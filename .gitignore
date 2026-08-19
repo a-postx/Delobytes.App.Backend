@@ -1,0 +1,24 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+TestResults/
+
+## NuGet
+packages/
+*.nupkg
+
+## Secrets / env
+appsettings.*.json
+!appsettings.json
+!appsettings.Development.json
+.env
+*.pfx
+*.snk
+
+## OS
+.DS_Store
+Thumbs.db
