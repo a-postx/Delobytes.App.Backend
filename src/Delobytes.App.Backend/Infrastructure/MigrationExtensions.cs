@@ -1,11 +1,11 @@
-namespace Delobytes.App.Backend.Infrastructure;
-
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Pricing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+
+namespace Delobytes.App.Backend.Infrastructure;
 
 /// <summary>
 /// Extension methods for applying EF Core migrations on application startup.
@@ -28,11 +28,7 @@ public static class MigrationExtensions
         await ApplyAsync<PricingDbContext>(scope, logger, "Pricing");
     }
 
-    private static async Task ApplyAsync<TContext>(
-        IServiceScope scope,
-        ILogger logger,
-        string moduleName)
-        where TContext : DbContext
+    private static async Task ApplyAsync<TContext>(IServiceScope scope, ILogger logger, string moduleName) where TContext : DbContext
     {
         try
         {

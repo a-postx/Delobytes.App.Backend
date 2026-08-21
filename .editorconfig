@@ -117,6 +117,10 @@ dotnet_diagnostic.CA1034.severity = suggestion
 # VSTHRD200: Use "Async" suffix for async methods
 dotnet_diagnostic.VSTHRD200.severity = suggestion
 
+dotnet_diagnostic.SA1611.severity = suggestion
+dotnet_diagnostic.SA1615.severity = suggestion
+dotnet_diagnostic.SA1629.severity = none
+
 ##########################################
 # .NET Language Conventions
 # https://docs.microsoft.com/visualstudio/ide/editorconfig-language-conventions
@@ -450,3 +454,18 @@ dotnet_naming_symbols.parameters_group.applicable_kinds = parameter
 dotnet_naming_rule.parameters_rule.symbols              = parameters_group
 dotnet_naming_rule.parameters_rule.style                = camel_case_style
 dotnet_naming_rule.parameters_rule.severity             = warning
+
+
+# SA1633: File must have header
+dotnet_diagnostic.SA1633.severity = none
+# SA1309: Field names should not begin with underscore
+dotnet_diagnostic.SA1309.severity = none
+# SA1101: Prefix local calls with this
+dotnet_diagnostic.SA1101.severity = none
+# SA1009: 
+dotnet_diagnostic.SA1009.severity = none
+# SA1600: Elements should be documented 
+dotnet_diagnostic.SA1600.severity = none
+
+# IDE1006:
+dotnet_diagnostic.IDE1006.severity = none

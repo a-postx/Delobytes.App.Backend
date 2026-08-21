@@ -1,107 +1,178 @@
-using Delobytes.App.Backend.Infrastructure;
-using FluentValidation;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Swashbuckle.AspNetCore.Swagger;
+using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading.Tasks;
+using Delobytes.App.Backend.Extensions;
+using Delobytes.App.Backend.Infrastructure;
+using Delobytes.App.Backend.Options;
+using Delobytes.Extensions.Configuration;
+using FluentValidation;
+using Google.Protobuf.WellKnownTypes;
+using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting.Internal;
+using Microsoft.Extensions.Options;
+using Swashbuckle.AspNetCore.Swagger;
 
-WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+namespace Delobytes.App.Backend;
 
-// Controllers
-builder.Services.AddControllers();
-
-// Swagger / OpenAPI
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
+/// <summary>
+/// Main program.
+/// </summary>
+public partial class Program
 {
-    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    /// <summary>
+    /// Entry point.
+    /// </summary>
+    /// <param name="args">Comand line arguments.</param>
+    /// <returns>Exit code.</returns>
+    public static async Task<int> Main(string[] args)
     {
-        Title = "Delobytes App Backend API",
-        Version = "v1",
-        Description = "Delobytes e-commerce margin accounting system API",
-    });
-});
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Activity.DefaultIdFormat = ActivityIdFormat.W3C;
 
-// MediatR – scan all module application assemblies
-builder.Services.AddMediatR(cfg =>
-{
-    cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-    // Add validation pipeline behavior
-    cfg.AddOpenBehavior(typeof(Delobytes.App.Backend.Application.Behaviours.ValidationBehaviour<,>));
-});
+        builder.WebHost.UseKestrel((builderContext, options) =>
+        {
+            options.AddServerHeader = false;
+            options.Configure(builderContext.Configuration.GetSection(nameof(AppSettings.Kestrel)));
+        });
 
-// FluentValidation
-builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+        builder.Services.AddControllers();
 
-// EF Core / PostgreSQL via module infrastructure registrations
-builder.Services.AddInfrastructure(builder.Configuration);
-
-// Health checks
-builder.Services.AddHealthChecks()
-    .AddNpgSql(
-        builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty,
-        name: "postgresql",
-        failureStatus: HealthStatus.Unhealthy,
-        tags: new[] { "db", "sql", "postgresql" });
-
-WebApplication app = builder.Build();
-
-// Apply EF Core migrations on startup
-await app.Services.ApplyMigrationsAsync();
-
-// Swagger
-app.UseSwagger();
-app.UseSwaggerUI(options =>
-{
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Delobytes App Backend v1");
-    options.RoutePrefix = string.Empty; // swagger at root
-});
-
-// Status endpoint – returns 200 OK with service info (non-Prometheus, human-readable)
-app.MapGet("/status", () =>
-{
-    return Results.Ok(new
-    {
-        status = "ok",
-        version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0",
-        timestamp = DateTimeOffset.UtcNow,
-    });
-})
-.WithName("Status")
-.WithTags("System")
-.Produces<object>(StatusCodes.Status200OK);
-
-// Metrics / health endpoint
-app.MapHealthChecks("/metrics", new HealthCheckOptions
-{
-    ResponseWriter = async (context, report) =>
-    {
-        context.Response.ContentType = "application/json";
-        JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
-        string result = JsonSerializer.Serialize(
-            new
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen(options =>
+        {
+            options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
             {
-                status = report.Status.ToString(),
-                totalDuration = report.TotalDuration,
-                entries = report.Entries.ToDictionary(
-                    e => e.Key,
-                    e => new
+                Title = "Delobytes App Backend API",
+                Version = "v1",
+                Description = "Delobytes e-commerce margin accounting system API",
+            });
+        });
+
+        builder.Services.AddMediatR(cfg =>
+        {
+            cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
+            cfg.AddOpenBehavior(typeof(Application.Behaviours.ValidationBehaviour<,>));
+        });
+
+        builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+
+        builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
+        {
+            builder.Configuration
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables();
+
+            IConfigurationRoot tempConfig = new ConfigurationBuilder()
+                   .AddJsonFile("appsettings.json")
+                   .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: false, reloadOnChange: false)
+                   .Build();
+
+            config.PrivateKey = Environment.GetEnvironmentVariable("YC_PRIVATE_KEY");
+            config.ServiceAccountId = tempConfig.GetValue<string>("YC:ServiceAccountId");
+            config.ServiceAccountAuthorizedKeyId = tempConfig.GetValue<string>("YC:ServiceAccountAuthorizedKeyId");
+            config.SecretId = tempConfig.GetValue<string>("YC:ConfigurationSecretId");
+            config.PathSeparator = '-';
+            config.Optional = false;
+            config.ReloadPeriod = TimeSpan.FromDays(7);
+            config.LoadTimeout = TimeSpan.FromSeconds(20);
+            config.OnLoadException += exceptionContext =>
+            {
+                // log
+            };
+        });
+
+        builder.AddOptionsWithValidation();
+
+        ServiceProvider sp = builder.Services.BuildServiceProvider();
+        AppSecrets? secrets = sp.GetService<IOptions<AppSecrets>>()?.Value;
+
+        builder.Services
+            .AddInfrastructure(builder.Configuration, secrets.DelobytesBackend?.ConnectionString);
+
+        IHealthChecksBuilder healthChecksBuilder = builder.Services.AddHealthChecks();
+
+        if (secrets?.DelobytesBackend != null && secrets.DelobytesBackend.ConnectionString != null)
+        {
+            healthChecksBuilder.AddNpgSql(
+                secrets.DelobytesBackend.ConnectionString,
+                "SELECT 1;",
+                null,
+                "Database",
+                HealthStatus.Unhealthy,
+                new string[] { "ready", "metric", "db", "sql", "postgresql" });
+        }
+
+        builder.Services.AddCustomCors();
+
+        WebApplication app = builder.Build();
+
+        IHostApplicationLifetime hostLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+        hostLifetime.ApplicationStopping.Register(() =>
+        {
+            app.Services.GetRequiredService<ILogger<Program>>().LogInformation("Shutdown has been initiated.");
+        });
+
+        await app.Services.ApplyMigrationsAsync();
+
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "Delobytes App Backend v1");
+            options.RoutePrefix = "swagger"; // swagger at root
+        });
+
+        app.MapGet("/status", () =>
+        {
+            return Results.Ok(new
+            {
+                status = "ok",
+                version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0",
+                timestamp = DateTimeOffset.UtcNow,
+            });
+        })
+            .WithName("Status")
+            .WithTags("System")
+            .Produces<object>(StatusCodes.Status200OK);
+
+        app.MapHealthChecks("/metrics", new HealthCheckOptions
+        {
+            ResponseWriter = async (context, report) =>
+            {
+                context.Response.ContentType = "application/json";
+                JsonSerializerOptions jsonOptions = new (JsonSerializerDefaults.Web);
+                string result = JsonSerializer.Serialize(
+                    new
                     {
-                        status = e.Value.Status.ToString(),
-                        duration = e.Value.Duration,
-                        description = e.Value.Description,
-                    }),
+                        status = report.Status.ToString(),
+                        totalDuration = report.TotalDuration,
+                        entries = report.Entries.ToDictionary(
+                            e => e.Key,
+                            e => new
+                            {
+                                status = e.Value.Status.ToString(),
+                                duration = e.Value.Duration,
+                                description = e.Value.Description,
+                            }),
+                    },
+                    jsonOptions);
+                await context.Response.WriteAsync(result);
             },
-            jsonOptions);
-        await context.Response.WriteAsync(result);
-    },
-});
+        });
 
-app.MapControllers();
+        app.MapControllers();
 
-await app.RunAsync();
+        await app.RunAsync();
 
-// Needed for WebApplicationFactory in integration tests
-public partial class Program { }
+        return 0;
+    }
+}

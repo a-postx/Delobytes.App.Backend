@@ -1,7 +1,7 @@
-namespace Delobytes.App.Backend.Application.Behaviours;
-
 using FluentValidation;
 using MediatR;
+
+namespace Delobytes.App.Backend.Application.Behaviours;
 
 /// <summary>
 /// MediatR pipeline behavior that validates all incoming requests using FluentValidation.
@@ -24,14 +24,11 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
     }
 
     /// <inheritdoc/>
-    public async Task<TResponse> Handle(
-        TRequest request,
-        RequestHandlerDelegate<TResponse> next,
-        CancellationToken cancellationToken)
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
         if (_validators.Any())
         {
-            ValidationContext<TRequest> context = new(request);
+            ValidationContext<TRequest> context = new (request);
 
             FluentValidation.Results.ValidationResult[] results =
                 await Task.WhenAll(_validators.Select(v => v.ValidateAsync(context, cancellationToken)));

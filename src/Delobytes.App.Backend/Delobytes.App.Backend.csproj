@@ -1,13 +1,32 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <PropertyGroup>
+  <PropertyGroup Label="Build">
     <TargetFramework>net7.0</TargetFramework>
+    <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package">
+    <Version>0.0.0.1</Version>
+    <Authors>Алексей Якубин</Authors>
+    <Company>Делобайты</Company>
+    <Product>Delobytes.Backend</Product>
+    <Description>Бекенд</Description>
+    <Copyright>Авторские права © Делобайты 2026. Все права защищены</Copyright>
+    <PackageId>Delobytes.Backend</PackageId>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
   </PropertyGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="stylecop.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="7.1.0" />
+    <PackageReference Include="Delobytes.AspNetCore.Common" Version="2.0.0" />
+    <PackageReference Include="Delobytes.Extensions.Configuration" Version="1.0.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
     <PackageReference Include="MediatR" Version="12.4.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="7.0.20" />
