@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Options;
 using Delobytes.App.Backend.Options.Validators;
+using Delobytes.App.Backend.Services;
 using Delobytes.AspNetCore.Common.Constants;
 using Microsoft.Extensions.Options;
 
@@ -32,15 +33,18 @@ internal static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddCustomOptions(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton<IValidateOptions<DelobytesBackendSecrets>, DelobytesBackendSecretsValidator>();
         services.AddSingleton<IValidateOptions<AppSecrets>, AppSecretsValidator>();
+        services.AddSingleton<IValidateOptions<Auth0Options>, Auth0OptionsValidator>();
 
         ////services
         ////    .ConfigureAndValidateSingleton<AppSettings>(configuration, o => o.BindNonPublicProperties = false);
 
         services
-            .Configure<DelobytesBackendSecrets>(configuration.GetSection($"{nameof(AppSecrets)}:{nameof(AppSecrets.DelobytesBackend)}"), o => o.BindNonPublicProperties = false)
-            .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false);
+            .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false)
+            .Configure<Auth0Options>(configuration.GetSection("Auth0"), o => o.BindNonPublicProperties = false);
+
+        // JWT token validator — stateless, singleton-safe
+        services.AddSingleton<JwtTokenValidator>();
 
         return services;
     }
@@ -59,7 +63,7 @@ internal static class ServiceCollectionExtensions
             AppSettings? applicationOptions = provider.GetService<IOptions<AppSettings>>()?.Value;
 
             AppSecrets? appSecrets = provider.GetService<IOptions<AppSecrets>>()?.Value;
-            DelobytesBackendSecrets? userWorkerSecrets = provider.GetService<IOptions<DelobytesBackendSecrets>>()?.Value;
+            Auth0Options? auth0Options = provider.GetService<IOptions<Auth0Options>>()?.Value;
         }
         catch (OptionsValidationException ex)
         {
