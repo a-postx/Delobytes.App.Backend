@@ -23,23 +23,23 @@ internal static class MassTransitExtensions
             // Register all consumers
             bus.AddConsumer<AppStartedEventConsumer>();
 
-            ////if (!string.IsNullOrWhiteSpace(messageBusConnectionString))
-            ////{
-            ////    // Production: RabbitMQ via CloudAMQP
-            ////    bus.UsingRabbitMq((ctx, cfg) =>
-            ////    {
-            ////        cfg.Host(new Uri(messageBusConnectionString));
-            ////        cfg.ConfigureEndpoints(ctx);
-            ////    });
-            ////}
-            ////else
-            ////{
-                // Development fallback: in-memory transport (no external dependencies)
-                bus.UsingInMemory((ctx, cfg) =>
+            if (!string.IsNullOrWhiteSpace(messageBusConnectionString))
+            {
+                // Production: RabbitMQ via CloudAMQP
+                bus.UsingRabbitMq((ctx, cfg) =>
                 {
+                    cfg.Host(new Uri(messageBusConnectionString));
                     cfg.ConfigureEndpoints(ctx);
                 });
-            ////}
+            }
+            else
+            {
+                // Development fallback: in-memory transport (no external dependencies)
+                bus.UsingInMemory((ctx, cfg) =>
+                    {
+                        cfg.ConfigureEndpoints(ctx);
+                    });
+            }
         });
 
         return services;

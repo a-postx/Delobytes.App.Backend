@@ -154,15 +154,17 @@ public partial class Program
             await app.Services.ApplyMigrationsAsync();
 
             // Publish test event to verify MassTransit + RabbitMQ connectivity on startup
-            IPublishEndpoint publishEndpoint = app.Services.GetRequiredService<IPublishEndpoint>();
-
             string appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
-
-            await publishEndpoint.Publish(new AppStartedEvent
+            using (IServiceScope publishScope = app.Services.CreateScope())
             {
-                StartedAt = DateTimeOffset.UtcNow,
-                ApplicationVersion = appVersion,
-            });
+                IPublishEndpoint publishEndpoint = publishScope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+
+                await publishEndpoint.Publish(new AppStartedEvent
+                {
+                    StartedAt = DateTimeOffset.UtcNow,
+                    ApplicationVersion = appVersion,
+                });
+            }
 
             app.UseSwagger();
             app.UseSwaggerUI(options =>
