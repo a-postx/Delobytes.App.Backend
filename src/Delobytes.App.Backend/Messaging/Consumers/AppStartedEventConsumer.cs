@@ -25,7 +25,7 @@ public class AppStartedEventConsumer : IConsumer<AppStartedEvent>
         AppStartedEvent evt = context.Message;
 
         _logger.LogInformation(
-            "AppStartedEvent received. EventId={EventId}, StartedAt={StartedAt}, Version={Version}",
+            "AppStartedEvent received. EventId={EvId}, StartedAt={StartedAt}, Version={Version}",
             evt.EventId,
             evt.StartedAt,
             evt.ApplicationVersion);

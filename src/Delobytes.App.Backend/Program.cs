@@ -1,19 +1,16 @@
-using System;
 using System.Diagnostics;
-using System.Linq;
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
-using System.Threading.Tasks;
+using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Options;
-using Delobytes.Extensions.Configuration;
+using Delobytes.AspNetCore.Common.Constants;
 using FluentValidation;
 using MassTransit;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -25,6 +22,10 @@ namespace Delobytes.App.Backend;
 /// </summary>
 public partial class Program
 {
+    internal static readonly string? AppName = Assembly.GetEntryAssembly()?.GetName().Name;
+    internal static readonly Version? AppVersion = Assembly.GetEntryAssembly()?.GetName().Version;
+    internal static readonly string? RootPath = Path.GetDirectoryName(typeof(Program).Assembly.Location);
+
     /// <summary>
     /// Entry point.
     /// </summary>
@@ -38,20 +39,28 @@ public partial class Program
         // Bootstrap logger (console only) before full Serilog configuration is available.
         // This captures startup errors in case YC Lockbox or config loading fails.
         Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
             .Enrich.FromLogContext()
-            .WriteTo.Console()
+            .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
             .CreateBootstrapLogger();
 
         try
         {
+            Log.Information("Building Web App...");
+
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-            builder.WebHost.UseKestrel((builderContext, options) =>
-            {
-                options.AddServerHeader = false;
-                options.Configure(builderContext.Configuration.GetSection(nameof(AppSettings.Kestrel)));
-            });
+            Log.Information("Hosting environment is {EnvironmentName}", builder.Environment.EnvironmentName);
+
+            builder.ConfigureJsonOptions();
+
+            builder.WebHost
+                .UseKestrel((builderContext, options) =>
+                    {
+                        options.AddServerHeader = false;
+                        options.Configure(builderContext.Configuration.GetSection(nameof(AppSettings.Kestrel)));
+                    })
+                .CaptureStartupErrors(true)
+                .UseShutdownTimeout(TimeSpan.FromSeconds(Timeouts.WebHostShutdownTimeoutSec));
 
             builder.Services.AddControllers();
 
@@ -101,9 +110,9 @@ public partial class Program
             });
 
             builder.AddOptionsWithValidation();
-
+            AppSecrets? secrets = builder.Configuration.GetSection(nameof(AppSecrets)).Get<AppSecrets>();
+            Auth0Options? opty = builder.Configuration.GetSection(nameof(Auth0Options)).Get<Auth0Options>();
             ServiceProvider sp = builder.Services.BuildServiceProvider();
-            AppSecrets? secrets = sp.GetService<IOptions<AppSecrets>>()?.Value;
             Auth0Options auth0Options = sp.GetRequiredService<IOptions<Auth0Options>>().Value;
 
             // ── Serilog ─────────────────────────────────────────────────────────────
@@ -144,6 +153,8 @@ public partial class Program
             builder.Services.AddCustomCors();
 
             WebApplication app = builder.Build();
+
+            app.UseCors(CorsPolicyNames.AllowAny);
 
             IHostApplicationLifetime hostLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
             hostLifetime.ApplicationStopping.Register(() =>
@@ -195,7 +206,7 @@ public partial class Program
                 ResponseWriter = async (context, report) =>
                 {
                     context.Response.ContentType = "application/json";
-                    JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
+                    JsonSerializerOptions jsonOptions = new (JsonSerializerDefaults.Web);
                     string result = JsonSerializer.Serialize(
                         new
                         {
@@ -231,4 +242,6 @@ public partial class Program
             await Log.CloseAndFlushAsync();
         }
     }
+
+    
 }

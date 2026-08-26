@@ -16,6 +16,21 @@ public class AppSecrets
     public string? MessageBusConnectionString { get; set; }
 
     /// <summary>
+    /// Адрес OpenSearch.
+    /// </summary>
+    public string? ElasticSearchUrl { get; set; }
+
+    /// <summary>
+    /// Пользователь OpenSearch.
+    /// </summary>
+    public string? ElasticSearchUser { get; set; }
+
+    /// <summary>
+    /// Пароль OpenSearch.
+    /// </summary>
+    public string? ElasticSearchPassword { get; set; }
+
+    /// <summary>
     /// URL Grafana Cloud Loki endpoint.
     /// Пример: https://logs-prod-{region}.grafana.net
     /// </summary>
