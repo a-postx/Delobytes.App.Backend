@@ -34,14 +34,14 @@ internal static class ServiceCollectionExtensions
     public static IServiceCollection AddCustomOptions(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<IValidateOptions<AppSecrets>, AppSecretsValidator>();
-        services.AddSingleton<IValidateOptions<Auth0Options>, Auth0OptionsValidator>();
+        ////services.AddSingleton<IValidateOptions<Auth0Options>, Auth0OptionsValidator>();
 
         ////services
         ////    .ConfigureAndValidateSingleton<AppSettings>(configuration, o => o.BindNonPublicProperties = false);
 
         services
-            .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false)
-            .Configure<Auth0Options>(configuration.GetSection("Auth0"), o => o.BindNonPublicProperties = false);
+            .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false);
+            ////.Configure<Auth0Options>(configuration.GetSection("Auth0"), o => o.BindNonPublicProperties = false);
 
         // JWT token validator — stateless, singleton-safe
         services.AddSingleton<JwtTokenValidator>();
@@ -63,7 +63,7 @@ internal static class ServiceCollectionExtensions
             AppSettings? applicationOptions = provider.GetService<IOptions<AppSettings>>()?.Value;
 
             AppSecrets? appSecrets = provider.GetService<IOptions<AppSecrets>>()?.Value;
-            Auth0Options? auth0Options = provider.GetService<IOptions<Auth0Options>>()?.Value;
+            ////Auth0Options? auth0Options = provider.GetService<IOptions<Auth0Options>>()?.Value;
         }
         catch (OptionsValidationException ex)
         {

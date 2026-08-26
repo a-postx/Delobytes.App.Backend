@@ -111,9 +111,7 @@ public partial class Program
 
             builder.AddOptionsWithValidation();
             AppSecrets? secrets = builder.Configuration.GetSection(nameof(AppSecrets)).Get<AppSecrets>();
-            Auth0Options? opty = builder.Configuration.GetSection(nameof(Auth0Options)).Get<Auth0Options>();
-            ServiceProvider sp = builder.Services.BuildServiceProvider();
-            Auth0Options auth0Options = sp.GetRequiredService<IOptions<Auth0Options>>().Value;
+            ////Auth0Options? opty = builder.Configuration.GetSection(nameof(Auth0Options)).Get<Auth0Options>();
 
             // ── Serilog ─────────────────────────────────────────────────────────────
             // Logs go EXCLUSIVELY to Grafana Cloud Loki (per tech stack, section 5.1).
@@ -144,10 +142,7 @@ public partial class Program
             // falls back to in-memory transport in Development without credentials.
             builder.Services.AddMessaging(secrets?.MessageBusConnectionString);
 
-            // ── Auth0 JWT Bearer authentication ─────────────────────────────────────
-            // Auth0 is responsible ONLY for user identity verification (authentication).
-            // Authorization (roles, tenants) is implemented in the application layer.
-            builder.Services.AddAuth0Authentication(auth0Options);
+            ////builder.Services.AddAuth0Authentication(auth0Options);
 
             // ── CORS ────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();
