@@ -3,11 +3,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Копируем файлы решения и конфигурации проекта
-COPY ["Delobytes.App.Backend.sln", "./"]
-COPY ["Directory.Build.props", "./"]
-
-# Копируем все .csproj файлы для восстановления зависимостей
+# Копируем .csproj файлы для восстановления зависимостей
 COPY ["src/Delobytes.App.Backend/Delobytes.App.Backend.csproj", "src/Delobytes.App.Backend/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/Delobytes.App.Backend.Identity.Domain.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Application/Delobytes.App.Backend.Identity.Application.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Application/"]
@@ -18,13 +14,14 @@ COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/Delobyte
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Domain/Delobytes.App.Backend.Pricing.Domain.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Domain/"]
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/Delobytes.App.Backend.Pricing.Application.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/"]
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/Delobytes.App.Backend.Pricing.Infrastructure.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/"]
-COPY ["tests/Delobytes.App.Backend.Tests/Delobytes.App.Backend.Tests.csproj", "tests/Delobytes.App.Backend.Tests/"]
 
-# Восстанавливаем зависимости
-RUN dotnet restore "Delobytes.App.Backend.sln"
+# Восстанавливаем зависимости основного проекта
+WORKDIR "/src/src/Delobytes.App.Backend"
+RUN dotnet restore "Delobytes.App.Backend.csproj"
 
 # Копируем весь исходный код
-COPY . .
+WORKDIR /src
+COPY ["src/", "src/"]
 
 # Собираем проект в режиме Release
 WORKDIR "/src/src/Delobytes.App.Backend"

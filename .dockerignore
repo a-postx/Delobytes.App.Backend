@@ -40,10 +40,8 @@ azure-pipelines.yml
 LICENSE
 docs/
 
-# Тесты
-**/tests/
-**/*.Tests/
-**/*Tests.csproj
+# Тесты - исключаем полностью
+tests/
 
 # NuGet
 **/*.nupkg
