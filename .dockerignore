@@ -1,0 +1,58 @@
+# Файлы и директории, которые не должны попасть в контекст сборки Docker
+
+# Результаты сборки
+**/bin/
+**/obj/
+**/out/
+**/publish/
+
+# Временные файлы IDE и редакторов
+**/.vs/
+**/.vscode/
+**/.idea/
+**/*.user
+**/*.suo
+**/*.cache
+**/.DS_Store
+
+# Файлы конфигурации разработки
+**/appsettings.Development.json
+**/appsettings.Local.json
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+**/*.dockerfile
+docker-compose*.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+
+# Документация
+**/*.md
+LICENSE
+docs/
+
+# Тесты
+**/tests/
+**/*.Tests/
+**/*Tests.csproj
+
+# NuGet
+**/*.nupkg
+**/.nuget/
+
+# Логи
+**/logs/
+**/*.log
+
+# Временные файлы
+**/tmp/
+**/temp/
