@@ -1,9 +1,10 @@
 # Многоэтапная сборка для .NET 8 приложения
+
 # Этап 1: Сборка
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Копируем .csproj файлы для восстановления зависимостей
+# Копируем .csproj файлы для кеширования слоя восстановления зависимостей
 COPY ["src/Delobytes.App.Backend/Delobytes.App.Backend.csproj", "src/Delobytes.App.Backend/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/Delobytes.App.Backend.Identity.Domain.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Application/Delobytes.App.Backend.Identity.Application.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Application/"]
@@ -15,27 +16,25 @@ COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Domain/Delobytes.App.Ba
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/Delobytes.App.Backend.Pricing.Application.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/"]
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/Delobytes.App.Backend.Pricing.Infrastructure.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/"]
 
-# Восстанавливаем зависимости основного проекта
+# Восстанавливаем зависимости через главный проект
 RUN dotnet restore "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj"
 
-# Копируем весь исходный код (только src/)
+# Копируем исходный код и общие свойства сборки
+COPY ["Directory.Build.props", "."]
 COPY ["src/", "src/"]
 
-# Собираем проект в режиме Release
-WORKDIR "/src/src/Delobytes.App.Backend"
-RUN dotnet build "Delobytes.App.Backend.csproj" -c Release -o /app/build --no-restore
+# Собираем главный проект в режиме Release
+RUN dotnet build "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Release --no-restore
 
-# Этап 2: Публикация
-FROM build AS publish
-WORKDIR "/src/src/Delobytes.App.Backend"
-RUN dotnet publish "Delobytes.App.Backend.csproj" -c Release -o /app/publish --no-restore --no-build /p:UseAppHost=false
+# Публикуем приложение
+RUN dotnet publish "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Release --no-build -o /app/publish
 
-# Этап 3: Финальный образ
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+# Этап 2: Runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
-# Копируем опубликованное приложение
-COPY --from=publish /app/publish .
+# Копируем опубликованное приложение из этапа сборки
+COPY --from=build /app/publish .
 
 # Настройка переменных окружения
 ENV ASPNETCORE_URLS=http://+:8080
