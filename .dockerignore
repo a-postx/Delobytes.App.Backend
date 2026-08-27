@@ -43,6 +43,10 @@ docs/
 # Тесты - исключаем полностью
 tests/
 
+# Solution файлы - содержат ссылки на тесты
+*.sln
+Directory.Build.props
+
 # NuGet
 **/*.nupkg
 **/.nuget/

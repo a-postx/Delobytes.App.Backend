@@ -16,11 +16,9 @@ COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/Delobytes.A
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/Delobytes.App.Backend.Pricing.Infrastructure.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/"]
 
 # Восстанавливаем зависимости основного проекта
-WORKDIR "/src/src/Delobytes.App.Backend"
-RUN dotnet restore "Delobytes.App.Backend.csproj"
+RUN dotnet restore "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj"
 
-# Копируем весь исходный код
-WORKDIR /src
+# Копируем весь исходный код (только src/)
 COPY ["src/", "src/"]
 
 # Собираем проект в режиме Release
@@ -29,6 +27,7 @@ RUN dotnet build "Delobytes.App.Backend.csproj" -c Release -o /app/build --no-re
 
 # Этап 2: Публикация
 FROM build AS publish
+WORKDIR "/src/src/Delobytes.App.Backend"
 RUN dotnet publish "Delobytes.App.Backend.csproj" -c Release -o /app/publish --no-restore --no-build /p:UseAppHost=false
 
 # Этап 3: Финальный образ
