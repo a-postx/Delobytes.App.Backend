@@ -4,6 +4,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
+COPY ["Directory.Build.props", "./"]
+
 # Копируем .csproj файлы для кеширования слоя восстановления зависимостей
 COPY ["src/Delobytes.App.Backend/Delobytes.App.Backend.csproj", "src/Delobytes.App.Backend/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/Delobytes.App.Backend.Identity.Domain.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/"]
@@ -16,13 +18,10 @@ COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Domain/Delobytes.App.Ba
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/Delobytes.App.Backend.Pricing.Application.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/"]
 COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/Delobytes.App.Backend.Pricing.Infrastructure.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/"]
 
-COPY ["Directory.Build.props", "."]
-
 # Восстанавливаем зависимости через главный проект
 RUN dotnet restore "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj"
 
 # Копируем исходный код и общие свойства сборки
-
 COPY ["src/", "src/"]
 
 # Собираем главный проект в режиме Release
