@@ -26,6 +26,7 @@
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="7.1.0" />
     <PackageReference Include="Delobytes.AspNetCore.Common" Version="2.0.0" />
+    <PackageReference Include="Delobytes.AspNetCore.Logging" Version="4.0.0" />
     <PackageReference Include="Delobytes.Extensions.Configuration" Version="1.0.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.4.1" />
@@ -48,12 +49,17 @@
     <PackageReference Include="Serilog.Sinks.OpenSearch" Version="2.0.0" />
     <PackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="6.9.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Modules\Identity\Delobytes.App.Backend.Identity.Infrastructure\Delobytes.App.Backend.Identity.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Catalog\Delobytes.App.Backend.Catalog.Infrastructure\Delobytes.App.Backend.Catalog.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Pricing\Delobytes.App.Backend.Pricing.Infrastructure\Delobytes.App.Backend.Pricing.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Infrastructure\Health\System\" />
   </ItemGroup>
 
 </Project>

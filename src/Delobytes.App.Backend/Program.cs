@@ -121,18 +121,7 @@ public partial class Program
                 .AddInfrastructure(builder.Configuration, secrets?.ConnectionString);
 
             // ── Health checks ───────────────────────────────────────────────────────
-            IHealthChecksBuilder healthChecksBuilder = builder.Services.AddHealthChecks();
-
-            if (secrets != null && secrets.ConnectionString != null)
-            {
-                healthChecksBuilder.AddNpgSql(
-                    secrets.ConnectionString,
-                    "SELECT 1;",
-                    null,
-                    "Database",
-                    HealthStatus.Unhealthy,
-                    new string[] { "ready", "metric", "db", "sql", "postgresql" });
-            }
+            builder.Services.AddCustomHealthChecks(secrets);
 
             // ── MassTransit + RabbitMQ (CloudAMQP) ─────────────────────────────────
             // Connects to CloudAMQP when CloudAmqpConnectionString is set;
@@ -234,6 +223,4 @@ public partial class Program
             await Log.CloseAndFlushAsync();
         }
     }
-
-    
 }

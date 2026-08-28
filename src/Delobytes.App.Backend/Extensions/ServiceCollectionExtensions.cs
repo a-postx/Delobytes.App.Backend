@@ -1,7 +1,11 @@
+using Delobytes.App.Backend.Infrastructure;
+using Delobytes.App.Backend.Infrastructure.Health;
+using Delobytes.App.Backend.Infrastructure.Health.System;
 using Delobytes.App.Backend.Options;
 using Delobytes.App.Backend.Options.Validators;
 using Delobytes.App.Backend.Services;
 using Delobytes.AspNetCore.Common.Constants;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Extensions;
@@ -70,6 +74,47 @@ internal static class ServiceCollectionExtensions
             Console.WriteLine($"Error validating {ex.OptionsType.FullName}: {string.Join(", ", ex.Failures)}");
             throw;
         }
+
+        return services;
+    }
+
+    public static IServiceCollection AddCustomHealthChecks(this IServiceCollection services, AppSecrets? secrets)
+    {
+        IHealthChecksBuilder builder = services.AddHealthChecks();
+
+        builder.AddGenericHealthCheck<UptimeHealthCheck>("uptime")
+                .AddMemoryHealthCheck(HealthCheckNames.Memory);
+
+        if (secrets?.ConnectionString != null)
+        {
+            builder.AddNpgSql(
+                secrets.ConnectionString,
+                "SELECT 1;",
+                null,
+                HealthCheckNames.Database,
+                HealthStatus.Unhealthy,
+                new string[] { "ready", "metric", "db", "sql", "postgresql" });
+        }
+
+        ////services
+        //// проверка дублирует встроенную проверку масстранзита
+        //////.AddSingleton<MessageBusServiceHealthCheck>()
+        ////.AddHealthChecks()
+        //// проверка дублирует встроенную проверку масстранзита
+        //////.AddGenericHealthCheck<MessageBusServiceHealthCheck>(HealthCheckNames.MessageBus, HealthStatus.Degraded, new[] { "ready", "metric" })
+        //// Ping is not available on Azure Web Apps
+        ////.AddNetworkHealthCheck("network");
+
+        services.Configure<HealthCheckPublisherOptions>(options =>
+        {
+            options.Period = TimeSpan.FromSeconds(60);
+            options.Timeout = TimeSpan.FromSeconds(30);
+            options.Delay = TimeSpan.FromSeconds(15);
+            ////options.Predicate = (check) => check.Tags.Contains("ready");
+        });
+
+        services.AddSingleton<IHealthCheckPublisher, MetricsPublisher>();
+        services.AddSingleton<IHealthCheckPublisher, ReadinessPublisher>();
 
         return services;
     }
