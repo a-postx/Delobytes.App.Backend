@@ -22,19 +22,19 @@ public class AppSecretsValidator : IValidateOptions<AppSecrets>
             failures.Add($"{nameof(options.MessageBusConnectionString)} secret is not found.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.LokiUrl))
+        if (string.IsNullOrWhiteSpace(options.ElasticSearchUrl))
         {
-            failures.Add($"{nameof(options.LokiUrl)} secret is not found.");
+            failures.Add($"{nameof(options.ElasticSearchUrl)} secret is not found.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.LokiUser))
+        if (string.IsNullOrWhiteSpace(options.ElasticSearchUser))
         {
-            failures.Add($"{nameof(options.LokiUser)} secret is not found.");
+            failures.Add($"{nameof(options.ElasticSearchUser)} secret is not found.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.LokiPassword))
+        if (string.IsNullOrWhiteSpace(options.ElasticSearchPassword))
         {
-            failures.Add($"{nameof(options.LokiPassword)} secret is not found.");
+            failures.Add($"{nameof(options.ElasticSearchPassword)} secret is not found.");
         }
 
         if (failures.Count > 0)
