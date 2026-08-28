@@ -38,7 +38,6 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 # Настройка переменных окружения
-ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV DOTNET_RUNNING_IN_CONTAINER=true
 ENV DOTNET_EnableDiagnostics=0
