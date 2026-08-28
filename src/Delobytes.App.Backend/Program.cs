@@ -114,9 +114,6 @@ public partial class Program
             ////Auth0Options? opty = builder.Configuration.GetSection(nameof(Auth0Options)).Get<Auth0Options>();
 
             // ── Serilog ─────────────────────────────────────────────────────────────
-            // Logs go EXCLUSIVELY to Grafana Cloud Loki (per tech stack, section 5.1).
-            // Console sink is enabled only in Development for local diagnostics.
-            // File sink is intentionally NOT configured.
             builder.AddSerilog(secrets);
 
             // ── Infrastructure (EF Core / PostgreSQL) ───────────────────────────────

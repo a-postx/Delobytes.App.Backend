@@ -20,14 +20,6 @@
         "ASPNETCORE_ENVIRONMENT": "Production"
       }
     },
-    "Kestrel Staging": {
-      "commandName": "Project",
-      "launchBrowser": true,
-      "launchUrl": "swagger",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Staging"
-      }
-    },
     "Watch Kestrel (CTRL+F5)": {
       "commandName": "Executable",
       "executablePath": "dotnet",
