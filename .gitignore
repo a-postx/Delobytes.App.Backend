@@ -12,9 +12,6 @@ packages/
 *.nupkg
 
 ## Secrets / env
-appsettings.*.json
-!appsettings.json
-!appsettings.Development.json
 .env
 *.pfx
 *.snk
