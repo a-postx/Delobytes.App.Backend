@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Messaging.Events;
+using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
 using Delobytes.AspNetCore.Common.Constants;
 using FluentValidation;
@@ -137,6 +138,9 @@ public partial class Program
             WebApplication app = builder.Build();
 
             app.UseCors(CorsPolicyNames.AllowAny);
+
+            // Global exception handling — must be first in the pipeline after CORS
+            app.UseMiddleware<ExceptionHandlingMiddleware>();
 
             IHostApplicationLifetime hostLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
             hostLifetime.ApplicationStopping.Register(() =>

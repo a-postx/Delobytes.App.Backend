@@ -61,6 +61,7 @@
 
   <ItemGroup>
     <Folder Include="Infrastructure\Health\System\" />
+    <Folder Include="Middleware\" />
   </ItemGroup>
 
 </Project>
