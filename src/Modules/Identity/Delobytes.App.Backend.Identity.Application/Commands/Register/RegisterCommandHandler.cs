@@ -10,15 +10,23 @@ namespace Delobytes.App.Backend.Identity.Application.Commands.Register;
 public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterResponse>
 {
     private readonly IUserRepository _userRepository;
+    private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IJwtTokenService _jwtTokenService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RegisterCommandHandler"/> class.
     /// </summary>
-    public RegisterCommandHandler(IUserRepository userRepository, IPasswordHasher passwordHasher)
+    public RegisterCommandHandler(
+        IUserRepository userRepository,
+        ITenantMembershipRepository membershipRepository,
+        IPasswordHasher passwordHasher,
+        IJwtTokenService jwtTokenService)
     {
         _userRepository = userRepository;
+        _membershipRepository = membershipRepository;
         _passwordHasher = passwordHasher;
+        _jwtTokenService = jwtTokenService;
     }
 
     /// <inheritdoc/>
@@ -46,10 +54,31 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
         _userRepository.Add(user);
         await _userRepository.SaveChangesAsync(cancellationToken);
 
+        // Check if user already has tenant memberships (should not happen for new user)
+        IReadOnlyList<TenantMembership> memberships = await _membershipRepository.GetActiveByUserAsync(user.Id, cancellationToken);
+
+        if (memberships.Count == 0)
+        {
+            // New user without tenant - return minimal response for tenant setup
+            return new RegisterResponse
+            {
+                UserId = user.Id,
+                Success = true,
+                AccessToken = string.Empty,
+                RequiresTenantSetup = true,
+            };
+        }
+
+        // User has tenant (edge case) - generate full token
+        TenantMembership activeMembership = memberships.First();
+        string token = _jwtTokenService.GenerateToken(user.Id, activeMembership.TenantId, activeMembership.Role);
+
         return new RegisterResponse
         {
             UserId = user.Id,
             Success = true,
+            AccessToken = token,
+            RequiresTenantSetup = false,
         };
     }
 }
