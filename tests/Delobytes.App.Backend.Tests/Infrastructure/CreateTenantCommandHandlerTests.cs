@@ -70,7 +70,7 @@ public class CreateTenantCommandHandlerTests
         var command = new CreateTenantCommand { UserId = userId, TenantName = "Test Company" };
 
         // Act
-        var response = await BuildHandler().Handle(command, CancellationToken.None);
+        CreateTenantResponse response = await BuildHandler().Handle(command, CancellationToken.None);
 
         // Assert
         response.Should().NotBeNull();

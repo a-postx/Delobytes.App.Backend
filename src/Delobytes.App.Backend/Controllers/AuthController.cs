@@ -38,7 +38,7 @@ public class AuthController : ControllerBase
         [FromBody] RegisterCommand command,
         CancellationToken cancellationToken)
     {
-        var response = await _mediator.Send(command, cancellationToken);
+        RegisterResponse response = await _mediator.Send(command, cancellationToken);
         return Ok(response);
     }
 
@@ -54,7 +54,7 @@ public class AuthController : ControllerBase
         [FromBody] LoginCommand command,
         CancellationToken cancellationToken)
     {
-        var response = await _mediator.Send(command, cancellationToken);
+        LoginResponse response = await _mediator.Send(command, cancellationToken);
         return Ok(response);
     }
 
@@ -70,7 +70,7 @@ public class AuthController : ControllerBase
         [FromBody] CreateTenantCommand command,
         CancellationToken cancellationToken)
     {
-        var response = await _mediator.Send(command, cancellationToken);
+        CreateTenantResponse response = await _mediator.Send(command, cancellationToken);
         return Ok(response);
     }
 }

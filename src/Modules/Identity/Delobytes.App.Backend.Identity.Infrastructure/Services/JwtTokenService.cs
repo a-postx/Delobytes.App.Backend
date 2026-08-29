@@ -28,16 +28,17 @@ public class JwtTokenService : IJwtTokenService
     /// <inheritdoc/>
     public string GenerateToken(Guid userId, Guid tenantId, Role role)
     {
-        var jwtSettings = _configuration.GetSection("JwtSettings");
-        var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JwtSettings:SecretKey is not configured.");
-        var issuer = jwtSettings["Issuer"] ?? "Delobytes.App.Backend";
-        var audience = jwtSettings["Audience"] ?? "Delobytes.App.Frontend";
-        var expirationMinutes = int.Parse(jwtSettings["ExpirationMinutes"] ?? "1440"); // Default: 24 hours
+        IConfigurationSection secrets = _configuration.GetSection("AppSecrets");
+        string secretKey = secrets["JwtSecretKey"] ?? throw new InvalidOperationException("JwtSettings:SecretKey is not configured.");
+        IConfigurationSection jwtSettings = _configuration.GetSection("JwtSettings");
+        string issuer = jwtSettings["Issuer"] ?? "Delobytes.App.Backend";
+        string audience = jwtSettings["Audience"] ?? "Delobytes.App.Frontend";
+        int expirationMinutes = int.Parse(jwtSettings["ExpirationMinutes"] ?? "1440"); // Default: 24 hours
 
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+        SymmetricSecurityKey securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+        SigningCredentials credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        Claim[] claims = new[]
         {
             new Claim("userId", userId.ToString()),
             new Claim("tenantId", tenantId.ToString()),
@@ -46,7 +47,7 @@ public class JwtTokenService : IJwtTokenService
             new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
         };
 
-        var token = new JwtSecurityToken(
+        JwtSecurityToken token = new JwtSecurityToken(
             issuer: issuer,
             audience: audience,
             claims: claims,

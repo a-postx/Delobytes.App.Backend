@@ -11,14 +11,14 @@ public class RoleAuthorizationHandler : AuthorizationHandler<RoleRequirement>
     /// <inheritdoc/>
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, RoleRequirement requirement)
     {
-        var roleClaim = context.User.FindFirst("role")?.Value;
+        string? roleClaim = context.User.FindFirst("role")?.Value;
 
         if (string.IsNullOrEmpty(roleClaim))
         {
             return Task.CompletedTask;
         }
 
-        if (Enum.TryParse<Role>(roleClaim, out var userRole))
+        if (Enum.TryParse<Role>(roleClaim, out Role userRole))
         {
             // Administrator has access to everything
             if (userRole == Role.Administrator)

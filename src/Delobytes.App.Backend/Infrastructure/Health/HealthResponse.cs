@@ -40,7 +40,7 @@ public static class HealthResponse
             List<JProperty> dataList = new List<JProperty>();
             List<JProperty> additionalDataProperties = new List<JProperty>();
 
-            foreach (var dataEntry in entry.Value.Data)
+            foreach (KeyValuePair<string, object> dataEntry in entry.Value.Data)
             {
                 object? itemValue = null;
 

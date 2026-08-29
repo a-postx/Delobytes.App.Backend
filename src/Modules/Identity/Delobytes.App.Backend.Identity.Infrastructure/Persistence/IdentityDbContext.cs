@@ -1,8 +1,10 @@
+using System.Linq.Expressions;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 
@@ -57,7 +59,7 @@ public class IdentityDbContext : DbContext
         modelBuilder.HasDefaultSchema("identity");
 
         // Configure shadow property TenantId for tenant-scoped entities
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (IMutableEntityType entityType in modelBuilder.Model.GetEntityTypes())
         {
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
@@ -71,12 +73,12 @@ public class IdentityDbContext : DbContext
                     .HasIndex("TenantId");
 
                 // Add global query filter
-                var tenantIdProperty = entityType.FindProperty("TenantId");
-                var parameter = System.Linq.Expressions.Expression.Parameter(entityType.ClrType, "e");
-                var tenantIdAccess = System.Linq.Expressions.Expression.Property(parameter, tenantIdProperty!.PropertyInfo!);
-                var currentTenantId = System.Linq.Expressions.Expression.Constant(_tenantContext.TenantId);
-                var comparison = System.Linq.Expressions.Expression.Equal(tenantIdAccess, currentTenantId);
-                var lambda = System.Linq.Expressions.Expression.Lambda(comparison, parameter);
+                IMutableProperty? tenantIdProperty = entityType.FindProperty("TenantId");
+                ParameterExpression parameter = System.Linq.Expressions.Expression.Parameter(entityType.ClrType, "e");
+                MemberExpression tenantIdAccess = System.Linq.Expressions.Expression.Property(parameter, tenantIdProperty!.PropertyInfo!);
+                ConstantExpression currentTenantId = System.Linq.Expressions.Expression.Constant(_tenantContext.TenantId);
+                BinaryExpression comparison = System.Linq.Expressions.Expression.Equal(tenantIdAccess, currentTenantId);
+                LambdaExpression lambda = System.Linq.Expressions.Expression.Lambda(comparison, parameter);
 
                 modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
             }
@@ -102,8 +104,8 @@ public class IdentityDbContext : DbContext
         Guid? tenantId = _tenantContext.TenantId;
         if (!tenantId.HasValue)
         {
-            throw new InvalidOperationException("TenantId is not found.");
-            ////return;
+            ////throw new InvalidOperationException("TenantId is not found.");
+            return;
         }
 
         // Set TenantId for all added tenant-scoped entities

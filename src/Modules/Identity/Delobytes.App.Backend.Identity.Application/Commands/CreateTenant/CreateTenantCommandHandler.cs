@@ -36,21 +36,21 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
     /// <inheritdoc/>
     public async Task<CreateTenantResponse> Handle(CreateTenantCommand request, CancellationToken cancellationToken)
     {
-        var user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken);
+        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken);
 
         if (user == null)
         {
             throw new InvalidOperationException($"User with ID {request.UserId} not found.");
         }
 
-        var alreadyHasMembership = await _membershipRepository.ExistsForUserAsync(request.UserId, cancellationToken);
+        bool alreadyHasMembership = await _membershipRepository.ExistsForUserAsync(request.UserId, cancellationToken);
 
         if (alreadyHasMembership)
         {
             throw new InvalidOperationException("User already has a tenant membership.");
         }
 
-        var tenant = new Tenant
+        Tenant tenant = new Tenant
         {
             Id = Guid.NewGuid(),
             Name = request.TenantName,
@@ -60,7 +60,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
 
         _tenantRepository.Add(tenant);
 
-        var membership = new TenantMembership
+        TenantMembership membership = new TenantMembership
         {
             Id = Guid.NewGuid(),
             UserId = request.UserId,
@@ -76,7 +76,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
         // so one SaveChanges call persists both the tenant and the membership.
         await _tenantRepository.SaveChangesAsync(cancellationToken);
 
-        var token = _jwtTokenService.GenerateToken(request.UserId, tenant.Id, Role.Administrator);
+        string token = _jwtTokenService.GenerateToken(request.UserId, tenant.Id, Role.Administrator);
 
         return new CreateTenantResponse
         {

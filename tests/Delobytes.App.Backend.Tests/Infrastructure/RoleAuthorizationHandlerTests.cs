@@ -18,7 +18,7 @@ public class RoleAuthorizationHandlerTests
         var handler = new RoleAuthorizationHandler();
         var requirement = new RoleRequirement(Role.Manager);
 
-        var claims = new[]
+        Claim[] claims = new[]
         {
             new Claim("userId", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
@@ -46,7 +46,7 @@ public class RoleAuthorizationHandlerTests
         var handler = new RoleAuthorizationHandler();
         var requirement = new RoleRequirement(Role.Manager, Role.Administrator);
 
-        var claims = new[]
+        Claim[] claims = new[]
         {
             new Claim("userId", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
@@ -74,7 +74,7 @@ public class RoleAuthorizationHandlerTests
         var handler = new RoleAuthorizationHandler();
         var requirement = new RoleRequirement(Role.Administrator);
 
-        var claims = new[]
+        Claim[] claims = new[]
         {
             new Claim("userId", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
@@ -102,7 +102,7 @@ public class RoleAuthorizationHandlerTests
         var handler = new RoleAuthorizationHandler();
         var requirement = new RoleRequirement(Role.Manager);
 
-        var claims = new[]
+        Claim[] claims = new[]
         {
             new Claim("userId", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
