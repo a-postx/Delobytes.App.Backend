@@ -29,4 +29,9 @@ public class AppSecrets
     /// Пароль OpenSearch.
     /// </summary>
     public string? ElasticSearchPassword { get; set; }
+
+    /// <summary>
+    /// Секретный ключ JWT.
+    /// </summary>
+    public string? JwtSecretKey { get; set; }
 }

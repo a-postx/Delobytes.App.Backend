@@ -78,6 +78,7 @@ public partial class Program
             builder.Services.AddMediatR(cfg =>
             {
                 cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Delobytes.App.Backend.Identity.Application.Commands.Login.LoginCommand).Assembly);
                 cfg.AddOpenBehavior(typeof(Application.Behaviours.ValidationBehaviour<,>));
             });
 
@@ -118,7 +119,7 @@ public partial class Program
 
             // ── Infrastructure (EF Core / PostgreSQL) ───────────────────────────────
             builder.Services
-                .AddInfrastructure(builder.Configuration, secrets?.ConnectionString);
+                .AddInfrastructure(builder.Configuration, secrets);
 
             // ── Health checks ───────────────────────────────────────────────────────
             builder.Services.AddCustomHealthChecks(secrets);

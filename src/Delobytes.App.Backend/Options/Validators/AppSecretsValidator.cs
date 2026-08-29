@@ -37,6 +37,11 @@ public class AppSecretsValidator : IValidateOptions<AppSecrets>
             failures.Add($"{nameof(options.ElasticSearchPassword)} secret is not found.");
         }
 
+        if (string.IsNullOrWhiteSpace(options.JwtSecretKey))
+        {
+            failures.Add($"{nameof(options.JwtSecretKey)} secret is not found.");
+        }
+
         if (failures.Count > 0)
         {
             return ValidateOptionsResult.Fail(failures);

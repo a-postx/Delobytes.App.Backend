@@ -54,6 +54,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modules\Identity\Delobytes.App.Backend.Identity.Infrastructure\Delobytes.App.Backend.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Identity\Delobytes.App.Backend.Identity.Application\Delobytes.App.Backend.Identity.Application.csproj" />
     <ProjectReference Include="..\Modules\Catalog\Delobytes.App.Backend.Catalog.Infrastructure\Delobytes.App.Backend.Catalog.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Pricing\Delobytes.App.Backend.Pricing.Infrastructure\Delobytes.App.Backend.Pricing.Infrastructure.csproj" />
   </ItemGroup>
