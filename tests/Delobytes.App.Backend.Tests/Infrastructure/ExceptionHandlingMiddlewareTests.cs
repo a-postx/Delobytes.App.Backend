@@ -65,7 +65,7 @@ public class ExceptionHandlingMiddlewareTests
     {
         // Arrange
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
-            _ => throw new UnauthorizedAccessException("Invalid email or password."));
+            _ => throw new UnauthorizedAccessException("Неверный email или пароль."));
 
         DefaultHttpContext context = BuildContext();
 
@@ -75,7 +75,7 @@ public class ExceptionHandlingMiddlewareTests
 
         // Assert
         statusCode.Should().Be((int)HttpStatusCode.Unauthorized);
-        message.Should().Be("Invalid email or password.");
+        message.Should().Be("Неверный email или пароль.");
     }
 
     [Fact]

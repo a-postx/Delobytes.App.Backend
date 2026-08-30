@@ -71,7 +71,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
 
             if (existing == null || !_passwordHasher.Verify(request.Password, existing.PasswordHash ?? string.Empty))
             {
-                throw new UnauthorizedAccessException("Invalid email or password.");
+                throw new UnauthorizedAccessException("Неверный email или пароль.");
             }
 
             existing.LastLoginAt = DateTimeOffset.UtcNow;
