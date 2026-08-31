@@ -19,7 +19,12 @@ public static class InfrastructureServiceExtensions
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, AppSecrets? secrets)
     {
-        services.AddIdentityInfrastructure(configuration, secrets?.ConnectionString, secrets?.JwtSecretKey);
+        services.AddIdentityInfrastructure(
+            configuration,
+            secrets?.ConnectionString,
+            secrets?.JwtSecretKey,
+            secrets?.YandexClientId,
+            secrets?.YandexClientSecret);
         services.AddCatalogInfrastructure(secrets?.ConnectionString);
         services.AddPricingInfrastructure(secrets?.ConnectionString);
 

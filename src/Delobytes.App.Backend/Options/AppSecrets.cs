@@ -34,4 +34,14 @@ public class AppSecrets
     /// Секретный ключ JWT.
     /// </summary>
     public string? JwtSecretKey { get; set; }
+
+    /// <summary>
+    /// Client ID приложения Yandex OAuth (из настроек приложения на id.yandex.ru).
+    /// </summary>
+    public string? YandexClientId { get; set; }
+
+    /// <summary>
+    /// Client Secret приложения Yandex OAuth (из настроек приложения на id.yandex.ru).
+    /// </summary>
+    public string? YandexClientSecret { get; set; }
 }

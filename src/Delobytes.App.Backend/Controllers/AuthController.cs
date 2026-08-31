@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.Login;
 using Delobytes.App.Backend.Identity.Application.Commands.Register;
+using Delobytes.App.Backend.Identity.Application.Commands.YandexCallback;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -71,6 +72,25 @@ public class AuthController : ControllerBase
         CancellationToken cancellationToken)
     {
         CreateTenantResponse response = await _mediator.Send(command, cancellationToken);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Complete the Yandex ID OAuth 2.0 authorization-code flow.
+    /// The client sends the code received from Yandex; the backend exchanges it
+    /// for a Yandex token, resolves or creates the local user account, and
+    /// returns a local JWT identical in shape to the regular login response.
+    /// </summary>
+    /// <param name="command">Authorization code and redirect URI.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Login result with JWT token.</returns>
+    [HttpPost("yandex/callback")]
+    [AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> YandexCallback(
+        [FromBody] YandexCallbackCommand command,
+        CancellationToken cancellationToken)
+    {
+        LoginResponse response = await _mediator.Send(command, cancellationToken);
         return Ok(response);
     }
 }

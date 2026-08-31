@@ -9,7 +9,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-
 namespace Delobytes.App.Backend.Identity.Infrastructure;
 
 /// <summary>
@@ -28,7 +27,9 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         string? connectionString,
-        string? jwtSecretKey)
+        string? jwtSecretKey,
+        string? yandexClientId,
+        string? yandexClientSecret)
     {
         if (connectionString == null)
         {
@@ -60,6 +61,18 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<IdentityDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IdentityMigrationsHistory", "identity")));
+
+        // Register Yandex OAuth service
+        services.AddHttpClient("YandexOAuth");
+        services.AddScoped<IYandexOAuthService>(sp =>
+        {
+            IHttpClientFactory factory = sp.GetRequiredService<IHttpClientFactory>();
+            HttpClient httpClient = factory.CreateClient("YandexOAuth");
+            return new YandexOAuthService(
+                httpClient,
+                yandexClientId ?? string.Empty,
+                yandexClientSecret ?? string.Empty);
+        });
 
         // Configure JWT Authentication
         IConfigurationSection jwtSettings = configuration.GetSection("JwtSettings");
