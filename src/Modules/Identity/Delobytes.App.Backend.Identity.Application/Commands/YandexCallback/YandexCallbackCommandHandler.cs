@@ -54,17 +54,12 @@ public class YandexCallbackCommandHandler : IRequestHandler<YandexCallbackComman
 
         if (user == null)
         {
-            string displayName = !string.IsNullOrWhiteSpace(userInfo.DisplayName)
-                ? userInfo.DisplayName
-                : $"{userInfo.FirstName} {userInfo.LastName}".Trim();
-
             user = new User
             {
                 Id = Guid.NewGuid(),
                 ExternalId = userInfo.Id,
                 IdentityProvider = "YandexID",
                 Email = userInfo.DefaultEmail,
-                DisplayName = displayName,
                 CreatedAt = DateTimeOffset.UtcNow,
                 IsActive = true,
             };

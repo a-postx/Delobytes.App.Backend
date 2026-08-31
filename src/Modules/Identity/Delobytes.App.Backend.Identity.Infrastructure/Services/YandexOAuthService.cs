@@ -87,9 +87,6 @@ internal sealed class YandexOAuthService : IYandexOAuthService
             Id = infoResponse.Id,
             Login = infoResponse.Login,
             DefaultEmail = infoResponse.DefaultEmail ?? string.Empty,
-            DisplayName = infoResponse.DisplayName,
-            FirstName = infoResponse.FirstName,
-            LastName = infoResponse.LastName,
         };
     }
 
@@ -117,14 +114,5 @@ internal sealed class YandexOAuthService : IYandexOAuthService
 
         [JsonPropertyName("default_email")]
         public string? DefaultEmail { get; set; }
-
-        [JsonPropertyName("display_name")]
-        public string? DisplayName { get; set; }
-
-        [JsonPropertyName("first_name")]
-        public string? FirstName { get; set; }
-
-        [JsonPropertyName("last_name")]
-        public string? LastName { get; set; }
     }
 }
