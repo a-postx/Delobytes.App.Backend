@@ -65,7 +65,7 @@ public class ExceptionHandlingMiddlewareTests
     {
         // Arrange
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
-            _ => throw new UnauthorizedAccessException("Неверный email или пароль."));
+            _ => throw new UnauthorizedAccessException("Неверный адрес или пароль."));
 
         DefaultHttpContext context = BuildContext();
 
@@ -75,7 +75,7 @@ public class ExceptionHandlingMiddlewareTests
 
         // Assert
         statusCode.Should().Be((int)HttpStatusCode.Unauthorized);
-        message.Should().Be("Неверный email или пароль.");
+        message.Should().Be("Неверный адрес или пароль.");
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class ExceptionHandlingMiddlewareTests
     {
         // Arrange
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
-            _ => throw new InvalidOperationException("User with email test@example.com already exists."));
+            _ => throw new InvalidOperationException("Пользователь с почтой test@example.com уже существует."));
 
         DefaultHttpContext context = BuildContext();
 
@@ -93,7 +93,7 @@ public class ExceptionHandlingMiddlewareTests
 
         // Assert
         statusCode.Should().Be((int)HttpStatusCode.BadRequest);
-        message.Should().Be("User with email test@example.com already exists.");
+        message.Should().Be("Пользователь с почтой test@example.com уже существует.");
     }
 
     [Fact]

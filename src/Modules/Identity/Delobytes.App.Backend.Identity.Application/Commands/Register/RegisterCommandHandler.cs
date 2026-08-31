@@ -36,7 +36,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
 
         if (existing != null)
         {
-            throw new InvalidOperationException($"User with email {request.Email} already exists.");
+            throw new InvalidOperationException($"Адрес {request.Email} уже существует ¯\\_(ツ)_/¯");
         }
 
         User user = new User

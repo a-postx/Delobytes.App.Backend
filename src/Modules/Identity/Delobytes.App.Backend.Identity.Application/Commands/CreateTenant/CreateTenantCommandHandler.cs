@@ -1,6 +1,3 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Domain.Enums;
@@ -40,14 +37,14 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
 
         if (user == null)
         {
-            throw new InvalidOperationException($"User with ID {request.UserId} not found.");
+            throw new InvalidOperationException($"Пользователь с ID {request.UserId} не найден.");
         }
 
         bool alreadyHasMembership = await _membershipRepository.ExistsForUserAsync(request.UserId, cancellationToken);
 
         if (alreadyHasMembership)
         {
-            throw new InvalidOperationException("User already has a tenant membership.");
+            throw new InvalidOperationException("Пользователь уже имеет пространство.");
         }
 
         Tenant tenant = new Tenant
