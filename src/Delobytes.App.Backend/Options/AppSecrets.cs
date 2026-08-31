@@ -44,4 +44,14 @@ public class AppSecrets
     /// Client Secret приложения Yandex OAuth (из настроек приложения на id.yandex.ru).
     /// </summary>
     public string? YandexClientSecret { get; set; }
+
+    /// <summary>
+    /// Client ID приложения Google OAuth (из Google Cloud Console).
+    /// </summary>
+    public string? GoogleClientId { get; set; }
+
+    /// <summary>
+    /// Client Secret приложения Google OAuth (из Google Cloud Console).
+    /// </summary>
+    public string? GoogleClientSecret { get; set; }
 }

@@ -29,7 +29,9 @@ public static class ServiceCollectionExtensions
         string? connectionString,
         string? jwtSecretKey,
         string? yandexClientId,
-        string? yandexClientSecret)
+        string? yandexClientSecret,
+        string? googleClientId,
+        string? googleClientSecret)
     {
         if (connectionString == null)
         {
@@ -72,6 +74,18 @@ public static class ServiceCollectionExtensions
                 httpClient,
                 yandexClientId ?? string.Empty,
                 yandexClientSecret ?? string.Empty);
+        });
+
+        // Register Google OAuth service
+        services.AddHttpClient("GoogleOAuth");
+        services.AddScoped<IGoogleOAuthService>(sp =>
+        {
+            IHttpClientFactory factory = sp.GetRequiredService<IHttpClientFactory>();
+            HttpClient httpClient = factory.CreateClient("GoogleOAuth");
+            return new GoogleOAuthService(
+                httpClient,
+                googleClientId ?? string.Empty,
+                googleClientSecret ?? string.Empty);
         });
 
         // Configure JWT Authentication

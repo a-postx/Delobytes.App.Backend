@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
+using Delobytes.App.Backend.Identity.Application.Commands.GoogleCallback;
 using Delobytes.App.Backend.Identity.Application.Commands.Login;
 using Delobytes.App.Backend.Identity.Application.Commands.Register;
 using Delobytes.App.Backend.Identity.Application.Commands.YandexCallback;
@@ -88,6 +89,25 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<LoginResponse>> YandexCallback(
         [FromBody] YandexCallbackCommand command,
+        CancellationToken cancellationToken)
+    {
+        LoginResponse response = await _mediator.Send(command, cancellationToken);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Complete the Google OAuth 2.0 authorization-code flow.
+    /// The client sends the code received from Google; the backend exchanges it
+    /// for a Google token, resolves or creates the local user account, and
+    /// returns a local JWT identical in shape to the regular login response.
+    /// </summary>
+    /// <param name="command">Authorization code and redirect URI.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Login result with JWT token.</returns>
+    [HttpPost("google/callback")]
+    [AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> GoogleCallback(
+        [FromBody] GoogleCallbackCommand command,
         CancellationToken cancellationToken)
     {
         LoginResponse response = await _mediator.Send(command, cancellationToken);

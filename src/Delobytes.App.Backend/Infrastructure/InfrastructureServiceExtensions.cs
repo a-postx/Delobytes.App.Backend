@@ -24,7 +24,9 @@ public static class InfrastructureServiceExtensions
             secrets?.ConnectionString,
             secrets?.JwtSecretKey,
             secrets?.YandexClientId,
-            secrets?.YandexClientSecret);
+            secrets?.YandexClientSecret,
+            secrets?.GoogleClientId,
+            secrets?.GoogleClientSecret);
         services.AddCatalogInfrastructure(secrets?.ConnectionString);
         services.AddPricingInfrastructure(secrets?.ConnectionString);
 
