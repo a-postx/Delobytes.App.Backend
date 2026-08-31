@@ -18,6 +18,11 @@ public interface ITenantRepository
     public void Add(Tenant tenant);
 
     /// <summary>
+    /// Updates an existing tenant.
+    /// </summary>
+    public void Update(Tenant tenant);
+
+    /// <summary>
     /// Persists all pending changes.
     /// </summary>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken);

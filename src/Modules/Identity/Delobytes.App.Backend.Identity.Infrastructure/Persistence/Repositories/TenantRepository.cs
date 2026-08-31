@@ -31,6 +31,10 @@ public class TenantRepository : ITenantRepository
         => _context.Tenants.Add(tenant);
 
     /// <inheritdoc/>
+    public void Update(Tenant tenant)
+        => _context.Tenants.Update(tenant);
+
+    /// <inheritdoc/>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         => _context.SaveChangesAsync(cancellationToken);
 }
