@@ -12,15 +12,15 @@ namespace Delobytes.App.Backend.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize]
-public class MeController : ControllerBase
+public class UserController : ControllerBase
 {
     private readonly IMediator _mediator;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="MeController"/> class.
+    /// Initializes a new instance of the <see cref="UserController"/> class.
     /// </summary>
     /// <param name="mediator">Mediator instance.</param>
-    public MeController(IMediator mediator)
+    public UserController(IMediator mediator)
     {
         _mediator = mediator;
     }

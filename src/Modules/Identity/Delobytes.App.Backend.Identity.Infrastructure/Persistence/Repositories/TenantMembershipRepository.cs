@@ -29,11 +29,21 @@ public class TenantMembershipRepository : ITenantMembershipRepository
             .AnyAsync(m => m.UserId == userId && m.IsActive, cancellationToken);
 
     /// <inheritdoc/>
+    public Task<int> CountActiveByUserAsync(Guid userId, CancellationToken cancellationToken)
+        => _context.TenantMemberships
+            .CountAsync(m => m.UserId == userId && m.IsActive, cancellationToken);
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<TenantMembership>> GetActiveByUserAsync(Guid userId, CancellationToken cancellationToken)
         => await _context.TenantMemberships
             .Where(m => m.UserId == userId && m.IsActive)
             .Include(m => m.Tenant)
             .ToListAsync(cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<TenantMembership?> FindActiveByUserAndTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken)
+        => _context.TenantMemberships
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.TenantId == tenantId && m.IsActive, cancellationToken);
 
     /// <inheritdoc/>
     public void Add(TenantMembership membership)

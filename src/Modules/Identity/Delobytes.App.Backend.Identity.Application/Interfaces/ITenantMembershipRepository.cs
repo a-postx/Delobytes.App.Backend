@@ -13,9 +13,19 @@ public interface ITenantMembershipRepository
     public Task<bool> ExistsForUserAsync(Guid userId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns the count of active memberships for a user.
+    /// </summary>
+    public Task<int> CountActiveByUserAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns all active memberships for a user, including the related Tenant.
     /// </summary>
     public Task<IReadOnlyList<TenantMembership>> GetActiveByUserAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds an active membership by user and tenant identifiers.
+    /// </summary>
+    public Task<TenantMembership?> FindActiveByUserAndTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Adds a new membership.

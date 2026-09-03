@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.GoogleCallback;
@@ -63,16 +64,39 @@ public class AuthController : ControllerBase
     /// <summary>
     /// Create a new tenant for the current user.
     /// </summary>
-    /// <param name="command">Tenant creation details.</param>
+    /// <param name="request">Tenant creation details.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Tenant creation result with JWT token.</returns>
     [HttpPost("create-tenant")]
-    [AllowAnonymous]
+    [Authorize]
     public async Task<ActionResult<CreateTenantResponse>> CreateTenant(
-        [FromBody] CreateTenantCommand command,
+        [FromBody] CreateTenantRequest request,
         CancellationToken cancellationToken)
     {
-        CreateTenantResponse response = await _mediator.Send(command, cancellationToken);
+        string? userIdClaim = User.FindFirstValue("sub");
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
+        {
+            return Unauthorized();
+        }
+
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+        Guid? currentTenantId = null;
+
+        if (!string.IsNullOrEmpty(tenantIdClaim) && Guid.TryParse(tenantIdClaim, out Guid parsedTenantId))
+        {
+            currentTenantId = parsedTenantId;
+        }
+
+        CreateTenantResponse response = await _mediator.Send(
+            new CreateTenantCommand
+            {
+                UserId = userId,
+                TenantName = request.TenantName,
+                CurrentTenantId = currentTenantId,
+            },
+            cancellationToken);
+
         return Ok(response);
     }
 
@@ -113,4 +137,15 @@ public class AuthController : ControllerBase
         LoginResponse response = await _mediator.Send(command, cancellationToken);
         return Ok(response);
     }
+}
+
+/// <summary>
+/// Request model for creating a tenant.
+/// </summary>
+public class CreateTenantRequest
+{
+    /// <summary>
+    /// Gets or sets the tenant name.
+    /// </summary>
+    public string TenantName { get; set; } = default!;
 }

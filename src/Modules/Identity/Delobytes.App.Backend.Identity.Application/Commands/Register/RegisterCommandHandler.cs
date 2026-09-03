@@ -59,12 +59,14 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
 
         if (memberships.Count == 0)
         {
-            // New user without tenant - return minimal response for tenant setup
+            // New user without tenant - return JWT without tenant for tenant setup
+            string setupToken = _jwtTokenService.GenerateTokenWithoutTenant(user.Id);
+            
             return new RegisterResponse
             {
                 UserId = user.Id,
                 Success = true,
-                AccessToken = string.Empty,
+                AccessToken = setupToken,
                 RequiresTenantSetup = true,
             };
         }

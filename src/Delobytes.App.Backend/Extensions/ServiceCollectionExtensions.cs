@@ -47,6 +47,10 @@ internal static class ServiceCollectionExtensions
             .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false);
             ////.Configure<Auth0Options>(configuration.GetSection("Auth0"), o => o.BindNonPublicProperties = false);
 
+        services.Configure<Delobytes.App.Backend.Identity.Application.Options.MultitenancyOptions>(
+            configuration.GetSection("Multitenancy"),
+            o => o.BindNonPublicProperties = false);
+
         // JWT token validator — stateless, singleton-safe
         services.AddSingleton<JwtTokenValidator>();
 

@@ -2,7 +2,9 @@ using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Queries.GetCurrentUser;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Moq;
+using static Yandex.Cloud.Mdb.Clickhouse.V1.Config.ClickhouseConfig.Types.ExternalDictionary.Types.Structure.Types;
 
 namespace Delobytes.App.Backend.Tests.Identity;
 
@@ -13,15 +15,17 @@ public class GetCurrentUserQueryHandlerTests
 {
     private readonly Mock<IUserRepository> _userRepo;
     private readonly Mock<ITenantRepository> _tenantRepo;
+    private readonly Mock<ITenantMembershipRepository> _tenantMembRepo;
 
     public GetCurrentUserQueryHandlerTests()
     {
         _userRepo = new Mock<IUserRepository>();
         _tenantRepo = new Mock<ITenantRepository>();
+        _tenantMembRepo = new Mock<ITenantMembershipRepository>();
     }
 
     private GetCurrentUserQueryHandler BuildHandler()
-        => new GetCurrentUserQueryHandler(_userRepo.Object, _tenantRepo.Object);
+        => new GetCurrentUserQueryHandler(_userRepo.Object, _tenantRepo.Object, _tenantMembRepo.Object);
 
     [Fact]
     public async Task Handle_ValidUserAndTenant_ReturnsCorrectResponse()
@@ -29,6 +33,7 @@ public class GetCurrentUserQueryHandlerTests
         // Arrange
         Guid userId = Guid.NewGuid();
         Guid tenantId = Guid.NewGuid();
+        Guid tenantMembershipId = Guid.NewGuid();
 
         User user = new User
         {
@@ -49,11 +54,30 @@ public class GetCurrentUserQueryHandlerTests
             IsActive = true,
         };
 
+        TenantMembership tenantMembership = new TenantMembership
+        {
+            Id = tenantMembershipId,
+            TenantId = tenantId,
+            Tenant = tenant,
+            UserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
         _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
         _tenantRepo.Setup(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(tenant);
+
+        _tenantMembRepo.Setup(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantMembership>
+            {
+                tenantMembership
+            });
+
+        _tenantMembRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenantMembership);
 
         GetCurrentUserQuery query = new GetCurrentUserQuery
         {
@@ -71,6 +95,7 @@ public class GetCurrentUserQueryHandlerTests
         response.DisplayName.Should().Be("Test User");
         response.TenantId.Should().Be(tenantId);
         response.TenantName.Should().Be("Acme Corp");
+        response.Tenants.Should().NotBeNull().And.HaveCountGreaterThan(0);
     }
 
     [Fact]
@@ -79,6 +104,7 @@ public class GetCurrentUserQueryHandlerTests
         // Arrange
         Guid userId = Guid.NewGuid();
         Guid tenantId = Guid.NewGuid();
+        Guid tenantMembershipId = Guid.NewGuid();
 
         User user = new User
         {
@@ -99,11 +125,30 @@ public class GetCurrentUserQueryHandlerTests
             IsActive = true,
         };
 
+        TenantMembership tenantMembership = new TenantMembership
+        {
+            Id = tenantMembershipId,
+            TenantId = tenantId,
+            Tenant = tenant,
+            UserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
         _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
         _tenantRepo.Setup(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(tenant);
+
+        _tenantMembRepo.Setup(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantMembership>
+            {
+                tenantMembership
+            });
+
+        _tenantMembRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenantMembership);
 
         GetCurrentUserQuery query = new GetCurrentUserQuery { UserId = userId, TenantId = tenantId };
 
@@ -170,6 +215,7 @@ public class GetCurrentUserQueryHandlerTests
         // Arrange
         Guid userId = Guid.NewGuid();
         Guid tenantId = Guid.NewGuid();
+        Guid tenantMembershipId = Guid.NewGuid();
 
         _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new User
@@ -182,14 +228,35 @@ public class GetCurrentUserQueryHandlerTests
                 IsActive = true,
             });
 
+        Tenant tenant = new Tenant
+        {
+            Id = tenantId,
+            Name = "T",
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
+        TenantMembership tenantMembership = new TenantMembership
+        {
+            Id = tenantMembershipId,
+            TenantId = tenantId,
+            Tenant = tenant,
+            UserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
         _tenantRepo.Setup(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Tenant
+            .ReturnsAsync(tenant);
+
+        _tenantMembRepo.Setup(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantMembership>
             {
-                Id = tenantId,
-                Name = "T",
-                CreatedAt = DateTimeOffset.UtcNow,
-                IsActive = true,
+                tenantMembership
             });
+
+        _tenantMembRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenantMembership);
 
         GetCurrentUserQuery query = new GetCurrentUserQuery { UserId = userId, TenantId = tenantId };
 
@@ -199,5 +266,7 @@ public class GetCurrentUserQueryHandlerTests
         // Assert
         _userRepo.Verify(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()), Times.Once);
         _tenantRepo.Verify(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>()), Times.Once);
+        _tenantMembRepo.Verify(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
+        _tenantMembRepo.Verify(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

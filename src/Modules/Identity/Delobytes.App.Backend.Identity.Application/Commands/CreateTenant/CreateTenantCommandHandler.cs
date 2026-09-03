@@ -1,7 +1,9 @@
 using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 
@@ -14,6 +16,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
     private readonly ITenantRepository _tenantRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly MultitenancyOptions _options;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CreateTenantCommandHandler"/> class.
@@ -22,12 +25,14 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
         IUserRepository userRepository,
         ITenantRepository tenantRepository,
         ITenantMembershipRepository membershipRepository,
-        IJwtTokenService jwtTokenService)
+        IJwtTokenService jwtTokenService,
+        IOptions<MultitenancyOptions> options)
     {
         _userRepository = userRepository;
         _tenantRepository = tenantRepository;
         _membershipRepository = membershipRepository;
         _jwtTokenService = jwtTokenService;
+        _options = options.Value;
     }
 
     /// <inheritdoc/>
@@ -40,11 +45,35 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
             throw new InvalidOperationException($"Пользователь с ID {request.UserId} не найден.");
         }
 
-        bool alreadyHasMembership = await _membershipRepository.ExistsForUserAsync(request.UserId, cancellationToken);
+        int currentMembershipsCount = await _membershipRepository.CountActiveByUserAsync(request.UserId, cancellationToken);
 
-        if (alreadyHasMembership)
+        if (currentMembershipsCount >= _options.MaxTenantsPerUser)
         {
-            throw new InvalidOperationException("Пользователь уже имеет пространство.");
+            throw new InvalidOperationException(
+                $"Пользователь достиг максимального лимита пространств ({_options.MaxTenantsPerUser}).");
+        }
+
+        // If user already has memberships, check they are Administrator in current tenant
+        if (currentMembershipsCount > 0)
+        {
+            if (request.CurrentTenantId == null)
+            {
+                throw new InvalidOperationException("Для создания дополнительного пространства необходимо указать текущий активный тенант.");
+            }
+
+            TenantMembership? currentMembership = await _membershipRepository
+                .FindActiveByUserAndTenantAsync(request.UserId, request.CurrentTenantId.Value, cancellationToken);
+
+            if (currentMembership == null)
+            {
+                throw new InvalidOperationException("Пользователь не состоит в указанном текущем пространстве.");
+            }
+
+            if (currentMembership.Role != Role.Administrator)
+            {
+                throw new InvalidOperationException(
+                    "Только Администратор текущего пространства может создавать дополнительные пространства.");
+            }
         }
 
         Tenant tenant = new Tenant

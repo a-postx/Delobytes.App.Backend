@@ -22,9 +22,9 @@ public class MeControllerTests
         _mediator = new Mock<IMediator>();
     }
 
-    private MeController BuildController(ClaimsPrincipal user)
+    private UserController BuildController(ClaimsPrincipal user)
     {
-        MeController controller = new MeController(_mediator.Object);
+        UserController controller = new UserController(_mediator.Object);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = user },
@@ -72,7 +72,7 @@ public class MeControllerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(handlerResponse);
 
-        MeController controller = BuildController(BuildPrincipal(userId.ToString(), tenantId.ToString()));
+        UserController controller = BuildController(BuildPrincipal(userId.ToString(), tenantId.ToString()));
 
         // Act
         ActionResult<GetCurrentUserResponse> result = await controller.GetMe(CancellationToken.None);
@@ -89,7 +89,7 @@ public class MeControllerTests
     public async Task GetMe_MissingUserIdClaim_ReturnsUnauthorized()
     {
         // Arrange — no userId claim
-        MeController controller = BuildController(BuildPrincipal(userId: null, tenantId: Guid.NewGuid().ToString()));
+        UserController controller = BuildController(BuildPrincipal(userId: null, tenantId: Guid.NewGuid().ToString()));
 
         // Act
         ActionResult<GetCurrentUserResponse> result = await controller.GetMe(CancellationToken.None);
@@ -103,7 +103,7 @@ public class MeControllerTests
     public async Task GetMe_MissingTenantIdClaim_ReturnsUnauthorized()
     {
         // Arrange — no tenantId claim
-        MeController controller = BuildController(BuildPrincipal(userId: Guid.NewGuid().ToString(), tenantId: null));
+        UserController controller = BuildController(BuildPrincipal(userId: Guid.NewGuid().ToString(), tenantId: null));
 
         // Act
         ActionResult<GetCurrentUserResponse> result = await controller.GetMe(CancellationToken.None);
@@ -117,7 +117,7 @@ public class MeControllerTests
     public async Task GetMe_InvalidUserIdFormat_ReturnsUnauthorized()
     {
         // Arrange — userId is not a valid Guid
-        MeController controller = BuildController(BuildPrincipal(userId: "not-a-guid", tenantId: Guid.NewGuid().ToString()));
+        UserController controller = BuildController(BuildPrincipal(userId: "not-a-guid", tenantId: Guid.NewGuid().ToString()));
 
         // Act
         ActionResult<GetCurrentUserResponse> result = await controller.GetMe(CancellationToken.None);
@@ -131,7 +131,7 @@ public class MeControllerTests
     public async Task GetMe_InvalidTenantIdFormat_ReturnsUnauthorized()
     {
         // Arrange — tenantId is not a valid Guid
-        MeController controller = BuildController(BuildPrincipal(userId: Guid.NewGuid().ToString(), tenantId: "not-a-guid"));
+        UserController controller = BuildController(BuildPrincipal(userId: Guid.NewGuid().ToString(), tenantId: "not-a-guid"));
 
         // Act
         ActionResult<GetCurrentUserResponse> result = await controller.GetMe(CancellationToken.None);
@@ -158,7 +158,7 @@ public class MeControllerTests
                 TenantName = "T",
             });
 
-        MeController controller = BuildController(BuildPrincipal(userId.ToString(), tenantId.ToString()));
+        UserController controller = BuildController(BuildPrincipal(userId.ToString(), tenantId.ToString()));
 
         // Act
         await controller.GetMe(CancellationToken.None);

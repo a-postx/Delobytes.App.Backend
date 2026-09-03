@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Delobytes.App.Backend.Identity.Application.Commands.SwitchTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -53,6 +54,35 @@ public class TenantController : ControllerBase
 
         return Ok(response);
     }
+
+    /// <summary>
+    /// Switch to another tenant that the user is a member of.
+    /// </summary>
+    /// <param name="request">Switch tenant request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>New JWT token with updated tenant context.</returns>
+    [HttpPost("switch")]
+    public async Task<ActionResult<SwitchTenantResponse>> SwitchTenant(
+        [FromBody] SwitchTenantRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? userIdClaim = User.FindFirstValue("sub");
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
+        {
+            return Unauthorized();
+        }
+
+        SwitchTenantResponse response = await _mediator.Send(
+            new SwitchTenantCommand
+            {
+                UserId = userId,
+                TargetTenantId = request.TargetTenantId,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
 }
 
 /// <summary>
@@ -64,4 +94,15 @@ public class UpdateTenantNameRequest
     /// Gets or sets the new tenant name.
     /// </summary>
     public string Name { get; set; } = default!;
+}
+
+/// <summary>
+/// Request model for switching tenant.
+/// </summary>
+public class SwitchTenantRequest
+{
+    /// <summary>
+    /// Gets or sets the target tenant identifier.
+    /// </summary>
+    public Guid TargetTenantId { get; set; }
 }

@@ -11,16 +11,19 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, G
 {
     private readonly IUserRepository _userRepository;
     private readonly ITenantRepository _tenantRepository;
+    private readonly ITenantMembershipRepository _membershipRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GetCurrentUserQueryHandler"/> class.
     /// </summary>
     public GetCurrentUserQueryHandler(
         IUserRepository userRepository,
-        ITenantRepository tenantRepository)
+        ITenantRepository tenantRepository,
+        ITenantMembershipRepository membershipRepository)
     {
         _userRepository = userRepository;
         _tenantRepository = tenantRepository;
+        _membershipRepository = membershipRepository;
     }
 
     /// <inheritdoc/>
@@ -34,6 +37,14 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, G
         Tenant tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken)
             ?? throw new UnauthorizedAccessException("Тенант не найден.");
 
+        TenantMembership? currentMembership = await _membershipRepository
+            .FindActiveByUserAndTenantAsync(request.UserId, request.TenantId, cancellationToken);
+
+        string role = currentMembership?.Role.ToString() ?? "Unknown";
+
+        IReadOnlyList<TenantMembership> allMemberships = await _membershipRepository
+            .GetActiveByUserAsync(request.UserId, cancellationToken);
+
         return new GetCurrentUserResponse
         {
             UserId = user.Id,
@@ -41,6 +52,13 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, G
             Email = user.Email,
             TenantId = tenant.Id,
             TenantName = tenant.Name,
+            Role = role,
+            Tenants = allMemberships.Select(m => new UserTenantInfo
+            {
+                TenantId = m.TenantId,
+                TenantName = m.Tenant.Name,
+                Role = m.Role.ToString(),
+            }).ToList(),
         };
     }
 }
