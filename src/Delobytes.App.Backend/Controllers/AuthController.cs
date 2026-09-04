@@ -77,7 +77,7 @@ public class AuthController : ControllerBase
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Got create-tenant");
-        string? userIdClaim = User.FindFirstValue("sub");
+        string? userIdClaim = User.FindFirstValue("userId");
         _logger.LogInformation("user is {userIdClaim}", userIdClaim);
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))

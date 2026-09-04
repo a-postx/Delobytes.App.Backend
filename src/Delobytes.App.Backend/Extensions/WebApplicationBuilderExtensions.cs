@@ -129,7 +129,7 @@ internal static class WebApplicationBuilderExtensions
                 // ускоряет расструктуризатор EF Core
                 .WithDestructurers(new[] { new DbUpdateExceptionDestructurer() }));
 
-        loggerConfig.WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Debug);
+        loggerConfig.WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Information);
 
         if (secrets is null || string.IsNullOrEmpty(secrets.ElasticSearchUrl)
                             || string.IsNullOrEmpty(secrets.ElasticSearchUser)

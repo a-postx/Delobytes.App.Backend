@@ -61,7 +61,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
         {
             // New user without tenant - return JWT without tenant for tenant setup
             string setupToken = _jwtTokenService.GenerateTokenWithoutTenant(user.Id);
-            
+
             return new RegisterResponse
             {
                 UserId = user.Id,
