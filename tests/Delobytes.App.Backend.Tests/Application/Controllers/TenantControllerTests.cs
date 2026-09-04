@@ -1,16 +1,13 @@
-using System;
 using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
 using Delobytes.App.Backend.Controllers;
-using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
+using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
 
-namespace Delobytes.App.Backend.Tests.Application.Controllers;
+namespace Delobytes.App.Backend.Tests.Controllers;
 
 public class TenantControllerTests
 {
@@ -24,159 +21,210 @@ public class TenantControllerTests
     }
 
     [Fact]
-    public async Task UpdateTenantName_ValidRequest_ReturnsOkWithResponse()
+    public async Task CreateTenantForUser_WithValidRequest_ReturnsOkWithTenantInfo()
     {
         // Arrange
-        Guid tenantId = Guid.NewGuid();
-        string newName = "New Tenant Name";
+        Guid userId = Guid.NewGuid();
+        Guid currentTenantId = Guid.NewGuid();
+        Guid newTenantId = Guid.NewGuid();
+        string tenantName = "New Company";
 
-        UpdateTenantNameRequest request = new UpdateTenantNameRequest
+        CreateTenantForUserRequest request = new CreateTenantForUserRequest
         {
-            Name = newName
+            TenantName = tenantName
         };
 
-        UpdateTenantNameResponse expectedResponse = new UpdateTenantNameResponse
+        CreateTenantResponse mediatorResponse = new CreateTenantResponse
         {
-            TenantId = tenantId,
-            Name = newName
+            TenantId = newTenantId,
+            AccessToken = "jwt-token-not-used"
         };
 
         _mediatorMock
-            .Setup(x => x.Send(It.Is<UpdateTenantNameCommand>(c => 
-                c.TenantId == tenantId && c.Name == newName), 
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedResponse);
+            .Setup(m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mediatorResponse);
 
-        ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
-        {
-            new Claim("tenantId", tenantId.ToString())
-        }));
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext { User = user }
-        };
+        SetupUserClaims(userId, currentTenantId);
 
         // Act
-        ActionResult<UpdateTenantNameResponse> result = await _controller.UpdateTenantName(request, CancellationToken.None);
+        ActionResult<CreateTenantForUserResponse> result = await _controller.CreateTenantForUser(
+            request,
+            CancellationToken.None);
 
         // Assert
-        OkObjectResult? okResult = Assert.IsType<OkObjectResult>(result.Result);
-        UpdateTenantNameResponse? response = Assert.IsType<UpdateTenantNameResponse>(okResult.Value);
-        Assert.Equal(tenantId, response.TenantId);
-        Assert.Equal(newName, response.Name);
+        OkObjectResult okResult = Assert.IsType<OkObjectResult>(result.Result);
+        CreateTenantForUserResponse response = Assert.IsType<CreateTenantForUserResponse>(okResult.Value);
+        
+        Assert.Equal(newTenantId, response.TenantId);
+        Assert.Equal(tenantName, response.TenantName);
 
-        _mediatorMock.Verify(x => x.Send(
-            It.Is<UpdateTenantNameCommand>(c => c.TenantId == tenantId && c.Name == newName),
-            It.IsAny<CancellationToken>()), 
+        _mediatorMock.Verify(
+            m => m.Send(
+                It.Is<CreateTenantCommand>(cmd =>
+                    cmd.UserId == userId &&
+                    cmd.TenantName == tenantName &&
+                    cmd.CurrentTenantId == currentTenantId),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task UpdateTenantName_NoTenantIdClaim_ReturnsUnauthorized()
+    public async Task CreateTenantForUser_WithoutCurrentTenant_SendsNullCurrentTenantId()
     {
         // Arrange
-        UpdateTenantNameRequest request = new UpdateTenantNameRequest
+        Guid userId = Guid.NewGuid();
+        Guid newTenantId = Guid.NewGuid();
+        string tenantName = "First Company";
+
+        CreateTenantForUserRequest request = new CreateTenantForUserRequest
         {
-            Name = "New Name"
+            TenantName = tenantName
         };
 
-        ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity());
+        CreateTenantResponse mediatorResponse = new CreateTenantResponse
+        {
+            TenantId = newTenantId,
+            AccessToken = "jwt-token-not-used"
+        };
+
+        _mediatorMock
+            .Setup(m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mediatorResponse);
+
+        SetupUserClaims(userId, null);
+
+        // Act
+        ActionResult<CreateTenantForUserResponse> result = await _controller.CreateTenantForUser(
+            request,
+            CancellationToken.None);
+
+        // Assert
+        OkObjectResult okResult = Assert.IsType<OkObjectResult>(result.Result);
+        CreateTenantForUserResponse response = Assert.IsType<CreateTenantForUserResponse>(okResult.Value);
+        
+        Assert.Equal(newTenantId, response.TenantId);
+        Assert.Equal(tenantName, response.TenantName);
+
+        _mediatorMock.Verify(
+            m => m.Send(
+                It.Is<CreateTenantCommand>(cmd =>
+                    cmd.UserId == userId &&
+                    cmd.TenantName == tenantName &&
+                    cmd.CurrentTenantId == null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTenantForUser_WithoutUserIdClaim_ReturnsUnauthorized()
+    {
+        // Arrange
+        CreateTenantForUserRequest request = new CreateTenantForUserRequest
+        {
+            TenantName = "Test Company"
+        };
 
         _controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext { User = user }
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity())
+            }
         };
 
         // Act
-        ActionResult<UpdateTenantNameResponse> result = await _controller.UpdateTenantName(request, CancellationToken.None);
+        ActionResult<CreateTenantForUserResponse> result = await _controller.CreateTenantForUser(
+            request,
+            CancellationToken.None);
 
         // Assert
         Assert.IsType<UnauthorizedResult>(result.Result);
 
-        _mediatorMock.Verify(x => x.Send(
-            It.IsAny<UpdateTenantNameCommand>(),
-            It.IsAny<CancellationToken>()), 
+        _mediatorMock.Verify(
+            m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
     [Fact]
-    public async Task UpdateTenantName_InvalidTenantIdClaim_ReturnsUnauthorized()
+    public async Task CreateTenantForUser_WithInvalidUserIdClaim_ReturnsUnauthorized()
     {
         // Arrange
-        UpdateTenantNameRequest request = new UpdateTenantNameRequest
+        CreateTenantForUserRequest request = new CreateTenantForUserRequest
         {
-            Name = "New Name"
+            TenantName = "Test Company"
         };
 
-        ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
+        ClaimsIdentity identity = new ClaimsIdentity(new[]
         {
-            new Claim("tenantId", "invalid-guid")
-        }));
+            new Claim("userId", "not-a-guid")
+        });
 
         _controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext { User = user }
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(identity)
+            }
         };
 
         // Act
-        ActionResult<UpdateTenantNameResponse> result = await _controller.UpdateTenantName(request, CancellationToken.None);
+        ActionResult<CreateTenantForUserResponse> result = await _controller.CreateTenantForUser(
+            request,
+            CancellationToken.None);
 
         // Assert
         Assert.IsType<UnauthorizedResult>(result.Result);
 
-        _mediatorMock.Verify(x => x.Send(
-            It.IsAny<UpdateTenantNameCommand>(),
-            It.IsAny<CancellationToken>()), 
+        _mediatorMock.Verify(
+            m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
-    [Theory]
-    [InlineData("Tenant Name")]
-    [InlineData("Пространство 1")]
-    [InlineData("テナント")]
-    [InlineData("A")]
-    public async Task UpdateTenantName_VariousValidNames_SendsCommandWithCorrectName(string name)
+    [Fact]
+    public async Task CreateTenantForUser_WhenMediatorThrowsException_PropagatesException()
     {
         // Arrange
-        Guid tenantId = Guid.NewGuid();
+        Guid userId = Guid.NewGuid();
+        Guid currentTenantId = Guid.NewGuid();
 
-        UpdateTenantNameRequest request = new UpdateTenantNameRequest
+        CreateTenantForUserRequest request = new CreateTenantForUserRequest
         {
-            Name = name
-        };
-
-        UpdateTenantNameResponse expectedResponse = new UpdateTenantNameResponse
-        {
-            TenantId = tenantId,
-            Name = name
+            TenantName = "Test Company"
         };
 
         _mediatorMock
-            .Setup(x => x.Send(It.IsAny<UpdateTenantNameCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedResponse);
+            .Setup(m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Только Администратор текущего пространства может создавать дополнительные пространства."));
 
-        ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new Claim[]
-        {
-            new Claim("tenantId", tenantId.ToString())
-        }));
+        SetupUserClaims(userId, currentTenantId);
 
-        _controller.ControllerContext = new ControllerContext
+        // Act & Assert
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _controller.CreateTenantForUser(request, CancellationToken.None));
+
+        Assert.Contains("Администратор", exception.Message);
+    }
+
+    private void SetupUserClaims(Guid userId, Guid? tenantId)
+    {
+        List<Claim> claims = new List<Claim>
         {
-            HttpContext = new DefaultHttpContext { User = user }
+            new Claim("userId", userId.ToString())
         };
 
-        // Act
-        ActionResult<UpdateTenantNameResponse> result = await _controller.UpdateTenantName(request, CancellationToken.None);
+        if (tenantId.HasValue)
+        {
+            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
+        }
 
-        // Assert
-        OkObjectResult? okResult = Assert.IsType<OkObjectResult>(result.Result);
-        UpdateTenantNameResponse? response = Assert.IsType<UpdateTenantNameResponse>(okResult.Value);
-        Assert.Equal(name, response.Name);
-
-        _mediatorMock.Verify(x => x.Send(
-            It.Is<UpdateTenantNameCommand>(c => c.Name == name),
-            It.IsAny<CancellationToken>()), 
-            Times.Once);
+        ClaimsIdentity identity = new ClaimsIdentity(claims);
+        
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(identity)
+            }
+        };
     }
 }

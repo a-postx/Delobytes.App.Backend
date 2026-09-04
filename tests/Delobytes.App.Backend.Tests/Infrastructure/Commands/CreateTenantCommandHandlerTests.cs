@@ -3,319 +3,311 @@ using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Domain.Enums;
-using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Moq;
+using Xunit;
 
-namespace Delobytes.App.Backend.Tests.Identity;
+namespace Delobytes.App.Backend.Tests.Commands;
 
-/// <summary>
-/// Tests for CreateTenantCommandHandler.
-/// </summary>
 public class CreateTenantCommandHandlerTests
 {
-    private readonly Mock<IUserRepository> _userRepo;
-    private readonly Mock<ITenantRepository> _tenantRepo;
-    private readonly Mock<ITenantMembershipRepository> _membershipRepo;
-    private readonly Mock<IJwtTokenService> _jwtService;
-    private readonly Mock<IOptions<MultitenancyOptions>> _options;
+    private readonly Mock<IUserRepository> _userRepositoryMock;
+    private readonly Mock<ITenantRepository> _tenantRepositoryMock;
+    private readonly Mock<ITenantMembershipRepository> _membershipRepositoryMock;
+    private readonly Mock<IJwtTokenService> _jwtTokenServiceMock;
+    private readonly Mock<IOptions<MultitenancyOptions>> _optionsMock;
+    private readonly CreateTenantCommandHandler _handler;
 
     public CreateTenantCommandHandlerTests()
     {
-        _userRepo = new Mock<IUserRepository>();
-        _tenantRepo = new Mock<ITenantRepository>();
-        _membershipRepo = new Mock<ITenantMembershipRepository>();
-        _jwtService = new Mock<IJwtTokenService>();
-        _options = new Mock<IOptions<MultitenancyOptions>>();
+        _userRepositoryMock = new Mock<IUserRepository>();
+        _tenantRepositoryMock = new Mock<ITenantRepository>();
+        _membershipRepositoryMock = new Mock<ITenantMembershipRepository>();
+        _jwtTokenServiceMock = new Mock<IJwtTokenService>();
 
-        _options.Setup(o => o.Value).Returns(new MultitenancyOptions { MaxTenantsPerUser = 5 });
+        _optionsMock = new Mock<IOptions<MultitenancyOptions>>();
+        _optionsMock.Setup(o => o.Value).Returns(new MultitenancyOptions
+        {
+            MaxTenantsPerUser = 5
+        });
+
+        _handler = new CreateTenantCommandHandler(
+            _userRepositoryMock.Object,
+            _tenantRepositoryMock.Object,
+            _membershipRepositoryMock.Object,
+            _jwtTokenServiceMock.Object,
+            _optionsMock.Object);
     }
 
-    private CreateTenantCommandHandler BuildHandler()
-        => new CreateTenantCommandHandler(
-            _userRepo.Object,
-            _tenantRepo.Object,
-            _membershipRepo.Object,
-            _jwtService.Object,
-            _options.Object);
-
     [Fact]
-    public async Task Handle_ValidCommand_FirstTenant_CreatesTenantAndMembership()
+    public async Task Handle_FirstTenantCreation_Succeeds()
     {
         // Arrange
-        var userId = Guid.NewGuid();
-        var user = new User
+        Guid userId = Guid.NewGuid();
+        string tenantName = "My First Company";
+        string expectedToken = "jwt-token-123";
+
+        User user = new User
         {
             Id = userId,
-            ExternalId = "test@example.com",
-            IdentityProvider = "Local",
-            Email = "test@example.com",
-            CreatedAt = DateTimeOffset.UtcNow,
-            IsActive = true,
+            Email = "user@example.com",
+            PasswordHash = "hash"
         };
 
-        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+        _userRepositoryMock
+            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
-        _membershipRepo.Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+        _membershipRepositoryMock
+            .Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
 
-        _tenantRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
+        _jwtTokenServiceMock
+            .Setup(s => s.GenerateToken(userId, It.IsAny<Guid>(), Role.Administrator))
+            .Returns(expectedToken);
 
-        _jwtService.Setup(s => s.GenerateToken(userId, It.IsAny<Guid>(), Role.Administrator))
-            .Returns("fake-jwt-token");
-
-        Tenant? capturedTenant = null;
-        _tenantRepo.Setup(r => r.Add(It.IsAny<Tenant>()))
-            .Callback<Tenant>(t => capturedTenant = t);
-
-        TenantMembership? capturedMembership = null;
-        _membershipRepo.Setup(r => r.Add(It.IsAny<TenantMembership>()))
-            .Callback<TenantMembership>(m => capturedMembership = m);
-
-        var command = new CreateTenantCommand
+        CreateTenantCommand command = new CreateTenantCommand
         {
             UserId = userId,
-            TenantName = "Test Company",
-            CurrentTenantId = null,
+            TenantName = tenantName,
+            CurrentTenantId = null
         };
 
         // Act
-        CreateTenantResponse response = await BuildHandler().Handle(command, CancellationToken.None);
+        CreateTenantResponse response = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Should().NotBeNull();
-        response.TenantId.Should().NotBeEmpty();
-        response.AccessToken.Should().Be("fake-jwt-token");
+        Assert.NotEqual(Guid.Empty, response.TenantId);
+        Assert.Equal(expectedToken, response.AccessToken);
 
-        capturedTenant.Should().NotBeNull();
-        capturedTenant!.Name.Should().Be("Test Company");
-        capturedTenant.IsActive.Should().BeTrue();
+        _tenantRepositoryMock.Verify(
+            r => r.Add(It.Is<Tenant>(t => t.Name == tenantName && t.IsActive)),
+            Times.Once);
 
-        capturedMembership.Should().NotBeNull();
-        capturedMembership!.UserId.Should().Be(userId);
-        capturedMembership.TenantId.Should().Be(capturedTenant.Id);
-        capturedMembership.Role.Should().Be(Role.Administrator);
-        capturedMembership.IsActive.Should().BeTrue();
+        _membershipRepositoryMock.Verify(
+            r => r.Add(It.Is<TenantMembership>(m => 
+                m.UserId == userId && 
+                m.Role == Role.Administrator && 
+                m.IsActive)),
+            Times.Once);
 
-        _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Once);
-        _membershipRepo.Verify(r => r.Add(It.IsAny<TenantMembership>()), Times.Once);
-        _tenantRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _tenantRepositoryMock.Verify(
+            r => r.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
-    public async Task Handle_AdministratorCreatesAdditionalTenant_Success()
+    public async Task Handle_AdditionalTenantByAdministrator_Succeeds()
     {
         // Arrange
-        var userId = Guid.NewGuid();
-        var currentTenantId = Guid.NewGuid();
+        Guid userId = Guid.NewGuid();
+        Guid currentTenantId = Guid.NewGuid();
+        string tenantName = "My Second Company";
+        string expectedToken = "jwt-token-456";
 
-        var user = new User
+        User user = new User
         {
             Id = userId,
-            ExternalId = "admin@example.com",
-            IdentityProvider = "Local",
             Email = "admin@example.com",
-            CreatedAt = DateTimeOffset.UtcNow,
-            IsActive = true,
+            PasswordHash = "hash"
         };
 
-        var currentMembership = new TenantMembership
+        TenantMembership currentMembership = new TenantMembership
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             TenantId = currentTenantId,
             Role = Role.Administrator,
-            IsActive = true,
+            IsActive = true
         };
 
-        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+        _userRepositoryMock
+            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
-        _membershipRepo.Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+        _membershipRepositoryMock
+            .Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
-        _membershipRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, currentTenantId, It.IsAny<CancellationToken>()))
+        _membershipRepositoryMock
+            .Setup(r => r.FindActiveByUserAndTenantAsync(userId, currentTenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(currentMembership);
 
-        _tenantRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
+        _jwtTokenServiceMock
+            .Setup(s => s.GenerateToken(userId, It.IsAny<Guid>(), Role.Administrator))
+            .Returns(expectedToken);
 
-        _jwtService.Setup(s => s.GenerateToken(userId, It.IsAny<Guid>(), Role.Administrator))
-            .Returns("new-tenant-token");
-
-        var command = new CreateTenantCommand
+        CreateTenantCommand command = new CreateTenantCommand
         {
             UserId = userId,
-            TenantName = "Second Company",
-            CurrentTenantId = currentTenantId,
+            TenantName = tenantName,
+            CurrentTenantId = currentTenantId
         };
 
         // Act
-        CreateTenantResponse response = await BuildHandler().Handle(command, CancellationToken.None);
+        CreateTenantResponse response = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Should().NotBeNull();
-        response.TenantId.Should().NotBeEmpty();
-        response.AccessToken.Should().Be("new-tenant-token");
+        Assert.NotEqual(Guid.Empty, response.TenantId);
+        Assert.Equal(expectedToken, response.AccessToken);
 
-        _membershipRepo.Verify(r => r.FindActiveByUserAndTenantAsync(userId, currentTenantId, It.IsAny<CancellationToken>()), Times.Once);
-        _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Once);
+        _tenantRepositoryMock.Verify(
+            r => r.Add(It.Is<Tenant>(t => t.Name == tenantName)),
+            Times.Once);
+
+        _membershipRepositoryMock.Verify(
+            r => r.Add(It.Is<TenantMembership>(m => m.Role == Role.Administrator)),
+            Times.Once);
     }
 
     [Fact]
-    public async Task Handle_UserNotFound_ThrowsInvalidOperationException()
+    public async Task Handle_AdditionalTenantByNonAdministrator_ThrowsException()
     {
         // Arrange
-        var userId = Guid.NewGuid();
+        Guid userId = Guid.NewGuid();
+        Guid currentTenantId = Guid.NewGuid();
 
-        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((User?)null);
-
-        var command = new CreateTenantCommand { UserId = userId, TenantName = "Test Company" };
-
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => BuildHandler().Handle(command, CancellationToken.None));
-
-        _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
-        _membershipRepo.Verify(r => r.Add(It.IsAny<TenantMembership>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Handle_UserExceedsMaxTenants_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var userId = Guid.NewGuid();
-        var user = new User
+        User user = new User
         {
             Id = userId,
-            ExternalId = "test@example.com",
-            IdentityProvider = "Local",
-            Email = "test@example.com",
-            CreatedAt = DateTimeOffset.UtcNow,
-            IsActive = true,
-        };
-
-        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(user);
-
-        _membershipRepo.Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(5);
-
-        var command = new CreateTenantCommand
-        {
-            UserId = userId,
-            TenantName = "Sixth Tenant",
-            CurrentTenantId = Guid.NewGuid(),
-        };
-
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => BuildHandler().Handle(command, CancellationToken.None));
-
-        _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
-        _membershipRepo.Verify(r => r.Add(It.IsAny<TenantMembership>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Handle_ManagerTriesToCreateAdditionalTenant_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var userId = Guid.NewGuid();
-        var currentTenantId = Guid.NewGuid();
-
-        var user = new User
-        {
-            Id = userId,
-            ExternalId = "manager@example.com",
-            IdentityProvider = "Local",
             Email = "manager@example.com",
-            CreatedAt = DateTimeOffset.UtcNow,
-            IsActive = true,
+            PasswordHash = "hash"
         };
 
-        var currentMembership = new TenantMembership
+        TenantMembership currentMembership = new TenantMembership
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             TenantId = currentTenantId,
             Role = Role.Manager,
-            IsActive = true,
+            IsActive = true
         };
 
-        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+        _userRepositoryMock
+            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
-        _membershipRepo.Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+        _membershipRepositoryMock
+            .Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
-        _membershipRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, currentTenantId, It.IsAny<CancellationToken>()))
+        _membershipRepositoryMock
+            .Setup(r => r.FindActiveByUserAndTenantAsync(userId, currentTenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(currentMembership);
 
-        var command = new CreateTenantCommand
+        CreateTenantCommand command = new CreateTenantCommand
         {
             UserId = userId,
             TenantName = "Unauthorized Tenant",
-            CurrentTenantId = currentTenantId,
+            CurrentTenantId = currentTenantId
         };
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => BuildHandler().Handle(command, CancellationToken.None));
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _handler.Handle(command, CancellationToken.None));
 
-        _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
-        _membershipRepo.Verify(r => r.Add(It.IsAny<TenantMembership>()), Times.Never);
+        Assert.Contains("Администратор", exception.Message);
+
+        _tenantRepositoryMock.Verify(
+            r => r.Add(It.IsAny<Tenant>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task Handle_ReadOnlyUserTriesToCreateAdditionalTenant_ThrowsInvalidOperationException()
+    public async Task Handle_ExceedsMaxTenantsLimit_ThrowsException()
     {
         // Arrange
-        var userId = Guid.NewGuid();
-        var currentTenantId = Guid.NewGuid();
+        Guid userId = Guid.NewGuid();
 
-        var user = new User
+        User user = new User
         {
             Id = userId,
-            ExternalId = "readonly@example.com",
-            IdentityProvider = "Local",
-            Email = "readonly@example.com",
-            CreatedAt = DateTimeOffset.UtcNow,
-            IsActive = true,
+            Email = "poweruser@example.com",
+            PasswordHash = "hash"
         };
 
-        var currentMembership = new TenantMembership
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            TenantId = currentTenantId,
-            Role = Role.ReadOnly,
-            IsActive = true,
-        };
-
-        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+        _userRepositoryMock
+            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
-        _membershipRepo.Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
+        _membershipRepositoryMock
+            .Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5);
 
-        _membershipRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, currentTenantId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(currentMembership);
-
-        var command = new CreateTenantCommand
+        CreateTenantCommand command = new CreateTenantCommand
         {
             UserId = userId,
-            TenantName = "Unauthorized Tenant",
-            CurrentTenantId = currentTenantId,
+            TenantName = "Too Many Tenants",
+            CurrentTenantId = Guid.NewGuid()
         };
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => BuildHandler().Handle(command, CancellationToken.None));
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _handler.Handle(command, CancellationToken.None));
 
-        _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
-        _membershipRepo.Verify(r => r.Add(It.IsAny<TenantMembership>()), Times.Never);
+        Assert.Contains("максимальный лимит", exception.Message);
+
+        _tenantRepositoryMock.Verify(
+            r => r.Add(It.IsAny<Tenant>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_UserNotFound_ThrowsException()
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+
+        _userRepositoryMock
+            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        CreateTenantCommand command = new CreateTenantCommand
+        {
+            UserId = userId,
+            TenantName = "Test Tenant",
+            CurrentTenantId = null
+        };
+
+        // Act & Assert
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        Assert.Contains("не найден", exception.Message);
+    }
+
+    [Fact]
+    public async Task Handle_AdditionalTenantWithoutCurrentTenantId_ThrowsException()
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+
+        User user = new User
+        {
+            Id = userId,
+            Email = "user@example.com",
+            PasswordHash = "hash"
+        };
+
+        _userRepositoryMock
+            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _membershipRepositoryMock
+            .Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        CreateTenantCommand command = new CreateTenantCommand
+        {
+            UserId = userId,
+            TenantName = "Second Tenant",
+            CurrentTenantId = null
+        };
+
+        // Act & Assert
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        Assert.Contains("текущий активный тенант", exception.Message);
     }
 }
