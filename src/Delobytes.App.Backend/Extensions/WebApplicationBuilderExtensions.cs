@@ -129,7 +129,7 @@ internal static class WebApplicationBuilderExtensions
                 // ускоряет расструктуризатор EF Core
                 .WithDestructurers(new[] { new DbUpdateExceptionDestructurer() }));
 
-        loggerConfig.WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Information);
+        loggerConfig.WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Debug);
 
         if (secrets is null || string.IsNullOrEmpty(secrets.ElasticSearchUrl)
                             || string.IsNullOrEmpty(secrets.ElasticSearchUser)
@@ -160,7 +160,7 @@ internal static class WebApplicationBuilderExtensions
             },
             BatchPostingLimit = 1000,
             Period = TimeSpan.FromSeconds(10),
-            MinimumLogEventLevel = LogEventLevel.Information,
+            MinimumLogEventLevel = LogEventLevel.Debug,
             EmitEventFailure = EmitEventFailureHandling.RaiseCallback,
             FailureCallback = (e) =>
             {
