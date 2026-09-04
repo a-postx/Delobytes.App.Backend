@@ -19,14 +19,17 @@ namespace Delobytes.App.Backend.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly ILogger<AuthController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AuthController"/> class.
     /// </summary>
     /// <param name="mediator">Mediator instance.</param>
-    public AuthController(IMediator mediator)
+    /// /// <param name="logger">Logger.</param>
+    public AuthController(IMediator mediator, ILogger<AuthController> logger)
     {
         _mediator = mediator;
+        _logger = logger;
     }
 
     /// <summary>
@@ -73,10 +76,13 @@ public class AuthController : ControllerBase
         [FromBody] CreateTenantRequest request,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Got create-tenant");
         string? userIdClaim = User.FindFirstValue("sub");
+        _logger.LogInformation("user is {userIdClaim}", userIdClaim);
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
         {
+            _logger.LogInformation("Got unauthorized");
             return Unauthorized();
         }
 

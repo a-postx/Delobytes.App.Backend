@@ -50,6 +50,8 @@ public class ExceptionHandlingMiddleware
         HttpStatusCode statusCode;
         string message;
 
+        _logger.LogWarning("Exception handling middleware");
+
         switch (exception)
         {
             case UnauthorizedAccessException:
