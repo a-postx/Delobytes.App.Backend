@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Domain.Enums;
@@ -60,7 +59,7 @@ public class CreateInvitationCommandHandler : IRequestHandler<CreateInvitationCo
             throw new InvalidOperationException("Активное приглашение для этого email уже существует.");
         }
 
-        string token = GenerateSecureToken();
+        string token = Guid.NewGuid().ToString();
 
         Invitation invitation = new Invitation
         {
@@ -87,17 +86,5 @@ public class CreateInvitationCommandHandler : IRequestHandler<CreateInvitationCo
         };
     }
 
-    private static string GenerateSecureToken()
-    {
-        byte[] randomBytes = new byte[32];
-        using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
-        {
-            rng.GetBytes(randomBytes);
-        }
 
-        return Convert.ToBase64String(randomBytes)
-            .Replace("+", "-")
-            .Replace("/", "_")
-            .Replace("=", string.Empty);
-    }
 }
