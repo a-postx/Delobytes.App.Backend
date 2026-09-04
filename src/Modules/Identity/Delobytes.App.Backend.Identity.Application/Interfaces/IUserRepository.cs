@@ -18,6 +18,11 @@ public interface IUserRepository
     public Task<User?> FindByEmailAsync(string email, string identityProvider, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Finds a user by email (any identity provider).
+    /// </summary>
+    public Task<User?> FindByEmailAsync(string email, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Finds a user by primary key.
     /// </summary>
     public Task<User?> FindByIdAsync(Guid id, CancellationToken cancellationToken);

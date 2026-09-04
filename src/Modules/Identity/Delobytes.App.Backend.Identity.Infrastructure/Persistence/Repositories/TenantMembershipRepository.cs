@@ -46,8 +46,29 @@ public class TenantMembershipRepository : ITenantMembershipRepository
             .FirstOrDefaultAsync(m => m.UserId == userId && m.TenantId == tenantId && m.IsActive, cancellationToken);
 
     /// <inheritdoc/>
+    public Task<int> CountAdministratorsByTenantAsync(Guid tenantId, CancellationToken cancellationToken)
+        => _context.TenantMemberships
+            .CountAsync(m => m.TenantId == tenantId && m.IsActive && m.Role == Domain.Enums.Role.Administrator, cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<TenantMembership>> GetActiveByTenantAsync(Guid tenantId, CancellationToken cancellationToken)
+        => await _context.TenantMemberships
+            .Where(m => m.TenantId == tenantId && m.IsActive)
+            .Include(m => m.User)
+            .ToListAsync(cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<TenantMembership?> FindByIdAsync(Guid membershipId, CancellationToken cancellationToken)
+        => _context.TenantMemberships
+            .FirstOrDefaultAsync(m => m.Id == membershipId, cancellationToken);
+
+    /// <inheritdoc/>
     public void Add(TenantMembership membership)
         => _context.TenantMemberships.Add(membership);
+
+    /// <inheritdoc/>
+    public void Remove(TenantMembership membership)
+        => _context.TenantMemberships.Remove(membership);
 
     /// <inheritdoc/>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)

@@ -60,6 +60,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserRepository, Persistence.Repositories.UserRepository>();
         services.AddScoped<ITenantRepository, Persistence.Repositories.TenantRepository>();
         services.AddScoped<ITenantMembershipRepository, Persistence.Repositories.TenantMembershipRepository>();
+        services.AddScoped<IInvitationRepository, Persistence.Repositories.InvitationRepository>();
 
         services.AddDbContext<IdentityDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>

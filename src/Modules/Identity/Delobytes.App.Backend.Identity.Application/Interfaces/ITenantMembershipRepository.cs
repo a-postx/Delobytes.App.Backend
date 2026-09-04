@@ -28,9 +28,29 @@ public interface ITenantMembershipRepository
     public Task<TenantMembership?> FindActiveByUserAndTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns the count of active administrators in a tenant.
+    /// </summary>
+    public Task<int> CountAdministratorsByTenantAsync(Guid tenantId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns all active memberships for a tenant, including the related User.
+    /// </summary>
+    public Task<IReadOnlyList<TenantMembership>> GetActiveByTenantAsync(Guid tenantId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds a membership by identifier.
+    /// </summary>
+    public Task<TenantMembership?> FindByIdAsync(Guid membershipId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Adds a new membership.
     /// </summary>
     public void Add(TenantMembership membership);
+
+    /// <summary>
+    /// Removes a membership.
+    /// </summary>
+    public void Remove(TenantMembership membership);
 
     /// <summary>
     /// Persists all pending changes.
