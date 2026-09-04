@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon.Runtime.Internal.Util;
 using Delobytes.App.Backend.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands.GoogleCallback;
 using Delobytes.App.Backend.Identity.Application.Commands.Login;
@@ -8,6 +9,7 @@ using Delobytes.App.Backend.Identity.Application.Commands.YandexCallback;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -19,13 +21,15 @@ namespace Delobytes.App.Backend.Tests.Controllers;
 public class AuthControllerOAuthTests
 {
     private readonly Mock<IMediator> _mediator;
+    private readonly Mock<ILogger<AuthController>> _logger;
 
     public AuthControllerOAuthTests()
     {
         _mediator = new Mock<IMediator>();
+        _logger = new Mock<ILogger<AuthController>>();
     }
 
-    private AuthController BuildController() => new AuthController(_mediator.Object);
+    private AuthController BuildController() => new AuthController(_mediator.Object, _logger.Object);
 
     // ── Yandex callback ───────────────────────────────────────────────────────
 
