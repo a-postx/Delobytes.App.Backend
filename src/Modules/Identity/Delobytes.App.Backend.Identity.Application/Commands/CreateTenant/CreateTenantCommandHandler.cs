@@ -50,7 +50,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
         if (currentMembershipsCount >= _options.MaxTenantsPerUser)
         {
             throw new InvalidOperationException(
-                $"Пользователь достиг максимального лимита пространств ({_options.MaxTenantsPerUser}).");
+                $"Достигнут максимальный лимит пространств ({_options.MaxTenantsPerUser}).");
         }
 
         // If user already has memberships, check they are Administrator in current tenant

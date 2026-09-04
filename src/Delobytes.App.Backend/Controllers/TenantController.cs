@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.SwitchTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
 using MediatR;
@@ -83,6 +84,50 @@ public class TenantController : ControllerBase
 
         return Ok(response);
     }
+
+    /// <summary>
+    /// Create a new tenant for the authenticated user.
+    /// Only available for users with Administrator role in their current tenant.
+    /// Does not switch to the new tenant automatically.
+    /// </summary>
+    /// <param name="request">Create tenant request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Created tenant information without JWT token.</returns>
+    [HttpPost("create")]
+    public async Task<ActionResult<CreateTenantForUserResponse>> CreateTenantForUser(
+        [FromBody] CreateTenantForUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? userIdClaim = User.FindFirstValue("userId");
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
+        {
+            return Unauthorized();
+        }
+
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+        Guid? currentTenantId = null;
+
+        if (!string.IsNullOrEmpty(tenantIdClaim) && Guid.TryParse(tenantIdClaim, out Guid parsedTenantId))
+        {
+            currentTenantId = parsedTenantId;
+        }
+
+        CreateTenantResponse response = await _mediator.Send(
+            new CreateTenantCommand
+            {
+                UserId = userId,
+                TenantName = request.TenantName,
+                CurrentTenantId = currentTenantId,
+            },
+            cancellationToken);
+
+        return Ok(new CreateTenantForUserResponse
+        {
+            TenantId = response.TenantId,
+            TenantName = request.TenantName,
+        });
+    }
 }
 
 /// <summary>
@@ -105,4 +150,31 @@ public class SwitchTenantRequest
     /// Gets or sets the target tenant identifier.
     /// </summary>
     public Guid TargetTenantId { get; set; }
+}
+
+/// <summary>
+/// Request model for creating a new tenant for authenticated user.
+/// </summary>
+public class CreateTenantForUserRequest
+{
+    /// <summary>
+    /// Gets or sets the tenant name.
+    /// </summary>
+    public string TenantName { get; set; } = default!;
+}
+
+/// <summary>
+/// Response model for creating a new tenant for authenticated user.
+/// </summary>
+public class CreateTenantForUserResponse
+{
+    /// <summary>
+    /// Gets or sets the created tenant identifier.
+    /// </summary>
+    public Guid TenantId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tenant name.
+    /// </summary>
+    public string TenantName { get; set; } = default!;
 }
