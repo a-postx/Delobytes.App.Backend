@@ -9,12 +9,14 @@ using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
 using Delobytes.AspNetCore.Common.Constants;
+using Delobytes.AspNetCore.Logging;
 using FluentValidation;
 using MassTransit;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Yandex.Cloud.Generated;
 
 namespace Delobytes.App.Backend;
 
@@ -117,6 +119,14 @@ public partial class Program
 
             // ── Serilog ─────────────────────────────────────────────────────────────
             builder.AddSerilog(secrets);
+            builder.Services.AddHttpContextLogging(options =>
+            {
+                options.LogRequestBody = true;
+                options.LogResponseBody = true;
+                options.MaxBodyLength = 32759;
+                options.SkipPaths = new List<PathString> { "/metrics" };
+                options.SkipRequestHeaders = new List<string> { "Authorization" };
+            });
 
             // ── Infrastructure (EF Core / PostgreSQL) ───────────────────────────────
             builder.Services
@@ -170,8 +180,11 @@ public partial class Program
                 options.RoutePrefix = "swagger";
             });
 
+            app.UseHttpContextLogging();
+
             // Authentication & authorization middleware must come before MapControllers
-            app.UseAuthentication();
+            app.UseAuthentication()
+                .UseClaimsLogging();
             app.UseAuthorization();
 
             app.MapGet("/status", () =>

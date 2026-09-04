@@ -2,6 +2,7 @@ using System.Text;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
+using Delobytes.AspNetCore.Logging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -111,6 +112,11 @@ public static class ServiceCollectionExtensions
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
                 ClockSkew = TimeSpan.FromSeconds(1),
             };
+        });
+
+        services.AddClaimsLogging(options =>
+        {
+            options.ClaimNames = new[] { "CustomClaimToLog" };
         });
 
         services.AddAuthorization(options =>

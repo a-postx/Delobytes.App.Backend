@@ -1,9 +1,9 @@
-namespace Delobytes.App.Backend.Middleware;
-
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+
+namespace Delobytes.App.Backend.Middleware;
 
 /// <summary>
 /// Global exception handling middleware.
