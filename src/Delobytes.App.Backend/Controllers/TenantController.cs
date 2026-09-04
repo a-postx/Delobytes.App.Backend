@@ -66,7 +66,7 @@ public class TenantController : ControllerBase
         [FromBody] SwitchTenantRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
+        string? userIdClaim = User.FindFirstValue("userId");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
         {
