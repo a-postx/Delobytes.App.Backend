@@ -104,26 +104,13 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
 
         if (user.LastActiveTenantId.HasValue)
         {
-            _logger.LogInformation("has value {LastActiveTenantId}", user.LastActiveTenantId.Value);
-
-            foreach (var item in memberships)
-            {
-                _logger.LogInformation("Membership found {MembershipId}", item.Id);
-            }
-
             TenantMembership? lastActiveMembership = memberships
                 .FirstOrDefault(m => m.TenantId == user.LastActiveTenantId.Value);
-
-            if (lastActiveMembership == null)
-            {
-                _logger.LogInformation("Membership is not found");
-            }
 
             activeMembership = lastActiveMembership ?? memberships.First();
         }
         else
         {
-            _logger.LogInformation("Doesn't have value");
             activeMembership = memberships.First();
         }
 

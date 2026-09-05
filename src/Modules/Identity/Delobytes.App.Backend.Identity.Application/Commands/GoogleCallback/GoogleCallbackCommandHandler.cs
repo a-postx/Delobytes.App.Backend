@@ -87,7 +87,20 @@ public class GoogleCallbackCommandHandler : IRequestHandler<GoogleCallbackComman
             };
         }
 
-        TenantMembership activeMembership = memberships.First();
+        TenantMembership activeMembership;
+
+        if (user.LastActiveTenantId.HasValue)
+        {
+            TenantMembership? lastActiveMembership = memberships
+                .FirstOrDefault(m => m.TenantId == user.LastActiveTenantId.Value);
+
+            activeMembership = lastActiveMembership ?? memberships.First();
+        }
+        else
+        {
+            activeMembership = memberships.First();
+        }
+
         string token = _jwtTokenService.GenerateToken(
             user.Id,
             activeMembership.TenantId,
