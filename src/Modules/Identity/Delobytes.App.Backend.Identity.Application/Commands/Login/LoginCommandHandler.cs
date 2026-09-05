@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.Login;
 
@@ -13,6 +14,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly ILogger<LoginCommandHandler> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LoginCommandHandler"/> class.
@@ -21,12 +23,14 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
         IUserRepository userRepository,
         ITenantMembershipRepository membershipRepository,
         IJwtTokenService jwtTokenService,
-        IPasswordHasher passwordHasher)
+        IPasswordHasher passwordHasher,
+        ILogger<LoginCommandHandler> logger)
     {
         _userRepository = userRepository;
         _membershipRepository = membershipRepository;
         _jwtTokenService = jwtTokenService;
         _passwordHasher = passwordHasher;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -100,13 +104,26 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
 
         if (user.LastActiveTenantId.HasValue)
         {
+            _logger.LogInformation("has value {LastActiveTenantId}", user.LastActiveTenantId.Value);
+
+            foreach (var item in memberships)
+            {
+                _logger.LogInformation("Membership found {MembershipId}", item.Id);
+            }
+
             TenantMembership? lastActiveMembership = memberships
                 .FirstOrDefault(m => m.TenantId == user.LastActiveTenantId.Value);
+
+            if (lastActiveMembership == null)
+            {
+                _logger.LogInformation("Membership is not found");
+            }
 
             activeMembership = lastActiveMembership ?? memberships.First();
         }
         else
         {
+            _logger.LogInformation("Doesn't have value");
             activeMembership = memberships.First();
         }
 
