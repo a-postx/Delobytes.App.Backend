@@ -17,6 +17,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Serilog;
 using Yandex.Cloud.Generated;
+using Delobytes.App.Backend.Application.Behaviours;
 
 namespace Delobytes.App.Backend;
 
@@ -87,10 +88,14 @@ public partial class Program
             {
                 cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
                 cfg.RegisterServicesFromAssembly(typeof(Delobytes.App.Backend.Identity.Application.Commands.Login.LoginCommand).Assembly);
-                cfg.AddOpenBehavior(typeof(Application.Behaviours.ValidationBehaviour<,>));
+
+                // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
+                cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
+                cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
             });
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+            builder.Services.AddHttpContextAccessor();
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
             {
