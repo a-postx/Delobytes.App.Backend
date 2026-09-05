@@ -10,6 +10,7 @@ namespace Delobytes.App.Backend.Identity.Application.Commands.SwitchTenant;
 public class SwitchTenantCommandHandler : IRequestHandler<SwitchTenantCommand, SwitchTenantResponse>
 {
     private readonly ITenantMembershipRepository _membershipRepository;
+    private readonly IUserRepository _userRepository;
     private readonly IJwtTokenService _jwtTokenService;
 
     /// <summary>
@@ -17,9 +18,11 @@ public class SwitchTenantCommandHandler : IRequestHandler<SwitchTenantCommand, S
     /// </summary>
     public SwitchTenantCommandHandler(
         ITenantMembershipRepository membershipRepository,
+        IUserRepository userRepository,
         IJwtTokenService jwtTokenService)
     {
         _membershipRepository = membershipRepository;
+        _userRepository = userRepository;
         _jwtTokenService = jwtTokenService;
     }
 
@@ -32,6 +35,14 @@ public class SwitchTenantCommandHandler : IRequestHandler<SwitchTenantCommand, S
         if (membership == null)
         {
             throw new InvalidOperationException("Пользователь не состоит в указанном пространстве.");
+        }
+
+        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken);
+
+        if (user != null)
+        {
+            user.LastActiveTenantId = request.TargetTenantId;
+            await _userRepository.SaveChangesAsync(cancellationToken);
         }
 
         string token = _jwtTokenService.GenerateToken(request.UserId, request.TargetTenantId, membership.Role);

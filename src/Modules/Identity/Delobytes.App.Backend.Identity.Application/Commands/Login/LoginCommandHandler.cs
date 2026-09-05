@@ -96,7 +96,24 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
             };
         }
 
-        TenantMembership activeMembership = memberships.First();
+        TenantMembership activeMembership;
+
+        if (user.LastActiveTenantId.HasValue)
+        {
+            TenantMembership? lastActiveMembership = memberships
+                .FirstOrDefault(m => m.TenantId == user.LastActiveTenantId.Value);
+
+            activeMembership = lastActiveMembership ?? memberships.First();
+        }
+        else
+        {
+            activeMembership = memberships.First();
+        }
+
+        user.LastActiveTenantId = activeMembership.TenantId;
+        user.LastLoginAt = DateTimeOffset.UtcNow;
+        await _userRepository.SaveChangesAsync(cancellationToken);
+
         string token = _jwtTokenService.GenerateToken(user.Id, activeMembership.TenantId, activeMembership.Role);
 
         return new LoginResponse

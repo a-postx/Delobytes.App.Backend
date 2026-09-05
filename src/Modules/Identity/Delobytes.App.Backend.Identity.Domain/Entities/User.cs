@@ -53,6 +53,12 @@ public class User
     public bool IsActive { get; set; }
 
     /// <summary>
+    /// Gets or sets the last active tenant identifier for this user.
+    /// Used to restore the user's tenant context when they log in from any device.
+    /// </summary>
+    public Guid? LastActiveTenantId { get; set; }
+
+    /// <summary>
     /// Navigation property: tenant memberships.
     /// </summary>
     public ICollection<TenantMembership> Memberships { get; set; } = new List<TenantMembership>();

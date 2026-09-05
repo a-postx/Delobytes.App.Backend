@@ -41,6 +41,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasDefaultValue(true);
 
+        builder.Property(u => u.LastActiveTenantId)
+            .IsRequired(false);
+
         builder.HasIndex(u => new { u.ExternalId, u.IdentityProvider })
             .IsUnique();
 
