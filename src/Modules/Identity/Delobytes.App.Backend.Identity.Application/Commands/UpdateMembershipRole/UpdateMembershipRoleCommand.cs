@@ -27,4 +27,7 @@ public class UpdateMembershipRoleCommand : IRequest<UpdateMembershipRoleResponse
     /// Gets or sets the user identifier who is performing the update.
     /// </summary>
     public Guid UpdatedByUserId { get; set; }
+
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Administrator };
 }

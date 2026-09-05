@@ -27,4 +27,7 @@ public class CreateInvitationCommand : IRequest<CreateInvitationResponse>
     /// Gets or sets the user identifier who is creating the invitation.
     /// </summary>
     public Guid InvitedByUserId { get; set; }
+
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Administrator };
 }

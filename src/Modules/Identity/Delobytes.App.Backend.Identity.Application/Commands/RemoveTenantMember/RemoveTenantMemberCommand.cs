@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.RemoveTenantMember;
@@ -21,4 +22,7 @@ public class RemoveTenantMemberCommand : IRequest<RemoveTenantMemberResponse>
     /// Gets or sets the user identifier who is performing the removal.
     /// </summary>
     public Guid RemovedByUserId { get; set; }
+
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Administrator };
 }

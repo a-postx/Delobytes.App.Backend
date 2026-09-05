@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.RevokeInvitation;
@@ -21,4 +22,7 @@ public class RevokeInvitationCommand : IRequest<RevokeInvitationResponse>
     /// Gets or sets the user identifier who is revoking the invitation.
     /// </summary>
     public Guid RevokedByUserId { get; set; }
+
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Administrator };
 }
