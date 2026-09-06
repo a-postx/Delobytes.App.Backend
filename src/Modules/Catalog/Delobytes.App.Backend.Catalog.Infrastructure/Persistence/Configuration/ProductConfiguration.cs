@@ -1,0 +1,58 @@
+using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Configurations;
+
+/// <summary>
+/// EF Core entity type configuration for Product.
+/// </summary>
+public class ProductConfiguration : IEntityTypeConfiguration<Product>
+{
+    /// <inheritdoc/>
+    public void Configure(EntityTypeBuilder<Product> builder)
+    {
+        builder.ToTable("Products");
+
+        builder.HasKey(p => p.Id);
+
+        builder.Property(p => p.Sku)
+            .IsRequired()
+            .HasMaxLength(100);
+
+        builder.Property(p => p.Name)
+            .IsRequired()
+            .HasMaxLength(200);
+
+        builder.Property(p => p.Description)
+            .HasMaxLength(2000);
+
+        builder.Property(p => p.IsActive)
+            .IsRequired();
+
+        builder.Property(p => p.CreatedAt)
+            .IsRequired();
+
+        builder.Property(p => p.UpdatedAt);
+
+        builder.HasIndex(p => p.Sku)
+            .IsUnique();
+
+        builder.HasIndex(p => p.IsActive);
+
+        builder.HasMany(p => p.ChannelProducts)
+            .WithOne(cp => cp.Product)
+            .HasForeignKey(cp => cp.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(p => p.ProductComponents)
+            .WithOne()
+            .HasForeignKey("ProductId")
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(p => p.ProductLaborCosts)
+            .WithOne()
+            .HasForeignKey("ProductId")
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}

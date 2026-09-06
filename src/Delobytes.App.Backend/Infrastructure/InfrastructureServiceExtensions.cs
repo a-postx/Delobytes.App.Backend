@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Identity.Infrastructure;
+using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Options;
 using Delobytes.App.Backend.Sales.Infrastructure;
 
@@ -29,6 +30,7 @@ public static class InfrastructureServiceExtensions
             secrets?.GoogleClientSecret);
         services.AddCatalogInfrastructure(secrets?.ConnectionString);
         services.AddSalesInfrastructure(secrets?.ConnectionString);
+        services.AddIntegrationsInfrastructure(secrets?.ConnectionString);
 
         return services;
     }
