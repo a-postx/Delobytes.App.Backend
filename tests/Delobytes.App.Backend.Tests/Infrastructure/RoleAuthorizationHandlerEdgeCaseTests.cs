@@ -29,7 +29,7 @@ public class RoleAuthorizationHandlerEdgeCaseTests
     {
         Claim[] claims = new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", roleClaim),
         };
@@ -245,7 +245,7 @@ public class RoleAuthorizationHandlerEdgeCaseTests
 
         Claim[] claims = new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", Role.Administrator.ToString()),
         };

@@ -41,7 +41,7 @@ public class JwtTokenService : IJwtTokenService
         Claim[] claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new Claim("userId", userId.ToString()),
+            ////new Claim("userId", userId.ToString()),
             new Claim("tenantId", tenantId.ToString()),
             new Claim("role", role.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
@@ -74,7 +74,7 @@ public class JwtTokenService : IJwtTokenService
         Claim[] claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new Claim("userId", userId.ToString()),
+            ////new Claim("userId", userId.ToString()),
             new Claim("needsTenantSetup", "true"),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),

@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+
 namespace Delobytes.App.Backend.Identity.Infrastructure;
 
 /// <summary>
@@ -95,6 +97,12 @@ public static class ServiceCollectionExtensions
         string issuer = jwtSettings["Issuer"] ?? "Delobytes.App.Backend";
         string audience = jwtSettings["Audience"] ?? "Delobytes.App.Frontend";
 
+        // Avoid claim mapping to old ms soap namespaces.
+        // Avoid replace "role" by "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+        // This is required to be instantiated before the OpenIdConnectOptions starts getting configured.
+        JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+        JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
+
         services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -111,13 +119,14 @@ public static class ServiceCollectionExtensions
                 ValidIssuer = issuer,
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
-                ClockSkew = TimeSpan.FromSeconds(1),
+                ClockSkew = TimeSpan.FromSeconds(1)
             };
         });
 
         services.AddClaimsLogging(options =>
         {
-            options.ClaimNames = new[] { "CustomClaimToLog" };
+            options.UserIdClaimName = "sub";
+            options.TenantIdClaimName = "tenantId";
         });
 
         services.AddAuthorization(options =>

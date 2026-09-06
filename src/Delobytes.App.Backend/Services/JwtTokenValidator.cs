@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Services;
 
 /// <summary>
 /// Validates JWT tokens against a given set of <see cref="TokenValidationParameters"/>.
-/// Decoupled from external HTTP calls (Auth0 OIDC discovery), making it fully unit-testable.
+/// Decoupled from external HTTP calls (OAuth OIDC discovery), making it fully unit-testable.
 /// In production, the parameters include signing keys downloaded via OIDC discovery;
 /// in tests, an in-memory RSA key is injected instead.
 /// </summary>

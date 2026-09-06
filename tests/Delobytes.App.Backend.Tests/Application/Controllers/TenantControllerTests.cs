@@ -156,7 +156,7 @@ public class TenantControllerTests
 
         ClaimsIdentity identity = new ClaimsIdentity(new[]
         {
-            new Claim("userId", "not-a-guid")
+            new Claim("sub", "not-a-guid")
         });
 
         _controller.ControllerContext = new ControllerContext
@@ -209,7 +209,7 @@ public class TenantControllerTests
     {
         List<Claim> claims = new List<Claim>
         {
-            new Claim("userId", userId.ToString())
+            new Claim("sub", userId.ToString())
         };
 
         if (tenantId.HasValue)
@@ -218,7 +218,7 @@ public class TenantControllerTests
         }
 
         ClaimsIdentity identity = new ClaimsIdentity(claims);
-        
+
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

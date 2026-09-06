@@ -74,7 +74,7 @@ public class TenantController : ControllerBase
         [FromBody] SwitchTenantRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
         {
@@ -94,8 +94,6 @@ public class TenantController : ControllerBase
 
     /// <summary>
     /// Create a new tenant for the authenticated user.
-    /// Only available for users with Administrator role in their current tenant.
-    /// Does not switch to the new tenant automatically.
     /// </summary>
     /// <param name="request">Create tenant request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -105,7 +103,7 @@ public class TenantController : ControllerBase
         [FromBody] CreateTenantForUserRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
         {
@@ -147,7 +145,7 @@ public class TenantController : ControllerBase
         [FromBody] CreateInvitationRequestDto request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
         string? tenantIdClaim = User.FindFirstValue("tenantId");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
@@ -184,7 +182,7 @@ public class TenantController : ControllerBase
         [FromBody] AcceptInvitationRequestDto request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
         {
@@ -213,7 +211,7 @@ public class TenantController : ControllerBase
         Guid invitationId,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
         string? tenantIdClaim = User.FindFirstValue("tenantId");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
@@ -246,7 +244,7 @@ public class TenantController : ControllerBase
     [HttpGet("members")]
     public async Task<ActionResult<GetTenantMembersResponse>> GetTenantMembers(CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
         string? tenantIdClaim = User.FindFirstValue("tenantId");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
@@ -283,7 +281,7 @@ public class TenantController : ControllerBase
         [FromBody] UpdateMemberRoleRequestDto request,
         CancellationToken cancellationToken)
     {
-        string? updaterIdClaim = User.FindFirstValue("userId");
+        string? updaterIdClaim = User.FindFirstValue("sub");
         string? tenantIdClaim = User.FindFirstValue("tenantId");
 
         if (string.IsNullOrEmpty(updaterIdClaim) || !Guid.TryParse(updaterIdClaim, out Guid updaterId))
@@ -320,7 +318,7 @@ public class TenantController : ControllerBase
         Guid userId,
         CancellationToken cancellationToken)
     {
-        string? removerIdClaim = User.FindFirstValue("userId");
+        string? removerIdClaim = User.FindFirstValue("sub");
         string? tenantIdClaim = User.FindFirstValue("tenantId");
 
         if (string.IsNullOrEmpty(removerIdClaim) || !Guid.TryParse(removerIdClaim, out Guid removerId))

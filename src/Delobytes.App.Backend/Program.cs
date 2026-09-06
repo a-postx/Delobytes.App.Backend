@@ -1,10 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IdentityModel.Tokens.Jwt;
 using System.Reflection;
 using System.Text.Json;
+using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Infrastructure;
+using Delobytes.App.Backend.Infrastructure.Swagger;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
@@ -12,12 +15,12 @@ using Delobytes.AspNetCore.Common.Constants;
 using Delobytes.AspNetCore.Logging;
 using FluentValidation;
 using MassTransit;
+using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi.Models;
 using Serilog;
-using Yandex.Cloud.Generated;
-using Delobytes.App.Backend.Application.Behaviours;
 
 namespace Delobytes.App.Backend;
 
@@ -76,11 +79,43 @@ public partial class Program
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(options =>
             {
-                options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+                options.DescribeAllParametersInCamelCase();
+                options.EnableAnnotations();
+
+                var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
+
+                options.SchemaFilter<LoginExampleSchemaFilter>();
+
+                options.SwaggerDoc("v1", new OpenApiInfo
                 {
                     Title = "Delobytes App Backend API",
                     Version = "v1",
                     Description = "Delobytes e-commerce margin accounting system API",
+                });
+
+                options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                {
+                    Description = "JWT Authorization header using the Bearer scheme.",
+                    Name = "Authorization",
+                    In = ParameterLocation.Header,
+                    Type = SecuritySchemeType.ApiKey,
+                    Scheme = "Bearer"
+                });
+
+                options.AddSecurityRequirement(new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
+                            }
+                        },
+                        Array.Empty<string>()
+                    }
                 });
             });
 
@@ -125,7 +160,6 @@ public partial class Program
 
             builder.AddOptionsWithValidation();
             AppSecrets? secrets = builder.Configuration.GetSection(nameof(AppSecrets)).Get<AppSecrets>();
-            ////Auth0Options? opty = builder.Configuration.GetSection(nameof(Auth0Options)).Get<Auth0Options>();
 
             // ── Serilog ─────────────────────────────────────────────────────────────
             builder.AddSerilog(secrets);
@@ -149,8 +183,6 @@ public partial class Program
             // Connects to CloudAMQP when CloudAmqpConnectionString is set;
             // falls back to in-memory transport in Development without credentials.
             builder.Services.AddMessaging(secrets?.MessageBusConnectionString);
-
-            ////builder.Services.AddAuth0Authentication(auth0Options);
 
             // ── CORS ────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();

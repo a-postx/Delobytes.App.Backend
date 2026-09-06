@@ -70,7 +70,7 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
 
             if (!requireRole.AllowedRoles.Contains(userRole))
             {
-                string userId = httpContext.User.FindFirstValue("userId") ?? "unknown";
+                string userId = httpContext.User.FindFirstValue("sub") ?? "unknown";
                 string tenantId = httpContext.User.FindFirstValue("tenantId") ?? "unknown";
 
                 _logger.LogWarning(

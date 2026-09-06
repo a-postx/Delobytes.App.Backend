@@ -33,7 +33,7 @@ public class UserController : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<GetCurrentUserResponse>> GetMe(CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("userId");
+        string? userIdClaim = User.FindFirstValue("sub");
         string? tenantIdClaim = User.FindFirstValue("tenantId");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))

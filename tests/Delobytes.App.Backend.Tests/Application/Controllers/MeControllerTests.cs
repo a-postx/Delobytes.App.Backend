@@ -38,7 +38,7 @@ public class MeControllerTests
 
         if (userId != null)
         {
-            claims.Add(new Claim("userId", userId));
+            claims.Add(new Claim("sub", userId));
         }
 
         if (tenantId != null)

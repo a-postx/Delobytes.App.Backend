@@ -199,7 +199,7 @@ public class AuthorizationBehaviourTests
     {
         ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", role.ToString()),
         }, "TestAuth"));
@@ -216,7 +216,7 @@ public class AuthorizationBehaviourTests
     {
         ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
         }, "TestAuth"));
 
@@ -227,7 +227,7 @@ public class AuthorizationBehaviourTests
     {
         ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", "InvalidRole"),
         }, "TestAuth"));

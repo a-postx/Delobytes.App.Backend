@@ -76,13 +76,10 @@ public class AuthController : ControllerBase
         [FromBody] CreateTenantRequest request,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Got create-tenant");
-        string? userIdClaim = User.FindFirstValue("userId");
-        _logger.LogInformation("user is {userIdClaim}", userIdClaim);
+        string? userIdClaim = User.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
         {
-            _logger.LogInformation("Got unauthorized");
             return Unauthorized();
         }
 

@@ -14,7 +14,6 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IPasswordHasher _passwordHasher;
-    private readonly ILogger<LoginCommandHandler> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="LoginCommandHandler"/> class.
@@ -23,14 +22,12 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
         IUserRepository userRepository,
         ITenantMembershipRepository membershipRepository,
         IJwtTokenService jwtTokenService,
-        IPasswordHasher passwordHasher,
-        ILogger<LoginCommandHandler> logger)
+        IPasswordHasher passwordHasher)
     {
         _userRepository = userRepository;
         _membershipRepository = membershipRepository;
         _jwtTokenService = jwtTokenService;
         _passwordHasher = passwordHasher;
-        _logger = logger;
     }
 
     /// <inheritdoc/>

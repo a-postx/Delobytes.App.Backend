@@ -20,7 +20,7 @@ public class RoleAuthorizationHandlerTests
 
         Claim[] claims = new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", Role.Administrator.ToString()),
         };
@@ -48,7 +48,7 @@ public class RoleAuthorizationHandlerTests
 
         Claim[] claims = new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", Role.Manager.ToString()),
         };
@@ -76,7 +76,7 @@ public class RoleAuthorizationHandlerTests
 
         Claim[] claims = new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
             new Claim("role", Role.ReadOnly.ToString()),
         };
@@ -104,7 +104,7 @@ public class RoleAuthorizationHandlerTests
 
         Claim[] claims = new[]
         {
-            new Claim("userId", Guid.NewGuid().ToString()),
+            new Claim("sub", Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString()),
         };
 
