@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Delobytes.App.Backend.Pricing.Domain\Delobytes.App.Backend.Pricing.Domain.csproj" />
-    <ProjectReference Include="..\Delobytes.App.Backend.Pricing.Application\Delobytes.App.Backend.Pricing.Application.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Sales.Domain\Delobytes.App.Backend.Sales.Domain.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Sales.Application\Delobytes.App.Backend.Sales.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

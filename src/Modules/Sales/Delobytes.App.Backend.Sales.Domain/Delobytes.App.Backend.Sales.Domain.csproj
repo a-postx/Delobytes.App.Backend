@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\..\\Identity\\Delobytes.App.Backend.Identity.Domain\\Delobytes.App.Backend.Identity.Domain.csproj" />
+    <ProjectReference Include="..\\..\\Catalog\\Delobytes.App.Backend.Catalog.Domain\\Delobytes.App.Backend.Catalog.Domain.csproj" />
+    <ProjectReference Include="..\\..\\Integrations\\Delobytes.App.Backend.Integrations.Domain\\Delobytes.App.Backend.Integrations.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
