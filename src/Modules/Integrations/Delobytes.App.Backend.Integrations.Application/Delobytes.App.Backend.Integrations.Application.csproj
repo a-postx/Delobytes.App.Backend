@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Compile Remove="Consumers\**" />
+    <EmbeddedResource Remove="Consumers\**" />
+    <None Remove="Consumers\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Domain\Delobytes.App.Backend.Integrations.Domain.csproj" />
   </ItemGroup>
 

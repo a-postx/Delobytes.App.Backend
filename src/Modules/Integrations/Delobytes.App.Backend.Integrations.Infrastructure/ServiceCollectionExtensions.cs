@@ -1,7 +1,12 @@
+using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
+using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +37,13 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
 
+        services.AddScoped<IConnectionRepository, ConnectionRepository>();
+        services.AddScoped<ISyncJobRepository, SyncJobRepository>();
+        services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
+        services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+
+        services.AddScoped<ProcessSyncJobConsumer>();
+
         services.AddHttpClient<WildberriesApiClient>()
             .AddResilienceHandler("retry-policy", (builder, context) =>
             {
@@ -43,5 +55,14 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers Integrations module MassTransit consumers.
+    /// </summary>
+    /// <param name="configurator">MassTransit bus registration configurator.</param>
+    public static void AddIntegrationsConsumers(this IBusRegistrationConfigurator configurator)
+    {
+        configurator.AddConsumers(Assembly.GetExecutingAssembly());
     }
 }
