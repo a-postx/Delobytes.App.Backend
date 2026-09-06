@@ -37,6 +37,28 @@ public static class MigrationExtensions
         try
         {
             IntegrationsDbContext context = scope.ServiceProvider.GetRequiredService<IntegrationsDbContext>();
+
+            bool canConnect = await context.Database.CanConnectAsync();
+            if (!canConnect)
+            {
+                logger.LogWarning("Cannot connect to Integrations database. Skipping data seeding.");
+                return;
+            }
+
+            IEnumerable<string> appliedMigrations = await context.Database.GetAppliedMigrationsAsync();
+            if (!appliedMigrations.Any())
+            {
+                logger.LogWarning("Integrations module has no applied migrations. Skipping data seeding. Run migrations first.");
+                return;
+            }
+
+            IEnumerable<string> pendingMigrations = await context.Database.GetPendingMigrationsAsync();
+            if (pendingMigrations.Any())
+            {
+                logger.LogWarning("Integrations module has pending migrations. Skipping data seeding until migrations are applied.");
+                return;
+            }
+
             await DataSeeder.SeedSystemChannelTemplatesAsync(context, logger);
         }
         catch (Exception ex)

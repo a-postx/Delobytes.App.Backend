@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Identity.Domain.Enums;
+using Delobytes.App.Backend.Identity.Domain.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.UpdateMembershipRole;
@@ -6,7 +7,7 @@ namespace Delobytes.App.Backend.Identity.Application.Commands.UpdateMembershipRo
 /// <summary>
 /// Command to update a user's role within a tenant.
 /// </summary>
-public class UpdateMembershipRoleCommand : IRequest<UpdateMembershipRoleResponse>
+public class UpdateMembershipRoleCommand : IRequest<UpdateMembershipRoleResponse>, IRequireRole
 {
     /// <summary>
     /// Gets or sets the tenant identifier.

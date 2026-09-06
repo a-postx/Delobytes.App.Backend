@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Identity.Domain.Enums;
+using Delobytes.App.Backend.Identity.Domain.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.RemoveTenantMember;
@@ -6,7 +7,7 @@ namespace Delobytes.App.Backend.Identity.Application.Commands.RemoveTenantMember
 /// <summary>
 /// Command to remove a user from a tenant.
 /// </summary>
-public class RemoveTenantMemberCommand : IRequest<RemoveTenantMemberResponse>
+public class RemoveTenantMemberCommand : IRequest<RemoveTenantMemberResponse>, IRequireRole
 {
     /// <summary>
     /// Gets or sets the tenant identifier.

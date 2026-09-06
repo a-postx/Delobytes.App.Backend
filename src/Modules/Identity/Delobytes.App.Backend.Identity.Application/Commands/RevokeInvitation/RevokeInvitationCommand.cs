@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Identity.Domain.Enums;
+using Delobytes.App.Backend.Identity.Domain.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.RevokeInvitation;
@@ -6,7 +7,7 @@ namespace Delobytes.App.Backend.Identity.Application.Commands.RevokeInvitation;
 /// <summary>
 /// Command to revoke (delete) an invitation.
 /// </summary>
-public class RevokeInvitationCommand : IRequest<RevokeInvitationResponse>
+public class RevokeInvitationCommand : IRequest<RevokeInvitationResponse>, IRequireRole
 {
     /// <summary>
     /// Gets or sets the invitation identifier.

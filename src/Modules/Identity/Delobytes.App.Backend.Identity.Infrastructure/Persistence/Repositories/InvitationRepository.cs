@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Delobytes.App.Backend.Identity.Infrastructure.Persistence.Repositories;
 

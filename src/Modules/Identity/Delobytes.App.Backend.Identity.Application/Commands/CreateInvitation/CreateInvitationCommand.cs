@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Identity.Domain.Enums;
+using Delobytes.App.Backend.Identity.Domain.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.CreateInvitation;
@@ -6,7 +7,7 @@ namespace Delobytes.App.Backend.Identity.Application.Commands.CreateInvitation;
 /// <summary>
 /// Command to create an invitation to join a tenant.
 /// </summary>
-public class CreateInvitationCommand : IRequest<CreateInvitationResponse>
+public class CreateInvitationCommand : IRequest<CreateInvitationResponse>, IRequireRole
 {
     /// <summary>
     /// Gets or sets the tenant identifier.

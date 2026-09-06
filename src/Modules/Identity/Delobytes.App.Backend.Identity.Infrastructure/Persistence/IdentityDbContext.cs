@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Domain.Interfaces;
@@ -63,22 +64,29 @@ public class IdentityDbContext : DbContext
         {
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
-                // Add shadow property TenantId
                 modelBuilder.Entity(entityType.ClrType)
                     .Property<Guid>("TenantId")
                     .IsRequired();
 
-                // Add index on TenantId
                 modelBuilder.Entity(entityType.ClrType)
                     .HasIndex("TenantId");
 
-                // Add global query filter
-                IMutableProperty? tenantIdProperty = entityType.FindProperty("TenantId");
-                ParameterExpression parameter = System.Linq.Expressions.Expression.Parameter(entityType.ClrType, "e");
-                MemberExpression tenantIdAccess = System.Linq.Expressions.Expression.Property(parameter, tenantIdProperty!.PropertyInfo!);
-                ConstantExpression currentTenantId = System.Linq.Expressions.Expression.Constant(_tenantContext.TenantId);
-                BinaryExpression comparison = System.Linq.Expressions.Expression.Equal(tenantIdAccess, currentTenantId);
-                LambdaExpression lambda = System.Linq.Expressions.Expression.Lambda(comparison, parameter);
+                ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
+
+                MethodInfo efPropertyMethod = typeof(EF)
+                    .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
+                    .MakeGenericMethod(typeof(Guid?));
+
+                MethodCallExpression tenantIdAccess = Expression.Call(
+                    efPropertyMethod,
+                    parameter,
+                    Expression.Constant("TenantId"));
+
+                ConstantExpression tenantContextConstant = Expression.Constant(_tenantContext, typeof(ITenantContext));
+                MemberExpression tenantIdProperty = Expression.Property(tenantContextConstant, nameof(ITenantContext.TenantId));
+
+                BinaryExpression comparison = Expression.Equal(tenantIdAccess, tenantIdProperty);
+                LambdaExpression lambda = Expression.Lambda(comparison, parameter);
 
                 modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
             }

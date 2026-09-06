@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -60,17 +61,27 @@ public class IntegrationsDbContext : DbContext
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
                 modelBuilder.Entity(entityType.ClrType)
-                    .Property<Guid>("TenantId")
+                    .Property<Guid?>("TenantId")
                     .IsRequired();
 
                 modelBuilder.Entity(entityType.ClrType)
                     .HasIndex("TenantId");
 
-                IMutableProperty? tenantIdProperty = entityType.FindProperty("TenantId");
                 ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
-                MemberExpression tenantIdAccess = Expression.Property(parameter, tenantIdProperty!.PropertyInfo!);
-                ConstantExpression currentTenantId = Expression.Constant(_tenantContext.TenantId);
-                BinaryExpression comparison = Expression.Equal(tenantIdAccess, currentTenantId);
+
+                MethodInfo efPropertyMethod = typeof(EF)
+                    .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
+                    .MakeGenericMethod(typeof(Guid?));
+
+                MethodCallExpression tenantIdAccess = Expression.Call(
+                    efPropertyMethod,
+                    parameter,
+                    Expression.Constant("TenantId"));
+
+                ConstantExpression tenantContextConstant = Expression.Constant(_tenantContext, typeof(ITenantContext));
+                MemberExpression tenantIdProperty = Expression.Property(tenantContextConstant, nameof(ITenantContext.TenantId));
+
+                BinaryExpression comparison = Expression.Equal(tenantIdAccess, tenantIdProperty);
                 LambdaExpression lambda = Expression.Lambda(comparison, parameter);
 
                 modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
