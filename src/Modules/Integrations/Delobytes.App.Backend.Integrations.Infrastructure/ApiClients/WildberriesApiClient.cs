@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
@@ -8,6 +9,19 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// </summary>
 public class WildberriesApiClient : IChannelApiClient
 {
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<WildberriesApiClient> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="WildberriesApiClient"/> class.
+    /// </summary>
+    /// <param name="httpClient">HTTP client.</param>
+    /// <param name="logger">Logger.</param>
+    public WildberriesApiClient(HttpClient httpClient, ILogger<WildberriesApiClient> logger)
+    {
+        _httpClient = httpClient;
+        _logger = logger;
+    }
     /// <inheritdoc/>
     public Task<ApiResponse<OrdersData>> GetOrdersAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
