@@ -28,6 +28,21 @@ public static class MigrationExtensions
         await ApplyAsync<CatalogDbContext>(scope, logger, "Catalog");
         await ApplyAsync<SalesDbContext>(scope, logger, "Sales");
         await ApplyAsync<IntegrationsDbContext>(scope, logger, "Integrations");
+
+        await SeedIntegrationsDataAsync(scope, logger);
+    }
+
+    private static async Task SeedIntegrationsDataAsync(IServiceScope scope, ILogger logger)
+    {
+        try
+        {
+            IntegrationsDbContext context = scope.ServiceProvider.GetRequiredService<IntegrationsDbContext>();
+            await DataSeeder.SeedSystemChannelTemplatesAsync(context, logger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not seed Integrations data. Database may not be available.");
+        }
     }
 
     private static async Task ApplyAsync<TContext>(IServiceScope scope, ILogger logger, string moduleName) where TContext : DbContext
