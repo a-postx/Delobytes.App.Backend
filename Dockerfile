@@ -14,9 +14,12 @@ COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/Deloby
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/Delobytes.App.Backend.Catalog.Domain.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/"]
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/Delobytes.App.Backend.Catalog.Application.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/"]
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/Delobytes.App.Backend.Catalog.Infrastructure.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/"]
-COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Domain/Delobytes.App.Backend.Pricing.Domain.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Domain/"]
-COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/Delobytes.App.Backend.Pricing.Application.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Application/"]
-COPY ["src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/Delobytes.App.Backend.Pricing.Infrastructure.csproj", "src/Modules/Pricing/Delobytes.App.Backend.Pricing.Infrastructure/"]
+COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/Delobytes.App.Backend.Integrations.Domain.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/"]
+COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Application/Delobytes.App.Backend.Integrations.Application.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Application/"]
+COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Infrastructure/Delobytes.App.Backend.Integrations.Infrastructure.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Infrastructure/"]
+COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/Delobytes.App.Backend.Sales.Domain.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/"]
+COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Application/Delobytes.App.Backend.Sales.Application.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Application/"]
+COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Infrastructure/Delobytes.App.Backend.Sales.Infrastructure.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Infrastructure/"]
 
 # Восстанавливаем зависимости через главный проект
 RUN dotnet restore "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj"
