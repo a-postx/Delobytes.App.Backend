@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
+using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,7 @@ public static class MigrationExtensions
         ILogger<Program> logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
         await ApplyAsync<IdentityDbContext>(scope, logger, "Identity");
+        await ApplyAsync<IntegrationsDbContext>(scope, logger, "Integrations");
         await ApplyAsync<CatalogDbContext>(scope, logger, "Catalog");
         await ApplyAsync<SalesDbContext>(scope, logger, "Sales");
     }
