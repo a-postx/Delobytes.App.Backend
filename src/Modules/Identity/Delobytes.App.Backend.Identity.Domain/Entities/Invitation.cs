@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Identity.Domain.Entities;
 /// <summary>
 /// Represents an invitation to join a tenant.
 /// </summary>
-public class Invitation : ITenantScoped
+public class Invitation
 {
     /// <summary>
     /// Gets or sets the invitation unique identifier.
