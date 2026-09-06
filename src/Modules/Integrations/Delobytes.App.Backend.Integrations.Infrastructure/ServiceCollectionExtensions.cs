@@ -25,7 +25,7 @@ public static class ServiceCollectionExtensions
 
         services.AddDbContext<IntegrationsDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
-                npgsqlOptions.MigrationsHistoryTable("__CatalogMigrationsHistory", "integrations")));
+                npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
 
         return services;
     }
