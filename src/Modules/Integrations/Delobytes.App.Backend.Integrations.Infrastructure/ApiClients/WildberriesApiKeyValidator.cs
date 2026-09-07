@@ -1,6 +1,9 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Polly;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
@@ -20,10 +23,12 @@ public class WildberriesApiKeyValidator : IApiKeyValidator
         CancellationToken ct)
     {
         using HttpRequestMessage request = new HttpRequestMessage(
-            HttpMethod.Get,
-            "https://suppliers-api.wildberries.ru/api/v3/offices");
+            HttpMethod.Post,
+            "https://content-api.wildberries.ru/content/v2/get/cards/list");
 
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+        string body = "{ \"settings\": { \"sort\": { \"ascending\": true }, \"cursor\": { \"limit\": 1 }, \"filter\": { \"withPhoto\": -1 } } }";
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
         try
         {

@@ -27,11 +27,11 @@ public class OzonApiKeyValidator : IApiKeyValidator
 
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Post,
-            "https://api-seller.ozon.ru/v1/warehouse/list");
+            "https://api-seller.ozon.ru/v3/product/list");
 
         request.Headers.TryAddWithoutValidation("Client-Id", sellerId);
         request.Headers.TryAddWithoutValidation("Api-Key", apiKey);
-        request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+        request.Content = new StringContent("{ \"filter\": { \"visibility\": \"ALL\" }, \"last_id\": \"\", \"limit\": 1 }", Encoding.UTF8, "application/json");
 
         try
         {
