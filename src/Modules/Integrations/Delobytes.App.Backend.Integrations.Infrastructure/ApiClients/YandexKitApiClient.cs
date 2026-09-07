@@ -1,23 +1,20 @@
+using System.Net;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
 /// <summary>
-/// Wildberries marketplace API client implementation.
+/// Yandex.Kit marketplace API client for orders and stocks synchronisation.
 /// </summary>
-public class WildberriesApiClient : IChannelApiClient
+public class YandexKitApiClient : IChannelApiClient
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogger<WildberriesApiClient> _logger;
+    private readonly ILogger<YandexKitApiClient> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="WildberriesApiClient"/> class.
-    /// </summary>
-    /// <param name="httpClient">HTTP client.</param>
-    /// <param name="logger">Logger.</param>
-    public WildberriesApiClient(HttpClient httpClient, ILogger<WildberriesApiClient> logger)
+    public YandexKitApiClient(HttpClient httpClient, ILogger<YandexKitApiClient> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
@@ -29,13 +26,9 @@ public class WildberriesApiClient : IChannelApiClient
         ApiResponse<OrdersData> response = new ApiResponse<OrdersData>
         {
             IsSuccess = true,
-            Data = new OrdersData
-            {
-                Orders = new List<OrderItem>(),
-                TotalCount = 0
-            },
+            Data = new OrdersData { Orders = new List<OrderItem>(), TotalCount = 0 },
             StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = DateTimeOffset.UtcNow,
         };
 
         return Task.FromResult(response);
@@ -47,13 +40,9 @@ public class WildberriesApiClient : IChannelApiClient
         ApiResponse<StocksData> response = new ApiResponse<StocksData>
         {
             IsSuccess = true,
-            Data = new StocksData
-            {
-                Stocks = new List<StockItem>(),
-                TotalCount = 0
-            },
+            Data = new StocksData { Stocks = new List<StockItem>(), TotalCount = 0 },
             StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = DateTimeOffset.UtcNow,
         };
 
         return Task.FromResult(response);

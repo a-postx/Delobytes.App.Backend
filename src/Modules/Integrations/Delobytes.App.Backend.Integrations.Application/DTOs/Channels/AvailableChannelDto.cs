@@ -7,4 +7,7 @@ public class AvailableChannelDto
     public string? Description { get; set; }
     public string ApiVersion { get; set; } = default!;
     public bool IsConnected { get; set; }
+    // Populated only when IsConnected = true
+    public Guid? ConnectionId { get; set; }
+    public string? MaskedApiKey { get; set; }
 }

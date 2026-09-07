@@ -65,6 +65,11 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
+        services.AddHttpClient<YandexKitApiKeyValidator>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
         services.AddTransient<IApiKeyValidatorFactory, ApiKeyValidatorFactory>();
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 

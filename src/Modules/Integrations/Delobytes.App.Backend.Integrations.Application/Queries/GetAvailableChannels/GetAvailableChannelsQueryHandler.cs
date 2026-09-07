@@ -29,19 +29,26 @@ public class GetAvailableChannelsQueryHandler : IRequestHandler<GetAvailableChan
         List<Connection> connections =
             await _connectionRepository.GetAllByTenantAsync(cancellationToken);
 
-        // Connection.ChannelId — FK to SystemChannelTemplate.Id
-        HashSet<Guid> connectedTemplateIds = connections
-            .Select(c => c.ChannelId)
-            .ToHashSet();
+        Dictionary<Guid, Connection> connectionByTemplateId = connections
+            .ToDictionary(c => c.ChannelId, c => c);
 
         List<AvailableChannelDto> items = templates
-            .Select(t => new AvailableChannelDto
+            .Select(t =>
             {
-                Code = t.Code,
-                DisplayName = t.DisplayName,
-                Description = t.Description,
-                ApiVersion = t.ApiVersion,
-                IsConnected = connectedTemplateIds.Contains(t.Id),
+                bool isConnected = connectionByTemplateId.TryGetValue(t.Id, out Connection? conn);
+                return new AvailableChannelDto
+                {
+                    Code = t.Code,
+                    DisplayName = t.DisplayName,
+                    Description = t.Description,
+                    ApiVersion = t.ApiVersion,
+                    IsConnected = isConnected,
+                    ConnectionId = isConnected ? conn!.Id : null,
+                    // Show last 6 chars, mask the rest
+                    MaskedApiKey = isConnected && conn!.ApiKey.Length >= 6
+                        ? new string('*', conn.ApiKey.Length - 6) + conn.ApiKey[^6..]
+                        : null,
+                };
             })
             .ToList();
 
