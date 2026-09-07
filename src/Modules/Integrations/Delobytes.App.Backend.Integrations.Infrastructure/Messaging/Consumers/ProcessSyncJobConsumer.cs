@@ -1,9 +1,10 @@
+using System.Text.Json;
+using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
@@ -75,7 +76,7 @@ public class ProcessSyncJobConsumer
         {
             IChannelApiClient apiClient = _clientFactory.Create(connection.Channel.Code, connection);
 
-            Application.DTOs.ApiResponse<Application.DTOs.OrdersData> apiResponse = await apiClient.GetOrdersAsync(
+            ApiResponse<OrdersData> apiResponse = await apiClient.GetOrdersAsync(
                 syncJob.DateRangeFrom,
                 syncJob.DateRangeTo,
                 cancellationToken);

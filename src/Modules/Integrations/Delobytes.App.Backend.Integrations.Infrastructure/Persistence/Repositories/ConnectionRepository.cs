@@ -23,15 +23,39 @@ public class ConnectionRepository : IConnectionRepository
 
     /// <inheritdoc/>
     public Task<Connection?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
-        => _context.Connections.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    {
+        return _context.Connections.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
 
-    /// <inheritdoc/>
     public Task<Connection?> FindByIdWithChannelAsync(Guid id, CancellationToken cancellationToken)
-        => _context.Connections
-            .Include(c => c.Channel)
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    {
+        return _context.Connections
+                .Include(c => c.Channel)
+                .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
 
-    /// <inheritdoc/>
+    public Task<List<Connection>> GetAllByTenantAsync(CancellationToken ct)
+    {
+        return _context.Connections
+                .Include(c => c.Channel)
+                .Where(c => c.IsActive)
+                .ToListAsync(ct);
+    }
+
+    public Task<bool> ExistsForTemplateAsync(string templateCode, CancellationToken ct)
+    {
+        return _context.Connections
+                .Include(c => c.Channel)
+                .AnyAsync(c => c.IsActive && c.Channel.Code == templateCode, ct);
+    }
+
+    public void Add(Connection connection)
+    {
+        _context.Connections.Add(connection);
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
-        => _context.SaveChangesAsync(cancellationToken);
+    {
+        return _context.SaveChangesAsync(cancellationToken);
+    }
 }

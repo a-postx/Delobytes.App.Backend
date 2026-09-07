@@ -23,24 +23,34 @@ public class SyncJobRepository : ISyncJobRepository
 
     /// <inheritdoc/>
     public Task<SyncJob?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
-        => _context.SyncJobs.FirstOrDefaultAsync(sj => sj.Id == id, cancellationToken);
+    {
+        return _context.SyncJobs.FirstOrDefaultAsync(sj => sj.Id == id, cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task<SyncJob?> FindByIdWithConnectionAsync(Guid id, CancellationToken cancellationToken)
-        => _context.SyncJobs
-            .Include(sj => sj.Connection)
-            .ThenInclude(c => c.Channel)
-            .FirstOrDefaultAsync(sj => sj.Id == id, cancellationToken);
+    {
+        return _context.SyncJobs
+                .Include(sj => sj.Connection)
+                .ThenInclude(c => c.Channel)
+                .FirstOrDefaultAsync(sj => sj.Id == id, cancellationToken);
+    }
 
     /// <inheritdoc/>
     public void Add(SyncJob syncJob)
-        => _context.SyncJobs.Add(syncJob);
+    {
+        _context.SyncJobs.Add(syncJob);
+    }
 
     /// <inheritdoc/>
     public void Update(SyncJob syncJob)
-        => _context.SyncJobs.Update(syncJob);
+    {
+        _context.SyncJobs.Update(syncJob);
+    }
 
     /// <inheritdoc/>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
-        => _context.SaveChangesAsync(cancellationToken);
+    {
+        return _context.SaveChangesAsync(cancellationToken);
+    }
 }

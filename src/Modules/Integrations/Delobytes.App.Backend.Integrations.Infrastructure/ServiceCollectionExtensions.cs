@@ -1,5 +1,6 @@
 using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
@@ -8,7 +9,6 @@ using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -40,10 +40,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConnectionRepository, ConnectionRepository>();
         services.AddScoped<ISyncJobRepository, SyncJobRepository>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
+        services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
         services.AddScoped<ProcessSyncJobConsumer>();
 
+        // WildberriesApiClient для операций синхронизации — с retry
         services.AddHttpClient<WildberriesApiClient>()
             .AddResilienceHandler("retry-policy", (builder, context) =>
             {
@@ -52,6 +54,18 @@ public static class ServiceCollectionExtensions
                 builder.AddPipeline(retryPipeline);
             });
 
+        // Валидаторы ключей — без retry, таймаут 10 сек
+        services.AddHttpClient<WildberriesApiKeyValidator>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
+        services.AddHttpClient<OzonApiKeyValidator>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
+        services.AddTransient<IApiKeyValidatorFactory, ApiKeyValidatorFactory>();
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 
         return services;

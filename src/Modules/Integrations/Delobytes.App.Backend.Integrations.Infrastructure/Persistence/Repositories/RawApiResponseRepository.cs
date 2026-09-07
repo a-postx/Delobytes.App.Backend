@@ -22,9 +22,13 @@ public class RawApiResponseRepository : IRawApiResponseRepository
 
     /// <inheritdoc/>
     public void Add(RawApiResponse rawApiResponse)
-        => _context.RawApiResponses.Add(rawApiResponse);
+    {
+        _context.RawApiResponses.Add(rawApiResponse);
+    }
 
     /// <inheritdoc/>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
-        => _context.SaveChangesAsync(cancellationToken);
+    {
+        return _context.SaveChangesAsync(cancellationToken);
+    }
 }

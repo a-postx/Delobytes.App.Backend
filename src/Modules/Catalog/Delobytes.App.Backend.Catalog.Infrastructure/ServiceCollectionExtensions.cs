@@ -1,6 +1,7 @@
+using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
+using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure;
@@ -26,6 +27,8 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<CatalogDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__CatalogMigrationsHistory", "catalog")));
+
+        services.AddScoped<IChannelRepository, ChannelRepository>();
 
         return services;
     }

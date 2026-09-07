@@ -13,7 +13,7 @@ public interface IConnectionRepository
     /// <param name="id">Connection identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Connection entity or null.</returns>
-    Task<Connection?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
+    public Task<Connection?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
 
     /// <summary>
     /// Finds a connection by primary key with related Channel loaded.
@@ -21,12 +21,16 @@ public interface IConnectionRepository
     /// <param name="id">Connection identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Connection entity with Channel or null.</returns>
-    Task<Connection?> FindByIdWithChannelAsync(Guid id, CancellationToken cancellationToken);
+    public Task<Connection?> FindByIdWithChannelAsync(Guid id, CancellationToken cancellationToken);
+
+    public Task<List<Connection>> GetAllByTenantAsync(CancellationToken ct);
+    public Task<bool> ExistsForTemplateAsync(string templateCode, CancellationToken ct);
+    public void Add(Connection connection);
 
     /// <summary>
     /// Persists all pending changes.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of state entries written to the database.</returns>
-    Task<int> SaveChangesAsync(CancellationToken cancellationToken);
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

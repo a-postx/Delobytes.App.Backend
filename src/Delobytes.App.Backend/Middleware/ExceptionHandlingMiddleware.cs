@@ -1,7 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Middleware;
 
@@ -13,13 +11,13 @@ namespace Delobytes.App.Backend.Middleware;
 /// </summary>
 public class ExceptionHandlingMiddleware
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
-
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ExceptionHandlingMiddleware"/> class.
@@ -58,6 +56,12 @@ public class ExceptionHandlingMiddleware
                 statusCode = HttpStatusCode.Unauthorized;
                 message = exception.Message;
                 _logger.LogWarning("Unauthorized: {Message}", exception.Message);
+                break;
+
+            case Integrations.Application.ConflictException:
+                statusCode = HttpStatusCode.Conflict;
+                message = exception.Message;
+                _logger.LogWarning("Conflict: {Message}", exception.Message);
                 break;
 
             case InvalidOperationException:
