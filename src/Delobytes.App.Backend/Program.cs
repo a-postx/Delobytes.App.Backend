@@ -123,6 +123,7 @@ public partial class Program
             {
                 cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
                 cfg.RegisterServicesFromAssembly(typeof(Delobytes.App.Backend.Identity.Application.Commands.Login.LoginCommand).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
 
                 // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
@@ -130,6 +131,7 @@ public partial class Program
             });
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+            builder.Services.AddValidatorsFromAssembly(typeof(Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
             builder.Services.AddHttpContextAccessor();
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
