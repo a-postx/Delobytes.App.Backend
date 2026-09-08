@@ -24,7 +24,7 @@ public class ApiKeyValidatorFactory : IApiKeyValidatorFactory
         {
             "wildberries" => _wildberries,
             "ozon" => _ozon,
-            "yandexkit" => _yandexKit,
+            "yandex.kit" => _yandexKit,
             _ => throw new NotSupportedException($"Валидатор для канала '{channelCode}' не найден."),
         };
     }

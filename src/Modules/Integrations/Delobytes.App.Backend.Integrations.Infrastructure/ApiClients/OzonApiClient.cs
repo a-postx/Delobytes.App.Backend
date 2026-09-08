@@ -7,14 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
 /// <summary>
-/// Yandex.Kit API client for orders and stocks synchronisation.
+/// Ozon marketplace API client for orders and stocks synchronisation.
 /// </summary>
-public class YandexKitApiClient : IChannelApiClient
+public class OzonApiClient : IChannelApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<YandexKitApiClient> _logger;
 
-    public YandexKitApiClient(HttpClient httpClient, ILogger<YandexKitApiClient> logger)
+    public OzonApiClient(HttpClient httpClient, ILogger<YandexKitApiClient> logger)
     {
         _httpClient = httpClient;
         _logger = logger;

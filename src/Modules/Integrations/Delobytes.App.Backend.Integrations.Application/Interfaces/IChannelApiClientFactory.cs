@@ -13,5 +13,5 @@ public interface IChannelApiClientFactory
     /// <param name="channelCode">The channel code (e.g., "wildberries", "ozon").</param>
     /// <param name="connection">The connection configuration.</param>
     /// <returns>An instance of <see cref="IChannelApiClient"/>.</returns>
-    IChannelApiClient Create(string channelCode, Connection connection);
+    public IChannelApiClient Create(string channelCode, Connection connection);
 }
