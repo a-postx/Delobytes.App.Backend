@@ -61,8 +61,18 @@ public class SalesDbContext : DbContext
                     parameter,
                     Expression.Constant("TenantId"));
 
-                ConstantExpression tenantContextConstant = Expression.Constant(_tenantContext, typeof(ITenantContext));
-                MemberExpression tenantIdProperty = Expression.Property(tenantContextConstant, nameof(ITenantContext.TenantId));
+                // Expression.Constant(this) captures the DbContext instance reference.
+                // EF Core recognises DbContext-typed constants in query filter trees and
+                // substitutes the *current* instance at query execution time, so TenantId
+                // is read from the live scoped ITenantContext on every request — not frozen
+                // to the value present when the singleton model cache was first built.
+                ConstantExpression contextRef = Expression.Constant(this, typeof(SalesDbContext));
+                FieldInfo tenantContextField = typeof(SalesDbContext)
+                    .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                MemberExpression tenantContextAccess = Expression.Field(contextRef, tenantContextField);
+                MemberExpression tenantIdProperty = Expression.Property(
+                    tenantContextAccess,
+                    nameof(ITenantContext.TenantId));
 
                 BinaryExpression comparison = Expression.Equal(tenantIdAccess, tenantIdProperty);
                 LambdaExpression lambda = Expression.Lambda(comparison, parameter);

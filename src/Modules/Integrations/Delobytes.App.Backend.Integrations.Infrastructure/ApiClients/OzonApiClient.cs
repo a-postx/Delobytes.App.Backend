@@ -72,9 +72,9 @@ public class OzonApiClient : IChannelApiClient
 
             return new AccountInfo
             {
-                CustomerName = body.Name,
-                LegalName = body.LegalName,
-                Inn = body.Inn,
+                CustomerName = body.Company?.Name,
+                LegalName = body.Company?.LegalName,
+                Inn = body.Company?.Inn,
             };
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
@@ -113,6 +113,12 @@ public class OzonApiClient : IChannelApiClient
     }
 
     private sealed class OzonSellerInfoResponse
+    {
+        [JsonPropertyName("company")]
+        public OzonCompanyInfo? Company { get; init; }
+    }
+
+    private sealed class OzonCompanyInfo
     {
         [JsonPropertyName("name")]
         public string? Name { get; init; }

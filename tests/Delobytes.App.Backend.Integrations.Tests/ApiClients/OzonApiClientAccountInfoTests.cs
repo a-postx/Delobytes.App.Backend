@@ -42,9 +42,11 @@ public class OzonApiClientAccountInfoTests
     {
         string json = """
             {
-                "name": "Ozon Store",
-                "legal_name": "ООО Озон Трейд",
-                "inn": "9999888877"
+                "company": {
+                    "name": "Ozon Store",
+                    "legal_name": "ООО Озон Трейд",
+                    "inn": "9999888877"
+                }
             }
             """;
 
@@ -65,7 +67,7 @@ public class OzonApiClientAccountInfoTests
     [Fact]
     public async Task GetAccountInfoAsync_PartialResponse_MapsAvailableFields()
     {
-        string json = """{ "name": "My Shop", "legal_name": "ИП Иванов" }""";
+        string json = """{ "company": { "name": "My Shop", "legal_name": "ИП Иванов" } }""";
 
         MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
         mockHttp.When(HttpMethod.Post, SellerInfoUrl).Respond("application/json", json);
@@ -145,7 +147,7 @@ public class OzonApiClientAccountInfoTests
             .When(HttpMethod.Post, SellerInfoUrl)
             .WithHeaders("Client-Id", "12345")
             .WithHeaders("Api-Key", "my-ozon-key")
-            .Respond("application/json", """{ "name": "Shop" }""");
+            .Respond("application/json", """{ "company": { "name": "Shop" } }""");
 
         mockHttp.When(HttpMethod.Post, SellerInfoUrl).Respond(HttpStatusCode.Forbidden);
 
