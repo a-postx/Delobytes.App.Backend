@@ -10,4 +10,7 @@ public class AvailableChannelDto
     // Populated only when IsConnected = true
     public Guid? ConnectionId { get; set; }
     public string? MaskedApiKey { get; set; }
+    public string? CustomerName { get; set; }
+    public string? LegalName { get; set; }
+    public string? Inn { get; set; }
 }

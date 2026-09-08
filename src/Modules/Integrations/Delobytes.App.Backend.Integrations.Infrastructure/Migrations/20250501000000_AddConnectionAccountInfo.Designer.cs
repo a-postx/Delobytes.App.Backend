@@ -2,15 +2,18 @@ using System;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations;
 
 [DbContext(typeof(IntegrationsDbContext))]
-partial class IntegrationsDbContextModelSnapshot : ModelSnapshot
+[Migration("20250501000000_AddConnectionAccountInfo")]
+partial class AddConnectionAccountInfo
 {
-    protected override void BuildModel(ModelBuilder modelBuilder)
+    /// <inheritdoc />
+    protected override void BuildTargetModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder
@@ -39,11 +42,23 @@ partial class IntegrationsDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("CustomerName")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
+
                 b.Property<bool>("IsActive")
                     .HasColumnType("boolean");
 
+                b.Property<string>("Inn")
+                    .HasMaxLength(50)
+                    .HasColumnType("character varying(50)");
+
                 b.Property<DateTimeOffset?>("LastSyncAt")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("LegalName")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
 
                 b.Property<string>("Name")
                     .IsRequired()
@@ -52,18 +67,6 @@ partial class IntegrationsDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("Settings")
                     .HasColumnType("text");
-
-                b.Property<string>("CustomerName")
-                    .HasMaxLength(500)
-                    .HasColumnType("character varying(500)");
-
-                b.Property<string>("LegalName")
-                    .HasMaxLength(500)
-                    .HasColumnType("character varying(500)");
-
-                b.Property<string>("Inn")
-                    .HasMaxLength(50)
-                    .HasColumnType("character varying(50)");
 
                 b.Property<Guid>("TenantId")
                     .HasColumnType("uuid");

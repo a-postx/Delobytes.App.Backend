@@ -58,6 +58,21 @@ public class Connection : ITenantScoped
     public DateTimeOffset? UpdatedAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the marketplace store/shop name.
+    /// </summary>
+    public string? CustomerName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the legal entity name.
+    /// </summary>
+    public string? LegalName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the taxpayer identification number (INN).
+    /// </summary>
+    public string? Inn { get; set; }
+
+    /// <summary>
     /// Navigation property: the channel template.
     /// </summary>
     public SystemChannelTemplate Channel { get; set; } = default!;

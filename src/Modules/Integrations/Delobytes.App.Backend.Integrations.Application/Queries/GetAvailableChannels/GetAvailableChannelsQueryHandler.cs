@@ -48,6 +48,9 @@ public class GetAvailableChannelsQueryHandler : IRequestHandler<GetAvailableChan
                     MaskedApiKey = isConnected && conn!.ApiKey.Length >= 6
                         ? new string('*', conn.ApiKey.Length - 6) + conn.ApiKey[^6..]
                         : null,
+                    CustomerName = isConnected ? conn!.CustomerName : null,
+                    LegalName = isConnected ? conn!.LegalName : null,
+                    Inn = isConnected ? conn!.Inn : null,
                 };
             })
             .ToList();

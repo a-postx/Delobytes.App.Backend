@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.DTOs;
+using Delobytes.App.Backend.Integrations.Application.Models;
 
 namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 
@@ -7,6 +8,20 @@ namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 /// </summary>
 public interface IChannelApiClient
 {
+    /// <summary>
+    /// Retrieves account/shop information for the supplied credentials.
+    /// Returns null when the marketplace does not expose this information or the call fails.
+    /// </summary>
+    /// <param name="apiKey">API key.</param>
+    /// <param name="apiSecret">Optional API secret.</param>
+    /// <param name="settings">Optional extra settings (e.g. sellerId for Ozon).</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<AccountInfo?> GetAccountInfoAsync(
+        string apiKey,
+        string? apiSecret,
+        Dictionary<string, string>? settings,
+        CancellationToken ct);
+
     /// <summary>
     /// Retrieves orders within the specified date range.
     /// </summary>

@@ -21,6 +21,8 @@ public class CreateConnectionCommandHandlerTests
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
     private readonly Mock<IChannelRepository> _channelRepo = new();
     private readonly Mock<IApiKeyValidatorFactory> _validatorFactory = new();
+    private readonly Mock<IChannelApiClientFactory> _apiClientFactory = new();
+    private readonly Mock<IChannelApiClient> _apiClient = new();
     private readonly Mock<IApiKeyValidator> _validator = new();
 
     private CreateConnectionCommandHandler CreateHandler()
@@ -29,7 +31,8 @@ public class CreateConnectionCommandHandlerTests
             _templateRepo.Object,
             _connectionRepo.Object,
             _channelRepo.Object,
-            _validatorFactory.Object);
+            _validatorFactory.Object,
+            _apiClientFactory.Object);
     }
 
     private static SystemChannelTemplate BuildTemplate(string code = "wildberries")
@@ -154,6 +157,18 @@ public class CreateConnectionCommandHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(ApiKeyValidationResult.Success());
 
+        _apiClientFactory
+            .Setup(f => f.Create("wildberries"))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AccountInfo?)null);
+
         _channelRepo
             .Setup(r => r.Add(It.IsAny<Channel>()))
             .Callback<Channel>(c => savedChannel = c);
@@ -188,6 +203,9 @@ public class CreateConnectionCommandHandlerTests
         savedConnection.Should().NotBeNull();
         savedConnection!.IsActive.Should().BeTrue();
         savedConnection.ApiKey.Should().Be(command.ApiKey);
+        savedConnection.CustomerName.Should().BeNull();
+        savedConnection.LegalName.Should().BeNull();
+        savedConnection.Inn.Should().BeNull();
     }
 
     [Fact]
@@ -203,6 +221,18 @@ public class CreateConnectionCommandHandlerTests
         _connectionRepo
             .Setup(r => r.ExistsForTemplateAsync("ozon", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+
+        _apiClientFactory
+            .Setup(f => f.Create("ozon"))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AccountInfo?)null);
 
         _validatorFactory
             .Setup(f => f.Create("ozon"))

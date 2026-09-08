@@ -17,17 +17,20 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
     private readonly IConnectionRepository _connectionRepository;
     private readonly IChannelRepository _channelRepository;
     private readonly IApiKeyValidatorFactory _validatorFactory;
+    private readonly IChannelApiClientFactory _channelApiClientFactory;
 
     public CreateConnectionCommandHandler(
         ISystemChannelTemplateRepository templateRepository,
         IConnectionRepository connectionRepository,
         IChannelRepository channelRepository,
-        IApiKeyValidatorFactory validatorFactory)
+        IApiKeyValidatorFactory validatorFactory,
+        IChannelApiClientFactory channelApiClientFactory)
     {
         _templateRepository = templateRepository;
         _connectionRepository = connectionRepository;
         _channelRepository = channelRepository;
         _validatorFactory = validatorFactory;
+        _channelApiClientFactory = channelApiClientFactory;
     }
 
     public async Task<CreateConnectionResponse> Handle(
@@ -63,6 +66,14 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
             throw new InvalidOperationException(validationResult.ErrorMessage);
         }
 
+        IChannelApiClient apiClient = _channelApiClientFactory.Create(request.SystemChannelTemplateCode);
+
+        AccountInfo? accountInfo = await apiClient.GetAccountInfoAsync(
+            request.ApiKey,
+            request.ApiSecret,
+            request.Settings,
+            cancellationToken);
+
         Channel catalogChannel = new Channel
         {
             Id = Guid.NewGuid(),
@@ -84,6 +95,9 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
                 ? JsonSerializer.Serialize(request.Settings)
                 : null,
             IsActive = true,
+            CustomerName = accountInfo?.CustomerName,
+            LegalName = accountInfo?.LegalName,
+            Inn = accountInfo?.Inn,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 

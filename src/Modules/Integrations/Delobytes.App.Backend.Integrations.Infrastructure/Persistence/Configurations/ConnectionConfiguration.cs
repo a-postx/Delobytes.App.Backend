@@ -33,6 +33,15 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
         builder.Property(c => c.Settings)
             .HasColumnType("text");
 
+        builder.Property(c => c.CustomerName)
+            .HasMaxLength(500);
+
+        builder.Property(c => c.LegalName)
+            .HasMaxLength(500);
+
+        builder.Property(c => c.Inn)
+            .HasMaxLength(50);
+
         builder.Property(c => c.IsActive)
             .IsRequired();
 
