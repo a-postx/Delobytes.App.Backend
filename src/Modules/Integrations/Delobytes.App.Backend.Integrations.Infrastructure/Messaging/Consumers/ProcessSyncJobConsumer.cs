@@ -74,7 +74,7 @@ public class ProcessSyncJobConsumer
 
         try
         {
-            IChannelApiClient apiClient = _clientFactory.Create(connection.Channel.Code, connection);
+            IChannelApiClient apiClient = _clientFactory.Create(connection.Channel.Code);
 
             ApiResponse<OrdersData> apiResponse = await apiClient.GetOrdersAsync(
                 syncJob.DateRangeFrom,

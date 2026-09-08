@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -21,7 +20,7 @@ public class ChannelApiClientFactory : IChannelApiClientFactory
     }
 
     /// <inheritdoc/>
-    public IChannelApiClient Create(string channelCode, Connection connection)
+    public IChannelApiClient Create(string channelCode)
     {
         return channelCode.ToLowerInvariant() switch
         {

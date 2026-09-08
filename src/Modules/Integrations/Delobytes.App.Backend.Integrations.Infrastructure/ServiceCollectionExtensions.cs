@@ -45,14 +45,39 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<ProcessSyncJobConsumer>();
 
+        services.AddScoped<IConnectionResolver, ConnectionResolver>();
+
+        services.AddTransient<OzonAuthHandler>();
+        services.AddTransient<WildberriesAuthHandler>();
+        services.AddTransient<YandexKitAuthHandler>();
+
         // WildberriesApiClient для операций синхронизации — с retry
         services.AddHttpClient<WildberriesApiClient>()
+            .AddHttpMessageHandler<WildberriesAuthHandler>()
             .AddResilienceHandler("retry-policy", (builder, context) =>
             {
                 ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<WildberriesApiClient>>();
                 ResiliencePipeline<HttpResponseMessage> retryPipeline = RetryPolicies.GetRetryPolicy(logger);
                 builder.AddPipeline(retryPipeline);
             });
+
+        services.AddHttpClient<OzonApiClient>()
+            .AddHttpMessageHandler<OzonAuthHandler>()
+            .AddResilienceHandler("retry-policy", (builder, context) =>
+            {
+                ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<OzonApiClient>>();
+                ResiliencePipeline<HttpResponseMessage> retryPipeline = RetryPolicies.GetRetryPolicy(logger);
+                builder.AddPipeline(retryPipeline);
+            });
+
+        services.AddHttpClient<YandexKitApiClient>()
+            .AddHttpMessageHandler<YandexKitAuthHandler>()
+            .AddResilienceHandler("retry-policy", (builder, context) =>
+             {
+                 ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<YandexKitApiClient>>();
+                 ResiliencePipeline<HttpResponseMessage> retryPipeline = RetryPolicies.GetRetryPolicy(logger);
+                 builder.AddPipeline(retryPipeline);
+             });
 
         // Валидаторы ключей — без retry, таймаут 10 сек
         services.AddHttpClient<WildberriesApiKeyValidator>(client =>
