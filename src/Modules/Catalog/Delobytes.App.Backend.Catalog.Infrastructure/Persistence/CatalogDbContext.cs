@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Security;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Interfaces;
@@ -98,13 +99,14 @@ public class CatalogDbContext : DbContext
     public override int SaveChanges()
     {
         SetTenantId();
+        ValidateCrossTenantWrite();
         return base.SaveChanges();
     }
 
-    /// <inheritdoc/>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         SetTenantId();
+        ValidateCrossTenantWrite();
         return base.SaveChangesAsync(cancellationToken);
     }
 
@@ -122,6 +124,37 @@ public class CatalogDbContext : DbContext
         foreach (EntityEntry entry in entries)
         {
             entry.Property("TenantId").CurrentValue = tenantId.Value;
+        }
+    }
+
+    // Prevents writes to entities belonging to a different tenant.
+    // Added entities are already protected by SetTenantId() overwriting the value.
+    // This guard targets Modified and Deleted: an entity loaded via IgnoreQueryFilters()
+    // or with a manually-tampered shadow property would otherwise pass through undetected.
+    private void ValidateCrossTenantWrite()
+    {
+        Guid? tenantId = _tenantContext.TenantId;
+        if (!tenantId.HasValue)
+        {
+            // System / background context — no user-scoped enforcement.
+            return;
+        }
+
+        IEnumerable<EntityEntry> entries = ChangeTracker.Entries()
+            .Where(e =>
+                (e.State == EntityState.Modified || e.State == EntityState.Deleted)
+                && e.Entity is ITenantScoped);
+
+        foreach (EntityEntry entry in entries)
+        {
+            Guid? entityTenantId = (Guid?)entry.Property("TenantId").CurrentValue;
+
+            if (entityTenantId.HasValue && entityTenantId.Value != tenantId.Value)
+            {
+                throw new SecurityException(
+                    $"Cross-tenant write detected on '{entry.Entity.GetType().Name}': " +
+                    $"entity TenantId '{entityTenantId}' does not match current tenant '{tenantId}'.");
+            }
         }
     }
 }
