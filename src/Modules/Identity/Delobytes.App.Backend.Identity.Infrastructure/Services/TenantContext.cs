@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Microsoft.AspNetCore.Http;
 
 namespace Delobytes.App.Backend.Identity.Infrastructure.Services;

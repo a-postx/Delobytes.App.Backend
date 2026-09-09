@@ -1,6 +1,4 @@
-using Delobytes.App.Backend.Catalog.Domain.Entities;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Domain.Enums;
 
 namespace Delobytes.App.Backend.Sales.Domain.Entities;
@@ -74,21 +72,6 @@ public class Order : ITenantScoped
     /// Gets or sets the date and time when the order was created.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
-
-    /// <summary>
-    /// Navigation property: the channel product.
-    /// </summary>
-    public ChannelProduct ChannelProduct { get; set; } = default!;
-
-    /// <summary>
-    /// Navigation property: the channel.
-    /// </summary>
-    public Channel Channel { get; set; } = default!;
-
-    /// <summary>
-    /// Navigation property: the raw API response.
-    /// </summary>
-    public RawApiResponse? RawData { get; set; }
 
     /// <summary>
     /// Navigation property: returns associated with this order.

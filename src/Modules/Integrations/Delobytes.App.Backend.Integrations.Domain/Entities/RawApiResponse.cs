@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 

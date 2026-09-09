@@ -1,7 +1,5 @@
-using System.Transactions;
-using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
-using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
 
@@ -10,14 +8,14 @@ namespace Delobytes.App.Backend.Integrations.Application.Commands.DeleteConnecti
 public class DeleteConnectionCommandHandler : IRequestHandler<DeleteConnectionCommand>
 {
     private readonly IConnectionRepository _connectionRepository;
-    private readonly IChannelRepository _channelRepository;
+    private readonly IEventPublisher _eventPublisher;
 
     public DeleteConnectionCommandHandler(
         IConnectionRepository connectionRepository,
-        IChannelRepository channelRepository)
+        IEventPublisher eventPublisher)
     {
         _connectionRepository = connectionRepository;
-        _channelRepository = channelRepository;
+        _eventPublisher = eventPublisher;
     }
 
     public async Task Handle(DeleteConnectionCommand request, CancellationToken cancellationToken)
@@ -30,22 +28,15 @@ public class DeleteConnectionCommandHandler : IRequestHandler<DeleteConnectionCo
             throw new KeyNotFoundException($"Подключение с ID '{request.Id}' не найдено.");
         }
 
-        Channel? catalogChannel = await _channelRepository
-            .GetByIdAsync(connection.ChannelId, cancellationToken);
+        connection.IsActive = false;
+        await _connectionRepository.SaveChangesAsync(cancellationToken);
 
-        using (TransactionScope scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+        // Catalog subscribes to this event and deactivates the corresponding Channel.
+        ConnectionDeactivatedEvent channelDeactivatedEvent = new ConnectionDeactivatedEvent
         {
-            connection.IsActive = false;
+            ChannelId = connection.ChannelId,
+        };
 
-            if (catalogChannel != null)
-            {
-                catalogChannel.IsActive = false;
-                await _channelRepository.SaveChangesAsync(cancellationToken);
-            }
-
-            await _connectionRepository.SaveChangesAsync(cancellationToken);
-
-            scope.Complete();
-        }
+        await _eventPublisher.PublishAsync(channelDeactivatedEvent, cancellationToken);
     }
 }

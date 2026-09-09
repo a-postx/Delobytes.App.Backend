@@ -40,11 +40,7 @@ public class ChannelConfiguration : IEntityTypeConfiguration<Channel>
         builder.HasIndex(c => c.IsActive);
         builder.HasIndex(c => c.IsCustom);
 
-        builder.HasOne(c => c.SystemChannelTemplate)
-            .WithMany()
-            .HasForeignKey(c => c.SystemChannelTemplateId)
-            .OnDelete(DeleteBehavior.Restrict);
-
+        // SystemChannelTemplate lives in Integrations — no FK navigation, only the ID is stored.
         builder.HasMany(c => c.ChannelProducts)
             .WithOne(cp => cp.Channel)
             .HasForeignKey(cp => cp.ChannelId)

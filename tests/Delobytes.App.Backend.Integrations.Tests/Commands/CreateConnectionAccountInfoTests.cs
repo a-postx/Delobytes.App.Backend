@@ -1,13 +1,8 @@
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
-using Delobytes.App.Backend.Catalog.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands.CreateConnection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using FluentAssertions;
 using Moq;
@@ -19,20 +14,20 @@ public class CreateConnectionAccountInfoTests
 {
     private readonly Mock<ISystemChannelTemplateRepository> _templateRepo = new();
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
-    private readonly Mock<IChannelRepository> _channelRepo = new();
     private readonly Mock<IApiKeyValidatorFactory> _validatorFactory = new();
     private readonly Mock<IApiKeyValidator> _validator = new();
     private readonly Mock<IChannelApiClientFactory> _apiClientFactory = new();
     private readonly Mock<IChannelApiClient> _apiClient = new();
+    private readonly Mock<IEventPublisher> _eventPublisher = new();
 
     private CreateConnectionCommandHandler CreateHandler()
     {
         return new CreateConnectionCommandHandler(
             _templateRepo.Object,
             _connectionRepo.Object,
-            _channelRepo.Object,
             _validatorFactory.Object,
-            _apiClientFactory.Object);
+            _apiClientFactory.Object,
+            _eventPublisher.Object);
     }
 
     private static SystemChannelTemplate BuildTemplate(string code = "wildberries")
@@ -77,9 +72,11 @@ public class CreateConnectionAccountInfoTests
             .Setup(f => f.Create(template.Code))
             .Returns(_apiClient.Object);
 
-        _channelRepo.Setup(r => r.Add(It.IsAny<Channel>()));
-        _channelRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         _connectionRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ConnectionCreatedEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     [Fact]
@@ -247,15 +244,14 @@ public class CreateConnectionAccountInfoTests
         await handler.Handle(new CreateConnectionCommand
         {
             SystemChannelTemplateCode = "ozon",
-            ApiKey = "ozon-api-key",
-            ApiSecret = null,
+            ApiKey = "ozon-key",
+            ApiSecret = "ozon-secret",
             Settings = settings,
         }, CancellationToken.None);
 
-        // credentials должны совпадать с теми, что переданы в команду
         _apiClient.Verify(c => c.GetAccountInfoAsync(
-            "ozon-api-key",
-            null,
+            "ozon-key",
+            "ozon-secret",
             settings,
             It.IsAny<CancellationToken>()), Times.Once);
     }

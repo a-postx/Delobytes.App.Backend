@@ -49,6 +49,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasConversion<string>()
             .HasMaxLength(50);
 
+        builder.Property(o => o.RawDataId);
+
         builder.Property(o => o.ImportedAt)
             .IsRequired();
 
@@ -63,21 +65,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.OrderDate);
         builder.HasIndex(o => o.Status);
 
-        builder.HasOne(o => o.ChannelProduct)
-            .WithMany()
-            .HasForeignKey(o => o.ChannelProductId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(o => o.Channel)
-            .WithMany()
-            .HasForeignKey(o => o.ChannelId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(o => o.RawData)
-            .WithMany()
-            .HasForeignKey(o => o.RawDataId)
-            .OnDelete(DeleteBehavior.SetNull);
-
+        // ChannelProduct and Channel live in Catalog, RawData in Integrations.
+        // Navigation properties removed — IDs are stored, cross-module joins happen via events/API.
         builder.HasMany(o => o.Returns)
             .WithOne(r => r.Order)
             .HasForeignKey(r => r.OrderId)

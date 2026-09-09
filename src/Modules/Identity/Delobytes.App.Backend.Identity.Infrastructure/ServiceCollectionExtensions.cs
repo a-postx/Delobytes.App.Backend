@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
@@ -49,8 +50,8 @@ public static class ServiceCollectionExtensions
         // Register HttpContextAccessor for TenantContext
         services.AddHttpContextAccessor();
 
-        // Register ITenantContext
-        services.AddScoped<ITenantContext, TenantContext>();
+        // Register Contracts.ITenantContext for all other modules.
+        services.AddScoped<Delobytes.App.Backend.Contracts.Interfaces.ITenantContext, TenantContext>();
 
         // Register JWT token service
         services.AddScoped<IJwtTokenService, JwtTokenService>();

@@ -1,8 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Security;
-using Delobytes.App.Backend.Identity.Application.Interfaces;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

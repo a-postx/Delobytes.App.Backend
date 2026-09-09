@@ -1,6 +1,9 @@
+using System.Reflection;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,5 +34,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChannelRepository, ChannelRepository>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers Catalog module MassTransit consumers.
+    /// </summary>
+    /// <param name="configurator">MassTransit bus registration configurator.</param>
+    public static void AddCatalogConsumers(this IBusRegistrationConfigurator configurator)
+    {
+        configurator.AddConsumers(Assembly.GetExecutingAssembly());
     }
 }

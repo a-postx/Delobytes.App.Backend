@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Messaging.Consumers;
 using MassTransit;
@@ -21,13 +22,12 @@ internal static class MassTransitExtensions
     {
         services.AddMassTransit(bus =>
         {
-            // Register all consumers
             bus.AddConsumer<AppStartedEventConsumer>();
             bus.AddIntegrationsConsumers();
+            bus.AddCatalogConsumers();
 
             if (!string.IsNullOrWhiteSpace(messageBusConnectionString))
             {
-                // Production: RabbitMQ via CloudAMQP
                 bus.UsingRabbitMq((ctx, cfg) =>
                 {
                     cfg.Host(new Uri(messageBusConnectionString));
@@ -36,11 +36,10 @@ internal static class MassTransitExtensions
             }
             else
             {
-                // Development fallback: in-memory transport (no external dependencies)
                 bus.UsingInMemory((ctx, cfg) =>
-                    {
-                        cfg.ConfigureEndpoints(ctx);
-                    });
+                {
+                    cfg.ConfigureEndpoints(ctx);
+                });
             }
         });
 

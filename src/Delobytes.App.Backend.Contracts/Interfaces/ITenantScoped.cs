@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Identity.Domain.Interfaces;
+namespace Delobytes.App.Backend.Contracts.Interfaces;
 
 /// <summary>
 /// Marker interface for tenant-scoped entities.

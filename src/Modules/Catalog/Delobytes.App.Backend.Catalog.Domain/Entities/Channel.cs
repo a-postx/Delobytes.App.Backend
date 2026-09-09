@@ -1,5 +1,4 @@
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
@@ -51,11 +50,6 @@ public class Channel : ITenantScoped
     /// Gets or sets the date and time when the channel was last updated.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
-
-    /// <summary>
-    /// Navigation property: the system channel template.
-    /// </summary>
-    public SystemChannelTemplate? SystemChannelTemplate { get; set; }
 
     /// <summary>
     /// Navigation property: products linked to this channel.

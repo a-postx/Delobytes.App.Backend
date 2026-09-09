@@ -1,11 +1,9 @@
 using System.Text.Json;
-using System.Transactions;
-using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
-using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
 
@@ -15,22 +13,22 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
 {
     private readonly ISystemChannelTemplateRepository _templateRepository;
     private readonly IConnectionRepository _connectionRepository;
-    private readonly IChannelRepository _channelRepository;
     private readonly IApiKeyValidatorFactory _validatorFactory;
     private readonly IChannelApiClientFactory _channelApiClientFactory;
+    private readonly IEventPublisher _eventPublisher;
 
     public CreateConnectionCommandHandler(
         ISystemChannelTemplateRepository templateRepository,
         IConnectionRepository connectionRepository,
-        IChannelRepository channelRepository,
         IApiKeyValidatorFactory validatorFactory,
-        IChannelApiClientFactory channelApiClientFactory)
+        IChannelApiClientFactory channelApiClientFactory,
+        IEventPublisher eventPublisher)
     {
         _templateRepository = templateRepository;
         _connectionRepository = connectionRepository;
-        _channelRepository = channelRepository;
         _validatorFactory = validatorFactory;
         _channelApiClientFactory = channelApiClientFactory;
+        _eventPublisher = eventPublisher;
     }
 
     public async Task<CreateConnectionResponse> Handle(
@@ -74,20 +72,12 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
             request.Settings,
             cancellationToken);
 
-        Channel catalogChannel = new Channel
-        {
-            Id = Guid.NewGuid(),
-            SystemChannelTemplateId = template.Id,
-            Name = template.DisplayName,
-            IsCustom = false,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+        Guid channelId = Guid.NewGuid();
 
         Connection connection = new Connection
         {
             Id = Guid.NewGuid(),
-            ChannelId = template.Id,
+            ChannelId = channelId,
             Name = template.DisplayName,
             ApiKey = request.ApiKey,
             ApiSecret = request.ApiSecret,
@@ -101,21 +91,23 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        using (TransactionScope scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+        _connectionRepository.Add(connection);
+        await _connectionRepository.SaveChangesAsync(cancellationToken);
+
+        // Catalog subscribes to this event and creates the corresponding Channel.
+        ConnectionCreatedEvent channelCreatedEvent = new ConnectionCreatedEvent
         {
-            _channelRepository.Add(catalogChannel);
-            await _channelRepository.SaveChangesAsync(cancellationToken);
+            ChannelId = channelId,
+            SystemChannelTemplateId = template.Id,
+            ChannelName = template.DisplayName,
+        };
 
-            _connectionRepository.Add(connection);
-            await _connectionRepository.SaveChangesAsync(cancellationToken);
-
-            scope.Complete();
-        }
+        await _eventPublisher.PublishAsync(channelCreatedEvent, cancellationToken);
 
         return new CreateConnectionResponse
         {
             ConnectionId = connection.Id,
-            ChannelId = catalogChannel.Id,
+            ChannelId = channelId,
         };
     }
 }

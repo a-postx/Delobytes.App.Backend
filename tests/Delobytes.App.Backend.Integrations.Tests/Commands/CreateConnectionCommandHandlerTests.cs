@@ -1,13 +1,12 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
-using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands.CreateConnection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using FluentAssertions;
 using Moq;
@@ -19,20 +18,20 @@ public class CreateConnectionCommandHandlerTests
 {
     private readonly Mock<ISystemChannelTemplateRepository> _templateRepo = new();
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
-    private readonly Mock<IChannelRepository> _channelRepo = new();
     private readonly Mock<IApiKeyValidatorFactory> _validatorFactory = new();
     private readonly Mock<IChannelApiClientFactory> _apiClientFactory = new();
     private readonly Mock<IChannelApiClient> _apiClient = new();
     private readonly Mock<IApiKeyValidator> _validator = new();
+    private readonly Mock<IEventPublisher> _eventPublisher = new();
 
     private CreateConnectionCommandHandler CreateHandler()
     {
         return new CreateConnectionCommandHandler(
             _templateRepo.Object,
             _connectionRepo.Object,
-            _channelRepo.Object,
             _validatorFactory.Object,
-            _apiClientFactory.Object);
+            _apiClientFactory.Object,
+            _eventPublisher.Object);
     }
 
     private static SystemChannelTemplate BuildTemplate(string code = "wildberries")
@@ -131,11 +130,11 @@ public class CreateConnectionCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ValidRequest_SavesBothEntitiesAndReturnsResponse()
+    public async Task Handle_ValidRequest_SavesConnectionAndPublishesCreatedEvent()
     {
         SystemChannelTemplate template = BuildTemplate();
-        Channel? savedChannel = null;
         Connection? savedConnection = null;
+        ConnectionCreatedEvent? publishedEvent = null;
 
         _templateRepo
             .Setup(r => r.GetByCodeAsync("wildberries", It.IsAny<CancellationToken>()))
@@ -169,14 +168,6 @@ public class CreateConnectionCommandHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((AccountInfo?)null);
 
-        _channelRepo
-            .Setup(r => r.Add(It.IsAny<Channel>()))
-            .Callback<Channel>(c => savedChannel = c);
-
-        _channelRepo
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
-
         _connectionRepo
             .Setup(r => r.Add(It.IsAny<Connection>()))
             .Callback<Connection>(c => savedConnection = c);
@@ -184,6 +175,11 @@ public class CreateConnectionCommandHandlerTests
         _connectionRepo
             .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ConnectionCreatedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ConnectionCreatedEvent, CancellationToken>((e, _) => publishedEvent = e)
+            .Returns(Task.CompletedTask);
 
         CreateConnectionCommandHandler handler = CreateHandler();
         CreateConnectionCommand command = BuildCommand();
@@ -195,17 +191,14 @@ public class CreateConnectionCommandHandlerTests
         result.ConnectionId.Should().NotBeEmpty();
         result.ChannelId.Should().NotBeEmpty();
 
-        savedChannel.Should().NotBeNull();
-        savedChannel!.SystemChannelTemplateId.Should().Be(template.Id);
-        savedChannel.IsActive.Should().BeTrue();
-        savedChannel.IsCustom.Should().BeFalse();
-
         savedConnection.Should().NotBeNull();
         savedConnection!.IsActive.Should().BeTrue();
         savedConnection.ApiKey.Should().Be(command.ApiKey);
-        savedConnection.CustomerName.Should().BeNull();
-        savedConnection.LegalName.Should().BeNull();
-        savedConnection.Inn.Should().BeNull();
+
+        publishedEvent.Should().NotBeNull();
+        publishedEvent!.ChannelId.Should().Be(result.ChannelId);
+        publishedEvent.ChannelName.Should().Be(template.DisplayName);
+        publishedEvent.SystemChannelTemplateId.Should().Be(template.Id);
     }
 
     [Fact]
@@ -246,27 +239,32 @@ public class CreateConnectionCommandHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(ApiKeyValidationResult.Success());
 
-        _channelRepo.Setup(r => r.Add(It.IsAny<Channel>()));
-        _channelRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
-
         _connectionRepo
             .Setup(r => r.Add(It.IsAny<Connection>()))
             .Callback<Connection>(c => savedConnection = c);
 
         _connectionRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        CreateConnectionCommand command = new CreateConnectionCommand
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ConnectionCreatedEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Dictionary<string, string> settings = new Dictionary<string, string>
         {
-            SystemChannelTemplateCode = "ozon",
-            ApiKey = "valid-api-key-1234567890",
-            Settings = new Dictionary<string, string> { ["sellerId"] = "12345" },
+            ["sellerId"] = "99999",
         };
 
         CreateConnectionCommandHandler handler = CreateHandler();
-        await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(new CreateConnectionCommand
+        {
+            SystemChannelTemplateCode = "ozon",
+            ApiKey = "ozon-key",
+            Settings = settings,
+        }, CancellationToken.None);
 
+        savedConnection.Should().NotBeNull();
         savedConnection!.Settings.Should().NotBeNullOrEmpty();
         savedConnection.Settings.Should().Contain("sellerId");
-        savedConnection.Settings.Should().Contain("12345");
+        savedConnection.Settings.Should().Contain("99999");
     }
 }

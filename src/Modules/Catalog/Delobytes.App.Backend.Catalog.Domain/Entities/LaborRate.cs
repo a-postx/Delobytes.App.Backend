@@ -1,5 +1,5 @@
 using Delobytes.App.Backend.Catalog.Domain.Enums;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 

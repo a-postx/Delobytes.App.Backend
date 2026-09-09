@@ -21,9 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Modules\Integrations\Delobytes.App.Backend.Integrations.Application\Delobytes.App.Backend.Integrations.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Integrations\Delobytes.App.Backend.Integrations.Contracts\Delobytes.App.Backend.Integrations.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Modules\Integrations\Delobytes.App.Backend.Integrations.Infrastructure\Delobytes.App.Backend.Integrations.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\src\Modules\Catalog\Delobytes.App.Backend.Catalog.Application\Delobytes.App.Backend.Catalog.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\Delobytes.App.Backend.Catalog.Domain\Delobytes.App.Backend.Catalog.Domain.csproj" />
   </ItemGroup>
 

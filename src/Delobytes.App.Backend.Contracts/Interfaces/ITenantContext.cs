@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Identity.Application.Interfaces;
+namespace Delobytes.App.Backend.Contracts.Interfaces;
 
 /// <summary>
 /// Provides access to the current tenant context.

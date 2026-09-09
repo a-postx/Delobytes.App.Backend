@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Identity\Delobytes.App.Backend.Identity.Application\Delobytes.App.Backend.Identity.Application.csproj" />
+    <ProjectReference Include="..\..\..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
+    <ProjectReference Include="..\..\Integrations\Delobytes.App.Backend.Integrations.Contracts\Delobytes.App.Backend.Integrations.Contracts.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Domain\Delobytes.App.Backend.Catalog.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Application\Delobytes.App.Backend.Catalog.Application.csproj" />
   </ItemGroup>
@@ -9,6 +10,11 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.2" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.2" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Messaging\Consumers\" />
   </ItemGroup>
 
   <PropertyGroup>
