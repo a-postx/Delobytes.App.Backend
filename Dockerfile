@@ -8,6 +8,7 @@ COPY ["Directory.Build.props", "./"]
 
 # Копируем .csproj файлы для кеширования слоя восстановления зависимостей
 COPY ["src/Delobytes.App.Backend/Delobytes.App.Backend.csproj", "src/Delobytes.App.Backend/"]
+COPY ["src/Delobytes.App.Backend.Contracts/Delobytes.App.Backend.Contracts.csproj", "src/Delobytes.App.Backend.Contracts/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/Delobytes.App.Backend.Identity.Domain.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Application/Delobytes.App.Backend.Identity.Application.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Application/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/Delobytes.App.Backend.Identity.Infrastructure.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/"]
@@ -15,6 +16,7 @@ COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/Delobytes.App.Ba
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/Delobytes.App.Backend.Catalog.Application.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/"]
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/Delobytes.App.Backend.Catalog.Infrastructure.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/"]
 COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/Delobytes.App.Backend.Integrations.Domain.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/"]
+COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Contracts/Delobytes.App.Backend.Integrations.Contracts.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Contracts/"]
 COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Application/Delobytes.App.Backend.Integrations.Application.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Application/"]
 COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Infrastructure/Delobytes.App.Backend.Integrations.Infrastructure.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Infrastructure/"]
 COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/Delobytes.App.Backend.Sales.Domain.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/"]
