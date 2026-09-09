@@ -27,6 +27,18 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Description)
             .HasMaxLength(2000);
 
+        builder.Property(p => p.LengthCm)
+            .HasPrecision(8, 2)
+            .IsRequired();
+
+        builder.Property(p => p.WidthCm)
+            .HasPrecision(8, 2)
+            .IsRequired();
+
+        builder.Property(p => p.HeightCm)
+            .HasPrecision(8, 2)
+            .IsRequired();
+
         builder.Property(p => p.IsActive)
             .IsRequired();
 
@@ -46,13 +58,18 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasMany(p => p.ProductComponents)
-            .WithOne()
-            .HasForeignKey("ProductId")
+            .WithOne(pc => pc.Product)
+            .HasForeignKey(pc => pc.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasMany(p => p.ProductLaborCosts)
-            .WithOne()
-            .HasForeignKey("ProductId")
+        builder.HasMany(p => p.ProductPackagingComponents)
+            .WithOne(ppc => ppc.Product)
+            .HasForeignKey(ppc => ppc.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(p => p.ProductChannelInputs)
+            .WithOne(pci => pci.Product)
+            .HasForeignKey(pci => pci.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -10,37 +10,29 @@ using Microsoft.EntityFrameworkCore.Metadata;
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 
 /// <summary>
-/// EF Core DbContext for the Catalog (SKU) module.
+/// EF Core DbContext for the Catalog module.
 /// </summary>
 public class CatalogDbContext : DbContext
 {
     private readonly ITenantContext _tenantContext;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="CatalogDbContext"/> class.
-    /// </summary>
-    /// <param name="options">DbContext options.</param>
-    /// <param name="tenantContext">Tenant context for query filtering.</param>
     public CatalogDbContext(DbContextOptions<CatalogDbContext> options, ITenantContext tenantContext)
         : base(options)
     {
         _tenantContext = tenantContext;
     }
 
-    /// <summary>
-    /// Gets or sets the Channels entity set.
-    /// </summary>
     public DbSet<Channel> Channels => Set<Channel>();
-
-    /// <summary>
-    /// Gets or sets the Products entity set.
-    /// </summary>
+    public DbSet<ChannelParameterSet> ChannelParameterSets => Set<ChannelParameterSet>();
     public DbSet<Product> Products => Set<Product>();
-
-    /// <summary>
-    /// Gets or sets the ChannelProducts entity set.
-    /// </summary>
     public DbSet<ChannelProduct> ChannelProducts => Set<ChannelProduct>();
+    public DbSet<PackagingComponent> PackagingComponents => Set<PackagingComponent>();
+    public DbSet<ProductPackagingComponent> ProductPackagingComponents => Set<ProductPackagingComponent>();
+    public DbSet<TariffGrid> TariffGrids => Set<TariffGrid>();
+    public DbSet<TariffGridEntry> TariffGridEntries => Set<TariffGridEntry>();
+    public DbSet<WorkRate> WorkRates => Set<WorkRate>();
+    public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
+    public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -73,11 +65,8 @@ public class CatalogDbContext : DbContext
                     parameter,
                     Expression.Constant("TenantId"));
 
-                // Expression.Constant(this) captures the DbContext instance reference.
-                // EF Core recognises DbContext-typed constants in query filter trees and
-                // substitutes the *current* instance at query execution time, so TenantId
-                // is read from the live scoped ITenantContext on every request — not frozen
-                // to the value present when the singleton model cache was first built.
+                // EF Core resolves the DbContext instance at query time, not at model-build time,
+                // so TenantId always reflects the current scoped ITenantContext.
                 ConstantExpression contextRef = Expression.Constant(this, typeof(CatalogDbContext));
                 FieldInfo tenantContextField = typeof(CatalogDbContext)
                     .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
@@ -102,6 +91,7 @@ public class CatalogDbContext : DbContext
         return base.SaveChanges();
     }
 
+    /// <inheritdoc/>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         SetTenantId();
@@ -126,16 +116,11 @@ public class CatalogDbContext : DbContext
         }
     }
 
-    // Prevents writes to entities belonging to a different tenant.
-    // Added entities are already protected by SetTenantId() overwriting the value.
-    // This guard targets Modified and Deleted: an entity loaded via IgnoreQueryFilters()
-    // or with a manually-tampered shadow property would otherwise pass through undetected.
     private void ValidateCrossTenantWrite()
     {
         Guid? tenantId = _tenantContext.TenantId;
         if (!tenantId.HasValue)
         {
-            // System / background context — no user-scoped enforcement.
             return;
         }
 
