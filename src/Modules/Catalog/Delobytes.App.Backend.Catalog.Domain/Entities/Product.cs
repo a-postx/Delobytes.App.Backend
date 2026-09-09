@@ -36,4 +36,6 @@ public class Product : ITenantScoped
     public ICollection<ProductPackagingComponent> ProductPackagingComponents { get; set; } = new List<ProductPackagingComponent>();
 
     public ICollection<ProductChannelInput> ProductChannelInputs { get; set; } = new List<ProductChannelInput>();
+
+    public ICollection<RawMaterialRate> RawMaterialRates { get; set; } = new List<RawMaterialRate>();
 }

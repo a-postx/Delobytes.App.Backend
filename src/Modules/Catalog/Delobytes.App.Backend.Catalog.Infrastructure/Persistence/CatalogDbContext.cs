@@ -33,6 +33,7 @@ public class CatalogDbContext : DbContext
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();
     public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
+    public DbSet<RawMaterialRate> RawMaterialRates => Set<RawMaterialRate>();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
