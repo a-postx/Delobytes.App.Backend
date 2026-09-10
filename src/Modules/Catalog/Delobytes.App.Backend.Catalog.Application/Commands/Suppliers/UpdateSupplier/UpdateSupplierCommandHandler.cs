@@ -22,8 +22,11 @@ public class UpdateSupplierCommandHandler : IRequestHandler<UpdateSupplierComman
             return new UpdateSupplierResponse { Found = false };
         }
 
+        supplier.Inn = request.Inn;
         supplier.Name = request.Name;
-        supplier.ContactInfo = request.ContactInfo;
+        supplier.Description = request.Description;
+        supplier.Phone = request.Phone;
+        supplier.Email = request.Email;
         supplier.IsActive = request.IsActive;
         supplier.UpdatedAt = DateTimeOffset.UtcNow;
 

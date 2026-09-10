@@ -18,8 +18,11 @@ public class CreateSupplierCommandHandler : IRequestHandler<CreateSupplierComman
         Supplier supplier = new Supplier
         {
             Id = Guid.NewGuid(),
+            Inn = request.Inn,
             Name = request.Name,
-            ContactInfo = request.ContactInfo,
+            Description = request.Description,
+            Phone = request.Phone,
+            Email = request.Email,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };

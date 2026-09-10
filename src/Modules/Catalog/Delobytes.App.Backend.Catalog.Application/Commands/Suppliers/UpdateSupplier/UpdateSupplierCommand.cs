@@ -8,9 +8,15 @@ public class UpdateSupplierCommand : IRequest<UpdateSupplierResponse>, IRequireR
 {
     public Guid Id { get; set; }
 
+    public string Inn { get; set; } = default!;
+
     public string Name { get; set; } = default!;
 
-    public string? ContactInfo { get; set; }
+    public string? Description { get; set; }
+
+    public string? Phone { get; set; }
+
+    public string? Email { get; set; }
 
     public bool IsActive { get; set; }
 

@@ -54,8 +54,11 @@ public class SuppliersController : ControllerBase
         CreateSupplierResponse response = await _mediator.Send(
             new CreateSupplierCommand
             {
+                Inn = request.Inn,
                 Name = request.Name,
-                ContactInfo = request.ContactInfo,
+                Description = request.Description,
+                Phone = request.Phone,
+                Email = request.Email,
             },
             cancellationToken);
 
@@ -72,8 +75,11 @@ public class SuppliersController : ControllerBase
             new UpdateSupplierCommand
             {
                 Id = id,
+                Inn = request.Inn,
                 Name = request.Name,
-                ContactInfo = request.ContactInfo,
+                Description = request.Description,
+                Phone = request.Phone,
+                Email = request.Email,
                 IsActive = request.IsActive,
             },
             cancellationToken);
@@ -105,17 +111,29 @@ public class SuppliersController : ControllerBase
 /// <summary>Request body for creating a supplier.</summary>
 public class CreateSupplierRequest
 {
+    public string Inn { get; set; } = default!;
+
     public string Name { get; set; } = default!;
 
-    public string? ContactInfo { get; set; }
+    public string? Description { get; set; }
+
+    public string? Phone { get; set; }
+
+    public string? Email { get; set; }
 }
 
 /// <summary>Request body for updating a supplier.</summary>
 public class UpdateSupplierRequest
 {
+    public string Inn { get; set; } = default!;
+
     public string Name { get; set; } = default!;
 
-    public string? ContactInfo { get; set; }
+    public string? Description { get; set; }
+
+    public string? Phone { get; set; }
+
+    public string? Email { get; set; }
 
     public bool IsActive { get; set; }
 }

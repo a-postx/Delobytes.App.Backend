@@ -25,8 +25,11 @@ public class GetSupplierQueryHandler : IRequestHandler<GetSupplierQuery, GetSupp
         return new GetSupplierResponse
         {
             Id = supplier.Id,
+            Inn = supplier.Inn,
             Name = supplier.Name,
-            ContactInfo = supplier.ContactInfo,
+            Description = supplier.Description,
+            Phone = supplier.Phone,
+            Email = supplier.Email,
             IsActive = supplier.IsActive,
             CreatedAt = supplier.CreatedAt,
             UpdatedAt = supplier.UpdatedAt,

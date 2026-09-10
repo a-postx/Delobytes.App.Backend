@@ -22,8 +22,11 @@ public class GetSuppliersQueryHandler : IRequestHandler<GetSuppliersQuery, GetSu
             Items = suppliers.Select(s => new SupplierItem
             {
                 Id = s.Id,
+                Inn = s.Inn,
                 Name = s.Name,
-                ContactInfo = s.ContactInfo,
+                Description = s.Description,
+                Phone = s.Phone,
+                Email = s.Email,
                 IsActive = s.IsActive,
                 CreatedAt = s.CreatedAt,
             }).ToList(),
