@@ -20,17 +20,11 @@ public class PackagingComponentsController : ControllerBase
 {
     private readonly IMediator _mediator;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PackagingComponentsController"/> class.
-    /// </summary>
     public PackagingComponentsController(IMediator mediator)
     {
         _mediator = mediator;
     }
 
-    /// <summary>
-    /// Returns all packaging components for the current tenant.
-    /// </summary>
     [HttpGet]
     public async Task<ActionResult<GetPackagingComponentsResponse>> GetAll(CancellationToken cancellationToken)
     {
@@ -38,9 +32,6 @@ public class PackagingComponentsController : ControllerBase
         return Ok(response);
     }
 
-    /// <summary>
-    /// Returns a single packaging component by ID.
-    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetPackagingComponentResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -56,9 +47,6 @@ public class PackagingComponentsController : ControllerBase
         return Ok(response);
     }
 
-    /// <summary>
-    /// Creates a new packaging component. Requires Manager or Administrator role.
-    /// </summary>
     [HttpPost]
     public async Task<ActionResult<CreatePackagingComponentResponse>> Create(
         [FromBody] CreatePackagingComponentRequest request,
@@ -71,16 +59,13 @@ public class PackagingComponentsController : ControllerBase
                 Description = request.Description,
                 Unit = request.Unit,
                 PricePerUnit = request.PricePerUnit,
-                Supplier = request.Supplier,
+                SupplierId = request.SupplierId,
             },
             cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
-    /// <summary>
-    /// Updates an existing packaging component. Requires Manager or Administrator role.
-    /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(
         Guid id,
@@ -95,7 +80,7 @@ public class PackagingComponentsController : ControllerBase
                 Description = request.Description,
                 Unit = request.Unit,
                 PricePerUnit = request.PricePerUnit,
-                Supplier = request.Supplier,
+                SupplierId = request.SupplierId,
                 IsActive = request.IsActive,
             },
             cancellationToken);
@@ -108,9 +93,6 @@ public class PackagingComponentsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>
-    /// Soft-deletes a packaging component. Requires Manager or Administrator role.
-    /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
@@ -138,7 +120,7 @@ public class CreatePackagingComponentRequest
 
     public decimal PricePerUnit { get; set; }
 
-    public string? Supplier { get; set; }
+    public Guid? SupplierId { get; set; }
 }
 
 /// <summary>Request body for updating a packaging component.</summary>
@@ -152,7 +134,7 @@ public class UpdatePackagingComponentRequest
 
     public decimal PricePerUnit { get; set; }
 
-    public string? Supplier { get; set; }
+    public Guid? SupplierId { get; set; }
 
     public bool IsActive { get; set; }
 }

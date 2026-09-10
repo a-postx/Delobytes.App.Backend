@@ -1,5 +1,3 @@
-using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
-using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Identity.Domain.Enums;
 using Delobytes.App.Backend.Identity.Domain.Interfaces;
@@ -17,7 +15,7 @@ public class CreatePackagingComponentCommand : IRequest<CreatePackagingComponent
 
     public decimal PricePerUnit { get; set; }
 
-    public string? Supplier { get; set; }
+    public Guid? SupplierId { get; set; }
 
     public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
 }

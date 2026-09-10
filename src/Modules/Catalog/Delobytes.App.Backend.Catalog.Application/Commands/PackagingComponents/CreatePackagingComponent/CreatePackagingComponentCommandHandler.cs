@@ -22,7 +22,7 @@ public class CreatePackagingComponentCommandHandler : IRequestHandler<CreatePack
             Description = request.Description,
             Unit = request.Unit,
             PricePerUnit = request.PricePerUnit,
-            Supplier = request.Supplier,
+            SupplierId = request.SupplierId,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };

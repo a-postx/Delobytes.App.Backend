@@ -26,6 +26,7 @@ public class CatalogDbContext : DbContext
     public DbSet<ChannelParameterSet> ChannelParameterSets => Set<ChannelParameterSet>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ChannelProduct> ChannelProducts => Set<ChannelProduct>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PackagingComponent> PackagingComponents => Set<PackagingComponent>();
     public DbSet<ProductPackagingComponent> ProductPackagingComponents => Set<ProductPackagingComponent>();
     public DbSet<TariffGrid> TariffGrids => Set<TariffGrid>();

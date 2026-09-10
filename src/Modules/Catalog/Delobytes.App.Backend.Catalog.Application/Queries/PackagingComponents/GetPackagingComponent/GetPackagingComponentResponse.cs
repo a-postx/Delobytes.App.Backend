@@ -14,7 +14,9 @@ public class GetPackagingComponentResponse
 
     public decimal PricePerUnit { get; set; }
 
-    public string? Supplier { get; set; }
+    public Guid? SupplierId { get; set; }
+
+    public string? SupplierName { get; set; }
 
     public bool IsActive { get; set; }
 

@@ -26,8 +26,7 @@ public class PackagingComponentConfiguration : IEntityTypeConfiguration<Packagin
             .HasPrecision(18, 4)
             .IsRequired();
 
-        builder.Property(pc => pc.Supplier)
-            .HasMaxLength(200);
+        builder.Property(pc => pc.SupplierId);
 
         builder.Property(pc => pc.IsActive)
             .IsRequired();
@@ -38,6 +37,8 @@ public class PackagingComponentConfiguration : IEntityTypeConfiguration<Packagin
         builder.Property(pc => pc.UpdatedAt);
 
         builder.HasIndex(pc => pc.IsActive);
+
+        builder.HasIndex(pc => pc.SupplierId);
 
         builder.HasMany(pc => pc.ProductPackagingComponents)
             .WithOne(ppc => ppc.PackagingComponent)

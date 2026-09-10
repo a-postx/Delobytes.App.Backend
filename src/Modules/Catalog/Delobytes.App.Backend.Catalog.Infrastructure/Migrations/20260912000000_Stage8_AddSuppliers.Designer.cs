@@ -11,10 +11,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260912000000_Stage8_AddSuppliers")]
+    partial class Stage8_AddSuppliers
     {
         /// <inheritdoc />
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -754,11 +755,12 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackagingComponent", b =>
             {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", null)
-                    .WithMany()
-                    .HasForeignKey("ProductId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
+                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Supplier", "Supplier")
+                    .WithMany("PackagingComponents")
+                    .HasForeignKey("SupplierId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.Navigation("Supplier");
             });
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelInput", b =>

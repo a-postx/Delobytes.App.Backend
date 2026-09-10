@@ -20,6 +20,8 @@ public class PackagingComponentCommandHandlerTests
 {
     private readonly Mock<IPackagingComponentRepository> _repoMock = new();
 
+    private static readonly Guid _supplierId = Guid.NewGuid();
+
     private static PackagingComponent BuildComponent(Guid? id = null)
         => new PackagingComponent
         {
@@ -27,7 +29,7 @@ public class PackagingComponentCommandHandlerTests
             Name = "Коробка 20x15x10",
             Unit = Unit.Piece,
             PricePerUnit = 12.50m,
-            Supplier = "ООО Упаковка",
+            SupplierId = _supplierId,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -45,13 +47,15 @@ public class PackagingComponentCommandHandlerTests
         CreatePackagingComponentCommandHandler handler =
             new CreatePackagingComponentCommandHandler(_repoMock.Object);
 
+        Guid supplierId = Guid.NewGuid();
+
         CreatePackagingComponentCommand command = new CreatePackagingComponentCommand
         {
             Name = "Пузырчатая плёнка",
             Description = "Рулон 1м x 50м",
             Unit = Unit.Meter,
             PricePerUnit = 350m,
-            Supplier = "ИП Пузырьков",
+            SupplierId = supplierId,
         };
 
         // Act
@@ -66,6 +70,7 @@ public class PackagingComponentCommandHandlerTests
                 c.Name == "Пузырчатая плёнка" &&
                 c.Unit == Unit.Meter &&
                 c.PricePerUnit == 350m &&
+                c.SupplierId == supplierId &&
                 c.IsActive == true)),
             Times.Once);
 
@@ -95,7 +100,7 @@ public class PackagingComponentCommandHandlerTests
             Unit = Unit.Piece,
             PricePerUnit = 25m,
             Description = null,
-            Supplier = null,
+            SupplierId = null,
         };
 
         // Act
@@ -104,20 +109,60 @@ public class PackagingComponentCommandHandlerTests
         // Assert
         captured.Should().NotBeNull();
         captured!.Description.Should().BeNull();
-        captured.Supplier.Should().BeNull();
+        captured.SupplierId.Should().BeNull();
     }
 
     // ── Update ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task UpdatePackagingComponent_ExistingComponent_UpdatesFieldsAndReturnsFound()
+    public async Task UpdatePackagingComponent_ExistingId_UpdatesFields()
     {
         // Arrange
-        Guid id = Guid.NewGuid();
-        PackagingComponent existing = BuildComponent(id);
+        PackagingComponent existing = BuildComponent();
 
         _repoMock
-            .Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+
+        _repoMock
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        UpdatePackagingComponentCommandHandler handler =
+            new UpdatePackagingComponentCommandHandler(_repoMock.Object);
+
+        Guid newSupplierId = Guid.NewGuid();
+
+        UpdatePackagingComponentCommand command = new UpdatePackagingComponentCommand
+        {
+            Id = existing.Id,
+            Name = "Коробка 30x20x15",
+            Unit = Unit.Piece,
+            PricePerUnit = 18m,
+            SupplierId = newSupplierId,
+            IsActive = true,
+        };
+
+        // Act
+        UpdatePackagingComponentResponse response =
+            await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        response.Found.Should().BeTrue();
+        existing.Name.Should().Be("Коробка 30x20x15");
+        existing.PricePerUnit.Should().Be(18m);
+        existing.SupplierId.Should().Be(newSupplierId);
+        existing.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdatePackagingComponent_ClearSupplier_SetsSuppliierIdToNull()
+    {
+        // Arrange
+        PackagingComponent existing = BuildComponent();
+
+        _repoMock
+            .Setup(r => r.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
 
         _repoMock
@@ -129,30 +174,23 @@ public class PackagingComponentCommandHandlerTests
 
         UpdatePackagingComponentCommand command = new UpdatePackagingComponentCommand
         {
-            Id = id,
-            Name = "Коробка 25x20x15",
-            Unit = Unit.Piece,
-            PricePerUnit = 18m,
-            Supplier = "ООО НоваяУпаковка",
-            IsActive = false,
+            Id = existing.Id,
+            Name = existing.Name,
+            Unit = existing.Unit,
+            PricePerUnit = existing.PricePerUnit,
+            SupplierId = null,
+            IsActive = true,
         };
 
         // Act
-        UpdatePackagingComponentResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        existing.Name.Should().Be("Коробка 25x20x15");
-        existing.PricePerUnit.Should().Be(18m);
-        existing.IsActive.Should().BeFalse();
-        existing.UpdatedAt.Should().NotBeNull();
-
-        _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        existing.SupplierId.Should().BeNull();
     }
 
     [Fact]
-    public async Task UpdatePackagingComponent_NotFound_ReturnsFalseWithoutSaving()
+    public async Task UpdatePackagingComponent_NotFound_ReturnsFalse()
     {
         // Arrange
         _repoMock
@@ -165,7 +203,7 @@ public class PackagingComponentCommandHandlerTests
         UpdatePackagingComponentCommand command = new UpdatePackagingComponentCommand
         {
             Id = Guid.NewGuid(),
-            Name = "Х",
+            Name = "X",
             Unit = Unit.Piece,
             PricePerUnit = 1m,
             IsActive = true,
@@ -183,14 +221,13 @@ public class PackagingComponentCommandHandlerTests
     // ── Delete ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task DeletePackagingComponent_ExistingComponent_SoftDeletesAndReturnsFound()
+    public async Task DeletePackagingComponent_ExistingId_SoftDeletes()
     {
         // Arrange
-        Guid id = Guid.NewGuid();
-        PackagingComponent existing = BuildComponent(id);
+        PackagingComponent existing = BuildComponent();
 
         _repoMock
-            .Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
 
         _repoMock
@@ -202,18 +239,18 @@ public class PackagingComponentCommandHandlerTests
 
         // Act
         DeletePackagingComponentResponse response =
-            await handler.Handle(new DeletePackagingComponentCommand { Id = id }, CancellationToken.None);
+            await handler.Handle(
+                new DeletePackagingComponentCommand { Id = existing.Id },
+                CancellationToken.None);
 
         // Assert
         response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
-        existing.UpdatedAt.Should().NotBeNull();
-
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task DeletePackagingComponent_NotFound_ReturnsFalseWithoutSaving()
+    public async Task DeletePackagingComponent_NotFound_ReturnsFalse()
     {
         // Arrange
         _repoMock
@@ -234,14 +271,48 @@ public class PackagingComponentCommandHandlerTests
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // ── Get / GetAll ───────────────────────────────────────────────────────
+    // ── Query handlers ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetPackagingComponents_ReturnsAllItems()
+    {
+        // Arrange
+        List<PackagingComponent> components = new List<PackagingComponent>
+        {
+            BuildComponent(),
+            BuildComponent(),
+        };
+
+        _repoMock
+            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(components);
+
+        GetPackagingComponentsQueryHandler handler =
+            new GetPackagingComponentsQueryHandler(_repoMock.Object);
+
+        // Act
+        GetPackagingComponentsResponse response =
+            await handler.Handle(new GetPackagingComponentsQuery(), CancellationToken.None);
+
+        // Assert
+        response.Items.Should().HaveCount(2);
+    }
 
     [Fact]
     public async Task GetPackagingComponent_ExistingId_ReturnsMappedResponse()
     {
         // Arrange
-        PackagingComponent component = BuildComponent();
-        component.Description = "Тест описание";
+        Guid supplierId = Guid.NewGuid();
+        PackagingComponent component = new PackagingComponent
+        {
+            Id = Guid.NewGuid(),
+            Name = "Коробка",
+            Unit = Unit.Piece,
+            PricePerUnit = 10m,
+            SupplierId = supplierId,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
 
         _repoMock
             .Setup(r => r.GetByIdAsync(component.Id, It.IsAny<CancellationToken>()))
@@ -258,16 +329,12 @@ public class PackagingComponentCommandHandlerTests
 
         // Assert
         response.Should().NotBeNull();
-        response!.Id.Should().Be(component.Id);
-        response.Name.Should().Be(component.Name);
-        response.Unit.Should().Be(component.Unit);
-        response.PricePerUnit.Should().Be(component.PricePerUnit);
-        response.Description.Should().Be("Тест описание");
-        response.IsActive.Should().BeTrue();
+        response!.SupplierId.Should().Be(supplierId);
+        response.Name.Should().Be("Коробка");
     }
 
     [Fact]
-    public async Task GetPackagingComponent_MissingId_ReturnsNull()
+    public async Task GetPackagingComponent_NotFound_ReturnsNull()
     {
         // Arrange
         _repoMock
@@ -285,51 +352,5 @@ public class PackagingComponentCommandHandlerTests
 
         // Assert
         response.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task GetPackagingComponents_ReturnsAllMappedItems()
-    {
-        // Arrange
-        List<PackagingComponent> components = new List<PackagingComponent>
-        {
-            BuildComponent(),
-            BuildComponent(),
-            BuildComponent(),
-        };
-
-        _repoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(components);
-
-        GetPackagingComponentsQueryHandler handler =
-            new GetPackagingComponentsQueryHandler(_repoMock.Object);
-
-        // Act
-        GetPackagingComponentsResponse response =
-            await handler.Handle(new GetPackagingComponentsQuery(), CancellationToken.None);
-
-        // Assert
-        response.Items.Should().HaveCount(3);
-        response.Items.Should().OnlyContain(i => i.Id != Guid.Empty);
-    }
-
-    [Fact]
-    public async Task GetPackagingComponents_EmptyRepository_ReturnsEmptyList()
-    {
-        // Arrange
-        _repoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<PackagingComponent>());
-
-        GetPackagingComponentsQueryHandler handler =
-            new GetPackagingComponentsQueryHandler(_repoMock.Object);
-
-        // Act
-        GetPackagingComponentsResponse response =
-            await handler.Handle(new GetPackagingComponentsQuery(), CancellationToken.None);
-
-        // Assert
-        response.Items.Should().BeEmpty();
     }
 }

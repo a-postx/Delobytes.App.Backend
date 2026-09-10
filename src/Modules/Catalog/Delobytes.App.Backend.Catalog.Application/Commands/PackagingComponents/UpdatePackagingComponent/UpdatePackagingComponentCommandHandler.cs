@@ -26,7 +26,7 @@ public class UpdatePackagingComponentCommandHandler : IRequestHandler<UpdatePack
         component.Description = request.Description;
         component.Unit = request.Unit;
         component.PricePerUnit = request.PricePerUnit;
-        component.Supplier = request.Supplier;
+        component.SupplierId = request.SupplierId;
         component.IsActive = request.IsActive;
         component.UpdatedAt = DateTimeOffset.UtcNow;
 

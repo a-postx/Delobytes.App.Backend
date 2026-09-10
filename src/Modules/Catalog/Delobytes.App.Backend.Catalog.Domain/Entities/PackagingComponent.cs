@@ -21,7 +21,9 @@ public class PackagingComponent : ITenantScoped
     /// <summary>Purchase price per unit in currency.</summary>
     public decimal PricePerUnit { get; set; }
 
-    public string? Supplier { get; set; }
+    public Guid? SupplierId { get; set; }
+
+    public Supplier? Supplier { get; set; }
 
     public bool IsActive { get; set; }
 
