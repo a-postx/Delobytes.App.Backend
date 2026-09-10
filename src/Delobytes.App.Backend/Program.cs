@@ -122,8 +122,9 @@ public partial class Program
             builder.Services.AddMediatR(cfg =>
             {
                 cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Delobytes.App.Backend.Identity.Application.Commands.Login.LoginCommand).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Identity.Application.Commands.Login.LoginCommand).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Catalog.Application.Commands.PackagingComponents.CreatePackagingComponent.CreatePackagingComponentCommand).Assembly);
 
                 // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
@@ -131,7 +132,7 @@ public partial class Program
             });
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
-            builder.Services.AddValidatorsFromAssembly(typeof(Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
+            builder.Services.AddValidatorsFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
             builder.Services.AddHttpContextAccessor();
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
