@@ -1,6 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
-using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
