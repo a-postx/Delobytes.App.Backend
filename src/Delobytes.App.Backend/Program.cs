@@ -182,7 +182,7 @@ public partial class Program
             // ── Health checks ───────────────────────────────────────────────────────
             builder.Services.AddCustomHealthChecks(secrets);
 
-            // ── MassTransit + RabbitMQ (CloudAMQP) ─────────────────────────────────
+            // ── MassTransit + RabbitMQ (CloudAMQP) ─────────────────────────────────-
             // Connects to CloudAMQP when CloudAmqpConnectionString is set;
             // falls back to in-memory transport in Development without credentials.
             builder.Services.AddMessaging(secrets?.MessageBusConnectionString);
