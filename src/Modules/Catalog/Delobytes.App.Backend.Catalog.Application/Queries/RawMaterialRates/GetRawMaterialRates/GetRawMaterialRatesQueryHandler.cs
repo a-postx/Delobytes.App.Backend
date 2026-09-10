@@ -25,6 +25,7 @@ public class GetRawMaterialRatesQueryHandler : IRequestHandler<GetRawMaterialRat
                 ProductId = r.ProductId,
                 CostPerUnit = r.CostPerUnit,
                 ValidFrom = r.ValidFrom,
+                IsActive = r.IsActive,
                 CreatedAt = r.CreatedAt,
             }).ToList(),
         };

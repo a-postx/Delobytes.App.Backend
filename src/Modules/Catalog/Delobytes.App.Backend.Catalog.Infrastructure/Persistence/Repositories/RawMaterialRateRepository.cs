@@ -18,10 +18,19 @@ public class RawMaterialRateRepository : IRawMaterialRateRepository
         return _context.RawMaterialRates.FirstOrDefaultAsync(r => r.Id == id, ct);
     }
 
+    public async Task<IReadOnlyList<RawMaterialRate>> GetAllAsync(CancellationToken ct)
+    {
+        return await _context.RawMaterialRates
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.ProductId)
+            .ThenByDescending(r => r.ValidFrom)
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<RawMaterialRate>> GetByProductIdAsync(Guid productId, CancellationToken ct)
     {
         return await _context.RawMaterialRates
-            .Where(r => r.ProductId == productId)
+            .Where(r => r.ProductId == productId && r.IsActive)
             .OrderByDescending(r => r.ValidFrom)
             .ToListAsync(ct);
     }

@@ -20,7 +20,12 @@ public class RawMaterialRate : ITenantScoped
     /// <summary>Date from which this rate version becomes effective.</summary>
     public DateOnly ValidFrom { get; set; }
 
+    /// <summary>False when the record is soft-deleted; historical snapshots remain intact.</summary>
+    public bool IsActive { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? UpdatedAt { get; set; }
 
     public Product Product { get; set; } = default!;
 }

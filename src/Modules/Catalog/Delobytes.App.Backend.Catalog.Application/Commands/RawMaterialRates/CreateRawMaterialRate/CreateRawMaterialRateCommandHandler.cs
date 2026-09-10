@@ -22,6 +22,7 @@ public class CreateRawMaterialRateCommandHandler : IRequestHandler<CreateRawMate
             ProductId = request.ProductId,
             CostPerUnit = request.CostPerUnit,
             ValidFrom = request.ValidFrom,
+            IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 

@@ -15,5 +15,7 @@ public class RawMaterialRateItem
 
     public DateOnly ValidFrom { get; set; }
 
+    public bool IsActive { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
