@@ -11,10 +11,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260914000000_Stage9_ConvertUnitToString")]
+    partial class Stage9_ConvertUnitToString
     {
         /// <inheritdoc />
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -270,19 +271,15 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     .IsRequired()
                     .HasColumnType("uuid");
 
-                b.Property<decimal>("TotalCost")
-                    .HasPrecision(18, 4)
-                    .HasColumnType("numeric(18,4)");
-
-                b.Property<decimal>("WorkCost")
+                b.Property<decimal>("TaxAmount")
                     .HasPrecision(18, 4)
                     .HasColumnType("numeric(18,4)");
 
                 b.HasKey("Id");
 
-                b.HasIndex("ProductChannelInputId");
-
                 b.HasIndex("TenantId");
+
+                b.HasIndex("ProductChannelInputId");
 
                 b.ToTable("MarginCalculationSnapshots", "catalog");
             });
@@ -338,72 +335,30 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                 b.ToTable("PackagingComponents", "catalog");
             });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Supplier", b =>
-            {
-                b.Property<Guid>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("uuid");
-
-                b.Property<string>("Inn")
-                    .IsRequired()
-                    .HasMaxLength(12)
-                    .HasColumnType("character varying(12)");
-
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(200)
-                    .HasColumnType("character varying(200)");
-
-                b.Property<string>("Description")
-                    .HasMaxLength(1000)
-                    .HasColumnType("character varying(1000)");
-
-                b.Property<string>("Phone")
-                    .HasMaxLength(50)
-                    .HasColumnType("character varying(50)");
-
-                b.Property<string>("Email")
-                    .HasMaxLength(200)
-                    .HasColumnType("character varying(200)");
-
-                b.Property<bool>("IsActive")
-                    .HasColumnType("boolean");
-
-                b.Property<DateTimeOffset>("CreatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<Guid?>("TenantId")
-                    .IsRequired()
-                    .HasColumnType("uuid");
-
-                b.Property<DateTimeOffset?>("UpdatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.HasKey("Id");
-
-                b.HasIndex("IsActive");
-
-                b.HasIndex("TenantId");
-
-                b.ToTable("Suppliers", "catalog");
-            });
-
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Product", b =>
             {
                 b.Property<Guid>("Id")
                     .ValueGeneratedOnAdd()
                     .HasColumnType("uuid");
 
+                b.Property<decimal?>("CostPerUnit")
+                    .HasPrecision(18, 4)
+                    .HasColumnType("numeric(18,4)");
+
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(2000)
+                    .HasColumnType("character varying(2000)");
 
                 b.Property<bool>("IsActive")
                     .HasColumnType("boolean");
 
                 b.Property<string>("Name")
                     .IsRequired()
-                    .HasMaxLength(200)
-                    .HasColumnType("character varying(200)");
+                    .HasMaxLength(300)
+                    .HasColumnType("character varying(300)");
 
                 b.Property<string>("Sku")
                     .IsRequired()
@@ -423,7 +378,7 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                 b.HasIndex("TenantId");
 
-                b.HasIndex("Sku")
+                b.HasIndex("Sku", "TenantId")
                     .IsUnique();
 
                 b.ToTable("Products", "catalog");
@@ -435,36 +390,29 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     .ValueGeneratedOnAdd()
                     .HasColumnType("uuid");
 
-                b.Property<decimal>("AdditionalExpenses")
-                    .HasPrecision(18, 4)
-                    .HasColumnType("numeric(18,4)");
-
-                b.Property<decimal>("BuyerPrice")
-                    .HasPrecision(18, 4)
-                    .HasColumnType("numeric(18,4)");
-
                 b.Property<Guid>("ChannelId")
                     .HasColumnType("uuid");
 
-                b.Property<Guid?>("ChannelParameterSetId")
+                b.Property<Guid>("ChannelParameterSetId")
                     .HasColumnType("uuid");
 
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
 
-                b.Property<decimal>("PackagingCost")
+                b.Property<decimal>("LogisticsToMarketplaceCost")
                     .HasPrecision(18, 4)
                     .HasColumnType("numeric(18,4)");
 
                 b.Property<Guid>("ProductId")
                     .HasColumnType("uuid");
 
-                b.Property<decimal>("StorageCostPerMonth")
+                b.Property<decimal>("RawMaterialCost")
                     .HasPrecision(18, 4)
                     .HasColumnType("numeric(18,4)");
 
-                b.Property<Guid?>("TariffGridId")
-                    .HasColumnType("uuid");
+                b.Property<decimal>("RetailPrice")
+                    .HasPrecision(18, 4)
+                    .HasColumnType("numeric(18,4)");
 
                 b.Property<Guid?>("TenantId")
                     .IsRequired()
@@ -479,12 +427,9 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                 b.HasIndex("ChannelParameterSetId");
 
-                b.HasIndex("TariffGridId");
+                b.HasIndex("ProductId");
 
                 b.HasIndex("TenantId");
-
-                b.HasIndex("ProductId", "ChannelId")
-                    .IsUnique();
 
                 b.ToTable("ProductChannelInputs", "catalog");
             });
@@ -501,20 +446,25 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
 
-                b.Property<decimal>("Quantity")
-                    .HasPrecision(10, 3)
-                    .HasColumnType("numeric(10,3)");
-
                 b.Property<Guid>("ProductId")
                     .HasColumnType("uuid");
+
+                b.Property<decimal>("Quantity")
+                    .HasPrecision(18, 6)
+                    .HasColumnType("numeric(18,6)");
 
                 b.Property<Guid?>("TenantId")
                     .IsRequired()
                     .HasColumnType("uuid");
 
+                b.Property<DateTimeOffset?>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
                 b.HasKey("Id");
 
                 b.HasIndex("ComponentId");
+
+                b.HasIndex("ProductId");
 
                 b.HasIndex("TenantId");
 
@@ -524,393 +474,92 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                 b.ToTable("ProductComponents", "catalog");
             });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductPackagingComponent", b =>
-            {
-                b.Property<Guid>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("uuid");
-
-                b.Property<DateTimeOffset>("CreatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<Guid>("PackagingComponentId")
-                    .HasColumnType("uuid");
-
-                b.Property<Guid>("ProductId")
-                    .HasColumnType("uuid");
-
-                b.Property<decimal>("Quantity")
-                    .HasPrecision(10, 3)
-                    .HasColumnType("numeric(10,3)");
-
-                b.Property<Guid?>("TenantId")
-                    .IsRequired()
-                    .HasColumnType("uuid");
-
-                b.HasKey("Id");
-
-                b.HasIndex("PackagingComponentId");
-
-                b.HasIndex("TenantId");
-
-                b.HasIndex("ProductId", "PackagingComponentId")
-                    .IsUnique();
-
-                b.ToTable("ProductPackagingComponents", "catalog");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.RawMaterialRate", b =>
-            {
-                b.Property<Guid>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("uuid");
-
-                b.Property<decimal>("CostPerUnit")
-                    .HasPrecision(18, 4)
-                    .HasColumnType("numeric(18,4)");
-
-                b.Property<DateTimeOffset>("CreatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<bool>("IsActive")
-                    .HasColumnType("boolean");
-
-                b.Property<Guid>("ProductId")
-                    .HasColumnType("uuid");
-
-                b.Property<Guid?>("TenantId")
-                    .IsRequired()
-                    .HasColumnType("uuid");
-
-                b.Property<DateTimeOffset?>("UpdatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<DateOnly>("ValidFrom")
-                    .HasColumnType("date");
-
-                b.HasKey("Id");
-
-                b.HasIndex("IsActive");
-
-                b.HasIndex("TenantId");
-
-                b.HasIndex("ProductId", "ValidFrom");
-
-                b.ToTable("RawMaterialRates", "catalog");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.TariffGrid", b =>
-            {
-                b.Property<Guid>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("uuid");
-
-                b.Property<Guid?>("ChannelId")
-                    .HasColumnType("uuid");
-
-                b.Property<DateTimeOffset>("CreatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<bool>("IsActive")
-                    .HasColumnType("boolean");
-
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(200)
-                    .HasColumnType("character varying(200)");
-
-                b.Property<int>("TariffType")
-                    .HasColumnType("integer");
-
-                b.Property<Guid?>("TenantId")
-                    .IsRequired()
-                    .HasColumnType("uuid");
-
-                b.Property<DateOnly>("ValidFrom")
-                    .HasColumnType("date");
-
-                b.HasKey("Id");
-
-                b.HasIndex("IsActive");
-
-                b.HasIndex("TariffType");
-
-                b.HasIndex("TenantId");
-
-                b.HasIndex("ValidFrom");
-
-                b.ToTable("TariffGrids", "catalog");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.TariffGridEntry", b =>
-            {
-                b.Property<Guid>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("uuid");
-
-                b.Property<DateTimeOffset>("CreatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<decimal>("Rate")
-                    .HasPrecision(18, 4)
-                    .HasColumnType("numeric(18,4)");
-
-                b.Property<string>("RegionOrCity")
-                    .IsRequired()
-                    .HasMaxLength(200)
-                    .HasColumnType("character varying(200)");
-
-                b.Property<Guid?>("TenantId")
-                    .IsRequired()
-                    .HasColumnType("uuid");
-
-                b.Property<Guid>("TariffGridId")
-                    .HasColumnType("uuid");
-
-                b.Property<decimal?>("VolumeThresholdLiters")
-                    .HasPrecision(10, 3)
-                    .HasColumnType("numeric(10,3)");
-
-                b.HasKey("Id");
-
-                b.HasIndex("TenantId");
-
-                b.HasIndex("TariffGridId", "RegionOrCity", "VolumeThresholdLiters")
-                    .IsUnique();
-
-                b.ToTable("TariffGridEntries", "catalog");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.WorkRate", b =>
-            {
-                b.Property<Guid>("Id")
-                    .ValueGeneratedOnAdd()
-                    .HasColumnType("uuid");
-
-                b.Property<int>("AssemblyRatePerDay")
-                    .HasColumnType("integer");
-
-                b.Property<DateTimeOffset>("CreatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<decimal>("DailyWage")
-                    .HasPrecision(18, 4)
-                    .HasColumnType("numeric(18,4)");
-
-                b.Property<bool>("IsActive")
-                    .HasColumnType("boolean");
-
-                b.Property<string>("Name")
-                    .IsRequired()
-                    .HasMaxLength(200)
-                    .HasColumnType("character varying(200)");
-
-                b.Property<Guid?>("TenantId")
-                    .IsRequired()
-                    .HasColumnType("uuid");
-
-                b.Property<DateTimeOffset?>("UpdatedAt")
-                    .HasColumnType("timestamp with time zone");
-
-                b.Property<DateOnly>("ValidFrom")
-                    .HasColumnType("date");
-
-                b.HasKey("Id");
-
-                b.HasIndex("IsActive");
-
-                b.HasIndex("TenantId");
-
-                b.HasIndex("ValidFrom");
-
-                b.ToTable("WorkRates", "catalog");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelParameterSet", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", "Channel")
-                    .WithMany("ChannelParameterSets")
-                    .HasForeignKey("ChannelId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("Channel");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProduct", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", "Channel")
-                    .WithMany("ChannelProducts")
-                    .HasForeignKey("ChannelId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
-                    .WithMany("ChannelProducts")
-                    .HasForeignKey("ProductId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("Channel");
-
-                b.Navigation("Product");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.MarginCalculationSnapshot", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelInput", "ProductChannelInput")
-                    .WithMany("MarginCalculationSnapshots")
-                    .HasForeignKey("ProductChannelInputId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("ProductChannelInput");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackagingComponent", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Supplier", "Supplier")
-                    .WithMany("PackagingComponents")
-                    .HasForeignKey("SupplierId")
-                    .OnDelete(DeleteBehavior.SetNull);
-
-                b.Navigation("Supplier");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelInput", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", "Channel")
-                    .WithMany()
-                    .HasForeignKey("ChannelId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelParameterSet", "ChannelParameterSet")
-                    .WithMany()
-                    .HasForeignKey("ChannelParameterSetId");
-
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
-                    .WithMany("ProductChannelInputs")
-                    .HasForeignKey("ProductId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.TariffGrid", "TariffGrid")
-                    .WithMany()
-                    .HasForeignKey("TariffGridId");
-
-                b.Navigation("Channel");
-
-                b.Navigation("ChannelParameterSet");
-
-                b.Navigation("Product");
-
-                b.Navigation("TariffGrid");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductComponent", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Component", "Component")
-                    .WithMany("ProductComponents")
-                    .HasForeignKey("ComponentId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
-                    .WithMany("ProductComponents")
-                    .HasForeignKey("ProductId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("Component");
-
-                b.Navigation("Product");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductPackagingComponent", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.PackagingComponent", "PackagingComponent")
-                    .WithMany("ProductPackagingComponents")
-                    .HasForeignKey("PackagingComponentId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
-                    .WithMany("ProductPackagingComponents")
-                    .HasForeignKey("ProductId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("PackagingComponent");
-
-                b.Navigation("Product");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.RawMaterialRate", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
-                    .WithMany("RawMaterialRates")
-                    .HasForeignKey("ProductId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("Product");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.TariffGridEntry", b =>
-            {
-                b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.TariffGrid", "TariffGrid")
-                    .WithMany("Entries")
-                    .HasForeignKey("TariffGridId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
-
-                b.Navigation("TariffGrid");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", b =>
-            {
-                b.Navigation("ChannelParameterSets");
-
-                b.Navigation("ChannelProducts");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Component", b =>
-            {
-                b.Navigation("ProductComponents");
-            });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackagingComponent", b =>
-            {
-                b.Navigation("ProductPackagingComponents");
-            });
-
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Supplier", b =>
             {
-                b.Navigation("PackagingComponents");
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<string>("Email")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<string>("Inn")
+                    .IsRequired()
+                    .HasMaxLength(12)
+                    .HasColumnType("character varying(12)");
+
+                b.Property<bool>("IsActive")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<string>("Phone")
+                    .HasMaxLength(50)
+                    .HasColumnType("character varying(50)");
+
+                b.Property<Guid?>("TenantId")
+                    .IsRequired()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("IsActive");
+
+                b.HasIndex("TenantId");
+
+                b.HasIndex("Inn", "TenantId")
+                    .IsUnique();
+
+                b.ToTable("Suppliers", "catalog");
             });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Product", b =>
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.SystemChannelTemplate", b =>
             {
-                b.Navigation("ChannelProducts");
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
 
-                b.Navigation("ProductChannelInputs");
+                b.Property<string>("ApiBaseUrl")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
 
-                b.Navigation("ProductComponents");
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                b.Navigation("ProductPackagingComponents");
+                b.Property<string>("Description")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
 
-                b.Navigation("RawMaterialRates");
-            });
+                b.Property<bool>("IsActive")
+                    .HasColumnType("boolean");
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelInput", b =>
-            {
-                b.Navigation("MarginCalculationSnapshots");
-            });
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.TariffGrid", b =>
-            {
-                b.Navigation("Entries");
+                b.Property<DateTimeOffset?>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("IsActive");
+
+                b.ToTable("SystemChannelTemplates", "catalog");
             });
 #pragma warning restore 612, 618
         }

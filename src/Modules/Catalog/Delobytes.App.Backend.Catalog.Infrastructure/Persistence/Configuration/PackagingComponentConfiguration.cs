@@ -20,7 +20,9 @@ public class PackagingComponentConfiguration : IEntityTypeConfiguration<Packagin
             .HasMaxLength(1000);
 
         builder.Property(pc => pc.Unit)
-            .IsRequired();
+            .IsRequired()
+            .HasMaxLength(50)
+            .HasConversion<string>();
 
         builder.Property(pc => pc.PricePerUnit)
             .HasPrecision(18, 4)
