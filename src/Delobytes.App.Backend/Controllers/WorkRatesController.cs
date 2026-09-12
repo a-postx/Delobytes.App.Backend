@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.DeleteWorkRate;
+using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.UpdateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRates;
 using MediatR;

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.DeleteWorkRate;
+using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.UpdateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRates;
