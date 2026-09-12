@@ -63,6 +63,28 @@ public class WorkRatesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult> Update(
+        Guid id,
+        [FromBody] UpdateWorkRateApiRequest request,
+        CancellationToken cancellationToken)
+    {
+        UpdateWorkRateResponse response = await _mediator.Send(
+            new UpdateWorkRateCommand
+            {
+                Id = id,
+                IsActive = request.IsActive,
+            },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return NoContent();
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
