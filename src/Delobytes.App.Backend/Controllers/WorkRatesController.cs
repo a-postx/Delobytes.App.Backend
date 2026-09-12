@@ -112,11 +112,5 @@ public class CreateWorkRateApiRequest
 
 public class UpdateWorkRateApiRequest
 {
-    public string Name { get; set; } = default!;
-
-    public decimal DailyWage { get; set; }
-
-    public DateOnly ValidFrom { get; set; }
-
     public bool IsActive { get; set; }
 }
