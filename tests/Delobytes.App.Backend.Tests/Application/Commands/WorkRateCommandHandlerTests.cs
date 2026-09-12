@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.DeleteWorkRate;
-using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.UpdateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRates;
@@ -68,79 +67,7 @@ public class WorkRateCommandHandlerTests
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // ── Update ─────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task UpdateWorkRate_ExistingRate_UpdatesAllFieldsAndReturnsFound()
-    {
-        // Arrange
-        Guid id = Guid.NewGuid();
-        WorkRate existing = BuildWorkRate(id);
-
-        _repoMock
-            .Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existing);
-
-        _repoMock
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
-
-        UpdateWorkRateCommandHandler handler =
-            new UpdateWorkRateCommandHandler(_repoMock.Object);
-
-        UpdateWorkRateCommand command = new UpdateWorkRateCommand
-        {
-            Id = id,
-            Name = "Ставка обновлённая",
-            DailyWage = 4000m,
-            ValidFrom = new DateOnly(2026, 7, 1),
-            IsActive = false,
-        };
-
-        // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
-
-        // Assert
-        response.Found.Should().BeTrue();
-        existing.Name.Should().Be("Ставка обновлённая");
-        existing.DailyWage.Should().Be(4000m);
-        existing.ValidFrom.Should().Be(new DateOnly(2026, 7, 1));
-        existing.IsActive.Should().BeFalse();
-        existing.UpdatedAt.Should().NotBeNull();
-
-        _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task UpdateWorkRate_NotFound_ReturnsFalseWithoutSaving()
-    {
-        // Arrange
-        _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((WorkRate?)null);
-
-        UpdateWorkRateCommandHandler handler =
-            new UpdateWorkRateCommandHandler(_repoMock.Object);
-
-        // Act
-        UpdateWorkRateResponse response = await handler.Handle(
-            new UpdateWorkRateCommand
-            {
-                Id = Guid.NewGuid(),
-                Name = "Х",
-                DailyWage = 1m,
-                ValidFrom = new DateOnly(2026, 1, 1),
-                IsActive = true,
-            },
-            CancellationToken.None);
-
-        // Assert
-        response.Found.Should().BeFalse();
-        _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    // ── Delete ─────────────────────────────────────────────────────────────
+    // ── Delete ───────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task DeleteWorkRate_ExistingRate_SoftDeletesAndReturnsFound()

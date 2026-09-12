@@ -1,6 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.DeleteWorkRate;
-using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.UpdateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRates;
 using MediatR;
@@ -61,31 +60,6 @@ public class WorkRatesController : ControllerBase
             cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
-    }
-
-    [HttpPut("{id:guid}")]
-    public async Task<ActionResult> Update(
-        Guid id,
-        [FromBody] UpdateWorkRateApiRequest request,
-        CancellationToken cancellationToken)
-    {
-        UpdateWorkRateResponse response = await _mediator.Send(
-            new UpdateWorkRateCommand
-            {
-                Id = id,
-                Name = request.Name,
-                DailyWage = request.DailyWage,
-                ValidFrom = request.ValidFrom,
-                IsActive = request.IsActive,
-            },
-            cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
-        return NoContent();
     }
 
     [HttpDelete("{id:guid}")]
