@@ -37,7 +37,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITariffGridRepository, TariffGridRepository>();
         services.AddScoped<IWorkRateRepository, WorkRateRepository>();
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
-        services.AddScoped<IRawMaterialRateRepository, RawMaterialRateRepository>();
 
         return services;
     }

@@ -37,7 +37,5 @@ public class Product : ITenantScoped
 
     public ICollection<ProductChannelInput> ProductChannelInputs { get; set; } = new List<ProductChannelInput>();
 
-    public ICollection<RawMaterialRate> RawMaterialRates { get; set; } = new List<RawMaterialRate>();
-
     public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
 }
