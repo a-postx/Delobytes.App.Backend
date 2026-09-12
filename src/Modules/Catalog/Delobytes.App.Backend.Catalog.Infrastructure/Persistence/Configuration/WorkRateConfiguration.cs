@@ -20,9 +20,6 @@ public class WorkRateConfiguration : IEntityTypeConfiguration<WorkRate>
             .HasPrecision(18, 4)
             .IsRequired();
 
-        builder.Property(wr => wr.AssemblyRatePerDay)
-            .IsRequired();
-
         builder.Property(wr => wr.ValidFrom)
             .IsRequired();
 

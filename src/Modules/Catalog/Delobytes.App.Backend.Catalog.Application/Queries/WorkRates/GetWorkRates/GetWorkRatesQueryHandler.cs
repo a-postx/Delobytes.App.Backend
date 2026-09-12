@@ -24,7 +24,6 @@ public class GetWorkRatesQueryHandler : IRequestHandler<GetWorkRatesQuery, GetWo
                 Id = wr.Id,
                 Name = wr.Name,
                 DailyWage = wr.DailyWage,
-                AssemblyRatePerDay = wr.AssemblyRatePerDay,
                 ValidFrom = wr.ValidFrom,
                 IsActive = wr.IsActive,
                 CreatedAt = wr.CreatedAt,

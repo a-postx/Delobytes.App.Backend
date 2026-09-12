@@ -15,9 +15,6 @@ public class WorkRate : ITenantScoped
     /// <summary>Average gross daily wage for one assembly worker, in currency units.</summary>
     public decimal DailyWage { get; set; }
 
-    /// <summary>Number of finished units one worker assembles per day.</summary>
-    public int AssemblyRatePerDay { get; set; }
-
     /// <summary>Date from which this rate becomes effective.</summary>
     public DateOnly ValidFrom { get; set; }
 

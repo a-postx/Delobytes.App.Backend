@@ -20,7 +20,6 @@ public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateComman
             Id = Guid.NewGuid(),
             Name = request.Name,
             DailyWage = request.DailyWage,
-            AssemblyRatePerDay = request.AssemblyRatePerDay,
             ValidFrom = request.ValidFrom,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,

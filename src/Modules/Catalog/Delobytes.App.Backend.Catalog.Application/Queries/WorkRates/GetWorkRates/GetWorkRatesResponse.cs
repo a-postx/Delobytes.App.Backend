@@ -13,8 +13,6 @@ public class WorkRateItem
 
     public decimal DailyWage { get; set; }
 
-    public int AssemblyRatePerDay { get; set; }
-
     public DateOnly ValidFrom { get; set; }
 
     public bool IsActive { get; set; }

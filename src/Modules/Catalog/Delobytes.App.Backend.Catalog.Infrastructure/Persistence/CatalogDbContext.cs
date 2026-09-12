@@ -32,6 +32,7 @@ public class CatalogDbContext : DbContext
     public DbSet<TariffGrid> TariffGrids => Set<TariffGrid>();
     public DbSet<TariffGridEntry> TariffGridEntries => Set<TariffGridEntry>();
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();
+    public DbSet<ProductWorkRate> ProductWorkRates => Set<ProductWorkRate>();
     public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
     public DbSet<RawMaterialRate> RawMaterialRates => Set<RawMaterialRate>();

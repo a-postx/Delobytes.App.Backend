@@ -10,8 +10,6 @@ public class CreateWorkRateCommand : IRequest<CreateWorkRateResponse>, IRequireR
 
     public decimal DailyWage { get; set; }
 
-    public int AssemblyRatePerDay { get; set; }
-
     public DateOnly ValidFrom { get; set; }
 
     public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };

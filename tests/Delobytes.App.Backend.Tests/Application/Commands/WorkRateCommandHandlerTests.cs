@@ -25,7 +25,6 @@ public class WorkRateCommandHandlerTests
             Id = id ?? Guid.NewGuid(),
             Name = "Базовая ставка",
             DailyWage = 3000m,
-            AssemblyRatePerDay = 120,
             ValidFrom = new DateOnly(2026, 1, 1),
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -48,7 +47,6 @@ public class WorkRateCommandHandlerTests
         {
             Name = "Ставка Q2 2026",
             DailyWage = 3500m,
-            AssemblyRatePerDay = 130,
             ValidFrom = new DateOnly(2026, 4, 1),
         };
 
@@ -63,7 +61,6 @@ public class WorkRateCommandHandlerTests
             r => r.Add(It.Is<WorkRate>(wr =>
                 wr.Name == "Ставка Q2 2026" &&
                 wr.DailyWage == 3500m &&
-                wr.AssemblyRatePerDay == 130 &&
                 wr.ValidFrom == new DateOnly(2026, 4, 1) &&
                 wr.IsActive == true)),
             Times.Once);
@@ -96,7 +93,6 @@ public class WorkRateCommandHandlerTests
             Id = id,
             Name = "Ставка обновлённая",
             DailyWage = 4000m,
-            AssemblyRatePerDay = 150,
             ValidFrom = new DateOnly(2026, 7, 1),
             IsActive = false,
         };
@@ -109,7 +105,6 @@ public class WorkRateCommandHandlerTests
         response.Found.Should().BeTrue();
         existing.Name.Should().Be("Ставка обновлённая");
         existing.DailyWage.Should().Be(4000m);
-        existing.AssemblyRatePerDay.Should().Be(150);
         existing.ValidFrom.Should().Be(new DateOnly(2026, 7, 1));
         existing.IsActive.Should().BeFalse();
         existing.UpdatedAt.Should().NotBeNull();
@@ -135,7 +130,6 @@ public class WorkRateCommandHandlerTests
                 Id = Guid.NewGuid(),
                 Name = "Х",
                 DailyWage = 1m,
-                AssemblyRatePerDay = 1,
                 ValidFrom = new DateOnly(2026, 1, 1),
                 IsActive = true,
             },
@@ -222,7 +216,6 @@ public class WorkRateCommandHandlerTests
         response!.Id.Should().Be(rate.Id);
         response.Name.Should().Be(rate.Name);
         response.DailyWage.Should().Be(rate.DailyWage);
-        response.AssemblyRatePerDay.Should().Be(rate.AssemblyRatePerDay);
         response.ValidFrom.Should().Be(rate.ValidFrom);
         response.IsActive.Should().BeTrue();
     }
@@ -269,6 +262,6 @@ public class WorkRateCommandHandlerTests
 
         // Assert
         response.Items.Should().HaveCount(2);
-        response.Items.Should().OnlyContain(i => i.DailyWage == 3000m && i.AssemblyRatePerDay == 120);
+        response.Items.Should().OnlyContain(i => i.DailyWage == 3000m);
     }
 }

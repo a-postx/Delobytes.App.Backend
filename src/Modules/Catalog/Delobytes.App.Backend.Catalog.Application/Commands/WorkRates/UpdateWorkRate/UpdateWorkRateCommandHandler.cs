@@ -24,7 +24,6 @@ public class UpdateWorkRateCommandHandler : IRequestHandler<UpdateWorkRateComman
 
         workRate.Name = request.Name;
         workRate.DailyWage = request.DailyWage;
-        workRate.AssemblyRatePerDay = request.AssemblyRatePerDay;
         workRate.ValidFrom = request.ValidFrom;
         workRate.IsActive = request.IsActive;
         workRate.UpdatedAt = DateTimeOffset.UtcNow;

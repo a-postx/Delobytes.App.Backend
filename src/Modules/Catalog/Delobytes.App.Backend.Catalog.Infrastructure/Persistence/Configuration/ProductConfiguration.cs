@@ -4,9 +4,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Configurations;
 
-/// <summary>
-/// EF Core entity type configuration for Product.
-/// </summary>
 public class ProductConfiguration : IEntityTypeConfiguration<Product>
 {
     /// <inheritdoc/>
@@ -70,6 +67,11 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasMany(p => p.ProductChannelInputs)
             .WithOne(pci => pci.Product)
             .HasForeignKey(pci => pci.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(p => p.ProductWorkRates)
+            .WithOne(pwr => pwr.Product)
+            .HasForeignKey(pwr => pwr.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
