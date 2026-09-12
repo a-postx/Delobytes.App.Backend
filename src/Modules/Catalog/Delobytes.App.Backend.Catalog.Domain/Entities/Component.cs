@@ -26,7 +26,7 @@ public class Component : ITenantScoped
     /// <summary>
     /// Gets or sets the purchase price per unit.
     /// </summary>
-    public decimal PurchasePrice { get; set; }
+    public decimal PricePerUnit { get; set; }
 
     /// <summary>
     /// Gets or sets the supplier name.
