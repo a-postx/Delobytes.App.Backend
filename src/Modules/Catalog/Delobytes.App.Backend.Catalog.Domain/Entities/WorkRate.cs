@@ -3,7 +3,7 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
 /// <summary>
-/// Represents a work rate entry used to calculate assembly/packaging labour cost.
+/// Represents a work rate entry used to calculate assembly labour cost.
 /// Each entry is versioned via ValidFrom; the record active at a given date is used for cost calculation.
 /// </summary>
 public class WorkRate : ITenantScoped

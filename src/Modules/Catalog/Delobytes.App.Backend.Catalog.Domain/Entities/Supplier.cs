@@ -3,7 +3,7 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
 /// <summary>
-/// Represents a supplier of packaging components.
+/// Represents a supplier of components.
 /// </summary>
 public class Supplier : ITenantScoped
 {
@@ -26,5 +26,5 @@ public class Supplier : ITenantScoped
 
     public DateTimeOffset? UpdatedAt { get; set; }
 
-    public ICollection<PackagingComponentPrice> PackagingComponentPrices { get; set; } = new List<PackagingComponentPrice>();
+    public ICollection<ComponentPrice> ComponentPrices { get; set; } = new List<ComponentPrice>();
 }

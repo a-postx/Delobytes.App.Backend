@@ -39,7 +39,7 @@ public class SupplierConfiguration : IEntityTypeConfiguration<Supplier>
 
         builder.HasIndex(s => s.IsActive);
 
-        builder.HasMany(s => s.PackagingComponentPrices)
+        builder.HasMany(s => s.ComponentPrices)
             .WithOne(p => p.Supplier)
             .HasForeignKey(p => p.SupplierId)
             .OnDelete(DeleteBehavior.Restrict);

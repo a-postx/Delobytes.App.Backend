@@ -124,7 +124,7 @@ public partial class Program
                 cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
                 cfg.RegisterServicesFromAssembly(typeof(Identity.Application.Commands.Login.LoginCommand).Assembly);
                 cfg.RegisterServicesFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Catalog.Application.Commands.PackagingComponents.CreatePackagingComponent.CreatePackagingComponentCommand).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Catalog.Application.Commands.Components.CreateComponent.CreateComponentCommand).Assembly);
 
                 // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));

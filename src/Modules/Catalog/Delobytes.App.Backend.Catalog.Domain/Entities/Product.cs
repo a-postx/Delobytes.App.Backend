@@ -31,7 +31,7 @@ public class Product : ITenantScoped
 
     public ICollection<ChannelProduct> ChannelProducts { get; set; } = new List<ChannelProduct>();
 
-    public ICollection<ProductPackagingComponent> ProductPackagingComponents { get; set; } = new List<ProductPackagingComponent>();
+    public ICollection<ProductComponent> ProductComponents { get; set; } = new List<ProductComponent>();
 
     public ICollection<ProductChannelInput> ProductChannelInputs { get; set; } = new List<ProductChannelInput>();
 
