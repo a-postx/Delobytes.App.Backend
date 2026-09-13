@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Catalog.Domain.Enums;
+namespace Delobytes.App.Backend.Identity.Domain.Enums;
 
 /// <summary>
 /// Tax regime applied to the tenant's revenue.
@@ -9,5 +9,5 @@ public enum TaxType
     Usn = 0,
 
     /// <summary>ОСНО</summary>
-    Vat = 1
+    Osno = 1
 }

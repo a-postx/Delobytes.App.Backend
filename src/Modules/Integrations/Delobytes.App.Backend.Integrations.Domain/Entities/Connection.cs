@@ -65,12 +65,12 @@ public class Connection : ITenantScoped
     /// <summary>
     /// Gets or sets the legal entity name.
     /// </summary>
-    public string? LegalName { get; set; }
+    public string? CustomerLegalName { get; set; }
 
     /// <summary>
     /// Gets or sets the taxpayer identification number (INN).
     /// </summary>
-    public string? Inn { get; set; }
+    public string? CustomerInn { get; set; }
 
     /// <summary>
     /// Navigation property: the channel template.

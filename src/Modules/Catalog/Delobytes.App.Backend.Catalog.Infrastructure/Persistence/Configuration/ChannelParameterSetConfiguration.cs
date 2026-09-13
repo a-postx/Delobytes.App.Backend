@@ -30,20 +30,6 @@ public class ChannelParameterSetConfiguration : IEntityTypeConfiguration<Channel
         builder.Property(cps => cps.SppEnabled)
             .IsRequired();
 
-        builder.Property(cps => cps.TaxType)
-            .IsRequired();
-
-        builder.Property(cps => cps.TaxRatePercent)
-            .HasPrecision(8, 6)
-            .IsRequired();
-
-        builder.Property(cps => cps.VatApplicable)
-            .IsRequired();
-
-        builder.Property(cps => cps.VatPercent)
-            .HasPrecision(8, 6)
-            .IsRequired();
-
         builder.Property(cps => cps.ValidFrom)
             .IsRequired();
 

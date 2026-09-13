@@ -112,8 +112,8 @@ public class CreateConnectionAccountInfoTests
 
         savedConnection.Should().NotBeNull();
         savedConnection!.CustomerName.Should().Be("Ромашка Маркет");
-        savedConnection.LegalName.Should().Be("ООО Ромашка");
-        savedConnection.Inn.Should().Be("7701234567");
+        savedConnection.CustomerLegalName.Should().Be("ООО Ромашка");
+        savedConnection.CustomerInn.Should().Be("7701234567");
     }
 
     [Fact]
@@ -144,8 +144,8 @@ public class CreateConnectionAccountInfoTests
 
         savedConnection.Should().NotBeNull();
         savedConnection!.CustomerName.Should().BeNull();
-        savedConnection.LegalName.Should().BeNull();
-        savedConnection.Inn.Should().BeNull();
+        savedConnection.CustomerLegalName.Should().BeNull();
+        savedConnection.CustomerInn.Should().BeNull();
     }
 
     [Fact]
@@ -182,8 +182,8 @@ public class CreateConnectionAccountInfoTests
 
         savedConnection.Should().NotBeNull();
         savedConnection!.CustomerName.Should().Be("my-store-slug");
-        savedConnection.LegalName.Should().BeNull();
-        savedConnection.Inn.Should().BeNull();
+        savedConnection.CustomerLegalName.Should().BeNull();
+        savedConnection.CustomerInn.Should().BeNull();
     }
 
     [Fact]

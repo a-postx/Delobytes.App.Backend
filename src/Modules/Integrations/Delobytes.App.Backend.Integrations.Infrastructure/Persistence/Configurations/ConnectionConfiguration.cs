@@ -36,10 +36,10 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
         builder.Property(c => c.CustomerName)
             .HasMaxLength(500);
 
-        builder.Property(c => c.LegalName)
+        builder.Property(c => c.CustomerLegalName)
             .HasMaxLength(500);
 
-        builder.Property(c => c.Inn)
+        builder.Property(c => c.CustomerInn)
             .HasMaxLength(50);
 
         builder.Property(c => c.IsActive)

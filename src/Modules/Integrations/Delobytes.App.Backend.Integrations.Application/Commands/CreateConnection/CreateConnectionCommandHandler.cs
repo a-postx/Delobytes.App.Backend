@@ -86,8 +86,8 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
                 : null,
             IsActive = true,
             CustomerName = accountInfo?.CustomerName,
-            LegalName = accountInfo?.LegalName,
-            Inn = accountInfo?.Inn,
+            CustomerLegalName = accountInfo?.LegalName,
+            CustomerInn = accountInfo?.Inn,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
