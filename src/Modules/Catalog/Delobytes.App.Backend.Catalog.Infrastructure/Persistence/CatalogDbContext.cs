@@ -47,8 +47,6 @@ public class CatalogDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(CatalogDbContext).Assembly);
-
         modelBuilder.HasDefaultSchema("catalog");
 
         foreach (IMutableEntityType entityType in modelBuilder.Model.GetEntityTypes())
@@ -85,6 +83,8 @@ public class CatalogDbContext : DbContext
                 modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
             }
         }
+
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(CatalogDbContext).Assembly);
     }
 
     /// <inheritdoc/>
