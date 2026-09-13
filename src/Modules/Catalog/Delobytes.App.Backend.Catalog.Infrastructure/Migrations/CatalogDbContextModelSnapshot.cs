@@ -815,11 +815,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                 b.Navigation("ChannelProducts");
             });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Component", b =>
-            {
-                b.Navigation("ProductComponents");
-            });
-
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackagingComponent", b =>
             {
                 b.Navigation("Prices");
