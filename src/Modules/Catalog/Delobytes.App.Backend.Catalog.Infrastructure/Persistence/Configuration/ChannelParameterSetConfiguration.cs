@@ -37,6 +37,13 @@ public class ChannelParameterSetConfiguration : IEntityTypeConfiguration<Channel
             .HasPrecision(8, 6)
             .IsRequired();
 
+        builder.Property(cps => cps.VatApplicable)
+            .IsRequired();
+
+        builder.Property(cps => cps.VatPercent)
+            .HasPrecision(8, 6)
+            .IsRequired();
+
         builder.Property(cps => cps.ValidFrom)
             .IsRequired();
 

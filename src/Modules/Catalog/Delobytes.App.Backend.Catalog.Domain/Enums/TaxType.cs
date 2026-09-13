@@ -5,9 +5,9 @@ namespace Delobytes.App.Backend.Catalog.Domain.Enums;
 /// </summary>
 public enum TaxType
 {
-    /// <summary>Simplified tax system (УСН).</summary>
+    /// <summary>УСН</summary>
     Usn = 0,
 
-    /// <summary>Value-added tax (НДС).</summary>
+    /// <summary>ОСНО</summary>
     Vat = 1
 }

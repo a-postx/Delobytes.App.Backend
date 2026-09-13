@@ -31,6 +31,12 @@ public class ChannelParameterSet : ITenantScoped
     /// <summary>Applicable tax rate, as a fraction (e.g. 0.06 for simplified USN at 6%).</summary>
     public decimal TaxRatePercent { get; set; }
 
+    /// <summary>Плательщик НДС.</summary>
+    public bool VatApplicable { get; set; }
+
+    /// <summary>Applicable NDS rate, as a fraction (e.g. 0.06 for simplified USN at 6%).</summary>
+    public decimal VatPercent { get; set; }
+
     /// <summary>Date from which this parameter set becomes effective.</summary>
     public DateOnly ValidFrom { get; set; }
 
