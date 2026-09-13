@@ -16,14 +16,22 @@ public class PackagingComponentRepository : IPackagingComponentRepository
     public Task<PackagingComponent?> GetByIdAsync(Guid id, CancellationToken ct)
     {
         return _context.PackagingComponents
-            .Include(pc => pc.Supplier)
+            .FirstOrDefaultAsync(pc => pc.Id == id, ct);
+    }
+
+    public Task<PackagingComponent?> GetWithPricesByIdAsync(Guid id, CancellationToken ct)
+    {
+        return _context.PackagingComponents
+            .Include(pc => pc.Prices)
+                .ThenInclude(p => p.Supplier)
             .FirstOrDefaultAsync(pc => pc.Id == id, ct);
     }
 
     public async Task<IReadOnlyList<PackagingComponent>> GetAllAsync(CancellationToken ct)
     {
         return await _context.PackagingComponents
-            .Include(pc => pc.Supplier)
+            .Include(pc => pc.Prices)
+                .ThenInclude(p => p.Supplier)
             .OrderBy(pc => pc.Name)
             .ToListAsync(ct);
     }

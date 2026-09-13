@@ -13,9 +13,13 @@ public class CreatePackagingComponentCommand : IRequest<CreatePackagingComponent
 
     public Domain.Enums.Unit Unit { get; set; }
 
+    /// <summary>Price of the first price version created together with the component.</summary>
     public decimal PricePerUnit { get; set; }
 
     public Guid? SupplierId { get; set; }
+
+    /// <summary>Effective date of the first price version.</summary>
+    public DateOnly ValidFrom { get; set; }
 
     public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
 }

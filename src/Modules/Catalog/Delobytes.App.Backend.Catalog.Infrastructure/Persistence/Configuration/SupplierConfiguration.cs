@@ -39,14 +39,9 @@ public class SupplierConfiguration : IEntityTypeConfiguration<Supplier>
 
         builder.HasIndex(s => s.IsActive);
 
-        // Unique per tenant
-        ////builder.HasIndex("TenantId", nameof(Supplier.Inn))
-        ////    .IsUnique()
-        ////    .HasDatabaseName("IX_Suppliers_TenantId_Inn");
-
-        builder.HasMany(s => s.PackagingComponents)
-            .WithOne(pc => pc.Supplier)
-            .HasForeignKey(pc => pc.SupplierId)
-            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasMany(s => s.PackagingComponentPrices)
+            .WithOne(p => p.Supplier)
+            .HasForeignKey(p => p.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

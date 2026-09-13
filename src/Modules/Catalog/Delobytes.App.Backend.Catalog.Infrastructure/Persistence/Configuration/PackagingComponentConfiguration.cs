@@ -24,23 +24,18 @@ public class PackagingComponentConfiguration : IEntityTypeConfiguration<Packagin
             .HasMaxLength(50)
             .HasConversion<string>();
 
-        builder.Property(pc => pc.PricePerUnit)
-            .HasPrecision(18, 4)
-            .IsRequired();
-
-        builder.Property(pc => pc.SupplierId);
-
         builder.Property(pc => pc.IsActive)
             .IsRequired();
 
         builder.Property(pc => pc.CreatedAt)
             .IsRequired();
 
-        builder.Property(pc => pc.UpdatedAt);
-
         builder.HasIndex(pc => pc.IsActive);
 
-        builder.HasIndex(pc => pc.SupplierId);
+        builder.HasMany(pc => pc.Prices)
+            .WithOne(p => p.PackagingComponent)
+            .HasForeignKey(p => p.PackagingComponentId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasMany(pc => pc.ProductPackagingComponents)
             .WithOne(ppc => ppc.PackagingComponent)

@@ -26,5 +26,5 @@ public class Supplier : ITenantScoped
 
     public DateTimeOffset? UpdatedAt { get; set; }
 
-    public ICollection<PackagingComponent> PackagingComponents { get; set; } = new List<PackagingComponent>();
+    public ICollection<PackagingComponentPrice> PackagingComponentPrices { get; set; } = new List<PackagingComponentPrice>();
 }

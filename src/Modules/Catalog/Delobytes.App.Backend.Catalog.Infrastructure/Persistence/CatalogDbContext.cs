@@ -28,6 +28,7 @@ public class CatalogDbContext : DbContext
     public DbSet<ChannelProduct> ChannelProducts => Set<ChannelProduct>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PackagingComponent> PackagingComponents => Set<PackagingComponent>();
+    public DbSet<PackagingComponentPrice> PackagingComponentPrices => Set<PackagingComponentPrice>();
     public DbSet<ProductPackagingComponent> ProductPackagingComponents => Set<ProductPackagingComponent>();
     public DbSet<TariffGrid> TariffGrids => Set<TariffGrid>();
     public DbSet<TariffGridEntry> TariffGridEntries => Set<TariffGridEntry>();
@@ -35,6 +36,11 @@ public class CatalogDbContext : DbContext
     public DbSet<ProductWorkRate> ProductWorkRates => Set<ProductWorkRate>();
     public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Conventions.Add(_ => new TenantIdShadowPropertyConvention());
+    }
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -49,10 +55,6 @@ public class CatalogDbContext : DbContext
         {
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property<Guid?>("TenantId")
-                    .IsRequired();
-
                 modelBuilder.Entity(entityType.ClrType)
                     .HasIndex("TenantId");
 

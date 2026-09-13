@@ -17,11 +17,8 @@ public class PackagingComponentItem
 
     public Unit Unit { get; set; }
 
-    public decimal PricePerUnit { get; set; }
-
-    public Guid? SupplierId { get; set; }
-
-    public string? SupplierName { get; set; }
+    /// <summary>Currently active price version, or null when the component has no active price.</summary>
+    public PackagingComponentPriceDto? ActivePrice { get; set; }
 
     public bool IsActive { get; set; }
 

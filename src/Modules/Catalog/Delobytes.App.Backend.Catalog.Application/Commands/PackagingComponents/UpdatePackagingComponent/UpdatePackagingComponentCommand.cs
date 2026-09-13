@@ -5,6 +5,10 @@ using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.PackagingComponents.UpdatePackagingComponent;
 
+/// <summary>
+/// Updates descriptive fields only. Price and supplier are versioned through
+/// <see cref="CreatePackagingComponentPrice.CreatePackagingComponentPriceCommand"/>.
+/// </summary>
 public class UpdatePackagingComponentCommand : IRequest<UpdatePackagingComponentResponse>, IRequireRole
 {
     public Guid Id { get; set; }
@@ -14,12 +18,6 @@ public class UpdatePackagingComponentCommand : IRequest<UpdatePackagingComponent
     public string? Description { get; set; }
 
     public Domain.Enums.Unit Unit { get; set; }
-
-    public decimal PricePerUnit { get; set; }
-
-    public Guid? SupplierId { get; set; }
-
-    public bool IsActive { get; set; }
 
     public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
 }

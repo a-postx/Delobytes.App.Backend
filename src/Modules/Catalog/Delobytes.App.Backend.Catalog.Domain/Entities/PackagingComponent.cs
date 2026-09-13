@@ -5,8 +5,8 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
 /// <summary>
 /// Represents a packaging material or component (e.g. box, bubble wrap, tape).
-/// Price changes create a new record rather than updating the existing one
-/// so that historical cost calculations remain intact.
+/// Carries descriptive data only; price and supplier live in <see cref="PackagingComponentPrice"/>
+/// versions so that historical cost calculations remain intact.
 /// </summary>
 public class PackagingComponent : ITenantScoped
 {
@@ -18,18 +18,12 @@ public class PackagingComponent : ITenantScoped
 
     public Unit Unit { get; set; }
 
-    /// <summary>Purchase price per unit in currency.</summary>
-    public decimal PricePerUnit { get; set; }
-
-    public Guid? SupplierId { get; set; }
-
-    public Supplier? Supplier { get; set; }
-
+    /// <summary>Whether the logical component is archived. Does not depend on price versions.</summary>
     public bool IsActive { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 
-    public DateTimeOffset? UpdatedAt { get; set; }
+    public ICollection<PackagingComponentPrice> Prices { get; set; } = new List<PackagingComponentPrice>();
 
     public ICollection<ProductPackagingComponent> ProductPackagingComponents { get; set; } = new List<ProductPackagingComponent>();
 }

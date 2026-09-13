@@ -1,5 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.PackagingComponents.CreatePackagingComponent;
+using Delobytes.App.Backend.Catalog.Application.Commands.PackagingComponents.CreatePackagingComponentPrice;
 using Delobytes.App.Backend.Catalog.Application.Commands.PackagingComponents.DeletePackagingComponent;
+using Delobytes.App.Backend.Catalog.Application.Commands.PackagingComponents.RestorePackagingComponent;
 using Delobytes.App.Backend.Catalog.Application.Commands.PackagingComponents.UpdatePackagingComponent;
 using Delobytes.App.Backend.Catalog.Application.Queries.PackagingComponents.GetPackagingComponent;
 using Delobytes.App.Backend.Catalog.Application.Queries.PackagingComponents.GetPackagingComponents;
@@ -12,6 +14,8 @@ namespace Delobytes.App.Backend.Controllers;
 
 /// <summary>
 /// CRUD endpoints for the Packaging Components catalog.
+/// Price changes are versioned: POST /{id}/prices appends a new price version and
+/// deactivates the previous one, while PUT /{id} touches descriptive fields only.
 /// </summary>
 [ApiController]
 [Route("api/catalogs/packaging-components")]
@@ -60,6 +64,7 @@ public class PackagingComponentsController : ControllerBase
                 Unit = request.Unit,
                 PricePerUnit = request.PricePerUnit,
                 SupplierId = request.SupplierId,
+                ValidFrom = request.ValidFrom,
             },
             cancellationToken);
 
@@ -79,10 +84,48 @@ public class PackagingComponentsController : ControllerBase
                 Name = request.Name,
                 Description = request.Description,
                 Unit = request.Unit,
+            },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Appends a new price version for the component.</summary>
+    [HttpPost("{id:guid}/prices")]
+    public async Task<ActionResult<CreatePackagingComponentPriceResponse>> CreatePrice(
+        Guid id,
+        [FromBody] CreatePackagingComponentPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        CreatePackagingComponentPriceResponse response = await _mediator.Send(
+            new CreatePackagingComponentPriceCommand
+            {
+                PackagingComponentId = id,
                 PricePerUnit = request.PricePerUnit,
                 SupplierId = request.SupplierId,
-                IsActive = request.IsActive,
+                ValidFrom = request.ValidFrom,
             },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return Ok(response);
+    }
+
+    /// <summary>Restores an archived component and its latest price version.</summary>
+    [HttpPost("{id:guid}/restore")]
+    public async Task<ActionResult> Restore(Guid id, CancellationToken cancellationToken)
+    {
+        RestorePackagingComponentResponse response = await _mediator.Send(
+            new RestorePackagingComponentCommand { Id = id },
             cancellationToken);
 
         if (!response.Found)
@@ -109,7 +152,7 @@ public class PackagingComponentsController : ControllerBase
     }
 }
 
-/// <summary>Request body for creating a packaging component.</summary>
+/// <summary>Request body for creating a packaging component together with its first price version.</summary>
 public class CreatePackagingComponentRequest
 {
     public string Name { get; set; } = default!;
@@ -121,9 +164,12 @@ public class CreatePackagingComponentRequest
     public decimal PricePerUnit { get; set; }
 
     public Guid? SupplierId { get; set; }
+
+    /// <summary>Effective date of the first price version.</summary>
+    public DateOnly ValidFrom { get; set; }
 }
 
-/// <summary>Request body for updating a packaging component.</summary>
+/// <summary>Request body for updating descriptive fields of a packaging component.</summary>
 public class UpdatePackagingComponentRequest
 {
     public string Name { get; set; } = default!;
@@ -131,10 +177,14 @@ public class UpdatePackagingComponentRequest
     public string? Description { get; set; }
 
     public Catalog.Domain.Enums.Unit Unit { get; set; }
+}
 
+/// <summary>Request body for appending a new price version.</summary>
+public class CreatePackagingComponentPriceRequest
+{
     public decimal PricePerUnit { get; set; }
 
     public Guid? SupplierId { get; set; }
 
-    public bool IsActive { get; set; }
+    public DateOnly ValidFrom { get; set; }
 }

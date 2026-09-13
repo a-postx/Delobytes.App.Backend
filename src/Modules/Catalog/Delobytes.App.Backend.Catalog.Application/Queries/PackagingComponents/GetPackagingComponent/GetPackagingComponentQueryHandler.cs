@@ -15,7 +15,7 @@ public class GetPackagingComponentQueryHandler : IRequestHandler<GetPackagingCom
 
     public async Task<GetPackagingComponentResponse?> Handle(GetPackagingComponentQuery request, CancellationToken cancellationToken)
     {
-        PackagingComponent? component = await _repository.GetByIdAsync(request.Id, cancellationToken);
+        PackagingComponent? component = await _repository.GetWithPricesByIdAsync(request.Id, cancellationToken);
 
         if (component == null)
         {
@@ -28,12 +28,9 @@ public class GetPackagingComponentQueryHandler : IRequestHandler<GetPackagingCom
             Name = component.Name,
             Description = component.Description,
             Unit = component.Unit,
-            PricePerUnit = component.PricePerUnit,
-            SupplierId = component.SupplierId,
-            SupplierName = component.Supplier?.Name,
+            ActivePrice = PackagingComponentPriceMapper.Map(component.Prices.FirstOrDefault(p => p.IsActive)),
             IsActive = component.IsActive,
             CreatedAt = component.CreatedAt,
-            UpdatedAt = component.UpdatedAt,
         };
     }
 }

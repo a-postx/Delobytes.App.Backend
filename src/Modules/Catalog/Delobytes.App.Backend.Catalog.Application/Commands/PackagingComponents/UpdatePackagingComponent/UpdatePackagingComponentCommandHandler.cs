@@ -25,10 +25,6 @@ public class UpdatePackagingComponentCommandHandler : IRequestHandler<UpdatePack
         component.Name = request.Name;
         component.Description = request.Description;
         component.Unit = request.Unit;
-        component.PricePerUnit = request.PricePerUnit;
-        component.SupplierId = request.SupplierId;
-        component.IsActive = request.IsActive;
-        component.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _repository.SaveChangesAsync(cancellationToken);
 
