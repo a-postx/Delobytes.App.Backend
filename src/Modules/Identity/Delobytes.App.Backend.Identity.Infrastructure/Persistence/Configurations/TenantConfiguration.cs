@@ -47,10 +47,7 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(cps => cps.TaxRatePercent)
             .HasPrecision(8, 6);
 
-        builder.Property(cps => cps.VatApplicable);
-
-        builder.Property(cps => cps.VatPercent)
-            .HasPrecision(8, 6);
+        builder.Property(cps => cps.VatType);
 
         builder.Property(t => t.Currency);
         builder.Property(t => t.TimeZone);

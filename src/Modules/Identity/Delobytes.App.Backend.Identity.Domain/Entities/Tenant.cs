@@ -84,11 +84,8 @@ public class Tenant
     /// <summary>Tax rate, as a fraction (e.g., 0.06 for УСН 6%).</summary>
     public decimal TaxRatePercent { get; set; }
 
-    /// <summary>Is subject to VAT (плательщик НДС).</summary>
-    public bool VatApplicable { get; set; }
-
-    /// <summary>VAT rate, as a fraction (e.g., 0.20 for 20%).</summary>
-    public decimal VatPercent { get; set; }
+    /// <summary>VAT tax rate regime.</summary>
+    public VatType VatType { get; set; }
 
     // ── Business settings ────────────────────────────────────────────────────
 

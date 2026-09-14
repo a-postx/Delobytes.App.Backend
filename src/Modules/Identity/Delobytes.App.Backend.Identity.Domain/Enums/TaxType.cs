@@ -6,8 +6,11 @@ namespace Delobytes.App.Backend.Identity.Domain.Enums;
 public enum TaxType
 {
     /// <summary>УСН</summary>
-    Usn = 0,
+    Usn = 1,
 
     /// <summary>ОСНО</summary>
-    Osno = 1
+    Osno = 2,
+
+    /// <summary>НПД</summary>
+    Npd = 3,
 }
