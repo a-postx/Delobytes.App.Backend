@@ -79,11 +79,15 @@ public class GoogleCallbackCommandHandler : IRequestHandler<GoogleCallbackComman
 
         if (memberships.Count == 0)
         {
+            // User has no tenant yet - issue a temporary token without tenant/role
+            string tempToken = _jwtTokenService.GenerateToken(user.Id, null, null);
+
             return new LoginResponse
             {
                 UserId = user.Id,
+                TenantId = null,
                 RequiresTenantSetup = true,
-                AccessToken = string.Empty,
+                AccessToken = tempToken,
             };
         }
 

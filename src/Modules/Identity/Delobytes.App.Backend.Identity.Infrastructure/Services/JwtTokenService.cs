@@ -1,4 +1,3 @@
-using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -26,7 +25,7 @@ public class JwtTokenService : IJwtTokenService
     }
 
     /// <inheritdoc/>
-    public string GenerateToken(Guid userId, Guid tenantId, Role role)
+    public string GenerateToken(Guid userId, Guid? tenantId, Role? role)
     {
         IConfigurationSection secrets = _configuration.GetSection("AppSecrets");
         string secretKey = secrets["JwtSecretKey"] ?? throw new InvalidOperationException("JwtSettings:SecretKey is not configured.");
@@ -38,47 +37,23 @@ public class JwtTokenService : IJwtTokenService
         SymmetricSecurityKey securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         SigningCredentials credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-        Claim[] claims = new[]
+        List<Claim> claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            ////new Claim("userId", userId.ToString()),
-            new Claim("tenantId", tenantId.ToString()),
-            new Claim("role", role.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
         };
 
-        JwtSecurityToken token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
-
-    /// <inheritdoc/>
-    public string GenerateTokenWithoutTenant(Guid userId)
-    {
-        IConfigurationSection secrets = _configuration.GetSection("AppSecrets");
-        string secretKey = secrets["JwtSecretKey"] ?? throw new InvalidOperationException("JwtSettings:SecretKey is not configured.");
-        IConfigurationSection jwtSettings = _configuration.GetSection("JwtSettings");
-        string issuer = jwtSettings["Issuer"] ?? "Delobytes.App.Backend";
-        string audience = jwtSettings["Audience"] ?? "Delobytes.App.Frontend";
-        int expirationMinutes = int.Parse(jwtSettings["ExpirationMinutes"] ?? "1440"); // Default: 24 hours
-
-        SymmetricSecurityKey securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-        SigningCredentials credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-        Claim[] claims = new[]
+        // Add tenant and role claims only if user has a tenant
+        if (tenantId.HasValue)
         {
-            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            ////new Claim("userId", userId.ToString()),
-            new Claim("needsTenantSetup", "true"),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-        };
+            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
+        }
+
+        if (role.HasValue)
+        {
+            claims.Add(new Claim("role", role.Value.ToString()));
+        }
 
         JwtSecurityToken token = new JwtSecurityToken(
             issuer: issuer,

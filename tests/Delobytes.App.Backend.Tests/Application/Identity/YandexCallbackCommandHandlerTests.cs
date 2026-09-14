@@ -173,7 +173,7 @@ public class YandexCallbackCommandHandlerTests
 
         // Assert
         response.RequiresTenantSetup.Should().BeTrue();
-        response.AccessToken.Should().BeEmpty();
+        response.AccessToken.Should().BeNull();
         response.UserId.Should().NotBeEmpty();
 
         _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Role>()), Times.Never);
