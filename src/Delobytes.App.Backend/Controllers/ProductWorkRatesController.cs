@@ -62,6 +62,7 @@ public class ProductWorkRatesController : ControllerBase
             new CreateProductWorkRateCommand
             {
                 ProductId = request.ProductId,
+                WorkRateId = request.WorkRateId,
                 AssemblyRatePerDay = request.AssemblyRatePerDay,
                 ValidFrom = request.ValidFrom,
             },
@@ -97,6 +98,8 @@ public class ProductWorkRatesController : ControllerBase
 public class CreateProductWorkRateApiRequest
 {
     public Guid ProductId { get; set; }
+
+    public Guid WorkRateId { get; set; }
 
     public int AssemblyRatePerDay { get; set; }
 

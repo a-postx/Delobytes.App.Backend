@@ -23,6 +23,7 @@ public class GetAllProductWorkRatesQueryHandler : IRequestHandler<GetAllProductW
             {
                 Id = r.Id,
                 ProductId = r.ProductId,
+                WorkRateId = r.WorkRateId,
                 AssemblyRatePerDay = r.AssemblyRatePerDay,
                 ValidFrom = r.ValidFrom,
                 IsActive = r.IsActive,

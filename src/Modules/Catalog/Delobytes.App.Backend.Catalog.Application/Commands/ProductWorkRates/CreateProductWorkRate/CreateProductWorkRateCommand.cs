@@ -8,6 +8,8 @@ public class CreateProductWorkRateCommand : IRequest<CreateProductWorkRateRespon
 {
     public Guid ProductId { get; set; }
 
+    public Guid WorkRateId { get; set; }
+
     public int AssemblyRatePerDay { get; set; }
 
     public DateOnly ValidFrom { get; set; }

@@ -20,6 +20,7 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
         {
             Id = Guid.NewGuid(),
             ProductId = request.ProductId,
+            WorkRateId = request.WorkRateId,
             AssemblyRatePerDay = request.AssemblyRatePerDay,
             ValidFrom = request.ValidFrom,
             IsActive = true,

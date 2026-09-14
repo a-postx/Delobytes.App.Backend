@@ -14,6 +14,9 @@ public class ProductWorkRate : ITenantScoped
 
     public Guid ProductId { get; set; }
 
+    /// <summary>The work rate (employee daily wage) applied to this product.</summary>
+    public Guid WorkRateId { get; set; }
+
     /// <summary>Number of finished units one worker assembles per day for this product.</summary>
     public int AssemblyRatePerDay { get; set; }
 
@@ -28,4 +31,6 @@ public class ProductWorkRate : ITenantScoped
     public DateTimeOffset? UpdatedAt { get; set; }
 
     public Product Product { get; set; } = default!;
+
+    public WorkRate WorkRate { get; set; } = default!;
 }

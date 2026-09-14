@@ -23,4 +23,6 @@ public class WorkRate : ITenantScoped
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
 }

@@ -15,6 +15,9 @@ public class ProductWorkRateConfiguration : IEntityTypeConfiguration<ProductWork
         builder.Property(r => r.ProductId)
             .IsRequired();
 
+        builder.Property(r => r.WorkRateId)
+            .IsRequired();
+
         builder.Property(r => r.AssemblyRatePerDay)
             .IsRequired();
 
@@ -31,11 +34,18 @@ public class ProductWorkRateConfiguration : IEntityTypeConfiguration<ProductWork
 
         builder.HasIndex(r => new { r.ProductId, r.ValidFrom });
 
+        builder.HasIndex(r => r.WorkRateId);
+
         builder.HasIndex(r => r.IsActive);
 
         builder.HasOne(r => r.Product)
             .WithMany(p => p.ProductWorkRates)
             .HasForeignKey(r => r.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(r => r.WorkRate)
+            .WithMany(wr => wr.ProductWorkRates)
+            .HasForeignKey(r => r.WorkRateId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
