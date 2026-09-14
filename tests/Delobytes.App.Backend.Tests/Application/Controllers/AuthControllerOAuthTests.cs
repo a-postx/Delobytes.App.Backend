@@ -108,7 +108,7 @@ public class AuthControllerOAuthTests
             {
                 UserId = userId,
                 RequiresTenantSetup = true,
-                AccessToken = string.Empty,
+                AccessToken = "temp-token",
             });
 
         // Act
@@ -119,7 +119,7 @@ public class AuthControllerOAuthTests
         OkObjectResult okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         LoginResponse response = okResult.Value.Should().BeOfType<LoginResponse>().Subject;
         response.RequiresTenantSetup.Should().BeTrue();
-        response.AccessToken.Should().BeEmpty();
+        response.AccessToken.Should().NotBeNullOrEmpty().And.Be("temp-token");
         response.UserId.Should().Be(userId);
     }
 
@@ -216,7 +216,7 @@ public class AuthControllerOAuthTests
             {
                 UserId = userId,
                 RequiresTenantSetup = true,
-                AccessToken = string.Empty,
+                AccessToken = "temp-token",
             });
 
         // Act
@@ -227,7 +227,7 @@ public class AuthControllerOAuthTests
         OkObjectResult okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         LoginResponse response = okResult.Value.Should().BeOfType<LoginResponse>().Subject;
         response.RequiresTenantSetup.Should().BeTrue();
-        response.AccessToken.Should().BeEmpty();
+        response.AccessToken.Should().NotBeNullOrEmpty().And.Be("temp-token");
         response.UserId.Should().Be(userId);
     }
 
