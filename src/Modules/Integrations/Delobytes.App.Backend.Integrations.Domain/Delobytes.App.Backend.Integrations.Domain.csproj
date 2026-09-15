@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
-    <ProjectReference Include="..\..\Identity\Delobytes.App.Backend.Identity.Domain\Delobytes.App.Backend.Identity.Domain.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Identity.Domain.Enums;
+﻿using Delobytes.App.Backend.Identity.Domain.Enums;
 
 namespace Delobytes.App.Backend.Identity.Domain.Entities;
 

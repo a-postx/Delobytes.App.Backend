@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Identity.Domain.Enums;
+﻿using Delobytes.App.Backend.Contracts.Authorization;
 
 namespace Delobytes.App.Backend.Identity.Application.Interfaces;
 

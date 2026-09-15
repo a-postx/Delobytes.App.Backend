@@ -1,6 +1,5 @@
-using Delobytes.App.Backend.Catalog.Domain.Enums;
-using Delobytes.App.Backend.Identity.Domain.Enums;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+﻿using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components.UpdateComponent;

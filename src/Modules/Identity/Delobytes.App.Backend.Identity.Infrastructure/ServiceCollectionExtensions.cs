@@ -130,21 +130,11 @@ public static class ServiceCollectionExtensions
             options.TenantIdClaimName = "tenantId";
         });
 
-        services.AddAuthorization(options =>
-        {
-            // Register policies for each role
-            options.AddPolicy("RequireRole_Administrator", policy =>
-                policy.Requirements.Add(new Authorization.RoleRequirement(Domain.Enums.Role.Administrator)));
-
-            options.AddPolicy("RequireRole_Manager", policy =>
-                policy.Requirements.Add(new Authorization.RoleRequirement(Domain.Enums.Role.Administrator, Domain.Enums.Role.Manager)));
-
-            options.AddPolicy("RequireRole_ReadOnly", policy =>
-                policy.Requirements.Add(new Authorization.RoleRequirement(Domain.Enums.Role.Administrator, Domain.Enums.Role.Manager, Domain.Enums.Role.ReadOnly)));
-        });
-
-        // Register authorization handler
-        services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, Authorization.RoleAuthorizationHandler>();
+        // Authorization for module commands and queries is enforced by the MediatR
+        // AuthorizationBehaviour pipeline in the host (Contracts.Authorization.IRequireRole).
+        // The plain [Authorize] attribute on controllers relies on the default policy
+        // registered by the framework, so no named policies are defined here.
+        services.AddAuthorization();
 
         return services;
     }

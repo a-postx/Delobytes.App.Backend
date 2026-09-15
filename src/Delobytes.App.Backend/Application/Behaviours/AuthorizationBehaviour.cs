@@ -1,6 +1,5 @@
-using System.Security.Claims;
-using Delobytes.App.Backend.Identity.Domain.Enums;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+﻿using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 

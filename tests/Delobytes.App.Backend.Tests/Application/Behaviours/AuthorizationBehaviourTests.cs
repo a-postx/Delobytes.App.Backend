@@ -1,7 +1,6 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Delobytes.App.Backend.Application.Behaviours;
-using Delobytes.App.Backend.Identity.Domain.Enums;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+using Delobytes.App.Backend.Contracts.Authorization;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -119,6 +118,37 @@ public class AuthorizationBehaviourTests
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
         nextMock.Verify(x => x(), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_CommandRestrictedToManager_WithAdministratorRole_ShouldThrowUnauthorizedAccessException()
+    {
+        // Locks in Contracts.Authorization.IRequireRole semantics: AllowedRoles is authoritative,
+        // Administrator receives no implicit bypass, so a request can exclude it deliberately.
+        AuthorizationBehaviour<AuthTestManagerOnlyCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestManagerOnlyCommand>();
+        Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
+        AuthTestManagerOnlyCommand command = new AuthTestManagerOnlyCommand();
+        SetupHttpContextWithRole(Role.Administrator);
+
+        Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*недостаточно прав*");
+        nextMock.Verify(x => x(), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_CommandRestrictedToManager_WithManagerRole_ShouldSucceed()
+    {
+        AuthorizationBehaviour<AuthTestManagerOnlyCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestManagerOnlyCommand>();
+        Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
+        AuthTestManagerOnlyCommand command = new AuthTestManagerOnlyCommand();
+        SetupHttpContextWithRole(Role.Manager);
+
+        AuthTestResponse result = await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        nextMock.Verify(x => x(), Times.Once);
     }
 
     [Fact]
@@ -251,6 +281,11 @@ public class AuthTestCommand : IRequest<AuthTestResponse>, IRequireRole
 public class AuthTestManagerCommand : IRequest<AuthTestResponse>, IRequireRole
 {
     public Role[] AllowedRoles => new[] { Role.Administrator, Role.Manager };
+}
+
+public class AuthTestManagerOnlyCommand : IRequest<AuthTestResponse>, IRequireRole
+{
+    public Role[] AllowedRoles => new[] { Role.Manager };
 }
 
 public class AuthTestCommandWithoutRole : IRequest<AuthTestResponse>

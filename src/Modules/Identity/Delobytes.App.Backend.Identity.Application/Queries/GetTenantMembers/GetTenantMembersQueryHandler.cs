@@ -1,6 +1,6 @@
+﻿using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Queries.GetTenantMembers;

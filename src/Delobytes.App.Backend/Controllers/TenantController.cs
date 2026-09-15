@@ -1,4 +1,5 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Commands.AcceptInvitation;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateInvitation;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
@@ -8,7 +9,6 @@ using Delobytes.App.Backend.Identity.Application.Commands.SwitchTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateMembershipRole;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantMembers;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

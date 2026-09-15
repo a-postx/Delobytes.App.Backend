@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Moq;

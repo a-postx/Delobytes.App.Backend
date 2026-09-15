@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -48,7 +49,7 @@ public class TenantMembershipRepository : ITenantMembershipRepository
     /// <inheritdoc/>
     public Task<int> CountAdministratorsByTenantAsync(Guid tenantId, CancellationToken cancellationToken)
         => _context.TenantMemberships
-            .CountAsync(m => m.TenantId == tenantId && m.IsActive && m.Role == Domain.Enums.Role.Administrator, cancellationToken);
+            .CountAsync(m => m.TenantId == tenantId && m.IsActive && m.Role == Role.Administrator, cancellationToken);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<TenantMembership>> GetActiveByTenantAsync(Guid tenantId, CancellationToken cancellationToken)

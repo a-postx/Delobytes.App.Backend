@@ -1,5 +1,4 @@
-using Delobytes.App.Backend.Identity.Domain.Enums;
-using Delobytes.App.Backend.Identity.Domain.Interfaces;
+﻿using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.DeleteWorkRate;
