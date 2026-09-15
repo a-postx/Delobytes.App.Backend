@@ -51,7 +51,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
 
         // Register Contracts.ITenantContext for all other modules.
-        services.AddScoped<Delobytes.App.Backend.Contracts.Interfaces.ITenantContext, TenantContext>();
+        services.AddScoped<ITenantContext, HttpTenantContext>();
 
         // Register JWT token service
         services.AddScoped<IJwtTokenService, JwtTokenService>();

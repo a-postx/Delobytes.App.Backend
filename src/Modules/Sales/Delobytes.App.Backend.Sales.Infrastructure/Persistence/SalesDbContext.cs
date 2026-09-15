@@ -97,18 +97,32 @@ public class SalesDbContext : DbContext
         return base.SaveChangesAsync(cancellationToken);
     }
 
+    // Guards against orphan rows: without this check, a missing tenant (e.g. a background
+    // job or message consumer with no HttpContext) would leave the shadow TenantId at its
+    // CLR default (Guid.Empty) instead of throwing, silently creating a row no tenant can
+    // ever see through the query filter.
     private void SetTenantId()
     {
-        Guid? tenantId = _tenantContext.TenantId;
-        if (!tenantId.HasValue)
+        List<EntityEntry> addedScopedEntries = ChangeTracker.Entries()
+            .Where(e => e.State == EntityState.Added && e.Entity is ITenantScoped)
+            .ToList();
+
+        if (addedScopedEntries.Count == 0)
         {
             return;
         }
 
-        IEnumerable<EntityEntry> entries = ChangeTracker.Entries()
-            .Where(e => e.State == EntityState.Added && e.Entity is ITenantScoped);
+        Guid? tenantId = _tenantContext.TenantId;
 
-        foreach (EntityEntry entry in entries)
+        if (!tenantId.HasValue)
+        {
+            string entityNames = string.Join(", ", addedScopedEntries.Select(e => e.Entity.GetType().Name).Distinct());
+            throw new SecurityException(
+                $"Cannot save tenant-scoped entit{(addedScopedEntries.Count == 1 ? "y" : "ies")} ({entityNames}) " +
+                "without a resolved TenantId. The current execution context has no tenant.");
+        }
+
+        foreach (EntityEntry entry in addedScopedEntries)
         {
             entry.Property("TenantId").CurrentValue = tenantId.Value;
         }

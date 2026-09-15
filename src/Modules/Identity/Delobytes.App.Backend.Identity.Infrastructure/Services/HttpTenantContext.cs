@@ -7,15 +7,15 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Services;
 /// <summary>
 /// Implementation of ITenantContext that extracts TenantId from JWT claims.
 /// </summary>
-public class TenantContext : ITenantContext
+public class HttpTenantContext : ITenantContext
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TenantContext"/> class.
+    /// Initializes a new instance of the <see cref="HttpTenantContext"/> class.
     /// </summary>
     /// <param name="httpContextAccessor">HTTP context accessor.</param>
-    public TenantContext(IHttpContextAccessor httpContextAccessor)
+    public HttpTenantContext(IHttpContextAccessor httpContextAccessor)
     {
         _httpContextAccessor = httpContextAccessor;
     }
