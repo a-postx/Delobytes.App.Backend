@@ -7,8 +7,11 @@ using Delobytes.App.Backend.Identity.Application.Commands.RemoveTenantMember;
 using Delobytes.App.Backend.Identity.Application.Commands.RevokeInvitation;
 using Delobytes.App.Backend.Identity.Application.Commands.SwitchTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateMembershipRole;
+using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
+using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantMembers;
+using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,6 +35,64 @@ public class TenantController : ControllerBase
     public TenantController(IMediator mediator)
     {
         _mediator = mediator;
+    }
+
+    /// <summary>
+    /// Returns legal entity settings for the current tenant.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Legal entity settings.</returns>
+    [HttpGet("legal-entity")]
+    public async Task<ActionResult<GetTenantLegalEntityResponse>> GetTenantLegalEntity(CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        GetTenantLegalEntityResponse response = await _mediator.Send(
+            new GetTenantLegalEntityQuery
+            {
+                TenantId = tenantId,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Updates legal entity settings for the current tenant. Requires Administrator role.
+    /// </summary>
+    /// <param name="request">Update legal entity request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated legal entity settings.</returns>
+    [HttpPatch("legal-entity")]
+    public async Task<ActionResult<UpdateTenantLegalEntityResponse>> UpdateTenantLegalEntity(
+        [FromBody] UpdateTenantLegalEntityRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        UpdateTenantLegalEntityResponse response = await _mediator.Send(
+            new UpdateTenantLegalEntityCommand
+            {
+                TenantId = tenantId,
+                LegalName = request.LegalName,
+                Inn = request.Inn,
+                TaxType = request.TaxType,
+                TaxRatePercent = request.TaxRatePercent,
+                VatType = request.VatType,
+            },
+            cancellationToken);
+
+        return Ok(response);
     }
 
     /// <summary>
@@ -380,6 +441,37 @@ public class UpdateMemberRoleRequestDto
     /// Gets or sets the new role.
     /// </summary>
     public Role Role { get; set; }
+}
+
+/// <summary>
+/// Request model for updating tenant legal entity settings.
+/// </summary>
+public class UpdateTenantLegalEntityRequest
+{
+    /// <summary>
+    /// Gets or sets the full legal name.
+    /// </summary>
+    public string? LegalName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the taxpayer identification number (ИНН).
+    /// </summary>
+    public string? Inn { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tax regime.
+    /// </summary>
+    public TaxType TaxType { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tax rate as a fraction (e.g. 0.06 for 6%).
+    /// </summary>
+    public decimal TaxRatePercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the VAT type.
+    /// </summary>
+    public VatType VatType { get; set; }
 }
 
 /// <summary>
