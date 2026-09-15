@@ -1,11 +1,12 @@
 ﻿using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Identity.Domain.Entities;
 
 /// <summary>
 /// Represents an invitation to join a tenant.
 /// </summary>
-public class Invitation
+public class Invitation : ITenantScoped
 {
     /// <summary>
     /// Gets or sets the invitation unique identifier.

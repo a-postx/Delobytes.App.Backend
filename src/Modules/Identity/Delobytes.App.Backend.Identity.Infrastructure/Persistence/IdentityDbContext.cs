@@ -63,44 +63,66 @@ public class IdentityDbContext : DbContext
         // Configure shadow property TenantId for tenant-scoped entities
         foreach (IMutableEntityType entityType in modelBuilder.Model.GetEntityTypes())
         {
-            if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
+            if (!typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property<Guid?>("TenantId")
-                    .IsRequired();
-
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex("TenantId");
-
-                ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
-
-                MethodInfo efPropertyMethod = typeof(EF)
-                    .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
-                    .MakeGenericMethod(typeof(Guid?));
-
-                MethodCallExpression tenantIdAccess = Expression.Call(
-                    efPropertyMethod,
-                    parameter,
-                    Expression.Constant("TenantId"));
-
-                // Expression.Constant(this) captures the DbContext instance reference.
-                // EF Core recognises DbContext-typed constants in query filter trees and
-                // substitutes the *current* instance at query execution time, so TenantId
-                // is read from the live scoped ITenantContext on every request — not frozen
-                // to the value present when the singleton model cache was first built.
-                ConstantExpression contextRef = Expression.Constant(this, typeof(IdentityDbContext));
-                FieldInfo tenantContextField = typeof(IdentityDbContext)
-                    .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                MemberExpression tenantContextAccess = Expression.Field(contextRef, tenantContextField);
-                MemberExpression tenantIdProperty = Expression.Property(
-                    tenantContextAccess,
-                    nameof(ITenantContext.TenantId));
-
-                BinaryExpression comparison = Expression.Equal(tenantIdAccess, tenantIdProperty);
-                LambdaExpression lambda = Expression.Lambda(comparison, parameter);
-
-                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+                continue;
             }
+
+            // Some ITenantScoped entities (e.g. Invitation) already declare TenantId as
+            // a real, non-nullable CLR property via their own EntityTypeConfiguration
+            // (it is a genuine required foreign key, not merely a cross-cutting isolation
+            // marker). Only add a shadow Guid? property for entities that don't already
+            // have one — declaring it unconditionally would conflict with the existing
+            // property's CLR type and crash model building.
+            IMutableProperty tenantIdProperty = entityType.FindProperty("TenantId")
+                ?? modelBuilder.Entity(entityType.ClrType)
+                    .Property<Guid?>("TenantId")
+                    .IsRequired()
+                    .Metadata;
+
+            bool hasSingleColumnTenantIndex = entityType.GetIndexes()
+                .Any(i => i.Properties.Count == 1 && i.Properties[0].Name == "TenantId");
+
+            if (!hasSingleColumnTenantIndex)
+            {
+                modelBuilder.Entity(entityType.ClrType).HasIndex("TenantId");
+            }
+
+            ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
+
+            MethodInfo efPropertyMethod = typeof(EF)
+                .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
+                .MakeGenericMethod(tenantIdProperty.ClrType);
+
+            MethodCallExpression tenantIdAccess = Expression.Call(
+                efPropertyMethod,
+                parameter,
+                Expression.Constant("TenantId"));
+
+            // Unify to Guid? before comparing: a real, non-nullable Guid property (e.g.
+            // Invitation.TenantId) must be widened so Expression.Equal can compare it
+            // against ITenantContext.TenantId (Guid?) without a CLR type mismatch.
+            Expression tenantIdAsNullable = tenantIdProperty.ClrType == typeof(Guid?)
+                ? tenantIdAccess
+                : Expression.Convert(tenantIdAccess, typeof(Guid?));
+
+            // Expression.Constant(this) captures the DbContext instance reference.
+            // EF Core recognises DbContext-typed constants in query filter trees and
+            // substitutes the *current* instance at query execution time, so TenantId
+            // is read from the live scoped ITenantContext on every request — not frozen
+            // to the value present when the singleton model cache was first built.
+            ConstantExpression contextRef = Expression.Constant(this, typeof(IdentityDbContext));
+            FieldInfo tenantContextField = typeof(IdentityDbContext)
+                .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            MemberExpression tenantContextAccess = Expression.Field(contextRef, tenantContextField);
+            MemberExpression tenantContextTenantId = Expression.Property(
+                tenantContextAccess,
+                nameof(ITenantContext.TenantId));
+
+            BinaryExpression comparison = Expression.Equal(tenantIdAsNullable, tenantContextTenantId);
+            LambdaExpression lambda = Expression.Lambda(comparison, parameter);
+
+            modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
         }
     }
 
@@ -154,6 +176,15 @@ public class IdentityDbContext : DbContext
     // Added entities are already protected by SetTenantId() overwriting the value.
     // This guard targets Modified and Deleted: an entity loaded via IgnoreQueryFilters()
     // or with a manually-tampered shadow property would otherwise pass through undetected.
+    //
+    // Invitation is deliberately exempted: AcceptInvitationCommandHandler loads it via
+    // FindByTokenAsync's IgnoreQueryFilters() and legitimately modifies it (IsAccepted,
+    // AcceptedAt, AcceptedByUserId) while the accepting user's current tenant context is
+    // some OTHER tenant (or none at all) — that is the whole mechanism by which a user
+    // gains access to a tenant they are not yet a member of. Authorization for that write
+    // comes from the secret token + email match, not from tenant membership, so comparing
+    // its TenantId against the caller's current tenant here would reject every legitimate
+    // acceptance.
     private void ValidateCrossTenantWrite()
     {
         Guid? tenantId = _tenantContext.TenantId;
@@ -166,7 +197,8 @@ public class IdentityDbContext : DbContext
         IEnumerable<EntityEntry> entries = ChangeTracker.Entries()
             .Where(e =>
                 (e.State == EntityState.Modified || e.State == EntityState.Deleted)
-                && e.Entity is ITenantScoped);
+                && e.Entity is ITenantScoped
+                && e.Entity is not Invitation);
 
         foreach (EntityEntry entry in entries)
         {

@@ -21,8 +21,16 @@ public class InvitationRepository : IInvitationRepository
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Bypasses the tenant query filter deliberately: the accepting user is, by design,
+    /// not yet a member of the invitation's target tenant (that is the entire point of
+    /// accepting an invite). Authorization here comes from the token being secret and
+    /// from the caller's email matching <see cref="Invitation.Email"/> — both checked in
+    /// AcceptInvitationCommandHandler — not from tenant membership.
+    /// </remarks>
     public Task<Invitation?> FindByTokenAsync(string token, CancellationToken cancellationToken)
         => _context.Invitations
+            .IgnoreQueryFilters()
             .Include(i => i.Tenant)
             .FirstOrDefaultAsync(i => i.Token == token, cancellationToken);
 
