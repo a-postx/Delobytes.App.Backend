@@ -22,11 +22,11 @@ public class MarginCalculationSnapshot : ITenantScoped
 
     public decimal RawMaterialCost { get; set; }
 
-    public decimal PackagingCost { get; set; }
+    public decimal MaterialLogisticsCost { get; set; }
 
-    public decimal PackagingWorkCost { get; set; }
+    public decimal WorkCost { get; set; }
 
-    public decimal LogisticsToMarketplaceCost { get; set; }
+    public decimal LogisticsToCustomerCost { get; set; }
 
     /// <summary>Packing unit the volume was taken from; null when logistics cost was entered manually.</summary>
     public Guid? PackingUnitId { get; set; }

@@ -24,9 +24,9 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
             .IsRequired();
 
         builder.Property(mcs => mcs.RawMaterialCost).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.PackagingCost).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.PackagingWorkCost).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.LogisticsToMarketplaceCost).HasPrecision(18, 4).IsRequired();
+        builder.Property(mcs => mcs.MaterialLogisticsCost).HasPrecision(18, 4).IsRequired();
+        builder.Property(mcs => mcs.WorkCost).HasPrecision(18, 4).IsRequired();
+        builder.Property(mcs => mcs.LogisticsToCustomerCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.TotalCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.BuyerPrice).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.CommissionAmount).HasPrecision(18, 4).IsRequired();
