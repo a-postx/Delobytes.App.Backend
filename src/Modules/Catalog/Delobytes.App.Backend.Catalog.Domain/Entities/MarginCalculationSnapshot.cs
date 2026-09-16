@@ -28,6 +28,12 @@ public class MarginCalculationSnapshot : ITenantScoped
 
     public decimal LogisticsToMarketplaceCost { get; set; }
 
+    /// <summary>Packing unit the volume was taken from; null when logistics cost was entered manually.</summary>
+    public Guid? PackingUnitId { get; set; }
+
+    /// <summary>Volume in litres used to select the tariff bracket, kept for audit.</summary>
+    public decimal VolumeLiters { get; set; }
+
     /// <summary>Total cost of goods: sum of all cost components.</summary>
     public decimal TotalCost { get; set; }
 

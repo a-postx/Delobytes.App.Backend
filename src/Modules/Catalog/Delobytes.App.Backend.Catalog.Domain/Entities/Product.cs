@@ -16,13 +16,6 @@ public class Product : ITenantScoped
 
     public string? Description { get; set; }
 
-    /// <summary>Box dimensions in cm, used to calculate volume for logistics formulas.</summary>
-    public decimal LengthCm { get; set; }
-
-    public decimal WidthCm { get; set; }
-
-    public decimal HeightCm { get; set; }
-
     public bool IsActive { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
@@ -36,4 +29,6 @@ public class Product : ITenantScoped
     public ICollection<ProductChannelInput> ProductChannelInputs { get; set; } = new List<ProductChannelInput>();
 
     public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
+
+    public ICollection<PackingUnit> PackingUnits { get; set; } = new List<PackingUnit>();
 }

@@ -24,18 +24,6 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Description)
             .HasMaxLength(2000);
 
-        builder.Property(p => p.LengthCm)
-            .HasPrecision(8, 2)
-            .IsRequired();
-
-        builder.Property(p => p.WidthCm)
-            .HasPrecision(8, 2)
-            .IsRequired();
-
-        builder.Property(p => p.HeightCm)
-            .HasPrecision(8, 2)
-            .IsRequired();
-
         builder.Property(p => p.IsActive)
             .IsRequired();
 
@@ -68,6 +56,11 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasMany(p => p.ProductWorkRates)
             .WithOne(pwr => pwr.Product)
             .HasForeignKey(pwr => pwr.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(p => p.PackingUnits)
+            .WithOne(pu => pu.Product)
+            .HasForeignKey(pu => pu.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

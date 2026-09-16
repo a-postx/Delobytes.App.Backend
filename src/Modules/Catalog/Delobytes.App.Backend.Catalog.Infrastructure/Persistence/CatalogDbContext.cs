@@ -30,6 +30,7 @@ public class CatalogDbContext : DbContext
     public DbSet<Component> Components => Set<Component>();
     public DbSet<ComponentPrice> ComponentPrices => Set<ComponentPrice>();
     public DbSet<ProductComponent> ProductComponents => Set<ProductComponent>();
+    public DbSet<PackingUnit> PackingUnits => Set<PackingUnit>();
     public DbSet<TariffGrid> TariffGrids => Set<TariffGrid>();
     public DbSet<TariffGridEntry> TariffGridEntries => Set<TariffGridEntry>();
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();

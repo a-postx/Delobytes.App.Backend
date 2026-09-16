@@ -17,6 +17,9 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
 
         builder.Property(mcs => mcs.TariffGridId);
 
+        builder.Property(mcs => mcs.PackingUnitId);
+        builder.Property(mcs => mcs.VolumeLiters).HasPrecision(10, 3).IsRequired();
+
         builder.Property(mcs => mcs.WorkRateId)
             .IsRequired();
 
