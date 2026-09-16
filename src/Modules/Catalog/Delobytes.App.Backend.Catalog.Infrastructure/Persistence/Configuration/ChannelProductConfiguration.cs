@@ -46,8 +46,9 @@ public class ChannelProductConfiguration : IEntityTypeConfiguration<ChannelProdu
             .IsUnique();
 
         builder.HasIndex(cp => cp.ChannelId);
-        builder.HasIndex(cp => cp.ExternalProductId);
-        builder.HasIndex(cp => cp.IsActive);
+        builder.HasIndex(cp => new { cp.ChannelId, cp.ExternalProductId })
+            .IsUnique()
+            .HasDatabaseName("IX_ChannelProducts_Channel_ExternalProduct");
         builder.HasIndex(cp => cp.LastSyncedAt);
 
         builder.HasOne(cp => cp.Product)

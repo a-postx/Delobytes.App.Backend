@@ -44,8 +44,9 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.Property(p => p.UpdatedAt);
 
-        builder.HasIndex(p => p.Sku)
-            .IsUnique();
+        builder.HasIndex("TenantId", nameof(Product.Sku))
+            .IsUnique()
+            .HasDatabaseName("IX_Products_TenantId_Sku");
 
         builder.HasIndex(p => p.IsActive);
 
