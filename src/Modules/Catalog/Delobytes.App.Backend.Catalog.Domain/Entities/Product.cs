@@ -31,4 +31,6 @@ public class Product : ITenantScoped
     public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
 
     public ICollection<PackingUnit> PackingUnits { get; set; } = new List<PackingUnit>();
+
+    public ICollection<ProductBarcode> Barcodes { get; set; } = new List<ProductBarcode>();
 }
