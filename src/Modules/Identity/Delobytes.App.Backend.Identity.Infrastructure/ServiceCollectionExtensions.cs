@@ -47,12 +47,6 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("Jwt secret key is not configured.");
         }
 
-        // Register HttpContextAccessor for TenantContext
-        services.AddHttpContextAccessor();
-
-        // Register Contracts.ITenantContext for all other modules.
-        services.AddScoped<ITenantContext, HttpTenantContext>();
-
         // Register JWT token service
         services.AddScoped<IJwtTokenService, JwtTokenService>();
 

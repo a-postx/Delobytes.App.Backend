@@ -133,7 +133,6 @@ public partial class Program
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
             builder.Services.AddValidatorsFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
-            builder.Services.AddHttpContextAccessor();
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
             {
@@ -175,7 +174,7 @@ public partial class Program
                 options.SkipRequestHeaders = new List<string> { "Authorization" };
             });
 
-            // ── Infrastructure (EF Core / PostgreSQL) ───────────────────────────────
+            // ── Infrastructure (Http / EF Core / PostgreSQL) ───────────────────────────────
             builder.Services
                 .AddInfrastructure(builder.Configuration, secrets);
 

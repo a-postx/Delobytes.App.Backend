@@ -1,6 +1,8 @@
 using Delobytes.App.Backend.Catalog.Infrastructure;
+using Delobytes.App.Backend.Filters;
 using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Messaging.Consumers;
+using Delobytes.App.Backend.Services;
 using MassTransit;
 
 namespace Delobytes.App.Backend.Extensions;
@@ -31,6 +33,11 @@ internal static class MassTransitExtensions
                 bus.UsingRabbitMq((ctx, cfg) =>
                 {
                     cfg.Host(new Uri(messageBusConnectionString));
+
+                    // Register tenant filters for all messages
+                    cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
+                    cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
+
                     cfg.ConfigureEndpoints(ctx);
                 });
             }
@@ -38,6 +45,10 @@ internal static class MassTransitExtensions
             {
                 bus.UsingInMemory((ctx, cfg) =>
                 {
+                    // Register tenant filters for all messages
+                    cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
+                    cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
+
                     cfg.ConfigureEndpoints(ctx);
                 });
             }

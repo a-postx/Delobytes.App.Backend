@@ -1,8 +1,11 @@
 using Delobytes.App.Backend.Catalog.Infrastructure;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure;
+using Delobytes.App.Backend.Identity.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Options;
 using Delobytes.App.Backend.Sales.Infrastructure;
+using Delobytes.App.Backend.Services;
 
 namespace Delobytes.App.Backend.Infrastructure;
 
@@ -20,6 +23,14 @@ public static class InfrastructureServiceExtensions
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, AppSecrets? secrets)
     {
+        services.AddHttpContextAccessor();
+
+        // Register tenant contexts
+        services.AddScoped<MessageTenantContext>();
+        services.AddScoped<ITenantContext>(sp => new CompositeTenantContext(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<MessageTenantContext>()));
+
         services.AddIdentityInfrastructure(
             configuration,
             secrets?.ConnectionString,
