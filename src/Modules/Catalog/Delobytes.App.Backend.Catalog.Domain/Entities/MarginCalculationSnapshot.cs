@@ -13,12 +13,9 @@ public class MarginCalculationSnapshot : ITenantScoped
 
     public Guid ProductChannelInputId { get; set; }
 
-    /// <summary>TariffGrid used for logistics cost; null when logistics cost was entered manually.</summary>
-    public Guid? TariffGridId { get; set; }
-
     public Guid WorkRateId { get; set; }
 
-    // ── Calculated cost components ──────────────────────────────────────────
+    // ── Calculated cost components ───────────────────────────────────────────
 
     public decimal RawMaterialCost { get; set; }
 
@@ -26,18 +23,16 @@ public class MarginCalculationSnapshot : ITenantScoped
 
     public decimal WorkCost { get; set; }
 
-    public decimal LogisticsToCustomerCost { get; set; }
-
-    /// <summary>Packing unit the volume was taken from; null when logistics cost was entered manually.</summary>
-    public Guid? PackingUnitId { get; set; }
-
-    /// <summary>Volume in litres used to select the tariff bracket, kept for audit.</summary>
-    public decimal VolumeLiters { get; set; }
+    /// <summary>
+    /// Aggregate of all ProductChannelCost entries for the product+channel pair
+    /// at the time of calculation.
+    /// </summary>
+    public decimal ChannelCostTotal { get; set; }
 
     /// <summary>Total cost of goods: sum of all cost components.</summary>
     public decimal TotalCost { get; set; }
 
-    // ── Calculated revenue components ───────────────────────────────────────
+    // ── Calculated revenue components ────────────────────────────────────────
 
     public decimal BuyerPrice { get; set; }
 
@@ -50,7 +45,7 @@ public class MarginCalculationSnapshot : ITenantScoped
     /// <summary>Revenue net of commission, acquiring, and tax.</summary>
     public decimal NetRevenue { get; set; }
 
-    // ── Margin ──────────────────────────────────────────────────────────────
+    // ── Margin ────────────────────────────────────────────────────────────────
 
     public decimal Margin { get; set; }
 

@@ -17,9 +17,6 @@ public class ProductChannelInput : ITenantScoped
     /// <summary>Cost of raw materials for one product unit (manual operator input).</summary>
     public decimal RawMaterialCost { get; set; }
 
-    /// <summary>Logistics cost from supplier to operator's warehouse (manual operator input).</summary>
-    public decimal LogisticsToCost { get; set; }
-
     /// <summary>Listing price before any discounts, in currency.</summary>
     public decimal PriceWithoutDiscount { get; set; }
 

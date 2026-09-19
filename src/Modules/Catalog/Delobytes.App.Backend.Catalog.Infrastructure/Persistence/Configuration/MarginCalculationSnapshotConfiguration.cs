@@ -15,18 +15,13 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
         builder.Property(mcs => mcs.ProductChannelInputId)
             .IsRequired();
 
-        builder.Property(mcs => mcs.TariffGridId);
-
-        builder.Property(mcs => mcs.PackingUnitId);
-        builder.Property(mcs => mcs.VolumeLiters).HasPrecision(10, 3).IsRequired();
-
         builder.Property(mcs => mcs.WorkRateId)
             .IsRequired();
 
         builder.Property(mcs => mcs.RawMaterialCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.MaterialLogisticsCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.WorkCost).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.LogisticsToCustomerCost).HasPrecision(18, 4).IsRequired();
+        builder.Property(mcs => mcs.ChannelCostTotal).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.TotalCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.BuyerPrice).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.CommissionAmount).HasPrecision(18, 4).IsRequired();
@@ -47,7 +42,7 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
             .HasForeignKey(mcs => mcs.ProductChannelInputId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // WorkRate and TariffGrid are referenced by ID only; no navigation FK to avoid
+        // WorkRate is referenced by ID only; no navigation FK to avoid
         // accidental deletion of historical rate records that snapshots depend on.
     }
 }

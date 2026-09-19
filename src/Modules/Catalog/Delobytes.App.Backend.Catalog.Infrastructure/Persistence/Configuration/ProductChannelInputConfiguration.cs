@@ -22,10 +22,6 @@ public class ProductChannelInputConfiguration : IEntityTypeConfiguration<Product
             .HasPrecision(18, 4)
             .IsRequired();
 
-        builder.Property(pci => pci.LogisticsToCost)
-            .HasPrecision(18, 4)
-            .IsRequired();
-
         builder.Property(pci => pci.PriceWithoutDiscount)
             .HasPrecision(18, 4)
             .IsRequired();
