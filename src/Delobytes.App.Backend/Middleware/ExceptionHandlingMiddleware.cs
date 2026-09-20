@@ -1,15 +1,15 @@
-using System.Net;
 using System.Text.Json;
 using Delobytes.App.Backend.Constants;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Services;
 
 namespace Delobytes.App.Backend.Middleware;
 
 /// <summary>
 /// Global exception handling middleware.
-/// Maps known exception types to appropriate HTTP status codes and returns
-/// a consistent JSON error envelope: { "message": "..." }.
+/// Maps known exception types to ErrorCode and returns a consistent JSON error envelope.
 /// Unknown exceptions are logged and returned as 500 without internal details.
+/// CorrelationId is set only in the response header (X-Correlation-Id), not in the body.
 /// </summary>
 public class ExceptionHandlingMiddleware
 {
@@ -21,18 +21,12 @@ public class ExceptionHandlingMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ExceptionHandlingMiddleware"/> class.
-    /// </summary>
     public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
     {
         _next = next;
         _logger = logger;
     }
 
-    /// <summary>
-    /// Invokes the middleware.
-    /// </summary>
     public async Task InvokeAsync(HttpContext context)
     {
         try
@@ -47,57 +41,56 @@ public class ExceptionHandlingMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        HttpStatusCode statusCode;
-        string message;
-
-        _logger.LogWarning("Exception handling middleware");
+        ErrorCode errorCode;
+        string? message = null;
 
         switch (exception)
         {
+            case AppException appEx:
+                errorCode = appEx.Code;
+                message = appEx.Message;
+                _logger.LogWarning("AppException [{Code}]: {Message}", appEx.Code.Value, appEx.Message);
+                break;
+
             case UnauthorizedAccessException:
-                statusCode = HttpStatusCode.Unauthorized;
-                message = exception.Message;
+                errorCode = ErrorCodes.Common.Unauthorized;
                 _logger.LogWarning("Unauthorized: {Message}", exception.Message);
                 break;
 
             case Integrations.Application.ConflictException:
-                statusCode = HttpStatusCode.Conflict;
-                message = exception.Message;
+                errorCode = ErrorCodes.Common.Conflict;
                 _logger.LogWarning("Conflict: {Message}", exception.Message);
                 break;
 
             case InvalidOperationException:
-                statusCode = HttpStatusCode.BadRequest;
-                message = exception.Message;
+                errorCode = ErrorCodes.Common.ValidationFailed;
                 _logger.LogWarning("Bad request: {Message}", exception.Message);
                 break;
 
             case KeyNotFoundException:
-                statusCode = HttpStatusCode.NotFound;
-                message = exception.Message;
+                errorCode = ErrorCodes.Common.NotFound;
                 _logger.LogWarning("Not found: {Message}", exception.Message);
                 break;
 
             default:
-                statusCode = HttpStatusCode.InternalServerError;
-                message = "An unexpected error occurred.";
+                errorCode = ErrorCodes.Common.Unexpected;
                 _logger.LogError(exception, "Unhandled exception");
                 break;
         }
 
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = (int)statusCode;
+        context.Response.StatusCode = errorCode.Status;
 
         // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
-        // already present. This is a defensive fallback for the case where that middleware is not
-        // in the pipeline, for example in unit tests or when the host is composed differently.
+        // already present. Defensive fallback for tests or non-standard host composition.
         if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
         {
             context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
                 context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
         }
 
-        string body = JsonSerializer.Serialize(new { message }, JsonOptions);
-        await context.Response.WriteAsync(body);
+        ErrorResponse body = ErrorResponse.FromCode(errorCode, message);
+        string json = JsonSerializer.Serialize(body, JsonOptions);
+        await context.Response.WriteAsync(json);
     }
 }

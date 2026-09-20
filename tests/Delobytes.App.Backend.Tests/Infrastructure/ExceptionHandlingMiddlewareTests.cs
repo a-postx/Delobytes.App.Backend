@@ -6,6 +6,7 @@ using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Constants;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
@@ -27,17 +28,26 @@ public class ExceptionHandlingMiddlewareTests
         return context;
     }
 
-    private static async Task<(int StatusCode, string? Message)> ReadResponseAsync(HttpContext context)
+    private static async Task<(int StatusCode, string? Message, string? Code, int? BodyStatus)> ReadResponseAsync(HttpContext context)
     {
         context.Response.Body.Seek(0, SeekOrigin.Begin);
         string body = await new StreamReader(context.Response.Body).ReadToEndAsync();
 
         JsonDocument doc = JsonDocument.Parse(body);
-        string? message = doc.RootElement.TryGetProperty("message", out JsonElement prop)
-            ? prop.GetString()
+
+        string? message = doc.RootElement.TryGetProperty("message", out JsonElement messageProp)
+            ? messageProp.GetString()
             : null;
 
-        return (context.Response.StatusCode, message);
+        string? code = doc.RootElement.TryGetProperty("code", out JsonElement codeProp)
+            ? codeProp.GetString()
+            : null;
+
+        int? bodyStatus = doc.RootElement.TryGetProperty("status", out JsonElement statusProp)
+            ? statusProp.GetInt32()
+            : null;
+
+        return (context.Response.StatusCode, message, code, bodyStatus);
     }
 
     [Fact]
@@ -62,9 +72,10 @@ public class ExceptionHandlingMiddlewareTests
     }
 
     [Fact]
-    public async Task Invoke_UnauthorizedAccessException_Returns401WithMessage()
+    public async Task Invoke_UnauthorizedAccessException_Returns401WithDefaultMessage()
     {
         // Arrange
+        // exception.Message is intentionally not echoed — the DefaultMessage from ErrorCode is used instead.
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new UnauthorizedAccessException("Неверный адрес или пароль."));
 
@@ -72,17 +83,21 @@ public class ExceptionHandlingMiddlewareTests
 
         // Act
         await middleware.InvokeAsync(context);
-        (int statusCode, string? message) = await ReadResponseAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
 
         // Assert
         statusCode.Should().Be((int)HttpStatusCode.Unauthorized);
-        message.Should().Be("Неверный адрес или пароль.");
+        message.Should().Be("Требуется аутентификация.");
+        code.Should().Be("common.unauthorized");
+        bodyStatus.Should().Be(401);
     }
 
     [Fact]
-    public async Task Invoke_InvalidOperationException_Returns400WithMessage()
+    public async Task Invoke_InvalidOperationException_Returns422WithDefaultMessage()
     {
         // Arrange
+        // InvalidOperationException maps to ValidationFailed (422), not BadRequest (400).
+        // exception.Message is not echoed — the DefaultMessage from ErrorCode is used instead.
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new InvalidOperationException("Пользователь с почтой test@example.com уже существует."));
 
@@ -90,17 +105,20 @@ public class ExceptionHandlingMiddlewareTests
 
         // Act
         await middleware.InvokeAsync(context);
-        (int statusCode, string? message) = await ReadResponseAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
 
         // Assert
-        statusCode.Should().Be((int)HttpStatusCode.BadRequest);
-        message.Should().Be("Пользователь с почтой test@example.com уже существует.");
+        statusCode.Should().Be(422);
+        message.Should().Be("Проверьте корректность отправленных данных.");
+        code.Should().Be("common.validation_failed");
+        bodyStatus.Should().Be(422);
     }
 
     [Fact]
-    public async Task Invoke_KeyNotFoundException_Returns404WithMessage()
+    public async Task Invoke_KeyNotFoundException_Returns404WithDefaultMessage()
     {
         // Arrange
+        // exception.Message is not echoed — the DefaultMessage from ErrorCode is used instead.
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new KeyNotFoundException("Resource not found."));
 
@@ -108,11 +126,53 @@ public class ExceptionHandlingMiddlewareTests
 
         // Act
         await middleware.InvokeAsync(context);
-        (int statusCode, string? message) = await ReadResponseAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
 
         // Assert
         statusCode.Should().Be((int)HttpStatusCode.NotFound);
-        message.Should().Be("Resource not found.");
+        message.Should().Be("Ресурс не найден.");
+        code.Should().Be("common.not_found");
+        bodyStatus.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Invoke_AppException_ReturnsCodeStatusAndMessage()
+    {
+        // Arrange
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new AppException(ErrorCodes.Catalog.ProductWorkRateNotFound));
+
+        DefaultHttpContext context = BuildContext();
+
+        // Act
+        await middleware.InvokeAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
+
+        // Assert
+        statusCode.Should().Be((int)HttpStatusCode.NotFound);
+        code.Should().Be("catalog.product_work_rate.not_found");
+        message.Should().Be("Норма выработки не найдена.");
+        bodyStatus.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Invoke_AppException_WithCustomMessage_UsesCustomMessage()
+    {
+        // Arrange
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new AppException(ErrorCodes.Catalog.ProductWorkRateNotFound, "Норма выработки #42 не найдена."));
+
+        DefaultHttpContext context = BuildContext();
+
+        // Act
+        await middleware.InvokeAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
+
+        // Assert
+        statusCode.Should().Be((int)HttpStatusCode.NotFound);
+        code.Should().Be("catalog.product_work_rate.not_found");
+        message.Should().Be("Норма выработки #42 не найдена.");
+        bodyStatus.Should().Be(404);
     }
 
     [Fact]
@@ -126,7 +186,7 @@ public class ExceptionHandlingMiddlewareTests
 
         // Act
         await middleware.InvokeAsync(context);
-        (int statusCode, string? message) = await ReadResponseAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
 
         // Assert
         statusCode.Should().Be((int)HttpStatusCode.InternalServerError);
@@ -134,6 +194,8 @@ public class ExceptionHandlingMiddlewareTests
         // Internal details must not be leaked to the client
         message.Should().Be("An unexpected error occurred.");
         message.Should().NotContain("Sensitive internal details.");
+        code.Should().Be("common.unexpected_error");
+        bodyStatus.Should().Be(500);
     }
 
     [Fact]
