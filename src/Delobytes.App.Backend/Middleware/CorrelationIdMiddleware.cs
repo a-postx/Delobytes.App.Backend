@@ -29,8 +29,7 @@ public class CorrelationIdMiddleware
     /// Invokes the middleware.
     /// </summary>
     /// <param name="context">HTTP context.</param>
-    /// <param name="logger">Logger for the request scope.</param>
-    public async Task InvokeAsync(HttpContext context, ILogger<CorrelationIdMiddleware> logger)
+    public async Task InvokeAsync(HttpContext context)
     {
         string correlationId = CorrelationIdProvider.Resolve(
             context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
@@ -49,11 +48,5 @@ public class CorrelationIdMiddleware
         {
             await _next(context);
         }
-
-        logger.LogInformation(
-            "HTTP {Method} {Path} responded {StatusCode}",
-            context.Request.Method,
-            context.Request.Path.Value,
-            context.Response.StatusCode);
     }
 }

@@ -29,7 +29,7 @@ public class CorrelationIdMiddlewareTests
     }
 
     private static Task InvokeAsync(CorrelationIdMiddleware middleware, HttpContext context)
-        => middleware.InvokeAsync(context, NullLogger<CorrelationIdMiddleware>.Instance);
+        => middleware.InvokeAsync(context);
 
     [Fact]
     public async Task Invoke_AlwaysWritesCorrelationHeaderToResponse()
