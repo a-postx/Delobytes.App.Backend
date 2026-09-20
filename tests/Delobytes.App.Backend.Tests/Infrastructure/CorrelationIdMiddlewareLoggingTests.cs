@@ -45,6 +45,92 @@ public class CorrelationIdMiddlewareLoggingTests
         AssertAllEntriesCarry(pipeline.Sink.Events, "support-ticket-id");
     }
 
+    [Fact]
+    public async Task TwoParallelRequests_CorrelationIdsDoNotMix()
+    {
+        // Both requests must share ONE logger and ONE sink. Using separate pipelines would be
+        // trivially correct — each logger writes only to its own sink, so nothing can bleed.
+        // Here, a single Serilog instance receives events from both concurrent async flows, and the
+        // only thing separating them is the AsyncLocal stack maintained by LogContext. If the push
+        // and pop happen on the wrong continuations the wrong ID ends up on an event.
+        string firstId = "parallel-first-aaa";
+        string secondId = "parallel-second-bbb";
+
+        int arrivedCount = 0;
+        TaskCompletionSource<bool> barrier = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using CorrelationPipeline pipeline = CorrelationPipeline.Create(async ctx =>
+        {
+            // Hold both requests inside CorrelationIdMiddleware at the same time so the two
+            // LogContext scopes genuinely overlap on the thread pool.
+            if (Interlocked.Increment(ref arrivedCount) == 2)
+            {
+                barrier.TrySetResult(true);
+            }
+
+            await barrier.Task;
+
+            ctx.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Delobytes.Handler")
+                .LogInformation("downstream ran");
+        });
+
+        await Task.WhenAll(
+            pipeline.InvokeAsync(BuildContext(firstId)),
+            pipeline.InvokeAsync(BuildContext(secondId)));
+
+        List<LogEvent> allEvents = pipeline.Sink.Events;
+        allEvents.Should().NotBeEmpty();
+
+        List<LogEvent> withFirst = allEvents
+            .Where(e => e.Properties.ContainsKey(LoggingLogKeys.CorrelationId) &&
+                        e.Properties[LoggingLogKeys.CorrelationId].ToString().Contains(firstId))
+            .ToList();
+
+        List<LogEvent> withSecond = allEvents
+            .Where(e => e.Properties.ContainsKey(LoggingLogKeys.CorrelationId) &&
+                        e.Properties[LoggingLogKeys.CorrelationId].ToString().Contains(secondId))
+            .ToList();
+
+        withFirst.Should().NotBeEmpty("first request must produce at least one log entry");
+        withSecond.Should().NotBeEmpty("second request must produce at least one log entry");
+
+        // Every event must belong to exactly one of the two requests. A mismatch means the
+        // AsyncLocal scopes bled across concurrent async flows.
+        allEvents.Should().HaveCount(
+            withFirst.Count + withSecond.Count,
+            "every log event must carry exactly one of the two request correlation IDs");
+    }
+
+    [Fact]
+    public async Task LogEntriesWrittenAfterRequestCompletes_DoNotCarryCorrelationId()
+    {
+        // LogContext.PushProperty is scoped to the using block inside InvokeAsync. Once the
+        // middleware returns the property must be absent so stale identifiers cannot appear in
+        // unrelated work that runs on the same thread or task after the request ends.
+        using CorrelationPipeline pipeline = CorrelationPipeline.Create(_ => Task.CompletedTask);
+
+        DefaultHttpContext context = BuildContext("scoped-id");
+        await pipeline.InvokeAsync(context);
+
+        int countAfterRequest = pipeline.Sink.Events.Count;
+
+        pipeline.Services
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Delobytes.OutsideScope")
+            .LogInformation("written after request completed");
+
+        List<LogEvent> externalEvents = pipeline.Sink.Events.Skip(countAfterRequest).ToList();
+
+        externalEvents.Should().NotBeEmpty();
+        externalEvents.Should().NotContain(
+            e => e.Properties.ContainsKey(LoggingLogKeys.CorrelationId) &&
+                 e.Properties[LoggingLogKeys.CorrelationId].ToString().Contains("scoped-id"),
+            "correlation id must not appear in log entries written after the request scope ends");
+    }
+
     private static void AssertAllEntriesCarry(List<LogEvent> events, string expected)
     {
         events.Should().NotBeEmpty();
@@ -97,6 +183,12 @@ public class CorrelationIdMiddlewareLoggingTests
 
         public CapturingSink Sink { get; }
 
+        /// <summary>
+        /// Exposes the container so tests can resolve services (e.g. ILoggerFactory) to emit
+        /// log entries outside the request scope and verify they carry no correlation id.
+        /// </summary>
+        public IServiceProvider Services => _provider;
+
         public static CorrelationPipeline Create(RequestDelegate downstream)
         {
             CapturingSink sink = new CapturingSink();
@@ -144,11 +236,26 @@ public class CorrelationIdMiddlewareLoggingTests
     /// </summary>
     private sealed class CapturingSink : ILogEventSink
     {
-        public List<LogEvent> Events { get; } = new List<LogEvent>();
+        private readonly object _lock = new object();
+        private readonly List<LogEvent> _events = new List<LogEvent>();
+
+        public List<LogEvent> Events
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return new List<LogEvent>(_events);
+                }
+            }
+        }
 
         public void Emit(LogEvent logEvent)
         {
-            Events.Add(logEvent);
+            lock (_lock)
+            {
+                _events.Add(logEvent);
+            }
         }
     }
 }
