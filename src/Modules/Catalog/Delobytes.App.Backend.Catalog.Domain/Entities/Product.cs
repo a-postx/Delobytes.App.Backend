@@ -16,8 +16,6 @@ public class Product : ITenantScoped
 
     public string? Description { get; set; }
 
-    public bool IsActive { get; set; }
-
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? UpdatedAt { get; set; }

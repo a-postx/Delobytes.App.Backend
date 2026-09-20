@@ -24,9 +24,6 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Description)
             .HasMaxLength(2000);
 
-        builder.Property(p => p.IsActive)
-            .IsRequired();
-
         builder.Property(p => p.CreatedAt)
             .IsRequired();
 
@@ -35,8 +32,6 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex("TenantId", nameof(Product.Sku))
             .IsUnique()
             .HasDatabaseName("IX_Products_TenantId_Sku");
-
-        builder.HasIndex(p => p.IsActive);
 
         builder.HasMany(p => p.ChannelProducts)
             .WithOne(cp => cp.Product)

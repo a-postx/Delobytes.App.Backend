@@ -42,7 +42,6 @@ public class PackingUnitCascadeDeleteTests
             Id = Guid.NewGuid(),
             Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Name = "Товар",
-            IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
     }
