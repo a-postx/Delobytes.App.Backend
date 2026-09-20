@@ -5,6 +5,7 @@ using System.IO;
 using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
@@ -149,5 +150,67 @@ public class ExceptionHandlingMiddlewareTests
 
         // Assert
         context.Response.ContentType.Should().Be("application/json");
+    }
+
+    [Fact]
+    public async Task Invoke_AlwaysEmitsCorrelationHeader()
+    {
+        // Even without CorrelationIdMiddleware in the pipeline an error response must carry an
+        // identifier the user can quote to support.
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new InvalidOperationException("Some error."));
+
+        DefaultHttpContext context = BuildContext();
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.Headers[CorrelationHeaders.CorrelationId]
+            .ToString().Should().MatchRegex("^[0-9a-f]{32}$");
+    }
+
+    [Fact]
+    public async Task Invoke_WithIncomingCorrelationHeader_EchoesItOnErrorResponse()
+    {
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new InvalidOperationException("Some error."));
+
+        DefaultHttpContext context = BuildContext();
+        context.Request.Headers[CorrelationHeaders.CorrelationId] = "user-quotable-id";
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.Headers[CorrelationHeaders.CorrelationId]
+            .ToString().Should().Be("user-quotable-id");
+    }
+
+    [Fact]
+    public async Task Invoke_WithIncomingMalformedCorrelationHeader_SubstitutesIt()
+    {
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new InvalidOperationException("Some error."));
+
+        DefaultHttpContext context = BuildContext();
+        context.Request.Headers[CorrelationHeaders.CorrelationId] = "bad value with spaces";
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.Headers[CorrelationHeaders.CorrelationId]
+            .ToString().Should().NotBe("bad value with spaces");
+    }
+
+    [Fact]
+    public async Task Invoke_CorrelationHeaderAlreadySet_IsNotOverwritten()
+    {
+        // CorrelationIdMiddleware runs first and its value must win.
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new InvalidOperationException("Some error."));
+
+        DefaultHttpContext context = BuildContext();
+        context.Response.Headers[CorrelationHeaders.CorrelationId] = "set-upstream";
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.Headers[CorrelationHeaders.CorrelationId]
+            .ToString().Should().Be("set-upstream");
     }
 }

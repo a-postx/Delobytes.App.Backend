@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using Delobytes.App.Backend.Constants;
+using Delobytes.App.Backend.Services;
 
 namespace Delobytes.App.Backend.Middleware;
 
@@ -85,6 +87,15 @@ public class ExceptionHandlingMiddleware
 
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)statusCode;
+
+        // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
+        // already present. This is a defensive fallback for the case where that middleware is not
+        // in the pipeline, for example in unit tests or when the host is composed differently.
+        if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
+        {
+            context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
+                context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
+        }
 
         string body = JsonSerializer.Serialize(new { message }, JsonOptions);
         await context.Response.WriteAsync(body);

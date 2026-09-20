@@ -193,6 +193,11 @@ public partial class Program
 
             app.UseCors(CorsPolicyNames.AllowAny);
 
+            // Correlation id — first in the pipeline so the identifier is available to every
+            // component below it, including exception handling and framework-generated responses
+            // such as routing 404 and authentication 401 that never reach application code.
+            app.UseMiddleware<CorrelationIdMiddleware>();
+
             // Global exception handling — must be first in the pipeline after CORS
             app.UseMiddleware<ExceptionHandlingMiddleware>();
 

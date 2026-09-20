@@ -31,6 +31,11 @@ public static class InfrastructureServiceExtensions
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<MessageTenantContext>()));
 
+        // Register correlation context. CorrelationContext is registered as the concrete type as well,
+        // because MassTransit consume filters need the setter, not just ICorrelationContext.
+        services.AddScoped<CorrelationContext>();
+        services.AddScoped<ICorrelationContext>(sp => sp.GetRequiredService<CorrelationContext>());
+
         services.AddIdentityInfrastructure(
             configuration,
             secrets?.ConnectionString,

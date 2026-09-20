@@ -38,6 +38,10 @@ internal static class MassTransitExtensions
                     cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
                     cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
 
+                    // Register correlation filters for all messages
+                    cfg.UsePublishFilter(typeof(CorrelationPublishFilter<>), ctx);
+                    cfg.UseConsumeFilter(typeof(CorrelationConsumeFilter<>), ctx);
+
                     cfg.ConfigureEndpoints(ctx);
                 });
             }
@@ -48,6 +52,10 @@ internal static class MassTransitExtensions
                     // Register tenant filters for all messages
                     cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
                     cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
+
+                    // Register correlation filters for all messages
+                    cfg.UsePublishFilter(typeof(CorrelationPublishFilter<>), ctx);
+                    cfg.UseConsumeFilter(typeof(CorrelationConsumeFilter<>), ctx);
 
                     cfg.ConfigureEndpoints(ctx);
                 });

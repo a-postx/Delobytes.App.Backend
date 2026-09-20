@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Infrastructure.Health;
 using Delobytes.App.Backend.Infrastructure.Health.System;
@@ -27,7 +28,11 @@ internal static class ServiceCollectionExtensions
                     x => x
                         .AllowAnyOrigin()
                         .AllowAnyMethod()
-                        .AllowAnyHeader());
+                        .AllowAnyHeader()
+
+                        // Without this the browser hides the correlation header from JavaScript,
+                        // because the frontend and the API are served from different origins.
+                        .WithExposedHeaders(CorrelationHeaders.CorrelationId));
             });
     }
 
