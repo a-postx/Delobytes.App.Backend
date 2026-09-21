@@ -60,6 +60,8 @@ public partial class Program
 
             builder.ConfigureJsonOptions();
 
+            builder.Services.Configure<HostOptions>(opts => opts.ShutdownTimeout = TimeSpan.FromSeconds(30));
+
             builder.WebHost
                 .UseKestrel((builderContext, options) =>
                     {
@@ -130,8 +132,6 @@ public partial class Program
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
                 cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
             });
-
-            builder.Services.AddSignalR();
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
             builder.Services.AddValidatorsFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
@@ -277,7 +277,6 @@ public partial class Program
             });
 
             app.MapControllers();
-            app.MapHub<Hubs.ProductHub>("/hubs/products");
 
             await app.RunAsync();
 

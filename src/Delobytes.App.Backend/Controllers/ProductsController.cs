@@ -15,7 +15,7 @@ namespace Delobytes.App.Backend.Controllers;
 
 /// <summary>
 /// CRUD and lifecycle endpoints for Products.
-/// DELETE is asynchronous: returns 202 Accepted; clients receive real-time status via SignalR ProductHub.
+/// DELETE is asynchronous: returns 202 Accepted; clients poll GET {id}/deletion-status for progress.
 /// Two creation paths are planned: manual (this API) and marketplace import (not yet implemented).
 /// </summary>
 [ApiController]
@@ -137,8 +137,8 @@ public class ProductsController : ControllerBase
 
     /// <summary>
     /// Initiates asynchronous product deletion.
-    /// Returns 202 Accepted immediately. The actual deletion or failure notification
-    /// is pushed to the client via SignalR (ProductHub, event: ProductDeletionStatusChanged).
+    /// Returns 202 Accepted immediately. Clients should poll GET {id}/deletion-status
+    /// to monitor progress (recommended: exponential backoff 1s → 2s → 3s → 5s → 10s).
     /// Products with linked orders are denied deletion (status becomes DeletionFailed).
     /// </summary>
     [HttpDelete("{id:guid}")]
@@ -166,7 +166,7 @@ public class ProductsController : ControllerBase
 
     /// <summary>
     /// Returns the current deletion status for a product.
-    /// Use this endpoint to poll if SignalR is unavailable.
+    /// Poll this endpoint after calling DELETE to monitor progress.
     /// </summary>
     [HttpGet("{id:guid}/deletion-status")]
     public async Task<ActionResult<GetProductDeletionStatusResponse>> GetDeletionStatus(
