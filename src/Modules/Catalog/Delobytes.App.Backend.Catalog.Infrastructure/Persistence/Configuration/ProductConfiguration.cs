@@ -29,6 +29,24 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.Property(p => p.UpdatedAt);
 
+        builder.Property(p => p.Status)
+            .HasConversion<int>()
+            .IsRequired();
+
+        builder.Property(p => p.ArchivedAt)
+            .IsRequired(false);
+
+        builder.Property(p => p.DeletionRequestedAt)
+            .IsRequired(false);
+
+        builder.Property(p => p.DeletedAt)
+            .IsRequired(false);
+
+        builder.HasIndex(p => p.Status);
+
+        // for monitoring stuck pending deletions
+        builder.HasIndex(p => new { p.Status, p.DeletionRequestedAt });
+
         builder.HasIndex("TenantId", nameof(Product.Sku))
             .IsUnique()
             .HasDatabaseName("IX_Products_TenantId_Sku");

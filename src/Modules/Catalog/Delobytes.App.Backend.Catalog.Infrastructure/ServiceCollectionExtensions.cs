@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductChannelCostRepository, ProductChannelCostRepository>();
         services.AddScoped<IWorkRateRepository, WorkRateRepository>();
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
+        services.AddScoped<IProductRepository, ProductRepository>();
 
         return services;
     }
