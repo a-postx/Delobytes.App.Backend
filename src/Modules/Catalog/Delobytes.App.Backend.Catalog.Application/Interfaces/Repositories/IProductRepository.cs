@@ -9,6 +9,7 @@ public interface IProductRepository
 
     Task<Product?> GetWithChannelProductsByIdAsync(Guid id, CancellationToken ct);
 
+    /// <summary>Returns products ordered by name. A null status means "all statuses".</summary>
     Task<IReadOnlyList<Product>> GetAllByStatusAsync(ProductStatus? status, CancellationToken ct);
 
     void Add(Product product);

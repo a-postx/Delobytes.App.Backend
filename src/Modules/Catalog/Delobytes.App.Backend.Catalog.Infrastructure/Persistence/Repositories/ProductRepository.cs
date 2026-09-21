@@ -30,10 +30,17 @@ public class ProductRepository : IProductRepository
 
     public async Task<IReadOnlyList<Product>> GetAllByStatusAsync(ProductStatus? status, CancellationToken ct)
     {
-        ProductStatus filterStatus = status ?? ProductStatus.Active;
+        IQueryable<Product> query = _context.Products;
 
-        return await _context.Products
-            .Where(p => p.Status == filterStatus)
+        // Null means "no filter": callers that build the full catalog view need every
+        // status (active, archived, deletion states) to compute per-tab counters.
+        if (status.HasValue)
+        {
+            ProductStatus filterStatus = status.Value;
+            query = query.Where(p => p.Status == filterStatus);
+        }
+
+        return await query
             .OrderBy(p => p.Name)
             .ToListAsync(ct);
     }

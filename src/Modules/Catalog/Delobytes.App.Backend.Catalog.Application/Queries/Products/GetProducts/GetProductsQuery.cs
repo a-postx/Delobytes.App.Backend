@@ -5,6 +5,9 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts
 
 public class GetProductsQuery : IRequest<GetProductsResponse>
 {
-    /// <summary>Filter by status. Null returns only Active products.</summary>
+    /// <summary>
+    /// Optional status filter. When omitted, products of all statuses are returned and the
+    /// caller is responsible for filtering (the products page computes tab counters locally).
+    /// </summary>
     public ProductStatus? Status { get; set; }
 }

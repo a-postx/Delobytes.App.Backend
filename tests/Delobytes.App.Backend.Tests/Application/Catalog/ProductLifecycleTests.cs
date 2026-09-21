@@ -560,7 +560,7 @@ public class ProductLifecycleTests
     // -------------------------------------------------------------- queries / visibility
 
     [Fact]
-    public async Task GetProducts_DefaultFilter_ReturnsOnlyActive()
+    public async Task GetProducts_NoFilter_ReturnsAllStatuses()
     {
         // Arrange
         Mock<ITenantContext> tenantContextMock = BuildTenantContext();
@@ -580,6 +580,39 @@ public class ProductLifecycleTests
 
         // Act
         GetProductsResponse response = await handler.Handle(new GetProductsQuery(), CancellationToken.None);
+
+        // Assert: no status filter means the whole catalog -- the UI needs archived and
+        // pending items to render correct per-status counters.
+        response.Items.Should().HaveCount(5)
+            .And.Contain(i => i.Status == ProductStatus.Active)
+            .And.Contain(i => i.Status == ProductStatus.Archived)
+            .And.Contain(i => i.Status == ProductStatus.DeletionPending)
+            .And.Contain(i => i.Status == ProductStatus.Deleted);
+    }
+
+    [Fact]
+    public async Task GetProducts_ActiveFilter_ReturnsOnlyActive()
+    {
+        // Arrange
+        Mock<ITenantContext> tenantContextMock = BuildTenantContext();
+        using CatalogDbContext catalogContext = BuildCatalogContext(tenantContextMock);
+
+        catalogContext.Products.AddRange(
+            BuildProduct(ProductStatus.Active, name: "Active A"),
+            BuildProduct(ProductStatus.Active, name: "Active B"),
+            BuildProduct(ProductStatus.Archived, name: "Archived"),
+            BuildProduct(ProductStatus.DeletionPending, name: "Pending"),
+            BuildProduct(ProductStatus.Deleted, name: "Deleted"));
+
+        await catalogContext.SaveChangesAsync();
+
+        ProductRepository repository = new ProductRepository(catalogContext);
+        GetProductsQueryHandler handler = new GetProductsQueryHandler(repository);
+
+        // Act
+        GetProductsResponse response = await handler.Handle(
+            new GetProductsQuery { Status = ProductStatus.Active },
+            CancellationToken.None);
 
         // Assert
         response.Items.Should().HaveCount(2)

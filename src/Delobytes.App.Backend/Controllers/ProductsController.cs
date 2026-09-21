@@ -30,7 +30,7 @@ public class ProductsController : ControllerBase
         _mediator = mediator;
     }
 
-    /// <summary>Returns products filtered by status. Defaults to Active when status is omitted.</summary>
+    /// <summary>Returns products filtered by status. When status is omitted, products of all statuses are returned.</summary>
     [HttpGet]
     public async Task<ActionResult<GetProductsResponse>> GetAll(
         [FromQuery] ProductStatus? status,
