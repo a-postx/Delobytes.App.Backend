@@ -43,7 +43,7 @@ public class CorrelationIdMiddleware
             {
                 context.Response.Headers[CorrelationHeaders.CorrelationId] = correlationId;
             }
-            b
+            
             return Task.CompletedTask;
         });
 
