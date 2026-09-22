@@ -41,6 +41,15 @@ public class ExceptionHandlingMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
+        // Если response уже начат, мы не можем изменить статус или заголовки
+        if (context.Response.HasStarted)
+        {
+            _logger.LogWarning(
+                "Response has already started, cannot write error response for: {Message}",
+                exception.Message);
+            return;
+        }
+
         ErrorCode errorCode;
         string? message = null;
 
@@ -78,19 +87,31 @@ public class ExceptionHandlingMiddleware
                 break;
         }
 
-        context.Response.ContentType = "application/json";
-        context.Response.StatusCode = errorCode.Status;
-
-        // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
-        // already present. Defensive fallback for tests or non-standard host composition.
-        if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
+        try
         {
-            context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
-                context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
-        }
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = errorCode.Status;
 
-        ErrorResponse body = ErrorResponse.FromCode(errorCode, message);
-        string json = JsonSerializer.Serialize(body, JsonOptions);
-        await context.Response.WriteAsync(json);
+            // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
+            // already present. Defensive fallback for tests or non-standard host composition.
+            if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
+            {
+                context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
+                    context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
+            }
+
+            ErrorResponse body = ErrorResponse.FromCode(errorCode, message);
+            string json = JsonSerializer.Serialize(body, JsonOptions);
+            await context.Response.WriteAsync(json);
+        }
+        catch (Exception writeEx)
+        {
+            // Если не удалось записать ответ (например, соединение разорвано),
+            // логируем это, но не пытаемся обработать повторно
+            _logger.LogError(
+                writeEx,
+                "Failed to write error response. Original error: {OriginalMessage}",
+                exception.Message);
+        }
     }
 }
