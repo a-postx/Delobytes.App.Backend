@@ -8,8 +8,9 @@ namespace Delobytes.App.Backend.Middleware;
 /// Establishes the correlation identifier for every HTTP request.
 /// The identifier is accepted from the <see cref="CorrelationHeaders.CorrelationId"/> request header
 /// when it is well formed and generated otherwise, so downstream code and the server log always have
-/// a value. The header is written to the response using OnStarting callback, which guarantees it runs
-/// after exception handling has prepared the response but before headers are sent to the client.
+/// a value. The header is written to the response before the rest of the pipeline runs, which means
+/// responses produced outside the application's own handlers — routing 404, authentication 401,
+/// unhandled exceptions — still carry it.
 /// </summary>
 public class CorrelationIdMiddleware
 {
@@ -35,17 +36,13 @@ public class CorrelationIdMiddleware
 
         context.Items[CorrelationIdProvider.HttpContextItemKey] = correlationId;
 
-        // Используем OnStarting чтобы установить заголовок ровно перед отправкой response,
-        // после того как ExceptionHandlingMiddleware установит статус/тело при ошибке
-        context.Response.OnStarting(() =>
+        // Set directly rather than through Response.OnStarting: OnStarting does not run for a
+        // response that completes without flushing, and a header set here survives the rest of the
+        // pipeline, including exception handling, which does not clear the response.
+        if (!context.Response.HasStarted)
         {
-            if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
-            {
-                context.Response.Headers[CorrelationHeaders.CorrelationId] = correlationId;
-            }
-            
-            return Task.CompletedTask;
-        });
+            context.Response.Headers[CorrelationHeaders.CorrelationId] = correlationId;
+        }
 
         using (LogContext.PushProperty("CorrelationId", correlationId))
         {
