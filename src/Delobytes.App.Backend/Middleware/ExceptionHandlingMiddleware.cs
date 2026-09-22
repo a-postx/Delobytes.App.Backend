@@ -41,7 +41,6 @@ public class ExceptionHandlingMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        // Если response уже начат, мы не можем изменить статус или заголовки
         if (context.Response.HasStarted)
         {
             _logger.LogWarning(
@@ -89,16 +88,16 @@ public class ExceptionHandlingMiddleware
 
         try
         {
-            context.Response.ContentType = "application/json";
-            context.Response.StatusCode = errorCode.Status;
-
-            // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
-            // already present. Defensive fallback for tests or non-standard host composition.
+            // Устанавливаем correlation ID ДО записи тела ответа
             if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
             {
-                context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
+                string correlationId = CorrelationIdProvider.Resolve(
                     context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
+                context.Response.Headers[CorrelationHeaders.CorrelationId] = correlationId;
             }
+
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = errorCode.Status;
 
             ErrorResponse body = ErrorResponse.FromCode(errorCode, message);
             string json = JsonSerializer.Serialize(body, JsonOptions);
@@ -106,8 +105,6 @@ public class ExceptionHandlingMiddleware
         }
         catch (Exception writeEx)
         {
-            // Если не удалось записать ответ (например, соединение разорвано),
-            // логируем это, но не пытаемся обработать повторно
             _logger.LogError(
                 writeEx,
                 "Failed to write error response. Original error: {OriginalMessage}",
