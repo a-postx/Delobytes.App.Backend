@@ -19,6 +19,16 @@ public static partial class CorrelationIdProvider
     private const int GeneratedLength = 32;
 
     /// <summary>
+    /// Returns the supplied value when it is well formed, otherwise a newly generated identifier.
+    /// </summary>
+    /// <param name="value">Candidate value from an incoming request or message header.</param>
+    /// <returns>A usable correlation identifier.</returns>
+    public static string Resolve(string? value)
+    {
+        return IsWellFormed(value) ? value! : Create();
+    }
+
+    /// <summary>
     /// Gets a value indicating whether the supplied value is safe to reuse as a correlation identifier.
     /// </summary>
     /// <param name="value">Candidate value from an incoming request or message header.</param>
@@ -37,16 +47,6 @@ public static partial class CorrelationIdProvider
     public static string Create()
     {
         return Guid.NewGuid().ToString("N");
-    }
-
-    /// <summary>
-    /// Returns the supplied value when it is well formed, otherwise a newly generated identifier.
-    /// </summary>
-    /// <param name="value">Candidate value from an incoming request or message header.</param>
-    /// <returns>A usable correlation identifier.</returns>
-    public static string Resolve(string? value)
-    {
-        return IsWellFormed(value) ? value! : Create();
     }
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.CultureInvariant)]

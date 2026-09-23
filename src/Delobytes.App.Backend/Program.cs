@@ -11,12 +11,14 @@ using Delobytes.App.Backend.Infrastructure.Swagger;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
+using Delobytes.AspNetCore;
 using Delobytes.AspNetCore.Common.Constants;
 using Delobytes.AspNetCore.Logging;
 using FluentValidation;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
@@ -193,23 +195,35 @@ public partial class Program
 
             WebApplication app = builder.Build();
 
-            app.UseCors(CorsPolicyNames.AllowAny);
-
-            // Correlation id — first in the pipeline so the identifier is available to every
-            // component below it, including exception handling and framework-generated responses
-            // such as routing 404 and authentication 401 that never reach application code.
-            app.UseMiddleware<CorrelationIdMiddleware>();
-
-            // Global exception handling — must be first in the pipeline after CORS
-            app.UseMiddleware<ExceptionHandlingMiddleware>();
-
             IHostApplicationLifetime hostLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
             hostLifetime.ApplicationStopping.Register(() =>
             {
                 app.Services.GetRequiredService<ILogger<Program>>().LogInformation("Shutdown has been initiated.");
             });
 
-            await app.Services.ApplyMigrationsAsync();
+            try
+            {
+                await app.Services.ApplyMigrationsAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error applying database migration");
+                return 1;
+            }
+
+            // Correlation id — first in the pipeline so the identifier is available to every
+            // component below it, including exception handling and framework-generated responses
+            // such as routing 404 and authentication 401 that never reach application code.
+            app.UseMiddleware<CorrelationIdMiddleware>();
+
+            // Захват тела ДОЛЖЕН быть снаружи обработчика исключений,
+            // тогда ошибка сериализуется в живой буфер, а не в уже закрытый
+            app.UseHttpContextLogging();
+
+            // Global exception handling
+            app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+            app.UseCors(CorsPolicyNames.AllowAny);
 
             // Publish test event to verify MassTransit + RabbitMQ connectivity on startup
             string appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
@@ -230,8 +244,6 @@ public partial class Program
                 options.SwaggerEndpoint("/swagger/v1/swagger.json", "Delobytes App Backend v1");
                 options.RoutePrefix = "swagger";
             });
-
-            app.UseHttpContextLogging();
 
             // Authentication & authorization middleware must come before MapControllers
             app.UseAuthentication()

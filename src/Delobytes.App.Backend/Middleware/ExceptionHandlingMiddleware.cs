@@ -78,58 +78,19 @@ public class ExceptionHandlingMiddleware
                 break;
         }
 
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = errorCode.Status;
+
+        // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
+        // already present. Defensive fallback for tests or non-standard host composition.
+        if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
+        {
+            context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
+                context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
+        }
+
         ErrorResponse body = ErrorResponse.FromCode(errorCode, message);
         string json = JsonSerializer.Serialize(body, JsonOptions);
-
-        try
-        {
-            // Если response уже начат, мы не можем изменить статус или заголовки
-            if (context.Response.HasStarted)
-            {
-                _logger.LogWarning(
-                    "Response has already started, cannot write error response for: {Message}",
-                    exception.Message);
-                return;
-            }
-
-            // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
-            // already present. Defensive fallback for tests or non-standard host composition.
-            if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
-            {
-                context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
-                    context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
-            }
-
-            context.Response.ContentType = "application/json";
-            context.Response.StatusCode = errorCode.Status;
-
-            // Проверяем что stream доступен для записи
-            if (context.Response.Body.CanWrite)
-            {
-                await context.Response.WriteAsync(json);
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "Response stream is not writable for: {Message}",
-                    exception.Message);
-            }
-        }
-        catch (ObjectDisposedException disposeEx)
-        {
-            _logger.LogWarning(
-                disposeEx,
-                "Response stream was closed while writing error. Original error: {OriginalMessage}",
-                exception.Message);
-        }
-        catch (Exception writeEx)
-        {
-            // Если не удалось записать ответ (например, соединение разорвано),
-            // логируем это, но не пытаемся обработать повторно
-            _logger.LogError(
-                writeEx,
-                "Failed to write error response. Original error: {OriginalMessage}",
-                exception.Message);
-        }
+        await context.Response.WriteAsync(json);
     }
 }

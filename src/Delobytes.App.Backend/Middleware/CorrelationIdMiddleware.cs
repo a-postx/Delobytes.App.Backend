@@ -35,6 +35,7 @@ public class CorrelationIdMiddleware
             context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
 
         context.Items[CorrelationIdProvider.HttpContextItemKey] = correlationId;
+        context.TraceIdentifier = correlationId;
 
         // Set directly rather than through Response.OnStarting: OnStarting does not run for a
         // response that completes without flushing, and a header set here survives the rest of the
