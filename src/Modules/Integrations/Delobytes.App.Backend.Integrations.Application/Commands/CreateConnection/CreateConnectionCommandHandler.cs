@@ -72,12 +72,10 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
             request.Settings,
             cancellationToken);
 
-        Guid channelId = Guid.NewGuid();
-
         Connection connection = new Connection
         {
             Id = Guid.NewGuid(),
-            ChannelId = channelId,
+            ChannelId = template.Id,
             Name = template.DisplayName,
             ApiKey = request.ApiKey,
             ApiSecret = request.ApiSecret,
@@ -97,7 +95,7 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
         // Catalog subscribes to this event and creates the corresponding Channel.
         ConnectionCreatedEvent channelCreatedEvent = new ConnectionCreatedEvent
         {
-            ChannelId = channelId,
+            ChannelId = template.Id,
             SystemChannelTemplateId = template.Id,
             ChannelName = template.DisplayName,
         };
@@ -107,7 +105,7 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
         return new CreateConnectionResponse
         {
             ConnectionId = connection.Id,
-            ChannelId = channelId,
+            ChannelId = template.Id,
         };
     }
 }
