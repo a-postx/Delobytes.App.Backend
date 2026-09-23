@@ -39,7 +39,7 @@ public class WildberriesAuthHandlerTests
             ApiKey = apiKey,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
-            Channel = BuildTemplate(),
+            SystemChannelTemplate = BuildTemplate(),
         };
     }
 

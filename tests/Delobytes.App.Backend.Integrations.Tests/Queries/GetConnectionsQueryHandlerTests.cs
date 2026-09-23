@@ -39,6 +39,7 @@ public class GetConnectionsQueryHandlerTests
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset lastSync = now.AddHours(-2);
+        Guid channelId = Guid.NewGuid();
 
         SystemChannelTemplate template = new SystemChannelTemplate
         {
@@ -54,13 +55,17 @@ public class GetConnectionsQueryHandlerTests
         Connection connection = new Connection
         {
             Id = Guid.NewGuid(),
-            ChannelId = template.Id,
+            ChannelId = channelId,
+            SystemChannelTemplateId = template.Id,
             Name = "Wildberries",
-            ApiKey = "some-key",
+            ApiKey = "some-key-1234567890",
             IsActive = true,
             LastSyncAt = lastSync,
             CreatedAt = now,
-            Channel = template,
+            SystemChannelTemplate = template,
+            CustomerName = "My Store",
+            CustomerLegalName = "LLC MyCompany",
+            CustomerInn = "1234567890",
         };
 
         _connectionRepo
@@ -75,25 +80,31 @@ public class GetConnectionsQueryHandlerTests
         ConnectionDto dto = result.Items.Single();
 
         dto.Id.Should().Be(connection.Id);
-        dto.ChannelCode.Should().Be("wildberries");
-        dto.ChannelDisplayName.Should().Be("Wildberries");
+        dto.ChannelId.Should().Be(channelId);
+        dto.TemplateCode.Should().Be("wildberries");
+        dto.TemplateDisplayName.Should().Be("Wildberries");
         dto.IsActive.Should().BeTrue();
         dto.LastSyncAt.Should().Be(lastSync);
         dto.CreatedAt.Should().Be(now);
+        dto.MaskedApiKey.Should().Be("*************567890");
+        dto.CustomerName.Should().Be("My Store");
+        dto.CustomerLegalName.Should().Be("LLC MyCompany");
+        dto.CustomerInn.Should().Be("1234567890");
     }
 
     [Fact]
-    public async Task Handle_ConnectionWithNullChannel_UsesEmptyStrings()
+    public async Task Handle_ConnectionWithNullTemplate_UsesEmptyStrings()
     {
         Connection connection = new Connection
         {
             Id = Guid.NewGuid(),
             ChannelId = Guid.NewGuid(),
+            SystemChannelTemplateId = Guid.NewGuid(),
             Name = "Unknown",
             ApiKey = "some-key",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
-            Channel = null!,
+            SystemChannelTemplate = null!,
         };
 
         _connectionRepo
@@ -105,8 +116,8 @@ public class GetConnectionsQueryHandlerTests
             await handler.Handle(new GetConnectionsQuery(), CancellationToken.None);
 
         ConnectionDto dto = result.Items.Single();
-        dto.ChannelCode.Should().BeEmpty();
-        dto.ChannelDisplayName.Should().BeEmpty();
+        dto.TemplateCode.Should().BeEmpty();
+        dto.TemplateDisplayName.Should().BeEmpty();
     }
 
     [Fact]
@@ -116,16 +127,20 @@ public class GetConnectionsQueryHandlerTests
         {
             new Connection
             {
-                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(), Name = "WB",
+                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(), 
+                SystemChannelTemplateId = Guid.NewGuid(),
+                Name = "WB",
                 ApiKey = "k1", IsActive = true, CreatedAt = DateTimeOffset.UtcNow,
-                Channel = new SystemChannelTemplate { Code = "wildberries", DisplayName = "Wildberries",
+                SystemChannelTemplate = new SystemChannelTemplate { Code = "wildberries", DisplayName = "Wildberries",
                     ApiBaseUrl = "x", ApiVersion = "v3" },
             },
             new Connection
             {
-                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(), Name = "Ozon",
+                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(), 
+                SystemChannelTemplateId = Guid.NewGuid(),
+                Name = "Ozon",
                 ApiKey = "k2", IsActive = true, CreatedAt = DateTimeOffset.UtcNow,
-                Channel = new SystemChannelTemplate { Code = "ozon", DisplayName = "Ozon",
+                SystemChannelTemplate = new SystemChannelTemplate { Code = "ozon", DisplayName = "Ozon",
                     ApiBaseUrl = "x", ApiVersion = "v1" },
             },
         };
@@ -139,6 +154,33 @@ public class GetConnectionsQueryHandlerTests
             await handler.Handle(new GetConnectionsQuery(), CancellationToken.None);
 
         result.Items.Should().HaveCount(2);
-        result.Items.Select(i => i.ChannelCode).Should().Contain("wildberries", "ozon");
+        result.Items.Select(i => i.TemplateCode).Should().Contain("wildberries", "ozon");
+    }
+
+    [Fact]
+    public async Task Handle_ShortApiKey_MaskedApiKeyIsNull()
+    {
+        Connection connection = new Connection
+        {
+            Id = Guid.NewGuid(),
+            ChannelId = Guid.NewGuid(),
+            SystemChannelTemplateId = Guid.NewGuid(),
+            Name = "Test",
+            ApiKey = "short",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            SystemChannelTemplate = new SystemChannelTemplate { Code = "test", DisplayName = "Test",
+                ApiBaseUrl = "x", ApiVersion = "v1" },
+        };
+
+        _connectionRepo
+            .Setup(r => r.GetAllByTenantAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Connection> { connection });
+
+        GetConnectionsQueryHandler handler = CreateHandler();
+        GetConnectionsResponse result =
+            await handler.Handle(new GetConnectionsQuery(), CancellationToken.None);
+
+        result.Items.Single().MaskedApiKey.Should().BeNull();
     }
 }

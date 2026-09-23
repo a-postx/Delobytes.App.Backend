@@ -25,11 +25,18 @@ public class GetConnectionsQueryHandler : IRequestHandler<GetConnectionsQuery, G
             .Select(c => new ConnectionDto
             {
                 Id = c.Id,
-                ChannelCode = c.Channel?.Code ?? string.Empty,
-                ChannelDisplayName = c.Channel?.DisplayName ?? string.Empty,
+                ChannelId = c.ChannelId,
+                TemplateCode = c.SystemChannelTemplate?.Code ?? string.Empty,
+                TemplateDisplayName = c.SystemChannelTemplate?.DisplayName ?? string.Empty,
                 IsActive = c.IsActive,
                 LastSyncAt = c.LastSyncAt,
                 CreatedAt = c.CreatedAt,
+                MaskedApiKey = c.ApiKey.Length >= 6
+                    ? new string('*', c.ApiKey.Length - 6) + c.ApiKey[^6..]
+                    : null,
+                CustomerName = c.CustomerName,
+                CustomerLegalName = c.CustomerLegalName,
+                CustomerInn = c.CustomerInn,
             })
             .ToList();
 

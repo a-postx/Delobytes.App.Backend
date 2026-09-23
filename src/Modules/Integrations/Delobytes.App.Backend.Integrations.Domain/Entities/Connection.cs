@@ -13,9 +13,14 @@ public class Connection : ITenantScoped
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the channel identifier.
+    /// Gets or sets the channel identifier (reference to Catalog.Channel).
     /// </summary>
     public Guid ChannelId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the system channel template identifier.
+    /// </summary>
+    public Guid SystemChannelTemplateId { get; set; }
 
     /// <summary>
     /// Gets or sets the user-friendly connection name.
@@ -73,9 +78,9 @@ public class Connection : ITenantScoped
     public string? CustomerInn { get; set; }
 
     /// <summary>
-    /// Navigation property: the channel template.
+    /// Navigation property: the system channel template.
     /// </summary>
-    public SystemChannelTemplate Channel { get; set; } = default!;
+    public SystemChannelTemplate SystemChannelTemplate { get; set; } = default!;
 
     /// <summary>
     /// Navigation property: sync jobs for this connection.

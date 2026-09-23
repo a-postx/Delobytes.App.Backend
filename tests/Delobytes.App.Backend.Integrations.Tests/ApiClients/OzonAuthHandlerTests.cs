@@ -42,7 +42,7 @@ public class OzonAuthHandlerTests
             Settings = settings,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
-            Channel = BuildTemplate(),
+            SystemChannelTemplate = BuildTemplate(),
         };
     }
 

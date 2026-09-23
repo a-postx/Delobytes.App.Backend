@@ -53,12 +53,13 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
         builder.Property(c => c.UpdatedAt);
 
         builder.HasIndex(c => c.ChannelId);
+        builder.HasIndex(c => c.SystemChannelTemplateId);
         builder.HasIndex(c => c.IsActive);
         builder.HasIndex(c => c.LastSyncAt);
 
-        builder.HasOne(c => c.Channel)
+        builder.HasOne(c => c.SystemChannelTemplate)
             .WithMany(s => s.Connections)
-            .HasForeignKey(c => c.ChannelId)
+            .HasForeignKey(c => c.SystemChannelTemplateId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasMany(c => c.SyncJobs)

@@ -5,6 +5,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Commands.CreateConnecti
 
 public class CreateConnectionCommand : IRequest<CreateConnectionResponse>
 {
+    public Guid ChannelId { get; set; }
     public string SystemChannelTemplateCode { get; set; } = default!;
     public string ApiKey { get; set; } = default!;
     public string? ApiSecret { get; set; }

@@ -52,10 +52,6 @@ public class CreateConnectionAccountInfoTests
             .Setup(r => r.GetByCodeAsync(template.Code, It.IsAny<CancellationToken>()))
             .ReturnsAsync(template);
 
-        _connectionRepo
-            .Setup(r => r.ExistsForTemplateAsync(template.Code, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
         _validatorFactory
             .Setup(f => f.Create(template.Code))
             .Returns(_validator.Object);

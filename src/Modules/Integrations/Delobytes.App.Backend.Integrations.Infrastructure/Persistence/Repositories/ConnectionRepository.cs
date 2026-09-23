@@ -27,26 +27,25 @@ public class ConnectionRepository : IConnectionRepository
         return _context.Connections.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
-    public Task<Connection?> FindByIdWithChannelAsync(Guid id, CancellationToken cancellationToken)
+    public Task<Connection?> FindByIdWithTemplateAsync(Guid id, CancellationToken cancellationToken)
     {
         return _context.Connections
-                .Include(c => c.Channel)
+                .Include(c => c.SystemChannelTemplate)
                 .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
     public Task<List<Connection>> GetAllByTenantAsync(CancellationToken ct)
     {
         return _context.Connections
-                .Include(c => c.Channel)
+                .Include(c => c.SystemChannelTemplate)
                 .Where(c => c.IsActive)
                 .ToListAsync(ct);
     }
 
-    public Task<bool> ExistsForTemplateAsync(string templateCode, CancellationToken ct)
+    public Task<bool> HasActiveConnectionForChannelAsync(Guid channelId, CancellationToken ct)
     {
         return _context.Connections
-                .Include(c => c.Channel)
-                .AnyAsync(c => c.IsActive && c.Channel.Code == templateCode, ct);
+                .AnyAsync(c => c.IsActive && c.ChannelId == channelId, ct);
     }
 
     public void Add(Connection connection)

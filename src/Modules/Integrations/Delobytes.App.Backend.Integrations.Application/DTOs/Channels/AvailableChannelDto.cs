@@ -1,16 +1,19 @@
 namespace Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
 
+/// <summary>
+/// A system channel template — pure catalog of supported marketplace integrations
+/// (Wildberries, Ozon, etc.). Carries no connection/account state: a template can be used
+/// by any number of Catalog.Channel + Connection pairs.
+/// </summary>
 public class AvailableChannelDto
 {
+    public Guid Id { get; set; }
+
     public string Code { get; set; } = default!;
+
     public string DisplayName { get; set; } = default!;
+
     public string? Description { get; set; }
+
     public string ApiVersion { get; set; } = default!;
-    public bool IsConnected { get; set; }
-    // Populated only when IsConnected = true
-    public Guid? ConnectionId { get; set; }
-    public string? MaskedApiKey { get; set; }
-    public string? CustomerName { get; set; }
-    public string? LegalName { get; set; }
-    public string? Inn { get; set; }
 }

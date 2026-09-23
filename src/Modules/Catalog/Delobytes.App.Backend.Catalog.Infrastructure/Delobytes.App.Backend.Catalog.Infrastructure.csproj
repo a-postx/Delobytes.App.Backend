@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Integrations.Contracts reference intentionally removed: Catalog no longer subscribes to
+       Integrations events. Channel lifecycle is fully independent of Connection lifecycle. -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
-    <ProjectReference Include="..\..\Integrations\Delobytes.App.Backend.Integrations.Contracts\Delobytes.App.Backend.Integrations.Contracts.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Domain\Delobytes.App.Backend.Catalog.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Application\Delobytes.App.Backend.Catalog.Application.csproj" />
   </ItemGroup>

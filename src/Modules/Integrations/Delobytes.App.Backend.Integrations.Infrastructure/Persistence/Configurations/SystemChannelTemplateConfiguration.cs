@@ -47,7 +47,7 @@ public class SystemChannelTemplateConfiguration : IEntityTypeConfiguration<Syste
         builder.HasIndex(s => s.IsActive);
 
         builder.HasMany(s => s.Connections)
-            .WithOne(c => c.Channel)
+            .WithOne(c => c.SystemChannelTemplate)
             .HasForeignKey(c => c.ChannelId)
             .OnDelete(DeleteBehavior.Restrict);
     }

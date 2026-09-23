@@ -32,7 +32,7 @@ public class SyncJobRepository : ISyncJobRepository
     {
         return _context.SyncJobs
                 .Include(sj => sj.Connection)
-                .ThenInclude(c => c.Channel)
+                .ThenInclude(c => c.SystemChannelTemplate)
                 .FirstOrDefaultAsync(sj => sj.Id == id, cancellationToken);
     }
 

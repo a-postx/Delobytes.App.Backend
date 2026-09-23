@@ -17,9 +17,7 @@ public class DeleteConnectionCommandHandlerTests
 
     private DeleteConnectionCommandHandler CreateHandler()
     {
-        return new DeleteConnectionCommandHandler(
-            _connectionRepo.Object,
-            _eventPublisher.Object);
+        return new DeleteConnectionCommandHandler(_connectionRepo.Object);
     }
 
     private static Connection BuildConnection(Guid? id = null)
@@ -56,20 +54,14 @@ public class DeleteConnectionCommandHandlerTests
     public async Task Handle_ValidConnection_SetsIsActiveToFalseAndPublishesEvent()
     {
         Connection connection = BuildConnection();
-        ConnectionDeactivatedEvent? publishedEvent = null;
 
         _connectionRepo
-            .Setup(r => r.FindByIdWithChannelAsync(connection.Id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(connection);
 
         _connectionRepo
             .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
-
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ConnectionDeactivatedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ConnectionDeactivatedEvent, CancellationToken>((e, _) => publishedEvent = e)
-            .Returns(Task.CompletedTask);
 
         DeleteConnectionCommandHandler handler = CreateHandler();
 
@@ -78,36 +70,5 @@ public class DeleteConnectionCommandHandlerTests
 
 
         connection.IsActive.Should().BeFalse();
-
-        publishedEvent.Should().NotBeNull();
-        publishedEvent!.ChannelId.Should().Be(connection.ChannelId);
-    }
-
-    [Fact]
-    public async Task Handle_ValidConnection_EventPublishedAfterSave()
-    {
-        Connection connection = BuildConnection();
-        bool savedBeforePublish = false;
-
-        _connectionRepo
-            .Setup(r => r.FindByIdWithChannelAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(connection);
-
-        _connectionRepo
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .Callback(() => savedBeforePublish = true)
-            .ReturnsAsync(1);
-
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ConnectionDeactivatedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ConnectionDeactivatedEvent, CancellationToken>((_, _) =>
-            {
-                // verify save already happened before publish
-                savedBeforePublish.Should().BeTrue();
-            })
-            .Returns(Task.CompletedTask);
-
-        DeleteConnectionCommandHandler handler = CreateHandler();
-        await handler.Handle(new DeleteConnectionCommand { Id = connection.Id }, CancellationToken.None);
     }
 }

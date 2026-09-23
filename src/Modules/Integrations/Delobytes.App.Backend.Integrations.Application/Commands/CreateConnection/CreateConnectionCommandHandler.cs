@@ -43,12 +43,12 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
             throw new KeyNotFoundException($"Канал '{request.SystemChannelTemplateCode}' не найден.");
         }
 
-        bool exists = await _connectionRepository
-            .ExistsForTemplateAsync(request.SystemChannelTemplateCode, cancellationToken);
+        bool hasActiveConnection = await _connectionRepository
+            .HasActiveConnectionForChannelAsync(request.ChannelId, cancellationToken);
 
-        if (exists)
+        if (hasActiveConnection)
         {
-            throw new ConflictException($"Канал '{template.DisplayName}' уже подключён.");
+            throw new ConflictException("К этому каналу продаж уже привязано активное подключение.");
         }
 
         IApiKeyValidator validator = _validatorFactory.Create(request.SystemChannelTemplateCode);
@@ -75,7 +75,8 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
         Connection connection = new Connection
         {
             Id = Guid.NewGuid(),
-            ChannelId = template.Id,
+            ChannelId = request.ChannelId,
+            SystemChannelTemplateId = template.Id,
             Name = template.DisplayName,
             ApiKey = request.ApiKey,
             ApiSecret = request.ApiSecret,
@@ -92,20 +93,20 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
         _connectionRepository.Add(connection);
         await _connectionRepository.SaveChangesAsync(cancellationToken);
 
-        // Catalog subscribes to this event and creates the corresponding Channel.
-        ConnectionCreatedEvent channelCreatedEvent = new ConnectionCreatedEvent
+        // Событие для будущей фоновой синхронизации данных (запуск первичной загрузки заказов и т.п.).
+        ConnectionCreatedEvent connectionCreatedEvent = new ConnectionCreatedEvent
         {
-            ChannelId = template.Id,
+            ConnectionId = connection.Id,
+            ChannelId = connection.ChannelId,
             SystemChannelTemplateId = template.Id,
-            ChannelName = template.DisplayName,
         };
 
-        await _eventPublisher.PublishAsync(channelCreatedEvent, cancellationToken);
+        await _eventPublisher.PublishAsync(connectionCreatedEvent, cancellationToken);
 
         return new CreateConnectionResponse
         {
             ConnectionId = connection.Id,
-            ChannelId = template.Id,
+            ChannelId = connection.ChannelId,
         };
     }
 }

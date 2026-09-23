@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -15,13 +14,10 @@ namespace Delobytes.App.Backend.Integrations.Tests.Queries;
 public class GetAvailableChannelsQueryHandlerTests
 {
     private readonly Mock<ISystemChannelTemplateRepository> _templateRepo = new();
-    private readonly Mock<IConnectionRepository> _connectionRepo = new();
 
     private GetAvailableChannelsQueryHandler CreateHandler()
     {
-        return new GetAvailableChannelsQueryHandler(
-            _templateRepo.Object,
-            _connectionRepo.Object);
+        return new GetAvailableChannelsQueryHandler(_templateRepo.Object);
     }
 
     private static SystemChannelTemplate BuildTemplate(string code, string displayName)
@@ -46,10 +42,6 @@ public class GetAvailableChannelsQueryHandlerTests
             .Setup(r => r.GetAllActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<SystemChannelTemplate>());
 
-        _connectionRepo
-            .Setup(r => r.GetAllByTenantAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Connection>());
-
         GetAvailableChannelsQueryHandler handler = CreateHandler();
         GetAvailableChannelsResponse result =
             await handler.Handle(new GetAvailableChannelsQuery(), CancellationToken.None);
@@ -58,7 +50,7 @@ public class GetAvailableChannelsQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_NoConnections_AllTemplatesReturnIsConnectedFalse()
+    public async Task Handle_WithTemplates_MapsAllFieldsCorrectly()
     {
         SystemChannelTemplate wb = BuildTemplate("wildberries", "Wildberries");
         SystemChannelTemplate ozon = BuildTemplate("ozon", "Ozon");
@@ -66,53 +58,19 @@ public class GetAvailableChannelsQueryHandlerTests
         _templateRepo
             .Setup(r => r.GetAllActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<SystemChannelTemplate> { wb, ozon });
-
-        _connectionRepo
-            .Setup(r => r.GetAllByTenantAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Connection>());
 
         GetAvailableChannelsQueryHandler handler = CreateHandler();
         GetAvailableChannelsResponse result =
             await handler.Handle(new GetAvailableChannelsQuery(), CancellationToken.None);
 
         result.Items.Should().HaveCount(2);
-        result.Items.Should().AllSatisfy(i => i.IsConnected.Should().BeFalse());
-    }
-
-    [Fact]
-    public async Task Handle_ConnectionExists_MatchingTemplateIsConnectedTrue()
-    {
-        SystemChannelTemplate wb = BuildTemplate("wildberries", "Wildberries");
-        SystemChannelTemplate ozon = BuildTemplate("ozon", "Ozon");
-
-        // Подключение к Wildberries — ChannelId ссылается на Id шаблона
-        Connection wbConnection = new Connection
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = wb.Id,
-            Name = "Wildberries",
-            ApiKey = "key",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-
-        _templateRepo
-            .Setup(r => r.GetAllActiveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<SystemChannelTemplate> { wb, ozon });
-
-        _connectionRepo
-            .Setup(r => r.GetAllByTenantAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Connection> { wbConnection });
-
-        GetAvailableChannelsQueryHandler handler = CreateHandler();
-        GetAvailableChannelsResponse result =
-            await handler.Handle(new GetAvailableChannelsQuery(), CancellationToken.None);
-
+        
         AvailableChannelDto wbDto = result.Items.Single(i => i.Code == "wildberries");
-        AvailableChannelDto ozonDto = result.Items.Single(i => i.Code == "ozon");
-
-        wbDto.IsConnected.Should().BeTrue();
-        ozonDto.IsConnected.Should().BeFalse();
+        wbDto.Id.Should().Be(wb.Id);
+        wbDto.Code.Should().Be("wildberries");
+        wbDto.DisplayName.Should().Be("Wildberries");
+        wbDto.Description.Should().Be("Description for Wildberries");
+        wbDto.ApiVersion.Should().Be("v1");
     }
 
     [Fact]
@@ -126,15 +84,12 @@ public class GetAvailableChannelsQueryHandlerTests
             .Setup(r => r.GetAllActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<SystemChannelTemplate> { template });
 
-        _connectionRepo
-            .Setup(r => r.GetAllByTenantAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Connection>());
-
         GetAvailableChannelsQueryHandler handler = CreateHandler();
         GetAvailableChannelsResponse result =
             await handler.Handle(new GetAvailableChannelsQuery(), CancellationToken.None);
 
         AvailableChannelDto dto = result.Items.Single();
+        dto.Id.Should().Be(template.Id);
         dto.Code.Should().Be("wildberries");
         dto.DisplayName.Should().Be("Wildberries");
         dto.Description.Should().Be("Крупнейший маркетплейс");

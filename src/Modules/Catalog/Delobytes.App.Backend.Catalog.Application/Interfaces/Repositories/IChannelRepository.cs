@@ -6,6 +6,8 @@ public interface IChannelRepository
 {
     public Task<Channel?> GetByIdAsync(Guid id, CancellationToken ct);
 
+    public Task<List<Channel>> GetAllAsync(CancellationToken ct);
+
     public void Add(Channel channel);
 
     public Task<int> SaveChangesAsync(CancellationToken ct);

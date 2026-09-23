@@ -24,8 +24,8 @@ public class ConnectionResolver : IConnectionResolver
 
         Connection? connection = connections.FirstOrDefault(c =>
             c.IsActive &&
-            c.Channel?.Code != null &&
-            c.Channel.Code.Equals(channelCode, StringComparison.OrdinalIgnoreCase));
+            c.SystemChannelTemplate?.Code != null &&
+            c.SystemChannelTemplate.Code.Equals(channelCode, StringComparison.OrdinalIgnoreCase));
 
         if (connection is null)
         {

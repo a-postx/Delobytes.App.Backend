@@ -38,7 +38,7 @@ public class YandexKitAuthHandlerTests
             ApiKey = apiKey,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
-            Channel = BuildTemplate(),
+            SystemChannelTemplate = BuildTemplate(),
         };
     }
 

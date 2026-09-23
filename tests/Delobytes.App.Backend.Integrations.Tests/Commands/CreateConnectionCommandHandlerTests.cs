@@ -48,10 +48,11 @@ public class CreateConnectionCommandHandlerTests
         };
     }
 
-    private static CreateConnectionCommand BuildCommand(string code = "wildberries")
+    private static CreateConnectionCommand BuildCommand(Guid? channelId = null, string code = "wildberries")
     {
         return new CreateConnectionCommand
         {
+            ChannelId = channelId ?? Guid.NewGuid(),
             SystemChannelTemplateCode = code,
             ApiKey = "valid-api-key-1234567890",
             ApiSecret = null,
@@ -67,7 +68,7 @@ public class CreateConnectionCommandHandlerTests
             .ReturnsAsync((SystemChannelTemplate?)null);
 
         CreateConnectionCommandHandler handler = CreateHandler();
-        CreateConnectionCommand command = BuildCommand("unknown");
+        CreateConnectionCommand command = BuildCommand(code: "unknown");
 
         Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
@@ -76,37 +77,39 @@ public class CreateConnectionCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ConnectionAlreadyExists_ThrowsConflictException()
+    public async Task Handle_ActiveConnectionForChannelAlreadyExists_ThrowsConflictException()
     {
         SystemChannelTemplate template = BuildTemplate();
+        Guid channelId = Guid.NewGuid();
 
         _templateRepo
             .Setup(r => r.GetByCodeAsync("wildberries", It.IsAny<CancellationToken>()))
             .ReturnsAsync(template);
 
         _connectionRepo
-            .Setup(r => r.ExistsForTemplateAsync("wildberries", It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveConnectionForChannelAsync(channelId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         CreateConnectionCommandHandler handler = CreateHandler();
 
-        Func<Task> act = () => handler.Handle(BuildCommand(), CancellationToken.None);
+        Func<Task> act = () => handler.Handle(BuildCommand(channelId: channelId), CancellationToken.None);
 
         await act.Should().ThrowAsync<ConflictException>()
-            .WithMessage("*Wildberries*");
+            .WithMessage("К этому каналу продаж уже привязано активное подключение.");
     }
 
     [Fact]
     public async Task Handle_ApiKeyValidationFails_ThrowsInvalidOperationException()
     {
         SystemChannelTemplate template = BuildTemplate();
+        Guid channelId = Guid.NewGuid();
 
         _templateRepo
             .Setup(r => r.GetByCodeAsync("wildberries", It.IsAny<CancellationToken>()))
             .ReturnsAsync(template);
 
         _connectionRepo
-            .Setup(r => r.ExistsForTemplateAsync("wildberries", It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveConnectionForChannelAsync(channelId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _validatorFactory
@@ -123,7 +126,7 @@ public class CreateConnectionCommandHandlerTests
 
         CreateConnectionCommandHandler handler = CreateHandler();
 
-        Func<Task> act = () => handler.Handle(BuildCommand(), CancellationToken.None);
+        Func<Task> act = () => handler.Handle(BuildCommand(channelId: channelId), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*Неверный API-ключ*");
@@ -133,6 +136,7 @@ public class CreateConnectionCommandHandlerTests
     public async Task Handle_ValidRequest_SavesConnectionAndPublishesCreatedEvent()
     {
         SystemChannelTemplate template = BuildTemplate();
+        Guid channelId = Guid.NewGuid();
         Connection? savedConnection = null;
         ConnectionCreatedEvent? publishedEvent = null;
 
@@ -141,7 +145,7 @@ public class CreateConnectionCommandHandlerTests
             .ReturnsAsync(template);
 
         _connectionRepo
-            .Setup(r => r.ExistsForTemplateAsync("wildberries", It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveConnectionForChannelAsync(channelId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _validatorFactory
@@ -182,22 +186,23 @@ public class CreateConnectionCommandHandlerTests
             .Returns(Task.CompletedTask);
 
         CreateConnectionCommandHandler handler = CreateHandler();
-        CreateConnectionCommand command = BuildCommand();
+        CreateConnectionCommand command = BuildCommand(channelId: channelId);
 
         Integrations.Application.DTOs.Connections.CreateConnectionResponse result =
             await handler.Handle(command, CancellationToken.None);
 
         result.Should().NotBeNull();
         result.ConnectionId.Should().NotBeEmpty();
-        result.ChannelId.Should().NotBeEmpty();
 
         savedConnection.Should().NotBeNull();
         savedConnection!.IsActive.Should().BeTrue();
         savedConnection.ApiKey.Should().Be(command.ApiKey);
+        savedConnection.ChannelId.Should().Be(channelId);
+        savedConnection.SystemChannelTemplateId.Should().Be(template.Id);
 
         publishedEvent.Should().NotBeNull();
-        publishedEvent!.ChannelId.Should().Be(result.ChannelId);
-        publishedEvent.ChannelName.Should().Be(template.DisplayName);
+        publishedEvent!.ConnectionId.Should().Be(result.ConnectionId);
+        publishedEvent.ChannelId.Should().Be(channelId);
         publishedEvent.SystemChannelTemplateId.Should().Be(template.Id);
     }
 
@@ -205,6 +210,7 @@ public class CreateConnectionCommandHandlerTests
     public async Task Handle_WithSettings_SerializesSettingsToJson()
     {
         SystemChannelTemplate template = BuildTemplate("ozon");
+        Guid channelId = Guid.NewGuid();
         Connection? savedConnection = null;
 
         _templateRepo
@@ -212,7 +218,7 @@ public class CreateConnectionCommandHandlerTests
             .ReturnsAsync(template);
 
         _connectionRepo
-            .Setup(r => r.ExistsForTemplateAsync("ozon", It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveConnectionForChannelAsync(channelId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _apiClientFactory
@@ -252,19 +258,86 @@ public class CreateConnectionCommandHandlerTests
         Dictionary<string, string> settings = new Dictionary<string, string>
         {
             ["sellerId"] = "99999",
+            ["warehouseId"] = "11111",
         };
 
-        CreateConnectionCommandHandler handler = CreateHandler();
-        await handler.Handle(new CreateConnectionCommand
+        CreateConnectionCommand command = new CreateConnectionCommand
         {
+            ChannelId = channelId,
             SystemChannelTemplateCode = "ozon",
-            ApiKey = "ozon-key",
+            ApiKey = "ozon-key-1234567890",
             Settings = settings,
-        }, CancellationToken.None);
+        };
+
+        await CreateHandler().Handle(command, CancellationToken.None);
 
         savedConnection.Should().NotBeNull();
         savedConnection!.Settings.Should().NotBeNullOrEmpty();
         savedConnection.Settings.Should().Contain("sellerId");
         savedConnection.Settings.Should().Contain("99999");
+    }
+
+    [Fact]
+    public async Task Handle_WithAccountInfo_PopulatesCustomerFields()
+    {
+        SystemChannelTemplate template = BuildTemplate();
+        Guid channelId = Guid.NewGuid();
+        Connection? savedConnection = null;
+
+        AccountInfo accountInfo = new AccountInfo
+        {
+            CustomerName = "My Store",
+            LegalName = "LLC MyCompany",
+            Inn = "1234567890",
+        };
+
+        _templateRepo
+            .Setup(r => r.GetByCodeAsync("wildberries", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(template);
+
+        _connectionRepo
+            .Setup(r => r.HasActiveConnectionForChannelAsync(channelId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _validatorFactory
+            .Setup(f => f.Create("wildberries"))
+            .Returns(_validator.Object);
+
+        _validator
+            .Setup(v => v.ValidateAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ApiKeyValidationResult.Success());
+
+        _apiClientFactory
+            .Setup(f => f.Create("wildberries"))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(accountInfo);
+
+        _connectionRepo
+            .Setup(r => r.Add(It.IsAny<Connection>()))
+            .Callback<Connection>(c => savedConnection = c);
+
+        _connectionRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ConnectionCreatedEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await CreateHandler().Handle(BuildCommand(channelId: channelId), CancellationToken.None);
+
+        savedConnection.Should().NotBeNull();
+        savedConnection!.CustomerName.Should().Be("My Store");
+        savedConnection.CustomerLegalName.Should().Be("LLC MyCompany");
+        savedConnection.CustomerInn.Should().Be("1234567890");
     }
 }

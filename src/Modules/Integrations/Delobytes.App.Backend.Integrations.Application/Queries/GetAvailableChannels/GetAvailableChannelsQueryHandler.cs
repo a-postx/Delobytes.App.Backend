@@ -1,22 +1,22 @@
 using Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels;
 
+/// <summary>
+/// Returns the catalog of system channel templates available for connecting.
+/// Deliberately carries no per-tenant connection/account state — that now lives on
+/// Connection (see GetConnectionsQuery) and is joined client-side via Channel.
+/// </summary>
 public class GetAvailableChannelsQueryHandler : IRequestHandler<GetAvailableChannelsQuery, GetAvailableChannelsResponse>
 {
     private readonly ISystemChannelTemplateRepository _templateRepository;
-    private readonly IConnectionRepository _connectionRepository;
 
-    public GetAvailableChannelsQueryHandler(
-        ISystemChannelTemplateRepository templateRepository,
-        IConnectionRepository connectionRepository)
+    public GetAvailableChannelsQueryHandler(ISystemChannelTemplateRepository templateRepository)
     {
         _templateRepository = templateRepository;
-        _connectionRepository = connectionRepository;
     }
 
     public async Task<GetAvailableChannelsResponse> Handle(
@@ -26,32 +26,14 @@ public class GetAvailableChannelsQueryHandler : IRequestHandler<GetAvailableChan
         List<SystemChannelTemplate> templates =
             await _templateRepository.GetAllActiveAsync(cancellationToken);
 
-        List<Connection> connections =
-            await _connectionRepository.GetAllByTenantAsync(cancellationToken);
-
-        Dictionary<Guid, Connection> connectionByTemplateId = connections
-            .ToDictionary(c => c.ChannelId, c => c);
-
         List<AvailableChannelDto> items = templates
-            .Select(t =>
+            .Select(t => new AvailableChannelDto
             {
-                bool isConnected = connectionByTemplateId.TryGetValue(t.Id, out Connection? conn);
-                return new AvailableChannelDto
-                {
-                    Code = t.Code,
-                    DisplayName = t.DisplayName,
-                    Description = t.Description,
-                    ApiVersion = t.ApiVersion,
-                    IsConnected = isConnected,
-                    ConnectionId = isConnected ? conn!.Id : null,
-                    // Show last 6 chars, mask the rest
-                    MaskedApiKey = isConnected && conn!.ApiKey.Length >= 6
-                        ? new string('*', conn.ApiKey.Length - 6) + conn.ApiKey[^6..]
-                        : null,
-                    CustomerName = isConnected ? conn!.CustomerName : null,
-                    LegalName = isConnected ? conn!.CustomerLegalName : null,
-                    Inn = isConnected ? conn!.CustomerInn : null,
-                };
+                Id = t.Id,
+                Code = t.Code,
+                DisplayName = t.DisplayName,
+                Description = t.Description,
+                ApiVersion = t.ApiVersion,
             })
             .ToList();
 

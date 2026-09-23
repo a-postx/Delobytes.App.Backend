@@ -48,6 +48,7 @@ public class IntegrationsController : ControllerBase
         CreateConnectionResponse response = await _mediator.Send(
             new CreateConnectionCommand
             {
+                ChannelId = request.ChannelId,
                 SystemChannelTemplateCode = request.SystemChannelTemplateCode,
                 ApiKey = request.ApiKey,
                 ApiSecret = request.ApiSecret,

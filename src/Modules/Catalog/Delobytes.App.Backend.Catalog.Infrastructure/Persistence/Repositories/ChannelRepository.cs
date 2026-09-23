@@ -18,6 +18,11 @@ public class ChannelRepository : IChannelRepository
         return _context.Channels.FirstOrDefaultAsync(c => c.Id == id, ct);
     }
 
+    public Task<List<Channel>> GetAllAsync(CancellationToken ct)
+    {
+        return _context.Channels.ToListAsync(ct);
+    }
+
     public void Add(Channel channel)
     {
         _context.Channels.Add(channel);
