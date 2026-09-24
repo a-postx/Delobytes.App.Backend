@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -85,6 +85,4 @@ public class CreateInvitationCommandHandler : IRequestHandler<CreateInvitationCo
             ExpiresAt = invitation.ExpiresAt,
         };
     }
-
-
 }

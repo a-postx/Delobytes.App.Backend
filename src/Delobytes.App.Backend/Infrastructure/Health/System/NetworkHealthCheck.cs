@@ -1,7 +1,7 @@
 using System.Net;
+using Delobytes.AspNetCore.Common;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
-using Delobytes.AspNetCore.Common;
 
 namespace Delobytes.App.Backend.Infrastructure.Health.System;
 

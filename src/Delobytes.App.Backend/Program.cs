@@ -150,10 +150,10 @@ public partial class Program
                        .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: false, reloadOnChange: false)
                        .Build();
 
-                config.PrivateKey = Environment.GetEnvironmentVariable("YC_PRIVATE_KEY");
-                config.ServiceAccountId = tempConfig.GetValue<string>("YC:ServiceAccountId");
-                config.ServiceAccountAuthorizedKeyId = tempConfig.GetValue<string>("YC:ServiceAccountAuthorizedKeyId");
-                config.SecretId = tempConfig.GetValue<string>("YC:ConfigurationSecretId");
+                config.PrivateKey = Environment.GetEnvironmentVariable("YC_PRIVATE_KEY") ?? throw new InvalidOperationException("YC_PRIVATE_KEY is required.");
+                config.ServiceAccountId = tempConfig.GetValue<string>("YC:ServiceAccountId") ?? throw new InvalidOperationException("YC:ServiceAccountId is required.");
+                config.ServiceAccountAuthorizedKeyId = tempConfig.GetValue<string>("YC:ServiceAccountAuthorizedKeyId") ?? throw new InvalidOperationException("YC:ServiceAccountAuthorizedKeyId is required.");
+                config.SecretId = tempConfig.GetValue<string>("YC:ConfigurationSecretId") ?? throw new InvalidOperationException("YC:ConfigurationSecretId is required.");
                 config.PathSeparator = '-';
                 config.Optional = false;
                 config.ReloadPeriod = TimeSpan.FromDays(7);

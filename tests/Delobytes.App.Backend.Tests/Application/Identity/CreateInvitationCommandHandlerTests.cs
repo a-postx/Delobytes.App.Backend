@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
@@ -27,12 +27,6 @@ public class CreateInvitationCommandHandlerTests
         _userRepo = new Mock<IUserRepository>();
     }
 
-    private CreateInvitationCommandHandler BuildHandler()
-        => new CreateInvitationCommandHandler(
-            _invitationRepo.Object,
-            _membershipRepo.Object,
-            _userRepo.Object);
-
     private static CreateInvitationCommand BuildCommand(Guid tenantId, Guid invitedByUserId, string email = "invitee@example.com", Role role = Role.Manager)
         => new CreateInvitationCommand
         {
@@ -52,6 +46,12 @@ public class CreateInvitationCommandHandlerTests
             IsActive = isActive,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+
+    private CreateInvitationCommandHandler BuildHandler()
+        => new CreateInvitationCommandHandler(
+            _invitationRepo.Object,
+            _membershipRepo.Object,
+            _userRepo.Object);
 
     // ── Authorization checks ──────────────────────────────────────────────────────────
 

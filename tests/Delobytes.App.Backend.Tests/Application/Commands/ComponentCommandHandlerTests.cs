@@ -22,10 +22,10 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog;
 
 public class ComponentCommandHandlerTests
 {
+    private static readonly Guid _supplierId = Guid.NewGuid();
+
     private readonly Mock<IComponentRepository> _repoMock = new();
     private readonly Mock<IComponentPriceRepository> _priceRepoMock = new();
-
-    private static readonly Guid _supplierId = Guid.NewGuid();
 
     private static ComponentPrice BuildPrice(
         Guid componentId,

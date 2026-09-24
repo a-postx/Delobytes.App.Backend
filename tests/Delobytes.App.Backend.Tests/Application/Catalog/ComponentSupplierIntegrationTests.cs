@@ -158,7 +158,7 @@ public class ComponentSupplierIntegrationTests
         // Assert
         response.Should().NotBeNull();
 
-        response.ActivePrice.Should().NotBeNull();
+        response!.ActivePrice.Should().NotBeNull();
         response.ActivePrice!.SupplierId.Should().BeNull();
         response.ActivePrice.SupplierName.Should().BeNull();
     }

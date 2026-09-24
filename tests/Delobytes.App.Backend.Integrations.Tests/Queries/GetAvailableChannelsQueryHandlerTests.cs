@@ -15,11 +15,6 @@ public class GetAvailableChannelsQueryHandlerTests
 {
     private readonly Mock<ISystemChannelTemplateRepository> _templateRepo = new();
 
-    private GetAvailableChannelsQueryHandler CreateHandler()
-    {
-        return new GetAvailableChannelsQueryHandler(_templateRepo.Object);
-    }
-
     private static SystemChannelTemplate BuildTemplate(string code, string displayName)
     {
         return new SystemChannelTemplate
@@ -33,6 +28,11 @@ public class GetAvailableChannelsQueryHandlerTests
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+    }
+
+    private GetAvailableChannelsQueryHandler CreateHandler()
+    {
+        return new GetAvailableChannelsQueryHandler(_templateRepo.Object);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public class GetAvailableChannelsQueryHandlerTests
             await handler.Handle(new GetAvailableChannelsQuery(), CancellationToken.None);
 
         result.Items.Should().HaveCount(2);
-        
+
         AvailableChannelDto wbDto = result.Items.Single(i => i.Code == "wildberries");
         wbDto.Id.Should().Be(wb.Id);
         wbDto.Code.Should().Be("wildberries");

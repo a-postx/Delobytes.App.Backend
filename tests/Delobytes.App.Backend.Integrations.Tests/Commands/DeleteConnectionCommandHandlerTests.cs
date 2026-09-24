@@ -15,11 +15,6 @@ public class DeleteConnectionCommandHandlerTests
     private readonly Mock<IConnectionRepository> _connectionRepo = new ();
     private readonly Mock<IEventPublisher> _eventPublisher = new ();
 
-    private DeleteConnectionCommandHandler CreateHandler()
-    {
-        return new DeleteConnectionCommandHandler(_connectionRepo.Object);
-    }
-
     private static Connection BuildConnection(Guid? id = null)
     {
         return new Connection
@@ -31,6 +26,11 @@ public class DeleteConnectionCommandHandlerTests
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+    }
+
+    private DeleteConnectionCommandHandler CreateHandler()
+    {
+        return new DeleteConnectionCommandHandler(_connectionRepo.Object);
     }
 
     [Fact]

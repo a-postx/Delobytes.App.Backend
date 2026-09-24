@@ -154,7 +154,7 @@ public class OzonAuthHandlerTests
     public async Task SendAsync_EmptySellerIdInSettings_ThrowsInvalidOperationException()
     {
         Connection connection = BuildConnection("key", "123");
-        connection.Settings = JsonSerializer.Serialize(new { sellerId = "" });
+        connection.Settings = JsonSerializer.Serialize(new { sellerId = string.Empty });
 
         Mock<IConnectionResolver> resolver = new Mock<IConnectionResolver>();
         resolver

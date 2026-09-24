@@ -54,7 +54,7 @@ public class TenantControllerTests
         // Assert
         OkObjectResult okResult = Assert.IsType<OkObjectResult>(result.Result);
         CreateTenantForUserResponse response = Assert.IsType<CreateTenantForUserResponse>(okResult.Value);
-        
+
         Assert.Equal(newTenantId, response.TenantId);
         Assert.Equal(tenantName, response.TenantName);
 
@@ -101,7 +101,7 @@ public class TenantControllerTests
         // Assert
         OkObjectResult okResult = Assert.IsType<OkObjectResult>(result.Result);
         CreateTenantForUserResponse response = Assert.IsType<CreateTenantForUserResponse>(okResult.Value);
-        
+
         Assert.Equal(newTenantId, response.TenantId);
         Assert.Equal(tenantName, response.TenantName);
 

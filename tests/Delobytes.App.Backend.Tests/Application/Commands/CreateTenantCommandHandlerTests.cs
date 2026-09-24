@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Options;
@@ -85,9 +85,9 @@ public class CreateTenantCommandHandlerTests
             Times.Once);
 
         _membershipRepositoryMock.Verify(
-            r => r.Add(It.Is<TenantMembership>(m => 
-                m.UserId == userId && 
-                m.Role == Role.Administrator && 
+            r => r.Add(It.Is<TenantMembership>(m =>
+                m.UserId == userId &&
+                m.Role == Role.Administrator &&
                 m.IsActive)),
             Times.Once);
 

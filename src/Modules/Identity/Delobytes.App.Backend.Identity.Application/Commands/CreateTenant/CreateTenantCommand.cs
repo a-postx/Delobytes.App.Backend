@@ -18,7 +18,7 @@ public class CreateTenantCommand : IRequest<CreateTenantResponse>
     public string TenantName { get; set; } = default!;
 
     /// <summary>
-    /// Gets or sets the current active tenant identifier. 
+    /// Gets or sets the current active tenant identifier.
     /// Required when creating additional tenant (must be Administrator).
     /// Null for first-time tenant creation.
     /// </summary>

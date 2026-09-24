@@ -10,7 +10,6 @@ public class AppSettings
 {
     public AppSettings()
     {
-
     }
 
     [Required]

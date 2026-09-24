@@ -1,5 +1,3 @@
-namespace Delobytes.App.Backend.Tests.Middleware;
-
 using System;
 using System.IO;
 using System.Net;
@@ -12,6 +10,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+
+namespace Delobytes.App.Backend.Tests.Middleware;
 
 /// <summary>
 /// Tests for ExceptionHandlingMiddleware.
@@ -179,8 +179,10 @@ public class ExceptionHandlingMiddlewareTests
     public async Task Invoke_UnknownException_Returns500WithGenericMessage()
     {
         // Arrange
+#pragma warning disable CA2201 // Не порождайте исключения зарезервированных типов
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new Exception("Sensitive internal details."));
+#pragma warning restore CA2201 // Не порождайте исключения зарезервированных типов
 
         DefaultHttpContext context = BuildContext();
 

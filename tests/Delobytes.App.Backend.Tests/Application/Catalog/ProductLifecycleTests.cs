@@ -4,8 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
+using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
 using Delobytes.App.Backend.Catalog.Application.Events;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductDeletionStatus;
@@ -373,7 +373,7 @@ public class ProductLifecycleTests
         // Assert
         response.Accepted.Should().BeTrue();
 
-        Product reloaded = await repository.GetWithChannelProductsByIdAsync(product.Id, CancellationToken.None);
+        Product? reloaded = await repository.GetWithChannelProductsByIdAsync(product.Id, CancellationToken.None);
         reloaded.Should().NotBeNull();
         reloaded!.Status.Should().Be(ProductStatus.Deleted);
         reloaded.DeletedAt.Should().NotBeNull();
@@ -433,7 +433,7 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert
-        Product reloaded = await repository.GetWithChannelProductsByIdAsync(product.Id, CancellationToken.None);
+        Product? reloaded = await repository.GetWithChannelProductsByIdAsync(product.Id, CancellationToken.None);
         reloaded.Should().NotBeNull();
         reloaded!.Status.Should().Be(ProductStatus.DeletionFailed);
         reloaded.DeletedAt.Should().BeNull();

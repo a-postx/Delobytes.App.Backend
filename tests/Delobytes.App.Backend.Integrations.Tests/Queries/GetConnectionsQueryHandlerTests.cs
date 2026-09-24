@@ -127,7 +127,7 @@ public class GetConnectionsQueryHandlerTests
         {
             new Connection
             {
-                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(), 
+                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(),
                 SystemChannelTemplateId = Guid.NewGuid(),
                 Name = "WB",
                 ApiKey = "k1", IsActive = true, CreatedAt = DateTimeOffset.UtcNow,
@@ -136,7 +136,7 @@ public class GetConnectionsQueryHandlerTests
             },
             new Connection
             {
-                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(), 
+                Id = Guid.NewGuid(), ChannelId = Guid.NewGuid(),
                 SystemChannelTemplateId = Guid.NewGuid(),
                 Name = "Ozon",
                 ApiKey = "k2", IsActive = true, CreatedAt = DateTimeOffset.UtcNow,

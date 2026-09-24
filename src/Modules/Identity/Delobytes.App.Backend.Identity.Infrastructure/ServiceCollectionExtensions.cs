@@ -26,6 +26,11 @@ public static class ServiceCollectionExtensions
     /// <param name="services">Service collection.</param>
     /// <param name="configuration">Configuration.</param>
     /// <param name="connectionString">Connection string.</param>
+    /// <param name="jwtSecretKey">Секретный ключ для шифрования токенов.</param>
+    /// <param name="yandexClientId">Идентификатор клиента Яндекс ID.</param>
+    /// <param name="yandexClientSecret">Секрет клиента Яндекс ID.</param>
+    /// <param name="googleClientId">Идентификатор клиента Google ID.</param>
+    /// <param name="googleClientSecret">Секрет клиента Google ID.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddIdentityInfrastructure(
         this IServiceCollection services,

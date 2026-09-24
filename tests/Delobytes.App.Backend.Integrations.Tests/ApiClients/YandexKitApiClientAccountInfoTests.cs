@@ -47,6 +47,7 @@ public class YandexKitApiClientAccountInfoTests
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("my-yandex-store");
+
         // Яндекс.Кит не предоставляет юрлицо и ИНН
         result.LegalName.Should().BeNull();
         result.Inn.Should().BeNull();

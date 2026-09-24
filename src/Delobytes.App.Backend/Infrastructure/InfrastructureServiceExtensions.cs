@@ -27,7 +27,7 @@ public static class InfrastructureServiceExtensions
 
         // Register tenant contexts
         services.AddScoped<MessageTenantContext>();
-        services.AddScoped<ITenantContext>(sp => new CompositeTenantContext(
+        services.AddScoped<ITenantContext>(sp => new TenantContext(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<MessageTenantContext>()));
 

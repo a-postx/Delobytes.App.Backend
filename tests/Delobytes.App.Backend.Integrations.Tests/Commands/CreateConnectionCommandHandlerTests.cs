@@ -24,16 +24,6 @@ public class CreateConnectionCommandHandlerTests
     private readonly Mock<IApiKeyValidator> _validator = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
 
-    private CreateConnectionCommandHandler CreateHandler()
-    {
-        return new CreateConnectionCommandHandler(
-            _templateRepo.Object,
-            _connectionRepo.Object,
-            _validatorFactory.Object,
-            _apiClientFactory.Object,
-            _eventPublisher.Object);
-    }
-
     private static SystemChannelTemplate BuildTemplate(string code = "wildberries")
     {
         return new SystemChannelTemplate
@@ -46,6 +36,16 @@ public class CreateConnectionCommandHandlerTests
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+    }
+
+    private CreateConnectionCommandHandler CreateHandler()
+    {
+        return new CreateConnectionCommandHandler(
+            _templateRepo.Object,
+            _connectionRepo.Object,
+            _validatorFactory.Object,
+            _apiClientFactory.Object,
+            _eventPublisher.Object);
     }
 
     private static CreateConnectionCommand BuildCommand(Guid? channelId = null, string code = "wildberries")

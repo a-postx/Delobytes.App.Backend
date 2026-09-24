@@ -8,11 +8,11 @@ namespace Delobytes.App.Backend.Tests.Messaging;
 
 public class CompositeTenantContextTests
 {
-    private static CompositeTenantContext BuildContext(
+    private static TenantContext BuildContext(
         Mock<IHttpContextAccessor> accessorMock,
         MessageTenantContext messageTenantContext)
     {
-        return new CompositeTenantContext(accessorMock.Object, messageTenantContext);
+        return new TenantContext(accessorMock.Object, messageTenantContext);
     }
 
     private static Mock<IHttpContextAccessor> BuildHttpAccessorWithClaim(Guid tenantId)
@@ -55,7 +55,7 @@ public class CompositeTenantContextTests
         MessageTenantContext messageTenantContext = new MessageTenantContext();
         messageTenantContext.SetTenantId(messageTenantId);
 
-        CompositeTenantContext context = BuildContext(
+        TenantContext context = BuildContext(
             BuildHttpAccessorWithClaim(httpTenantId),
             messageTenantContext);
 
@@ -70,7 +70,7 @@ public class CompositeTenantContextTests
         MessageTenantContext messageTenantContext = new MessageTenantContext();
         messageTenantContext.SetTenantId(differentMessageTenantId);
 
-        CompositeTenantContext context = BuildContext(
+        TenantContext context = BuildContext(
             BuildHttpAccessorWithClaim(httpTenantId),
             messageTenantContext);
 
@@ -84,7 +84,7 @@ public class CompositeTenantContextTests
         MessageTenantContext messageTenantContext = new MessageTenantContext();
         messageTenantContext.SetTenantId(messageTenantId);
 
-        CompositeTenantContext context = BuildContext(
+        TenantContext context = BuildContext(
             BuildHttpAccessorWithNoContext(),
             messageTenantContext);
 
@@ -98,7 +98,7 @@ public class CompositeTenantContextTests
         MessageTenantContext messageTenantContext = new MessageTenantContext();
         messageTenantContext.SetTenantId(messageTenantId);
 
-        CompositeTenantContext context = BuildContext(
+        TenantContext context = BuildContext(
             BuildHttpAccessorWithNoClaim(),
             messageTenantContext);
 
@@ -110,7 +110,7 @@ public class CompositeTenantContextTests
     {
         MessageTenantContext messageTenantContext = new MessageTenantContext();
 
-        CompositeTenantContext context = BuildContext(
+        TenantContext context = BuildContext(
             BuildHttpAccessorWithNoContext(),
             messageTenantContext);
 
@@ -134,7 +134,7 @@ public class CompositeTenantContextTests
         Mock<IHttpContextAccessor> accessorMock = new Mock<IHttpContextAccessor>();
         accessorMock.Setup(a => a.HttpContext).Returns(httpContext);
 
-        CompositeTenantContext context = BuildContext(accessorMock, messageTenantContext);
+        TenantContext context = BuildContext(accessorMock, messageTenantContext);
 
         context.TenantId.Should().Be(messageTenantId,
             "invalid HTTP claim must not block fallback to message context");
@@ -146,7 +146,7 @@ public class CompositeTenantContextTests
         Guid messageTenantId = Guid.NewGuid();
         MessageTenantContext messageTenantContext = new MessageTenantContext();
 
-        CompositeTenantContext context = BuildContext(
+        TenantContext context = BuildContext(
             BuildHttpAccessorWithNoContext(),
             messageTenantContext);
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
@@ -24,11 +24,6 @@ public class RevokeInvitationCommandHandlerTests
         _invitationRepo = new Mock<IInvitationRepository>();
         _membershipRepo = new Mock<ITenantMembershipRepository>();
     }
-
-    private RevokeInvitationCommandHandler BuildHandler()
-        => new RevokeInvitationCommandHandler(
-            _invitationRepo.Object,
-            _membershipRepo.Object);
 
     private static RevokeInvitationCommand BuildCommand(Guid invitationId, Guid tenantId, Guid revokedByUserId)
         => new RevokeInvitationCommand
@@ -61,6 +56,11 @@ public class RevokeInvitationCommandHandlerTests
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+
+    private RevokeInvitationCommandHandler BuildHandler()
+        => new RevokeInvitationCommandHandler(
+            _invitationRepo.Object,
+            _membershipRepo.Object);
 
     // ── Authorization checks ──────────────────────────────────────────────────────────
 

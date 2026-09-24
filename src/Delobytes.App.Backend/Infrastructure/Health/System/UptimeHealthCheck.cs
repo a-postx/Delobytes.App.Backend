@@ -10,7 +10,7 @@ public class UptimeHealthCheck : IHealthCheck
 {
     public string Name => "uptime_check";
 
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = new CancellationToken())
+    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         TimeSpan runtime = DateTime.UtcNow - Process.GetCurrentProcess().StartTime.ToUniversalTime();
         int upTimeValue = (runtime.Days * 3600) + (runtime.Minutes * 60) + runtime.Seconds;
