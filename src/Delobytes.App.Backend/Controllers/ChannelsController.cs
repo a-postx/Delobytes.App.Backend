@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.Channels.CreateChannel;
+using Delobytes.App.Backend.Catalog.Application.Commands.Channels.RenameChannel;
 using Delobytes.App.Backend.Catalog.Application.Queries.Channels.GetChannels;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -46,6 +47,28 @@ public class ChannelsController : ControllerBase
 
         return CreatedAtAction(nameof(GetAll), new { id = response.Id }, response);
     }
+
+    [HttpPatch("{id:guid}")]
+    public async Task<ActionResult> Rename(
+        Guid id,
+        [FromBody] RenameChannelRequest request,
+        CancellationToken cancellationToken)
+    {
+        RenameChannelResponse response = await _mediator.Send(
+            new RenameChannelCommand
+            {
+                Id = id,
+                Name = request.Name,
+            },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return NoContent();
+    }
 }
 
 /// <summary>Request body for creating a sales channel.</summary>
@@ -56,4 +79,10 @@ public class CreateChannelRequest
     public Guid? SystemChannelTemplateId { get; set; }
 
     public string? CustomApiUrl { get; set; }
+}
+
+/// <summary>Request body for renaming a sales channel.</summary>
+public class RenameChannelRequest
+{
+    public string Name { get; set; } = default!;
 }
