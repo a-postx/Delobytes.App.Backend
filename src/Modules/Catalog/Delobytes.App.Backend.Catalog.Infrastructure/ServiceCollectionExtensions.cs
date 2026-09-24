@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
                 npgsqlOptions.MigrationsHistoryTable("__CatalogMigrationsHistory", "catalog")));
 
         services.AddScoped<IChannelRepository, ChannelRepository>();
+        services.AddScoped<IChannelParameterSetRepository, ChannelParameterSetRepository>();
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IComponentRepository, ComponentRepository>();
         services.AddScoped<IComponentPriceRepository, ComponentPriceRepository>();
