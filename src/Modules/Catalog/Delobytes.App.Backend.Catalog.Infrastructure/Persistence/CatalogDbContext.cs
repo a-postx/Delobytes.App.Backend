@@ -115,24 +115,48 @@ public class CatalogDbContext : DbContext
             .Where(e => e.State == EntityState.Added && e.Entity is ITenantScoped)
             .ToList();
 
-        if (addedScopedEntries.Count == 0)
+        List<EntityEntry> modifiedScopedEntries = ChangeTracker.Entries()
+            .Where(e => e.State == EntityState.Modified && e.Entity is ITenantScoped)
+            .ToList();
+
+        if (addedScopedEntries.Count == 0 && modifiedScopedEntries.Count == 0)
         {
             return;
         }
 
         Guid? tenantId = _tenantContext.TenantId;
 
-        if (!tenantId.HasValue)
+        if(!tenantId.HasValue)
         {
-            string entityNames = string.Join(", ", addedScopedEntries.Select(e => e.Entity.GetType().Name).Distinct());
-            throw new SecurityException(
-                $"Cannot save tenant-scoped entit{(addedScopedEntries.Count == 1 ? "y" : "ies")} ({entityNames}) " +
-                "without a resolved TenantId. The current execution context has no tenant.");
+            List<string> entityNames = addedScopedEntries
+                .Concat(modifiedScopedEntries)
+                .Select(e => e.Entity.GetType().Name)
+                .Distinct()
+                .ToList();
+
+            if (entityNames.Count > 0)
+            {
+                throw new SecurityException(
+                    $"Cannot save tenant-scoped entit{(entityNames.Count == 1 ? "y" : "ies")} ({string.Join(", ", entityNames)}) " +
+                    "without a resolved TenantId. The current execution context has no tenant.");
+            }
+
+            return;
         }
 
         foreach (EntityEntry entry in addedScopedEntries)
         {
             entry.Property("TenantId").CurrentValue = tenantId.Value;
+        }
+
+        foreach (EntityEntry entry in modifiedScopedEntries)
+        {
+            Guid? entityTenantId = (Guid?)entry.Property("TenantId").CurrentValue;
+
+            if (!entityTenantId.HasValue || entityTenantId.Value == Guid.Empty)
+            {
+                entry.Property("TenantId").CurrentValue = tenantId.Value;
+            }
         }
     }
 
