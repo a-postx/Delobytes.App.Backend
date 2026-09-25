@@ -151,11 +151,14 @@ public class CatalogDbContext : DbContext
 
         foreach (EntityEntry entry in modifiedScopedEntries)
         {
-            Guid? entityTenantId = (Guid?)entry.Property("TenantId").CurrentValue;
+            PropertyEntry tenantIdProperty = entry.Property("TenantId");
+            Guid? entityTenantId = (Guid?)tenantIdProperty.CurrentValue;
 
             if (!entityTenantId.HasValue || entityTenantId.Value == Guid.Empty)
             {
-                entry.Property("TenantId").CurrentValue = tenantId.Value;
+                tenantIdProperty.CurrentValue = tenantId.Value;
+                tenantIdProperty.OriginalValue = tenantId.Value;
+                tenantIdProperty.IsModified = false;
             }
         }
     }
