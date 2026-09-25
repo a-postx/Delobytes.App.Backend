@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
@@ -32,6 +33,17 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                 ArchivedAt = p.ArchivedAt,
                 DeletionRequestedAt = p.DeletionRequestedAt,
                 DeletedAt = p.DeletedAt,
+                Barcodes = p.Barcodes
+                    .Select(b => new ProductBarcodeDto
+                    {
+                        Id = b.Id,
+                        Value = b.Value,
+                        Type = b.Type,
+                        IsDefault = b.IsDefault,
+                    })
+                    .ToList(),
+                // The list view does not show dimensions; the single-product endpoint does.
+                PackingUnit = null,
             }).ToList(),
         };
     }

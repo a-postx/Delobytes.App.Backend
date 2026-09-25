@@ -1,4 +1,3 @@
-using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
@@ -32,4 +31,8 @@ public class ProductItem
 
     // Placeholder for future marketplace import source — manual entry for now
     public string CreationSource { get; set; } = "Manual";
+
+    public List<Products.ProductBarcodeDto>? Barcodes { get; set; }
+
+    public Products.PackingUnitDto? PackingUnit { get; set; }
 }

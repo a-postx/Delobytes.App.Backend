@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
@@ -18,12 +19,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
     {
         Product? product = await _repository.GetByIdAsync(request.Id, cancellationToken);
 
-        if (product == null)
-        {
-            return new UpdateProductResponse { Found = false };
-        }
-
-        if (product.Status == ProductStatus.Deleted)
+        if (product == null || product.Status == ProductStatus.Deleted)
         {
             return new UpdateProductResponse { Found = false };
         }
@@ -31,6 +27,54 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
         product.Name = request.Name;
         product.Description = request.Description;
         product.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Barcodes are replaced wholesale: the client sends the full desired set,
+        // so there is no per-barcode identity to reconcile.
+        if (request.Barcodes != null)
+        {
+            product.Barcodes.Clear();
+
+            foreach (ProductBarcodeDto dto in request.Barcodes)
+            {
+                product.Barcodes.Add(new ProductBarcode
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = product.Id,
+                    Value = dto.Value,
+                    Type = dto.Type,
+                    IsDefault = dto.IsDefault,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                });
+            }
+        }
+
+        if (request.PackingUnit != null)
+        {
+            PackingUnit? existing = product.PackingUnits.FirstOrDefault(pu => pu.IsActive);
+
+            if (existing == null)
+            {
+                product.PackingUnits.Add(new PackingUnit
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = product.Id,
+                    LengthCm = request.PackingUnit.LengthCm,
+                    WidthCm = request.PackingUnit.WidthCm,
+                    HeightCm = request.PackingUnit.HeightCm,
+                    WeightKg = request.PackingUnit.WeightKg,
+                    IsActive = true,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                });
+            }
+            else
+            {
+                existing.LengthCm = request.PackingUnit.LengthCm;
+                existing.WidthCm = request.PackingUnit.WidthCm;
+                existing.HeightCm = request.PackingUnit.HeightCm;
+                existing.WeightKg = request.PackingUnit.WeightKg;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
 
         await _repository.SaveChangesAsync(cancellationToken);
 

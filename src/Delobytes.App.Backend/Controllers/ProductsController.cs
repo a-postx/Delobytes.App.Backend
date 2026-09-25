@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Catalog.Application.Commands.Products.CreateProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProduct;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductDeletionStatus;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
@@ -69,6 +70,8 @@ public class ProductsController : ControllerBase
                 Sku = request.Sku,
                 Name = request.Name,
                 Description = request.Description,
+                Barcodes = request.Barcodes,
+                PackingUnit = request.PackingUnit,
             },
             cancellationToken);
 
@@ -87,6 +90,8 @@ public class ProductsController : ControllerBase
                 Id = id,
                 Name = request.Name,
                 Description = request.Description,
+                Barcodes = request.Barcodes,
+                PackingUnit = request.PackingUnit,
             },
             cancellationToken);
 
@@ -193,6 +198,10 @@ public class CreateProductRequest
     public string Name { get; set; } = default!;
 
     public string? Description { get; set; }
+
+    public List<ProductBarcodeDto>? Barcodes { get; set; }
+
+    public PackingUnitDto? PackingUnit { get; set; }
 }
 
 public class UpdateProductRequest
@@ -200,4 +209,8 @@ public class UpdateProductRequest
     public string Name { get; set; } = default!;
 
     public string? Description { get; set; }
+
+    public List<ProductBarcodeDto>? Barcodes { get; set; }
+
+    public PackingUnitDto? PackingUnit { get; set; }
 }

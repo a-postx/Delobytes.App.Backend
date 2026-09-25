@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using MediatR;
 
@@ -35,6 +36,32 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
             ArchivedAt = product.ArchivedAt,
             DeletionRequestedAt = product.DeletionRequestedAt,
             DeletedAt = product.DeletedAt,
+            Barcodes = product.Barcodes
+                .Select(b => new ProductBarcodeDto
+                {
+                    Id = b.Id,
+                    Value = b.Value,
+                    Type = b.Type,
+                    IsDefault = b.IsDefault,
+                })
+                .ToList(),
+            PackingUnit = ToPackingUnitDto(product.PackingUnits.FirstOrDefault(pu => pu.IsActive)),
+        };
+    }
+
+    private static PackingUnitDto? ToPackingUnitDto(PackingUnit? unit)
+    {
+        if (unit == null)
+        {
+            return null;
+        }
+
+        return new PackingUnitDto
+        {
+            LengthCm = unit.LengthCm,
+            WidthCm = unit.WidthCm,
+            HeightCm = unit.HeightCm,
+            WeightKg = unit.WeightKg,
         };
     }
 }
