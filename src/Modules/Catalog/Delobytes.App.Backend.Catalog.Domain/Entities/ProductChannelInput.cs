@@ -12,8 +12,6 @@ public class ProductChannelInput : ITenantScoped
 
     public Guid ProductId { get; set; }
 
-    public Guid ChannelParameterSetId { get; set; }
-
     /// <summary>Cost of raw materials for one product unit (manual operator input).</summary>
     public decimal RawMaterialCost { get; set; }
 
@@ -26,8 +24,6 @@ public class ProductChannelInput : ITenantScoped
     public DateTimeOffset CreatedAt { get; set; }
 
     public Product Product { get; set; } = default!;
-
-    public ChannelParameterSet ChannelParameterSet { get; set; } = default!;
 
     public ICollection<MarginCalculationSnapshot> MarginCalculationSnapshots { get; set; } = new List<MarginCalculationSnapshot>();
 }

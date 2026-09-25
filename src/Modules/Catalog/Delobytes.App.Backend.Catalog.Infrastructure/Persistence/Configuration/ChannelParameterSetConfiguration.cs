@@ -15,21 +15,6 @@ public class ChannelParameterSetConfiguration : IEntityTypeConfiguration<Channel
         builder.Property(cps => cps.ChannelId)
             .IsRequired();
 
-        builder.Property(cps => cps.CommissionPercent)
-            .HasPrecision(8, 6)
-            .IsRequired();
-
-        builder.Property(cps => cps.AcquiringPercent)
-            .HasPrecision(8, 6)
-            .IsRequired();
-
-        builder.Property(cps => cps.SppPercent)
-            .HasPrecision(8, 6)
-            .IsRequired();
-
-        builder.Property(cps => cps.SppEnabled)
-            .IsRequired();
-
         builder.Property(cps => cps.ValidFrom)
             .IsRequired();
 
@@ -42,10 +27,5 @@ public class ChannelParameterSetConfiguration : IEntityTypeConfiguration<Channel
             .WithMany()
             .HasForeignKey(cps => cps.ChannelId)
             .OnDelete(DeleteBehavior.Cascade);
-
-        builder.HasMany(cps => cps.ProductChannelInputs)
-            .WithOne(pci => pci.ChannelParameterSet)
-            .HasForeignKey(pci => pci.ChannelParameterSetId)
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }

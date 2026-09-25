@@ -29,10 +29,6 @@ public class GetActiveChannelParameterSetQueryHandler : IRequestHandler<GetActiv
             Found = true,
             Id = active.Id,
             ChannelId = active.ChannelId,
-            CommissionPercent = active.CommissionPercent,
-            AcquiringPercent = active.AcquiringPercent,
-            SppPercent = active.SppPercent,
-            SppEnabled = active.SppEnabled,
             ValidFrom = active.ValidFrom,
             CreatedAt = active.CreatedAt,
         };

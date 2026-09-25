@@ -21,10 +21,6 @@ public class GetChannelParameterSetsQueryHandler : IRequestHandler<GetChannelPar
             {
                 Id = cps.Id,
                 ChannelId = cps.ChannelId,
-                CommissionPercent = cps.CommissionPercent,
-                AcquiringPercent = cps.AcquiringPercent,
-                SppPercent = cps.SppPercent,
-                SppEnabled = cps.SppEnabled,
                 ValidFrom = cps.ValidFrom,
                 CreatedAt = cps.CreatedAt,
             })

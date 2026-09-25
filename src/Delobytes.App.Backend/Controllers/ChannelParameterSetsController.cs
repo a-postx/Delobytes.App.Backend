@@ -71,10 +71,6 @@ public class ChannelParameterSetsController : ControllerBase
             new CreateChannelParameterSetCommand
             {
                 ChannelId = channelId,
-                CommissionPercent = request.CommissionPercent,
-                AcquiringPercent = request.AcquiringPercent,
-                SppPercent = request.SppPercent,
-                SppEnabled = request.SppEnabled,
                 ValidFrom = request.ValidFrom,
             },
             cancellationToken);
@@ -91,9 +87,5 @@ public class ChannelParameterSetsController : ControllerBase
 /// <summary>Request body for creating a new parameter set version.</summary>
 public class CreateChannelParameterSetRequest
 {
-    public decimal CommissionPercent { get; set; }
-    public decimal AcquiringPercent { get; set; }
-    public decimal SppPercent { get; set; }
-    public bool SppEnabled { get; set; }
     public DateOnly ValidFrom { get; set; }
 }

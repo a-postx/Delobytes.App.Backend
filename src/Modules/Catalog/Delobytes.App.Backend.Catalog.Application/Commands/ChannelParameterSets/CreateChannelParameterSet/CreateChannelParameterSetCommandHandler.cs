@@ -32,10 +32,6 @@ public class CreateChannelParameterSetCommandHandler : IRequestHandler<CreateCha
         {
             Id = Guid.NewGuid(),
             ChannelId = request.ChannelId,
-            CommissionPercent = request.CommissionPercent,
-            AcquiringPercent = request.AcquiringPercent,
-            SppPercent = request.SppPercent,
-            SppEnabled = request.SppEnabled,
             ValidFrom = request.ValidFrom,
             CreatedAt = DateTimeOffset.UtcNow,
         };
