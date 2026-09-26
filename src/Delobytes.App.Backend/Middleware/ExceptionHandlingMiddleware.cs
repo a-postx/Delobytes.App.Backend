@@ -1,4 +1,6 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Unicode;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Services;
@@ -16,6 +18,7 @@ public class ExceptionHandlingMiddleware
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
     };
 
     private readonly RequestDelegate _next;
@@ -64,6 +67,7 @@ public class ExceptionHandlingMiddleware
 
             case Catalog.Application.Exceptions.ConcurrencyException:
                 errorCode = ErrorCodes.Common.Conflict;
+                message = exception.Message;
                 _logger.LogWarning("Conflict: {Message}", exception.Message);
                 break;
 
