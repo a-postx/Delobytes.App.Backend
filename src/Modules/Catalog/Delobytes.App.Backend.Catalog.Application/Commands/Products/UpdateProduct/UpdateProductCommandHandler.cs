@@ -27,22 +27,48 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
         product.Name = request.Name;
         product.Description = request.Description;
 
-        // Barcodes are replaced wholesale: the client sends the full desired set,
-        // so there is no per-barcode identity to reconcile.
         if (request.Barcodes != null)
         {
-            product.Barcodes.Clear();
+            List<Guid> incomingIds = request.Barcodes
+                .Where(dto => dto.Id.HasValue)
+                .Select(dto => dto.Id!.Value)
+                .ToList();
+
+            List<ProductBarcode> toRemove = product.Barcodes
+                .Where(b => !incomingIds.Contains(b.Id))
+                .ToList();
+
+            foreach (ProductBarcode barcode in toRemove)
+            {
+                product.Barcodes.Remove(barcode);
+            }
 
             foreach (ProductBarcodeDto dto in request.Barcodes)
             {
-                product.Barcodes.Add(new ProductBarcode
+                if (dto.Id.HasValue)
                 {
-                    Id = Guid.NewGuid(),
-                    ProductId = product.Id,
-                    Value = dto.Value,
-                    Type = dto.Type,
-                    IsDefault = dto.IsDefault
-                });
+                    ProductBarcode? existing = product.Barcodes.FirstOrDefault(b => b.Id == dto.Id.Value);
+
+                    if (existing != null)
+                    {
+                        existing.Value = dto.Value;
+                        existing.Type = dto.Type;
+                        existing.IsDefault = dto.IsDefault;
+                        existing.UpdatedAt = DateTimeOffset.UtcNow;
+                    }
+                }
+                else
+                {
+                    product.Barcodes.Add(new ProductBarcode
+                    {
+                        Id = Guid.NewGuid(),
+                        ProductId = product.Id,
+                        Value = dto.Value,
+                        Type = dto.Type,
+                        IsDefault = dto.IsDefault,
+                        CreatedAt = DateTimeOffset.UtcNow
+                    });
+                }
             }
         }
 

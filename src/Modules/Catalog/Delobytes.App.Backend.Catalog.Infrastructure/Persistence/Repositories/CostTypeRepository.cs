@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Exceptions;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Errors;
 using Microsoft.EntityFrameworkCore;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
@@ -39,8 +40,7 @@ public class CostTypeRepository : ICostTypeRepository
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            throw new ConcurrencyException(
-                "Данные изменены другим пользователем. Обновите страницу и повторите попытку.");
+            throw new AppException(ErrorCodes.Common.Conflict, ex.Message);
         }
     }
 }
