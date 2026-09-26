@@ -7,7 +7,7 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// A product typically has one barcode, but can have several from different marketplaces
 /// or marking systems.
 /// </summary>
-public class ProductBarcode : ITenantScoped
+public class ProductBarcode : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
 
@@ -25,6 +25,14 @@ public class ProductBarcode : ITenantScoped
     public bool IsDefault { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
+    public uint RowVersion { get; set; }
 
     public Product Product { get; set; } = default!;
 }

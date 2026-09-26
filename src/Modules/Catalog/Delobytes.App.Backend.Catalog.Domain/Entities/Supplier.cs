@@ -5,7 +5,7 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// <summary>
 /// Represents a supplier of components.
 /// </summary>
-public class Supplier : ITenantScoped
+public class Supplier : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
 
@@ -25,6 +25,12 @@ public class Supplier : ITenantScoped
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
+    public uint RowVersion { get; set; }
 
     public ICollection<ComponentPrice> ComponentPrices { get; set; } = new List<ComponentPrice>();
 }

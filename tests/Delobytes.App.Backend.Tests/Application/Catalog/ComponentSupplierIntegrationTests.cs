@@ -43,8 +43,7 @@ public class ComponentSupplierIntegrationTests
             Name = "Коробка 20x15x10",
             Description = "Упаковочная коробка",
             Unit = Unit.Piece,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true
         };
 
         ComponentPrice price = new ComponentPrice
@@ -193,8 +192,7 @@ public class ComponentSupplierIntegrationTests
             Id = componentId,
             Name = "Пузырчатая плёнка",
             Unit = Unit.Meter,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true
         };
 
         ComponentPrice price1 = new ComponentPrice

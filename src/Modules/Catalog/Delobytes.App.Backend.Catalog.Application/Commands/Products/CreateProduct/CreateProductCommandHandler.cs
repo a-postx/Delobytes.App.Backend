@@ -23,8 +23,7 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
             Sku = request.Sku,
             Name = request.Name,
             Description = request.Description,
-            Status = ProductStatus.Active,
-            CreatedAt = DateTimeOffset.UtcNow,
+            Status = ProductStatus.Active
         };
 
         if (request.Barcodes != null)
@@ -37,8 +36,7 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
                     ProductId = product.Id,
                     Value = dto.Value,
                     Type = dto.Type,
-                    IsDefault = dto.IsDefault,
-                    CreatedAt = DateTimeOffset.UtcNow,
+                    IsDefault = dto.IsDefault
                 });
             }
         }

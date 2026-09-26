@@ -23,7 +23,7 @@ public class RenameChannelCommandHandler : IRequestHandler<RenameChannelCommand,
         }
 
         channel.Name = request.Name;
-        channel.UpdatedAt = DateTimeOffset.UtcNow;
+        ////channel.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _repository.SaveChangesAsync(cancellationToken);
 

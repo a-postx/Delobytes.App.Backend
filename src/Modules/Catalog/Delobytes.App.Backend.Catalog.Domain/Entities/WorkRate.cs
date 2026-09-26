@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// Represents a work rate entry used to calculate assembly labour cost.
 /// Each entry is versioned via ValidFrom; the record active at a given date is used for cost calculation.
 /// </summary>
-public class WorkRate : ITenantScoped
+public class WorkRate : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
 
@@ -23,6 +23,12 @@ public class WorkRate : ITenantScoped
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
+    public uint RowVersion { get; set; }
 
     public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
 }

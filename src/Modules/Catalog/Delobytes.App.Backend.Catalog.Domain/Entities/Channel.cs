@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// Represents a sales or marketplace channel where products can be sold.
 /// Can be based on a system template or completely custom.
 /// </summary>
-public class Channel : ITenantScoped
+public class Channel : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     /// <summary>
     /// Gets or sets the channel unique identifier.
@@ -50,6 +50,12 @@ public class Channel : ITenantScoped
     /// Gets or sets the date and time when the channel was last updated.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
+    public uint RowVersion { get; set; }
 
     /// <summary>
     /// Navigation property: products linked to this channel.

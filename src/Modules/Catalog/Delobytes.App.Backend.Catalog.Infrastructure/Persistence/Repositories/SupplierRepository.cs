@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Application.Exceptions;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -30,8 +31,16 @@ public class SupplierRepository : ISupplierRepository
         _context.Suppliers.Add(supplier);
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken ct)
+    public async Task<int> SaveChangesAsync(CancellationToken ct)
     {
-        return _context.SaveChangesAsync(ct);
+        try
+        {
+            return await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(
+                "Данные изменены другим пользователем. Обновите страницу и повторите попытку.");
+        }
     }
 }

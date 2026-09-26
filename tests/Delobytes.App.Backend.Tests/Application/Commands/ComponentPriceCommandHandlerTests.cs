@@ -25,8 +25,7 @@ public class ComponentPriceCommandHandlerTests
             Id = id ?? Guid.NewGuid(),
             Name = "Коробка 20x15x10",
             Unit = Unit.Piece,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true
         };
 
         return component;

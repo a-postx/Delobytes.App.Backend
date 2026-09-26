@@ -8,20 +8,24 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// Carries descriptive data only; price and supplier live in <see cref="ComponentPrice"/>
 /// versions so that historical cost calculations remain intact.
 /// </summary>
-public class Component : ITenantScoped
+public class Component : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
-
     public string Name { get; set; } = default!;
-
     public string? Description { get; set; }
-
     public Unit Unit { get; set; }
 
     /// <summary>Whether the logical component is archived. Does not depend on price versions.</summary>
     public bool IsActive { get; set; }
-
     public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
+    public uint RowVersion { get; set; }
 
     public ICollection<ComponentPrice> Prices { get; set; } = new List<ComponentPrice>();
 

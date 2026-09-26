@@ -41,8 +41,7 @@ public class CatalogDbContextNoTenantGuardTests
             Id = Guid.NewGuid(),
             Name = "Wildberries",
             IsCustom = false,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true
         };
     }
 

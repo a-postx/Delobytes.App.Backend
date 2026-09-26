@@ -22,8 +22,7 @@ public class CreateChannelCommandHandler : IRequestHandler<CreateChannelCommand,
             Name = request.Name,
             CustomApiUrl = request.CustomApiUrl,
             IsCustom = request.SystemChannelTemplateId == null,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true
         };
 
         _repository.Add(channel);

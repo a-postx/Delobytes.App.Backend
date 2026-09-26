@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// <summary>
 /// Represents a product in the catalog.
 /// </summary>
-public class Product : ITenantScoped
+public class Product : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
 
@@ -23,7 +23,13 @@ public class Product : ITenantScoped
 
     public DateTimeOffset? UpdatedAt { get; set; }
 
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
     public DateTimeOffset? ArchivedAt { get; set; }
+
+    public uint RowVersion { get; set; }
 
     /// <summary>Set when deletion is requested; cleared on restore or completion.</summary>
     public DateTimeOffset? DeletionRequestedAt { get; set; }

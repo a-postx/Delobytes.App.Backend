@@ -26,7 +26,6 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
 
         product.Name = request.Name;
         product.Description = request.Description;
-        product.UpdatedAt = DateTimeOffset.UtcNow;
 
         // Barcodes are replaced wholesale: the client sends the full desired set,
         // so there is no per-barcode identity to reconcile.
@@ -42,8 +41,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                     ProductId = product.Id,
                     Value = dto.Value,
                     Type = dto.Type,
-                    IsDefault = dto.IsDefault,
-                    CreatedAt = DateTimeOffset.UtcNow,
+                    IsDefault = dto.IsDefault
                 });
             }
         }
@@ -77,7 +75,6 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
         }
 
         await _repository.SaveChangesAsync(cancellationToken);
-
         return new UpdateProductResponse { Found = true };
     }
 }

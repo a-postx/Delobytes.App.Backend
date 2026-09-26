@@ -50,8 +50,7 @@ public class ComponentCommandHandlerTests
             Id = id ?? Guid.NewGuid(),
             Name = "Коробка 20x15x10",
             Unit = Unit.Piece,
-            IsActive = isActive,
-            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = isActive
         };
 
         if (withActivePrice)

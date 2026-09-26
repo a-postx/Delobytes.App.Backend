@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Security;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Conventions;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -42,6 +43,8 @@ public class CatalogDbContext : DbContext
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.Conventions.Add(_ => new TenantIdShadowPropertyConvention());
+        configurationBuilder.Conventions.Add(_ => new AuditableEntityConvention());
+        configurationBuilder.Conventions.Add(_ => new RowVersionedEntityConvention());
     }
 
     /// <inheritdoc/>

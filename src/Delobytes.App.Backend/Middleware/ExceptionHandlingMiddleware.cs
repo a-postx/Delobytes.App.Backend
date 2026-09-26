@@ -62,6 +62,11 @@ public class ExceptionHandlingMiddleware
                 _logger.LogWarning("Conflict: {Message}", exception.Message);
                 break;
 
+            case Catalog.Application.Exceptions.ConcurrencyException:
+                errorCode = ErrorCodes.Common.Conflict;
+                _logger.LogWarning("Conflict: {Message}", exception.Message);
+                break;
+
             case InvalidOperationException:
                 errorCode = ErrorCodes.Common.ValidationFailed;
                 _logger.LogWarning("Bad request: {Message}", exception.Message);

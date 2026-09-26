@@ -27,8 +27,7 @@ public class CreateComponentCommandHandler : IRequestHandler<CreateComponentComm
             Name = request.Name,
             Description = request.Description,
             Unit = request.Unit,
-            IsActive = true,
-            CreatedAt = now,
+            IsActive = true
         };
 
         ComponentPrice price = new ComponentPrice

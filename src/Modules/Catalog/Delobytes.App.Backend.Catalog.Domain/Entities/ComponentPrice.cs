@@ -7,7 +7,7 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 /// Changing price or supplier creates a new record with a new ValidFrom;
 /// existing records are never modified so historical cost calculations remain intact.
 /// </summary>
-public class ComponentPrice : ITenantScoped
+public class ComponentPrice : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
 
@@ -27,6 +27,12 @@ public class ComponentPrice : ITenantScoped
 
     /// <summary>Set only on deactivation/restore; never changes ValidFrom.</summary>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    public Guid? CreatedByUserId { get; set; }
+
+    public Guid? UpdatedByUserId { get; set; }
+
+    public uint RowVersion { get; set; }
 
     public Component Component { get; set; } = default!;
 

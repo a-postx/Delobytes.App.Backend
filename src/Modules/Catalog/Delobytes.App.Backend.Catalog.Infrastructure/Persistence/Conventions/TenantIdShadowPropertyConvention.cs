@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 
-namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
+namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Conventions;
 
 public sealed class TenantIdShadowPropertyConvention : IEntityTypeAddedConvention
 {
