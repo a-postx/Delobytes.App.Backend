@@ -52,7 +52,7 @@ public class ExceptionHandlingMiddleware
             case AppException appEx:
                 errorCode = appEx.Code;
                 message = appEx.Message;
-                _logger.LogWarning("AppException [{Code}]: {Message}", appEx.Code.Value, appEx.Message);
+                _logger.LogWarning("AppException [{Code}]: {Message}. {InnerException}", appEx.Code.Value, appEx.Message, appEx.InnerException);
                 break;
 
             case UnauthorizedAccessException:
@@ -62,12 +62,6 @@ public class ExceptionHandlingMiddleware
 
             case Integrations.Application.ConflictException:
                 errorCode = ErrorCodes.Common.Conflict;
-                _logger.LogWarning("Conflict: {Message}", exception.Message);
-                break;
-
-            case Catalog.Application.Exceptions.ConcurrencyException:
-                errorCode = ErrorCodes.Common.Conflict;
-                message = exception.Message;
                 _logger.LogWarning("Conflict: {Message}", exception.Message);
                 break;
 

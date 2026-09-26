@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
+using Delobytes.App.Backend.Contracts.Errors;
 using Microsoft.EntityFrameworkCore;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
@@ -62,9 +63,8 @@ public class ProductRepository : IProductRepository
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            string? entry = ex.Entries.ToList().FirstOrDefault()?.GetType().FullName;
-            throw new ConcurrencyException(
-                "Данные изменены другим пользователем. Обновите страницу и повторите попытку. Детали: сущность " + entry + " сообщение: " + ex.Message);
+            throw new AppException(ErrorCodes.Common.Conflict,
+                "Данные изменены другим пользователем. Обновите страницу и повторите попытку.", ex);
         }
     }
 }
