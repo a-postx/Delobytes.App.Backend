@@ -62,8 +62,9 @@ public class ProductRepository : IProductRepository
         }
         catch (DbUpdateConcurrencyException ex)
         {
+            string? entry = ex.Entries.ToList().FirstOrDefault()?.GetType().FullName;
             throw new ConcurrencyException(
-                "Данные изменены другим пользователем. Обновите страницу и повторите попытку. Детали: " + ex.Message);
+                "Данные изменены другим пользователем. Обновите страницу и повторите попытку. Детали: сущность " + entry + " сообщение: " + ex.Message);
         }
     }
 }
