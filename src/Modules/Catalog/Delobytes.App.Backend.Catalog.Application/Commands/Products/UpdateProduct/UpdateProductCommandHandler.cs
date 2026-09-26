@@ -54,7 +54,6 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                         existing.Value = dto.Value;
                         existing.Type = dto.Type;
                         existing.IsDefault = dto.IsDefault;
-                        existing.UpdatedAt = DateTimeOffset.UtcNow;
                     }
                 }
                 else
@@ -65,8 +64,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                         ProductId = product.Id,
                         Value = dto.Value,
                         Type = dto.Type,
-                        IsDefault = dto.IsDefault,
-                        CreatedAt = DateTimeOffset.UtcNow
+                        IsDefault = dto.IsDefault
                     });
                 }
             }
@@ -86,8 +84,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                     WidthCm = request.PackingUnit.WidthCm,
                     HeightCm = request.PackingUnit.HeightCm,
                     WeightKg = request.PackingUnit.WeightKg,
-                    IsActive = true,
-                    CreatedAt = DateTimeOffset.UtcNow,
+                    IsActive = true
                 });
             }
             else
@@ -96,7 +93,6 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                 existing.WidthCm = request.PackingUnit.WidthCm;
                 existing.HeightCm = request.PackingUnit.HeightCm;
                 existing.WeightKg = request.PackingUnit.WeightKg;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
             }
         }
 

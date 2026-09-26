@@ -101,11 +101,11 @@ public class CatalogDbContext : DbContext
     }
 
     /// <inheritdoc/>
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         SetTenantId();
         ValidateCrossTenantWrite();
-        return base.SaveChangesAsync(cancellationToken);
+        return await base.SaveChangesAsync(cancellationToken);
     }
 
     // Guards against orphan rows: without this check, a missing tenant (e.g. a background
@@ -159,9 +159,11 @@ public class CatalogDbContext : DbContext
 
             if (!entityTenantId.HasValue || entityTenantId.Value == Guid.Empty)
             {
+                // If TenantId is empty on a Modified entity, it's likely a new entity that EF Core
+                // incorrectly tracked as Modified (e.g. when added to a tracked collection with Id already set).
+                // Convert it to Added state to prevent concurrency exceptions on non-existent rows.
+                entry.State = EntityState.Added;
                 tenantIdProperty.CurrentValue = tenantId.Value;
-                tenantIdProperty.OriginalValue = tenantId.Value;
-                tenantIdProperty.IsModified = false;
             }
         }
     }
