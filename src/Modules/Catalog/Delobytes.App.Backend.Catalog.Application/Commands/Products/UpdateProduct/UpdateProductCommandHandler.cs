@@ -27,46 +27,47 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
         product.Name = request.Name;
         product.Description = request.Description;
 
-        if (request.Barcodes != null)
+        // Treat null as empty list: user wants to clear all barcodes.
+        // This makes null and [] semantically equivalent in the update context.
+        List<ProductBarcodeDto> barcodes = request.Barcodes ?? new List<ProductBarcodeDto>();
+
+        List<Guid> incomingIds = barcodes
+            .Where(dto => dto.Id.HasValue)
+            .Select(dto => dto.Id!.Value)
+            .ToList();
+
+        List<ProductBarcode> toRemove = product.Barcodes
+            .Where(b => !incomingIds.Contains(b.Id))
+            .ToList();
+
+        foreach (ProductBarcode barcode in toRemove)
         {
-            List<Guid> incomingIds = request.Barcodes
-                .Where(dto => dto.Id.HasValue)
-                .Select(dto => dto.Id!.Value)
-                .ToList();
+            product.Barcodes.Remove(barcode);
+        }
 
-            List<ProductBarcode> toRemove = product.Barcodes
-                .Where(b => !incomingIds.Contains(b.Id))
-                .ToList();
-
-            foreach (ProductBarcode barcode in toRemove)
+        foreach (ProductBarcodeDto dto in barcodes)
+        {
+            if (dto.Id.HasValue)
             {
-                product.Barcodes.Remove(barcode);
+                ProductBarcode? existing = product.Barcodes.FirstOrDefault(b => b.Id == dto.Id.Value);
+
+                if (existing != null)
+                {
+                    existing.Value = dto.Value;
+                    existing.Type = dto.Type;
+                    existing.IsDefault = dto.IsDefault;
+                }
             }
-
-            foreach (ProductBarcodeDto dto in request.Barcodes)
+            else
             {
-                if (dto.Id.HasValue)
+                product.Barcodes.Add(new ProductBarcode
                 {
-                    ProductBarcode? existing = product.Barcodes.FirstOrDefault(b => b.Id == dto.Id.Value);
-
-                    if (existing != null)
-                    {
-                        existing.Value = dto.Value;
-                        existing.Type = dto.Type;
-                        existing.IsDefault = dto.IsDefault;
-                    }
-                }
-                else
-                {
-                    product.Barcodes.Add(new ProductBarcode
-                    {
-                        Id = Guid.NewGuid(),
-                        ProductId = product.Id,
-                        Value = dto.Value,
-                        Type = dto.Type,
-                        IsDefault = dto.IsDefault
-                    });
-                }
+                    Id = Guid.NewGuid(),
+                    ProductId = product.Id,
+                    Value = dto.Value,
+                    Type = dto.Type,
+                    IsDefault = dto.IsDefault
+                });
             }
         }
 

@@ -129,7 +129,7 @@ public class CatalogDbContext : DbContext
 
         Guid? tenantId = _tenantContext.TenantId;
 
-        if(!tenantId.HasValue)
+        if (!tenantId.HasValue)
         {
             List<string> entityNames = addedScopedEntries
                 .Concat(modifiedScopedEntries)
