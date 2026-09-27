@@ -36,6 +36,20 @@ public interface ISyncJobRepository
     void Update(SyncJob syncJob);
 
     /// <summary>
+    /// Returns all products-import sync jobs for the current tenant, ordered by creation date descending.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<SyncJob>> GetProductsImportJobsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns true when there is already a Pending or Running ProductsImport job for the given connection.
+    /// Used to prevent duplicate import jobs.
+    /// </summary>
+    /// <param name="connectionId">Connection identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<bool> HasActivePendingOrRunningJobForConnectionAsync(Guid connectionId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Persists all pending changes.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>

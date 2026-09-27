@@ -51,6 +51,11 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
         builder.Property(s => s.NextCursor)
             .HasMaxLength(500);
 
+        builder.Property(s => s.RequestedByUserId);
+
+        builder.Property(s => s.CreatedAt)
+            .IsRequired();
+
         builder.Property(s => s.RecordsCreated)
             .IsRequired();
 

@@ -69,6 +69,17 @@ public class SyncJob : ITenantScoped
     public string? NextCursor { get; set; }
 
     /// <summary>
+    /// Gets or sets the identifier of the user who requested this job.
+    /// Null for system-initiated jobs.
+    /// </summary>
+    public Guid? RequestedByUserId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the date and time when this job was created.
+    /// </summary>
+    public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
     /// Gets or sets the number of records created during import.
     /// </summary>
     public int RecordsCreated { get; set; }

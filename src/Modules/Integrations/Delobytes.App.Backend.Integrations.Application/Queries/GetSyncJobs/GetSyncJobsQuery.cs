@@ -1,0 +1,8 @@
+using Delobytes.App.Backend.Integrations.Application.DTOs.SyncJobs;
+using MediatR;
+
+namespace Delobytes.App.Backend.Integrations.Application.Queries.GetSyncJobs;
+
+public class GetSyncJobsQuery : IRequest<GetSyncJobsResponse>
+{
+}

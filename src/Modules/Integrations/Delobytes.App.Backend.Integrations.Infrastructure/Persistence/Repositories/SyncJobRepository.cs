@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,6 +47,25 @@ public class SyncJobRepository : ISyncJobRepository
     public void Update(SyncJob syncJob)
     {
         _context.SyncJobs.Update(syncJob);
+    }
+
+    /// <inheritdoc/>
+    public Task<List<SyncJob>> GetProductsImportJobsAsync(CancellationToken cancellationToken)
+    {
+        return _context.SyncJobs
+            .Where(j => j.JobType == JobType.ProductsImport)
+            .OrderByDescending(j => j.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> HasActivePendingOrRunningJobForConnectionAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        return _context.SyncJobs.AnyAsync(
+            j => j.ConnectionId == connectionId
+                && j.JobType == JobType.ProductsImport
+                && (j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Running),
+            cancellationToken);
     }
 
     /// <inheritdoc/>
