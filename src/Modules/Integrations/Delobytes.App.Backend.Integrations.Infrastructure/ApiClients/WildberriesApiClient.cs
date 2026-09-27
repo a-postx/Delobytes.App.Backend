@@ -1,8 +1,12 @@
+using System.Net;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -137,6 +141,276 @@ public class WildberriesApiClient : IChannelApiClient
         };
 
         return Task.FromResult(response);
+    }
+
+    /// <inheritdoc/>
+    public async Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(
+        ProductCardsCursor? cursor,
+        int limit,
+        CancellationToken ct)
+    {
+        if (_templateId == null)
+        {
+            throw new InvalidOperationException(
+                "Template ID must be set before calling API methods. Call SetTemplateId() first.");
+        }
+
+        if (limit < 1 || limit > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be between 1 and 100.");
+        }
+
+        string baseUrl = await _endpointResolver.GetEndpointUrlAsync(
+            _templateId.Value,
+            ChannelEndpointType.Content,
+            ct);
+
+        WildberriesGetCardsRequest requestBody = new WildberriesGetCardsRequest
+        {
+            Settings = new WildberriesCardSettings
+            {
+                Cursor = new WildberriesCursorRequest
+                {
+                    Limit = limit,
+                    UpdatedAt = cursor?.UpdatedAt,
+                    NmId = cursor?.ProductId
+                },
+                Filter = new WildberriesCardFilter()
+            },
+            Filter = new WildberriesCardFilter()
+        };
+
+        try
+        {
+            string requestJson = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
+
+            StringContent content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+            using HttpRequestMessage request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"{baseUrl}/content/v2/get/cards/list")
+            {
+                Content = content
+            };
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
+
+            ApiResponse<ProductCardsData> apiResponse = new ApiResponse<ProductCardsData>
+            {
+                StatusCode = (int)response.StatusCode,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                string responseBody = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning(
+                    "Wildberries cards API returned {StatusCode}. Authentication failed.",
+                    (int)response.StatusCode);
+
+                apiResponse.IsSuccess = false;
+                apiResponse.ErrorMessage = $"Authentication failed: {response.StatusCode}";
+                apiResponse.Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                };
+
+                return apiResponse;
+            }
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                string retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds.ToString() ?? "unknown";
+                _logger.LogWarning(
+                    "Wildberries cards API rate limit exceeded. Retry after {RetryAfter} seconds.",
+                    retryAfter);
+
+                apiResponse.IsSuccess = false;
+                apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAfter} seconds.";
+                apiResponse.Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                };
+
+                return apiResponse;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string responseBody = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning(
+                    "Wildberries cards API returned {StatusCode}. Response: {Response}",
+                    (int)response.StatusCode,
+                    responseBody.Length > 500 ? responseBody.Substring(0, 500) : responseBody);
+
+                apiResponse.IsSuccess = false;
+                apiResponse.ErrorMessage = $"API error: {response.StatusCode}";
+                apiResponse.Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                };
+
+                return apiResponse;
+            }
+
+            WildberriesGetCardsResponse? cardsResponse =
+                await response.Content.ReadFromJsonAsync<WildberriesGetCardsResponse>(ct);
+
+            if (cardsResponse == null)
+            {
+                _logger.LogWarning("Wildberries cards API returned null response body.");
+
+                apiResponse.IsSuccess = false;
+                apiResponse.ErrorMessage = "Empty response from API.";
+                apiResponse.Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                };
+
+                return apiResponse;
+            }
+
+            List<WildberriesCardSnapshot> snapshots = cardsResponse.Cards
+                .Select(MapToSnapshot)
+                .ToList();
+
+            ProductCardsCursor? nextCursor = null;
+            if (cardsResponse.Cursor?.UpdatedAt != null && cardsResponse.Cursor?.NmId != null)
+            {
+                nextCursor = new ProductCardsCursor
+                {
+                    UpdatedAt = cardsResponse.Cursor.UpdatedAt,
+                    ProductId = cardsResponse.Cursor.NmId.Value
+                };
+            }
+
+            apiResponse.IsSuccess = true;
+            apiResponse.Data = new ProductCardsData
+            {
+                Cards = snapshots,
+                NextCursor = nextCursor,
+                TotalCount = cardsResponse.Cursor?.Total ?? snapshots.Count
+            };
+
+            _logger.LogInformation(
+                "Retrieved {Count} product cards from Wildberries. Total: {Total}, HasNextPage: {HasNext}",
+                snapshots.Count,
+                apiResponse.Data.TotalCount,
+                nextCursor != null);
+
+            return apiResponse;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP request failed when retrieving Wildberries product cards.");
+
+            return new ApiResponse<ProductCardsData>
+            {
+                IsSuccess = false,
+                ErrorMessage = $"Network error: {ex.Message}",
+                StatusCode = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                }
+            };
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Request timeout when retrieving Wildberries product cards.");
+
+            return new ApiResponse<ProductCardsData>
+            {
+                IsSuccess = false,
+                ErrorMessage = "Request timeout.",
+                StatusCode = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                }
+            };
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse Wildberries cards API response.");
+
+            return new ApiResponse<ProductCardsData>
+            {
+                IsSuccess = false,
+                ErrorMessage = "Invalid JSON response from API.",
+                StatusCode = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Data = new ProductCardsData
+                {
+                    Cards = new List<WildberriesCardSnapshot>(),
+                    TotalCount = 0
+                }
+            };
+        }
+    }
+
+    private WildberriesCardSnapshot MapToSnapshot(WildberriesCardDto dto)
+    {
+        List<string> barcodes = new List<string>();
+
+        if (dto.Sizes != null)
+        {
+            foreach (WildberriesSize size in dto.Sizes)
+            {
+                if (size.Skus != null)
+                {
+                    barcodes.AddRange(size.Skus);
+                }
+            }
+        }
+
+        string? channelSpecificData = null;
+        try
+        {
+            Dictionary<string, object?> additionalData = new Dictionary<string, object?>
+            {
+                ["imtId"] = dto.ImtId,
+                ["nmUuid"] = dto.NmUuid,
+                ["subjectId"] = dto.SubjectId,
+                ["subjectName"] = dto.SubjectName,
+                ["brand"] = dto.Brand,
+                ["dimensions"] = dto.Dimensions,
+                ["characteristics"] = dto.Characteristics,
+                ["sizes"] = dto.Sizes,
+                ["tags"] = dto.Tags,
+                ["photos"] = dto.Photos,
+                ["video"] = dto.Video,
+                ["createdAt"] = dto.CreatedAt,
+                ["updatedAt"] = dto.UpdatedAt
+            };
+
+            channelSpecificData = JsonSerializer.Serialize(additionalData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to serialize channel-specific data for nmID {NmId}.", dto.NmId);
+        }
+
+        return new WildberriesCardSnapshot
+        {
+            NmId = dto.NmId,
+            Name = dto.Title ?? string.Empty,
+            VendorCode = dto.VendorCode ?? string.Empty,
+            Barcodes = barcodes,
+            Description = dto.Description,
+            ChannelSpecificData = channelSpecificData
+        };
     }
 
     private sealed class WildberriesSellerInfoResponse

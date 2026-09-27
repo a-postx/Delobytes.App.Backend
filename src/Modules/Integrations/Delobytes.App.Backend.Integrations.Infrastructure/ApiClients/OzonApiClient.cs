@@ -98,6 +98,11 @@ public class OzonApiClient : IChannelApiClient
         return Task.FromResult(response);
     }
 
+    public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
+
     /// <inheritdoc/>
     public Task<ApiResponse<StocksData>> GetStocksAsync(CancellationToken ct)
     {

@@ -37,4 +37,13 @@ public interface IChannelApiClient
     /// <param name="ct">Cancellation token.</param>
     /// <returns>API response containing stocks data.</returns>
     Task<ApiResponse<StocksData>> GetStocksAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Retrieves one page of product cards using cursor-based pagination.
+    /// </summary>
+    /// <param name="cursor">Cursor for pagination. Null for the first page.</param>
+    /// <param name="limit">Maximum number of cards to retrieve (1-100).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>API response containing product cards data with pagination cursor.</returns>
+    Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct);
 }
