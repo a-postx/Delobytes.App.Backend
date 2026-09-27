@@ -126,7 +126,8 @@ public class ImportProductBatchConsumer
                     RecordsUpdated = recordsUpdated,
                     RecordsSkipped = recordsSkipped,
                     RecordsFailed = recordsFailed,
-                    ErrorMessage = errorMessage
+                    ErrorMessage = errorMessage,
+                    IsLastBatch = message.IsLastBatch,
                 };
 
                 await _publishEndpoint.Publish(completedEvent, cancellationToken);

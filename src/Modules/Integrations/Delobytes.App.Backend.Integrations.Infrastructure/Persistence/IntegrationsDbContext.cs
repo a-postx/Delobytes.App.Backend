@@ -29,6 +29,7 @@ public class IntegrationsDbContext : DbContext
     public DbSet<Connection> Connections => Set<Connection>();
     public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
     public DbSet<RawApiResponse> RawApiResponses => Set<RawApiResponse>();
+    public DbSet<SyncJobBatchResult> SyncJobBatchResults => Set<SyncJobBatchResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

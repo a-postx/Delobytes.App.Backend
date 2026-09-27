@@ -108,4 +108,9 @@ public class SyncJob : ITenantScoped
     /// Navigation property: raw API responses for this job.
     /// </summary>
     public ICollection<RawApiResponse> RawApiResponses { get; set; } = new List<RawApiResponse>();
+
+    /// <summary>
+    /// Navigation property: batch results for idempotent aggregation.
+    /// </summary>
+    public ICollection<SyncJobBatchResult> BatchResults { get; set; } = new List<SyncJobBatchResult>();
 }

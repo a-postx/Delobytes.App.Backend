@@ -40,4 +40,10 @@ public record ProductImportBatchCompletedEvent
     /// Error message if batch processing partially failed.
     /// </summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// True if this is the last batch in the import job.
+    /// When true, the aggregator finalises the SyncJob after recording this result.
+    /// </summary>
+    public bool IsLastBatch { get; init; }
 }
