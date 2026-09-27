@@ -38,6 +38,8 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
 
+        services.AddMemoryCache();
+
         services.AddScoped<IConnectionRepository, ConnectionRepository>();
         services.AddScoped<ISyncJobRepository, SyncJobRepository>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();

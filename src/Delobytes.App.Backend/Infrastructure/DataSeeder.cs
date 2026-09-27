@@ -19,15 +19,11 @@ public static class DataSeeder
     /// <returns>A task representing the asynchronous operation.</returns>
     public static async Task SeedSystemChannelTemplatesAsync(IntegrationsDbContext context, ILogger logger)
     {
-        Guid wildberriesId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        Guid ozonId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        Guid yandexKitId = Guid.Parse("33333333-3333-3333-3333-333333333333");
-
         SystemChannelTemplate[] templates = new[]
         {
             new SystemChannelTemplate
             {
-                Id = wildberriesId,
+                Id = Guid.NewGuid(),
                 Code = "wildberries",
                 DisplayName = "Wildberries",
                 ApiBaseUrl = "https://suppliers-api.wildberries.ru",
@@ -38,7 +34,7 @@ public static class DataSeeder
             },
             new SystemChannelTemplate
             {
-                Id = ozonId,
+                Id = Guid.NewGuid(),
                 Code = "ozon",
                 DisplayName = "Ozon",
                 ApiBaseUrl = "https://api-seller.ozon.ru",
@@ -49,7 +45,7 @@ public static class DataSeeder
             },
             new SystemChannelTemplate
             {
-                Id = yandexKitId,
+                Id = Guid.NewGuid(),
                 Code = "yandex.kit",
                 DisplayName = "Яндекс.Кит",
                 ApiBaseUrl = "https://api.kit.yandex.net/v1",
@@ -83,7 +79,7 @@ public static class DataSeeder
             logger.LogInformation("Seeded {Count} SystemChannelTemplate(s).", savedCount);
         }
 
-        await SeedSystemChannelEndpointsAsync(context, logger, wildberriesId, ozonId);
+        await SeedSystemChannelEndpointsAsync(context, logger);
     }
 
     /// <summary>
@@ -91,10 +87,28 @@ public static class DataSeeder
     /// </summary>
     private static async Task SeedSystemChannelEndpointsAsync(
         IntegrationsDbContext context,
-        ILogger logger,
-        Guid wildberriesId,
-        Guid ozonId)
+        ILogger logger)
     {
+        SystemChannelTemplate? wildberriesTemplate = await context.SystemChannelTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Code == "wildberries");
+
+        SystemChannelTemplate? ozonTemplate = await context.SystemChannelTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Code == "ozon");
+
+        if (wildberriesTemplate == null || ozonTemplate == null)
+        {
+            logger.LogWarning(
+                "SystemChannelTemplates not found (WB={WbExists}, Ozon={OzExists}). Skipping endpoint seeding.",
+                wildberriesTemplate != null,
+                ozonTemplate != null);
+            return;
+        }
+
+        Guid wildberriesId = wildberriesTemplate.Id;
+        Guid ozonId = ozonTemplate.Id;
+
         SystemChannelEndpoint[] endpoints = new[]
         {
             // Wildberries endpoints
