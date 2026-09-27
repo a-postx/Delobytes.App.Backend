@@ -1,6 +1,7 @@
 using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
@@ -10,6 +11,7 @@ using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -27,12 +29,18 @@ public static class ServiceCollectionExtensions
     /// <param name="services">Service collection.</param>
     /// <param name="connectionString">Connection string.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-    public static IServiceCollection AddIntegrationsInfrastructure(this IServiceCollection services, string? connectionString)
+    public static IServiceCollection AddIntegrationsInfrastructure(
+        this IServiceCollection services,
+        string? connectionString,
+        IConfiguration? configuration = null)
     {
         if (connectionString == null)
         {
             throw new InvalidOperationException("Connection string is not configured.");
         }
+
+        services.Configure<WildberriesImportOptions>(
+            configuration?.GetSection("WildberriesImport") ?? new ConfigurationBuilder().Build().GetSection("WildberriesImport"));
 
         services.AddDbContext<IntegrationsDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>

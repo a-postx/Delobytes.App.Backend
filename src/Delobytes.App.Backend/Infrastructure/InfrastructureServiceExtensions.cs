@@ -52,7 +52,7 @@ public static class InfrastructureServiceExtensions
             secrets?.GoogleClientSecret);
         services.AddCatalogInfrastructure(secrets?.ConnectionString);
         services.AddSalesInfrastructure(secrets?.ConnectionString);
-        services.AddIntegrationsInfrastructure(secrets?.ConnectionString);
+        services.AddIntegrationsInfrastructure(secrets?.ConnectionString, configuration);
 
         return services;
     }
