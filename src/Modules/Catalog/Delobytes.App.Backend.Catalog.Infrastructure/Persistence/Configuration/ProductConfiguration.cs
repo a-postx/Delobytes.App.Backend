@@ -28,6 +28,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .HasConversion<int>()
             .IsRequired();
 
+        builder.Property(p => p.CreationSource)
+            .HasConversion<int>()
+            .IsRequired();
+
         builder.Property(p => p.ArchivedAt)
             .IsRequired(false);
 
@@ -38,6 +42,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .IsRequired(false);
 
         builder.HasIndex(p => p.Status);
+        builder.HasIndex(p => p.CreationSource);
 
         // for monitoring stuck pending deletions
         builder.HasIndex(p => new { p.Status, p.DeletionRequestedAt });

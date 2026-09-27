@@ -64,6 +64,31 @@ public class SyncJob : ITenantScoped
     public int RecordsImported { get; set; }
 
     /// <summary>
+    /// Gets or sets the cursor for cursor-based pagination (used by ProductsImport).
+    /// </summary>
+    public string? NextCursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of records created during import.
+    /// </summary>
+    public int RecordsCreated { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of records updated during import.
+    /// </summary>
+    public int RecordsUpdated { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of records skipped during import.
+    /// </summary>
+    public int RecordsSkipped { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of records that failed during import.
+    /// </summary>
+    public int RecordsFailed { get; set; }
+
+    /// <summary>
     /// Navigation property: the connection.
     /// </summary>
     public Connection Connection { get; set; } = default!;

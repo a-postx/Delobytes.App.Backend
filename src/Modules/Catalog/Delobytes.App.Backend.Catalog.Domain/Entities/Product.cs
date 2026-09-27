@@ -19,6 +19,11 @@ public class Product : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 
     public ProductStatus Status { get; set; } = ProductStatus.Active;
 
+    /// <summary>
+    /// Gets or sets the source from which this product was created.
+    /// </summary>
+    public CreationSource CreationSource { get; set; } = CreationSource.Manual;
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? UpdatedAt { get; set; }

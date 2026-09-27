@@ -48,6 +48,21 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
         builder.Property(s => s.RecordsImported)
             .IsRequired();
 
+        builder.Property(s => s.NextCursor)
+            .HasMaxLength(500);
+
+        builder.Property(s => s.RecordsCreated)
+            .IsRequired();
+
+        builder.Property(s => s.RecordsUpdated)
+            .IsRequired();
+
+        builder.Property(s => s.RecordsSkipped)
+            .IsRequired();
+
+        builder.Property(s => s.RecordsFailed)
+            .IsRequired();
+
         builder.HasIndex(s => s.ConnectionId);
         builder.HasIndex(s => s.Status);
         builder.HasIndex(s => s.JobType);
