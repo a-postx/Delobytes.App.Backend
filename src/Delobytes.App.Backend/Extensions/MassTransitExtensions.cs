@@ -1,6 +1,9 @@
 using Delobytes.App.Backend.Catalog.Infrastructure;
+using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Filters;
+using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Infrastructure;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Messaging.Consumers;
 using Delobytes.App.Backend.Services;
 using MassTransit;
@@ -56,6 +59,39 @@ internal static class MassTransitExtensions
                     // Register correlation filters for all messages
                     cfg.UsePublishFilter(typeof(CorrelationPublishFilter<>), ctx);
                     cfg.UseConsumeFilter(typeof(CorrelationConsumeFilter<>), ctx);
+
+                    // Configure products import orchestration endpoint
+                    cfg.ReceiveEndpoint("integrations-products-import", e =>
+                    {
+                        e.ConfigureConsumer<ProcessProductsImportMassTransitConsumer>(ctx);
+                        
+                        // Retry policy with exponential backoff
+                        e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+                        
+                        // Concurrency limit for cursor-based pagination
+                        e.UseConcurrencyLimit(1);
+                    });
+
+                    // Configure product batch import endpoint
+                    cfg.ReceiveEndpoint("catalog-products-import", e =>
+                    {
+                        e.ConfigureConsumer<ImportProductBatchMassTransitConsumer>(ctx);
+                        
+                        // Retry policy with exponential backoff
+                        e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+                        
+                        // Higher concurrency for batch processing
+                        e.UseConcurrencyLimit(5);
+                    });
+
+                    // Configure product import batch completion endpoint
+                    cfg.ReceiveEndpoint("integrations-products-import-results", e =>
+                    {
+                        e.ConfigureConsumer<ProcessProductImportBatchCompletedMassTransitConsumer>(ctx);
+                        
+                        // Retry policy with exponential backoff
+                        e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+                    });
 
                     cfg.ConfigureEndpoints(ctx);
                 });

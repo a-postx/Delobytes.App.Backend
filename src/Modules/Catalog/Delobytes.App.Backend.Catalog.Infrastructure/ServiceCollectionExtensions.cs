@@ -1,5 +1,6 @@
 using System.Reflection;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Interceptors;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
@@ -52,6 +53,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkRateRepository, WorkRateRepository>();
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+
+        services.AddScoped<ImportProductBatchConsumer>();
 
         return services;
     }

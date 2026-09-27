@@ -47,6 +47,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
         services.AddScoped<ProcessSyncJobConsumer>();
+        services.AddScoped<ProcessProductsImportConsumer>();
+        services.AddScoped<ProcessProductImportBatchCompletedConsumer>();
 
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();
