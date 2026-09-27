@@ -22,6 +22,7 @@ public class SystemChannelTemplate
 
     /// <summary>
     /// Gets or sets the API base URL.
+    /// Deprecated: use Endpoints collection for multi-domain channels.
     /// </summary>
     public string ApiBaseUrl { get; set; } = default!;
 
@@ -49,4 +50,9 @@ public class SystemChannelTemplate
     /// Navigation property: connections using this channel.
     /// </summary>
     public ICollection<Connection> Connections { get; set; } = new List<Connection>();
+
+    /// <summary>
+    /// Navigation property: API endpoints for this channel.
+    /// </summary>
+    public ICollection<SystemChannelEndpoint> Endpoints { get; set; } = new List<SystemChannelEndpoint>();
 }

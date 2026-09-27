@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProcessSyncJobConsumer>();
 
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
+        services.AddScoped<IEndpointResolver, EndpointResolver>();
 
         services.AddTransient<OzonAuthHandler>();
         services.AddTransient<WildberriesAuthHandler>();

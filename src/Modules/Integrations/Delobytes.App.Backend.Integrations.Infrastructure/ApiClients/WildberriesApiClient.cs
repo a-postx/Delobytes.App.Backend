@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -13,10 +14,11 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 public class WildberriesApiClient : IChannelApiClient
 {
     private readonly HttpClient _httpClient;
-
-    // только для метода GetAccountInfoAsync
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IEndpointResolver _endpointResolver;
     private readonly ILogger<WildberriesApiClient> _logger;
+
+    private Guid? _templateId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WildberriesApiClient"/> class.
@@ -24,11 +26,23 @@ public class WildberriesApiClient : IChannelApiClient
     public WildberriesApiClient(
         HttpClient httpClient,
         IHttpClientFactory httpClientFactory,
+        IEndpointResolver endpointResolver,
         ILogger<WildberriesApiClient> logger)
     {
         _httpClient = httpClient;
         _httpClientFactory = httpClientFactory;
+        _endpointResolver = endpointResolver;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Sets the template ID for this client instance.
+    /// Must be called before any API operations.
+    /// </summary>
+    /// <param name="templateId">System channel template identifier.</param>
+    public void SetTemplateId(Guid templateId)
+    {
+        _templateId = templateId;
     }
 
     /// <inheritdoc/>
@@ -38,11 +52,22 @@ public class WildberriesApiClient : IChannelApiClient
         Dictionary<string, string>? settings,
         CancellationToken ct)
     {
+        if (_templateId == null)
+        {
+            throw new InvalidOperationException(
+                "Template ID must be set before calling API methods. Call SetTemplateId() first.");
+        }
+
+        string baseUrl = await _endpointResolver.GetEndpointUrlAsync(
+            _templateId.Value,
+            ChannelEndpointType.Common,
+            ct);
+
         using HttpClient client = _httpClientFactory.CreateClient();
 
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Get,
-            "https://common-api.wildberries.ru/api/v1/seller-info");
+            $"{baseUrl}/api/v1/seller-info");
 
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
 
