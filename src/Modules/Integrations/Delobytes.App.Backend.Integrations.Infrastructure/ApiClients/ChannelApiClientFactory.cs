@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -20,14 +21,35 @@ public class ChannelApiClientFactory : IChannelApiClientFactory
     }
 
     /// <inheritdoc/>
-    public IChannelApiClient Create(string channelCode)
+    ///
+    /// <remarks>
+    /// Клиент разрешается из контейнера при каждом вызове (регистрация типизированного
+    /// HttpClient — transient), поэтому настройка шаблона не расшаривается между вызовами.
+    /// </remarks>
+    public IChannelApiClient Create(SystemChannelTemplate template)
     {
-        return channelCode.ToLowerInvariant() switch
+        ArgumentNullException.ThrowIfNull(template);
+
+        switch (template.Code.ToLowerInvariant())
         {
-            "wildberries" => _serviceProvider.GetRequiredService<WildberriesApiClient>(),
-            "ozon" => _serviceProvider.GetRequiredService<OzonApiClient>(),
-            "yandex.kit" => _serviceProvider.GetRequiredService<YandexKitApiClient>(),
-            _ => throw new NotSupportedException($"Channel '{channelCode}' is not supported.")
-        };
+            case "wildberries":
+                WildberriesApiClient wildberriesClient =
+                    _serviceProvider.GetRequiredService<WildberriesApiClient>();
+
+                // WildberriesApiClient резолвит адреса эндпоинтов по шаблону,
+                // поэтому клиент конфигурируется здесь, а не вызывающим кодом.
+                wildberriesClient.SetTemplate(template);
+
+                return wildberriesClient;
+
+            case "ozon":
+                return _serviceProvider.GetRequiredService<OzonApiClient>();
+
+            case "yandex.kit":
+                return _serviceProvider.GetRequiredService<YandexKitApiClient>();
+
+            default:
+                throw new NotSupportedException($"Channel '{template.Code}' is not supported.");
+        }
     }
 }

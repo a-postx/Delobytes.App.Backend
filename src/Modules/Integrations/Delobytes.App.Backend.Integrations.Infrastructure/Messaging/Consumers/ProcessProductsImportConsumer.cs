@@ -6,7 +6,6 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -92,13 +91,7 @@ public class ProcessProductsImportConsumer
             await _syncJobRepository.SaveChangesAsync(cancellationToken);
         }
 
-        IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate.Code);
-
-        // WildberriesApiClient requires template id to resolve endpoint URL.
-        if (apiClient is WildberriesApiClient wbClient)
-        {
-            wbClient.SetTemplateId(connection.SystemChannelTemplateId);
-        }
+        IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
         int batchSize = _options.BatchSize > 0 ? _options.BatchSize : 50;
         int batchNumber = 0;

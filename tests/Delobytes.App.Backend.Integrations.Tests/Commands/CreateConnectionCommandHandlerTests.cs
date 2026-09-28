@@ -161,7 +161,7 @@ public class CreateConnectionCommandHandlerTests
             .ReturnsAsync(ApiKeyValidationResult.Success());
 
         _apiClientFactory
-            .Setup(f => f.Create("wildberries"))
+            .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
         _apiClient
@@ -222,7 +222,7 @@ public class CreateConnectionCommandHandlerTests
             .ReturnsAsync(false);
 
         _apiClientFactory
-            .Setup(f => f.Create("ozon"))
+            .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
         _apiClient
@@ -312,7 +312,7 @@ public class CreateConnectionCommandHandlerTests
             .ReturnsAsync(ApiKeyValidationResult.Success());
 
         _apiClientFactory
-            .Setup(f => f.Create("wildberries"))
+            .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
         _apiClient

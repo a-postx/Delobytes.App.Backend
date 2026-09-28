@@ -140,7 +140,7 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJobId, ConnectionId = Guid.NewGuid() },
             CancellationToken.None);
 
-        _clientFactory.Verify(f => f.Create(It.IsAny<string>()), Times.Never);
+        _clientFactory.Verify(f => f.Create(It.IsAny<SystemChannelTemplate>()), Times.Never);
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -173,7 +173,7 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        _clientFactory.Verify(f => f.Create(It.IsAny<string>()), Times.Never);
+        _clientFactory.Verify(f => f.Create(It.IsAny<SystemChannelTemplate>()), Times.Never);
     }
 
     // -----------------------------------------------------------------------
@@ -225,7 +225,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(1);
 
         _clientFactory
-            .Setup(f => f.Create("wildberries"))
+            .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
         _apiClient
@@ -272,7 +272,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(syncJob);
         _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create("wildberries")).Returns(_apiClient.Object);
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, 50, It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(cards, nextCursor: null));
@@ -319,7 +319,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(syncJob);
         _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create("wildberries")).Returns(_apiClient.Object);
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -374,7 +374,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(syncJob);
         _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create("wildberries")).Returns(_apiClient.Object);
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
@@ -423,7 +423,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(syncJob);
         _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create("wildberries")).Returns(_apiClient.Object);
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -468,7 +468,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(syncJob);
         _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create("wildberries")).Returns(_apiClient.Object);
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -519,7 +519,7 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(syncJob);
         _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create("wildberries")).Returns(_apiClient.Object);
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));

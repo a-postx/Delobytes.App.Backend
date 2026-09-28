@@ -8,9 +8,9 @@ namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 public interface IChannelApiClientFactory
 {
     /// <summary>
-    /// Creates an API client for the specified channel.
+    /// Creates an API client configured for the specified system channel template.
     /// </summary>
-    /// <param name="channelCode">The channel code (e.g., "wildberries", "ozon").</param>
-    /// <returns>An instance of <see cref="IChannelApiClient"/>.</returns>
-    public IChannelApiClient Create(string channelCode);
+    /// <param name="template">System channel template that identifies the channel and its endpoints.</param>
+    /// <returns>A ready-to-use instance of <see cref="IChannelApiClient"/>.</returns>
+    public IChannelApiClient Create(SystemChannelTemplate template);
 }

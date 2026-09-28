@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
@@ -22,6 +23,14 @@ public class WildberriesApiClientGetProductCardsTests
     private const string ContentBaseUrl = "https://content-api.wildberries.ru";
     private const string GetCardsListUrl = "https://content-api.wildberries.ru/content/v2/get/cards/list";
     private static readonly Guid TestTemplateId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly SystemChannelTemplate TestTemplate = new SystemChannelTemplate
+    {
+        Id = TestTemplateId,
+        Code = "wildberries",
+        DisplayName = "Wildberries",
+        IsActive = true,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
 
     private static WildberriesApiClient BuildClient(
         MockHttpMessageHandler mockHttp,
@@ -50,7 +59,7 @@ public class WildberriesApiClientGetProductCardsTests
             endpointResolver.Object,
             NullLogger<WildberriesApiClient>.Instance);
 
-        client.SetTemplateId(TestTemplateId);
+        client.SetTemplate(TestTemplate);
 
         return client;
     }
@@ -378,29 +387,6 @@ public class WildberriesApiClientGetProductCardsTests
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>()
             .WithMessage("*Limit must be between 1 and 100*");
-    }
-
-    [Fact]
-    public async Task GetProductCardsAsync_ThrowsWhenTemplateIdNotSet()
-    {
-        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
-
-        HttpClient typedClient = new HttpClient();
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
-
-        Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
-
-        WildberriesApiClient client = new WildberriesApiClient(
-            typedClient,
-            factory.Object,
-            endpointResolver.Object,
-            NullLogger<WildberriesApiClient>.Instance);
-
-        Func<Task> act = async () => await client.GetProductCardsAsync(null, 50, CancellationToken.None);
-
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Template ID must be set*");
     }
 
     [Fact]

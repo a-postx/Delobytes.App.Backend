@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
@@ -20,6 +21,14 @@ public class WildberriesApiClientAccountInfoTests
 {
     private const string SellerInfoUrl = "https://common-api.wildberries.ru/api/v1/seller-info";
     private static readonly Guid TestTemplateId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly SystemChannelTemplate TestTemplate = new SystemChannelTemplate
+    {
+        Id = TestTemplateId,
+        Code = "wildberries",
+        DisplayName = "Wildberries",
+        IsActive = true,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
 
     private static WildberriesApiClient BuildClient(
         MockHttpMessageHandler accountInfoHandler,
@@ -52,7 +61,7 @@ public class WildberriesApiClientAccountInfoTests
             endpointResolver.Object,
             NullLogger<WildberriesApiClient>.Instance);
 
-        client.SetTemplateId(TestTemplateId);
+        client.SetTemplate(TestTemplate);
 
         return client;
     }
@@ -220,32 +229,6 @@ public class WildberriesApiClientAccountInfoTests
     }
 
     [Fact]
-    public async Task GetAccountInfoAsync_ThrowsWhenTemplateIdNotSet()
-    {
-        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
-
-        HttpClient typedClient = new HttpClient();
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
-
-        Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
-
-        WildberriesApiClient client = new WildberriesApiClient(
-            typedClient,
-            factory.Object,
-            endpointResolver.Object,
-            NullLogger<WildberriesApiClient>.Instance);
-
-        // SetTemplateId НЕ вызван
-
-        Func<Task> act = async () => await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
-
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Template ID must be set*");
-    }
-
-    [Fact]
     public async Task GetAccountInfoAsync_ReturnsNullWhenEndpointResolverThrows()
     {
         Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
@@ -266,5 +249,4 @@ public class WildberriesApiClientAccountInfoTests
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Endpoint not found");
     }
-
 }

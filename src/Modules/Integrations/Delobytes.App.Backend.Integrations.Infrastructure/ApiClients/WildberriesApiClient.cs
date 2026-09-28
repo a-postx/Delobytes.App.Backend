@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -40,13 +41,13 @@ public class WildberriesApiClient : IChannelApiClient
     }
 
     /// <summary>
-    /// Sets the template ID for this client instance.
-    /// Must be called before any API operations.
+    /// Binds this client instance to a system channel template.
+    /// Called by <see cref="ChannelApiClientFactory"/> before the client is returned to a caller.
     /// </summary>
-    /// <param name="templateId">System channel template identifier.</param>
-    public void SetTemplateId(Guid templateId)
+    /// <param name="template">System channel template whose endpoints should be used.</param>
+    public void SetTemplate(SystemChannelTemplate template)
     {
-        _templateId = templateId;
+        _templateId = template.Id;
     }
 
     /// <inheritdoc/>
@@ -59,7 +60,7 @@ public class WildberriesApiClient : IChannelApiClient
         if (_templateId == null)
         {
             throw new InvalidOperationException(
-                "Template ID must be set before calling API methods. Call SetTemplateId() first.");
+                "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
         }
 
         string baseUrl = await _endpointResolver.GetEndpointUrlAsync(
@@ -152,7 +153,7 @@ public class WildberriesApiClient : IChannelApiClient
         if (_templateId == null)
         {
             throw new InvalidOperationException(
-                "Template ID must be set before calling API methods. Call SetTemplateId() first.");
+                "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
         }
 
         if (limit < 1 || limit > 100)

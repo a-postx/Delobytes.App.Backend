@@ -65,7 +65,7 @@ public class CreateConnectionAccountInfoTests
             .ReturnsAsync(ApiKeyValidationResult.Success());
 
         _apiClientFactory
-            .Setup(f => f.Create(template.Code))
+            .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
         _connectionRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
@@ -250,5 +250,33 @@ public class CreateConnectionAccountInfoTests
             "ozon-secret",
             settings,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_PassesResolvedTemplateToApiClientFactory()
+    {
+        SystemChannelTemplate template = BuildTemplate();
+        SetupHappyPath(template);
+
+        _apiClient
+            .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AccountInfo?)null);
+
+        _connectionRepo.Setup(r => r.Add(It.IsAny<Connection>()));
+
+        CreateConnectionCommandHandler handler = CreateHandler();
+        await handler.Handle(new CreateConnectionCommand
+        {
+            SystemChannelTemplateCode = "wildberries",
+            ApiKey = "valid-key",
+        }, CancellationToken.None);
+
+        // Фабрика получает именно разрешённый шаблон — идентификатор эндпоинтов берётся из него,
+        // а не из строки кода канала.
+        _apiClientFactory.Verify(f => f.Create(template), Times.Once);
     }
 }

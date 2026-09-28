@@ -64,7 +64,7 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
             throw new InvalidOperationException(validationResult.ErrorMessage);
         }
 
-        IChannelApiClient apiClient = _channelApiClientFactory.Create(request.SystemChannelTemplateCode);
+        IChannelApiClient apiClient = _channelApiClientFactory.Create(template);
 
         AccountInfo? accountInfo = await apiClient.GetAccountInfoAsync(
             request.ApiKey,
