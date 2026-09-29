@@ -1,11 +1,15 @@
+using Amazon.S3;
 using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Contracts.Storage;
 using Delobytes.App.Backend.Identity.Infrastructure;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
+using Delobytes.App.Backend.Infrastructure.Storage;
 using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Options;
 using Delobytes.App.Backend.Sales.Infrastructure;
 using Delobytes.App.Backend.Services;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Infrastructure;
 
@@ -41,6 +45,30 @@ public static class InfrastructureServiceExtensions
         // because MassTransit consume filters need the setter, not just ICorrelationContext.
         services.AddScoped<CorrelationContext>();
         services.AddScoped<ICorrelationContext>(sp => sp.GetRequiredService<CorrelationContext>());
+
+        services.Configure<ObjectStorageOptions>(configuration.GetSection("ObjectStorage"));
+
+        // Access keys never live in appsettings.json; PostConfigure merges them in from Lockbox secrets.
+        services.PostConfigure<ObjectStorageOptions>(options =>
+        {
+            options.AccessKeyId = secrets?.ObjectStorageAccessKeyId ?? string.Empty;
+            options.SecretAccessKey = secrets?.ObjectStorageSecretAccessKey ?? string.Empty;
+        });
+
+        services.AddSingleton<IAmazonS3>(sp =>
+        {
+            ObjectStorageOptions options = sp.GetRequiredService<IOptions<ObjectStorageOptions>>().Value;
+
+            AmazonS3Config s3Config = new AmazonS3Config
+            {
+                ServiceURL = "https://storage.yandexcloud.net",
+                AuthenticationRegion = "ru-central1"
+            };
+
+            return new AmazonS3Client(options.AccessKeyId, options.SecretAccessKey, s3Config);
+        });
+
+        services.AddSingleton<IObjectStorage, S3ObjectStorage>();
 
         services.AddIdentityInfrastructure(
             configuration,

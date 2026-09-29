@@ -54,4 +54,10 @@ public class AppSecrets
     /// Client Secret приложения Google OAuth (из Google Cloud Console).
     /// </summary>
     public string? GoogleClientSecret { get; set; }
+
+    /// <summary>Статический ключ сервисного аккаунта для доступа к Object Storage.</summary>
+    public string? ObjectStorageAccessKeyId { get; set; }
+
+    /// <summary>Секретный ключ сервисного аккаунта для доступа к Object Storage.</summary>
+    public string? ObjectStorageSecretAccessKey { get; set; }
 }
