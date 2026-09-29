@@ -19,6 +19,7 @@ using Delobytes.App.Backend.EventHandlers;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 using Delobytes.App.Backend.Sales.Domain.Enums;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using FluentAssertions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -347,6 +348,7 @@ public class ProductLifecycleTests
             .Returns((ProductOrdersCheckCompleted e, CancellationToken ct) =>
                 new ProductOrdersCheckCompletedHandler(
                     repository,
+                    BuildPhotoServiceMock().Object,
                     Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>()).Handle(e, ct));
 
         RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(
@@ -404,6 +406,7 @@ public class ProductLifecycleTests
             .Returns((ProductOrdersCheckCompleted e, CancellationToken ct) =>
                 new ProductOrdersCheckCompletedHandler(
                     repository,
+                    BuildPhotoServiceMock().Object,
                     Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>()).Handle(e, ct));
 
         ProductDeletionRequestedHandler salesHandler = new ProductDeletionRequestedHandler(
@@ -452,6 +455,7 @@ public class ProductLifecycleTests
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         ProductOrdersCheckCompletedHandler handler = new ProductOrdersCheckCompletedHandler(
             repositoryMock.Object,
+            BuildPhotoServiceMock().Object,
             Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>());
 
         ProductOrdersCheckCompleted notification = new ProductOrdersCheckCompleted
@@ -481,6 +485,7 @@ public class ProductLifecycleTests
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         ProductOrdersCheckCompletedHandler handler = new ProductOrdersCheckCompletedHandler(
             repositoryMock.Object,
+            BuildPhotoServiceMock().Object,
             Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>());
 
         ProductOrdersCheckCompleted notification = new ProductOrdersCheckCompleted
@@ -509,6 +514,7 @@ public class ProductLifecycleTests
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         ProductOrdersCheckCompletedHandler handler = new ProductOrdersCheckCompletedHandler(
             repositoryMock.Object,
+            BuildPhotoServiceMock().Object,
             Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>());
 
         ProductOrdersCheckCompleted notification = new ProductOrdersCheckCompleted
@@ -539,6 +545,7 @@ public class ProductLifecycleTests
 
         ProductOrdersCheckCompletedHandler handler = new ProductOrdersCheckCompletedHandler(
             repositoryMock.Object,
+            BuildPhotoServiceMock().Object,
             Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>());
 
         // Act
@@ -576,7 +583,7 @@ public class ProductLifecycleTests
         await catalogContext.SaveChangesAsync();
 
         ProductRepository repository = new ProductRepository(catalogContext);
-        GetProductsQueryHandler handler = new GetProductsQueryHandler(repository);
+        GetProductsQueryHandler handler = new GetProductsQueryHandler(repository, BuildPhotoServiceMock().Object);
 
         // Act
         GetProductsResponse response = await handler.Handle(new GetProductsQuery(), CancellationToken.None);
@@ -607,7 +614,7 @@ public class ProductLifecycleTests
         await catalogContext.SaveChangesAsync();
 
         ProductRepository repository = new ProductRepository(catalogContext);
-        GetProductsQueryHandler handler = new GetProductsQueryHandler(repository);
+        GetProductsQueryHandler handler = new GetProductsQueryHandler(repository, BuildPhotoServiceMock().Object);
 
         // Act
         GetProductsResponse response = await handler.Handle(
@@ -635,7 +642,7 @@ public class ProductLifecycleTests
 
         await catalogContext.SaveChangesAsync();
 
-        GetProductsQueryHandler handler = new GetProductsQueryHandler(new ProductRepository(catalogContext));
+        GetProductsQueryHandler handler = new GetProductsQueryHandler(new ProductRepository(catalogContext), BuildPhotoServiceMock().Object);
 
         // Act
         GetProductsResponse response = await handler.Handle(
@@ -660,7 +667,7 @@ public class ProductLifecycleTests
 
         await catalogContext.SaveChangesAsync();
 
-        GetProductsQueryHandler handler = new GetProductsQueryHandler(new ProductRepository(catalogContext));
+        GetProductsQueryHandler handler = new GetProductsQueryHandler(new ProductRepository(catalogContext), BuildPhotoServiceMock().Object);
 
         // Act
         GetProductsResponse response = await handler.Handle(new GetProductsQuery(), CancellationToken.None);
@@ -766,6 +773,140 @@ public class ProductLifecycleTests
         response.StatusMessage.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ProductOrdersCheckCompletedHandler_NoOrders_DeletesPhotoBlobsBeforeMarkingDeleted()
+    {
+        // Arrange
+        Product product = BuildProduct(ProductStatus.DeletionPending);
+        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        ProductPhoto photo1 = new ProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            StorageKey = "product-photos/t/p/1.webp",
+            ExternalId = "123_1_thumbnail",
+            SizeVariant = "thumbnail",
+            DisplayOrder = 1,
+            OriginalFileName = "1.webp",
+            ContentType = "image/webp",
+            Source = "Wildberries",
+            Status = ProductPhotoStatus.Uploaded,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+
+        ProductPhoto photo2 = new ProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            StorageKey = "product-photos/t/p/2.webp",
+            ExternalId = "123_1_large",
+            SizeVariant = "large",
+            DisplayOrder = 1,
+            OriginalFileName = "2.webp",
+            ContentType = "image/webp",
+            Source = "Wildberries",
+            Status = ProductPhotoStatus.Uploaded,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+
+        product.Photos.Add(photo1);
+        product.Photos.Add(photo2);
+
+        Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
+
+        List<ProductPhoto> deletedPhotos = new List<ProductPhoto>();
+        Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
+        photoServiceMock
+            .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<ProductPhoto>, CancellationToken>((photos, _) => deletedPhotos.AddRange(photos))
+            .Returns(Task.CompletedTask);
+
+        ProductOrdersCheckCompletedHandler handler = new ProductOrdersCheckCompletedHandler(
+            repositoryMock.Object,
+            photoServiceMock.Object,
+            Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>());
+
+        // Act
+        await handler.Handle(
+            new ProductOrdersCheckCompleted
+            {
+                ProductId = product.Id,
+                HasOrders = false,
+                OrderCount = 0,
+                CheckedAt = DateTimeOffset.UtcNow,
+            },
+            CancellationToken.None);
+
+        // Assert: both blobs were passed to the storage delete call
+        photoServiceMock.Verify(
+            s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        deletedPhotos.Should().HaveCount(2);
+        deletedPhotos.Should().Contain(p => p.StorageKey == photo1.StorageKey);
+        deletedPhotos.Should().Contain(p => p.StorageKey == photo2.StorageKey);
+
+        // Product is still marked deleted regardless
+        product.Status.Should().Be(ProductStatus.Deleted);
+        product.DeletedAt.Should().NotBeNull();
+        repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProductOrdersCheckCompletedHandler_PhotoDeleteFails_ProductStillMarkedDeleted()
+    {
+        // Storage failures must not block the soft-delete: a stale blob is cheaper than
+        // a product stuck in DeletionPending forever.
+        Product product = BuildProduct(ProductStatus.DeletionPending);
+        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        product.Photos.Add(new ProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            StorageKey = "product-photos/t/p/1.webp",
+            ExternalId = "123_1_thumbnail",
+            SizeVariant = "thumbnail",
+            DisplayOrder = 1,
+            OriginalFileName = "1.webp",
+            ContentType = "image/webp",
+            Source = "Wildberries",
+            Status = ProductPhotoStatus.Uploaded,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        });
+
+        Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
+
+        Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
+        photoServiceMock
+            .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("bucket unreachable"));
+
+        ProductOrdersCheckCompletedHandler handler = new ProductOrdersCheckCompletedHandler(
+            repositoryMock.Object,
+            photoServiceMock.Object,
+            Mock.Of<ILogger<ProductOrdersCheckCompletedHandler>>());
+
+        // Act — must not throw
+        Func<Task> act = () => handler.Handle(
+            new ProductOrdersCheckCompleted
+            {
+                ProductId = product.Id,
+                HasOrders = false,
+                OrderCount = 0,
+                CheckedAt = DateTimeOffset.UtcNow,
+            },
+            CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+
+        // Assert: product is deleted despite the storage error
+        product.Status.Should().Be(ProductStatus.Deleted);
+        product.DeletedAt.Should().NotBeNull();
+        repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // ------------------------------------------------------------------------- builders
 
     private static Product BuildProduct(
@@ -826,6 +967,28 @@ public class ProductLifecycleTests
             publisherMock.Object,
             BuildTenantContext().Object,
             Mock.Of<ILogger<RequestProductDeletionCommandHandler>>());
+    }
+
+    /// <summary>
+    /// Photo service stub for tests that are not about photos: deletion is a no-op and a
+    /// URL is always produced, so a fixture that gains photos later still exercises the
+    /// real mapping instead of failing on a null.
+    /// </summary>
+    private static Mock<IProductPhotoService> BuildPhotoServiceMock()
+    {
+        Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
+
+        photoServiceMock
+            .Setup(s => s.DeletePhotosAsync(
+                It.IsAny<IReadOnlyList<ProductPhoto>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        photoServiceMock
+            .Setup(s => s.GetPublicUrl(It.IsAny<ProductPhoto>()))
+            .Returns((ProductPhoto photo) => $"https://storage.example/{photo.StorageKey}");
+
+        return photoServiceMock;
     }
 
     private Mock<ITenantContext> BuildTenantContext()

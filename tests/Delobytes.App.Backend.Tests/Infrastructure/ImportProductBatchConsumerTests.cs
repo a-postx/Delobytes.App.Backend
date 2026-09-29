@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
@@ -962,6 +963,14 @@ public class ImportProductBatchConsumerTests
     private ImportProductBatchConsumer BuildConsumer(CatalogDbContext context, IPublishEndpoint publishEndpoint)
     {
         Mock<ILogger<ImportProductBatchConsumer>> loggerMock = new Mock<ILogger<ImportProductBatchConsumer>>();
-        return new ImportProductBatchConsumer(context, publishEndpoint, loggerMock.Object);
+        Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
+        photoServiceMock
+            .Setup(s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductPhotoImportResult());
+
+        return new ImportProductBatchConsumer(context, publishEndpoint, photoServiceMock.Object, loggerMock.Object);
     }
 }

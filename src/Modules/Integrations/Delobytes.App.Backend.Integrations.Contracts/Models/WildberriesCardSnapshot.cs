@@ -55,4 +55,17 @@ public record WildberriesCardSnapshot
     /// Additional channel-specific data serialized as JSON.
     /// </summary>
     public string? ChannelSpecificData { get; init; }
+
+    /// <summary>Photo URL variants per photo, in the order returned by the marketplace.</summary>
+    public List<WildberriesPhotoUrls> Photos { get; init; } = new();
+}
+
+/// <summary>Only the two variants the importer actually downloads.</summary>
+public record WildberriesPhotoUrls
+{
+    /// <summary>c246x328 variant; stored as "thumbnail".</summary>
+    public string? C246x328 { get; init; }
+
+    /// <summary>c516x688 variant; stored as "large".</summary>
+    public string? C516x688 { get; init; }
 }

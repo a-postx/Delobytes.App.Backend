@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
@@ -9,10 +10,12 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts
 public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProductsResponse>
 {
     private readonly IProductRepository _repository;
+    private readonly IProductPhotoService _photoService;
 
-    public GetProductsQueryHandler(IProductRepository repository)
+    public GetProductsQueryHandler(IProductRepository repository, IProductPhotoService photoService)
     {
         _repository = repository;
+        _photoService = photoService;
     }
 
     public async Task<GetProductsResponse> Handle(GetProductsQuery request, CancellationToken cancellationToken)
@@ -44,6 +47,20 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                     .ToList(),
                 // The list view does not show dimensions; the single-product endpoint does.
                 PackingUnit = null,
+                // The list view returns only thumbnail photos; the single-product endpoint returns all variants.
+                Photos = p.Photos
+                    .Where(ph => ph.Status == ProductPhotoStatus.Uploaded && ph.SizeVariant == "thumbnail")
+                    .OrderBy(ph => ph.DisplayOrder)
+                    .Select(ph => new ProductPhotoDto
+                    {
+                        Id = ph.Id,
+                        DisplayOrder = ph.DisplayOrder,
+                        SizeVariant = ph.SizeVariant,
+                        Url = _photoService.GetPublicUrl(ph),
+                        Width = ph.Width,
+                        Height = ph.Height
+                    })
+                    .ToList(),
             }).ToList(),
         };
     }

@@ -414,7 +414,10 @@ public class WildberriesApiClient : IChannelApiClient
             WidthCm = dto.Dimensions?.Width,
             HeightCm = dto.Dimensions?.Height,
             WeightKg = dto.Dimensions?.WeightBrutto,
-            ChannelSpecificData = channelSpecificData
+            ChannelSpecificData = channelSpecificData,
+            Photos = dto.Photos?
+                .Select(p => new WildberriesPhotoUrls { C246x328 = p.C246x328, C516x688 = p.C516x688 })
+                .ToList() ?? new List<WildberriesPhotoUrls>()
         };
     }
 

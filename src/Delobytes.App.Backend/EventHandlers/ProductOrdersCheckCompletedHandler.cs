@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Events;
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -16,13 +17,16 @@ namespace Delobytes.App.Backend.EventHandlers;
 public class ProductOrdersCheckCompletedHandler : INotificationHandler<ProductOrdersCheckCompleted>
 {
     private readonly IProductRepository _productRepository;
+    private readonly IProductPhotoService _photoService;
     private readonly ILogger<ProductOrdersCheckCompletedHandler> _logger;
 
     public ProductOrdersCheckCompletedHandler(
         IProductRepository productRepository,
+        IProductPhotoService photoService,
         ILogger<ProductOrdersCheckCompletedHandler> logger)
     {
         _productRepository = productRepository;
+        _photoService = photoService;
         _logger = logger;
     }
 
@@ -57,6 +61,21 @@ public class ProductOrdersCheckCompletedHandler : INotificationHandler<ProductOr
         }
         else
         {
+            if (product.Photos.Count > 0)
+            {
+                try
+                {
+                    await _photoService.DeletePhotosAsync(product.Photos.ToList(), cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // Deliberately non-fatal: a stale blob costs less than a product that
+                    // cannot be deleted because storage is temporarily unavailable.
+                    _logger.LogError(
+                        ex, "Failed to delete photos from Object Storage for Product {ProductId}", product.Id);
+                }
+            }
+
             product.Status = ProductStatus.Deleted;
             product.DeletedAt = DateTimeOffset.UtcNow;
 

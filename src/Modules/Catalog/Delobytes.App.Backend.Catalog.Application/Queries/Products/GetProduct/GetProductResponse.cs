@@ -33,4 +33,6 @@ public class GetProductResponse
     public List<ProductBarcodeDto>? Barcodes { get; set; }
 
     public PackingUnitDto? PackingUnit { get; set; }
+
+    public List<ProductPhotoDto>? Photos { get; set; }
 }

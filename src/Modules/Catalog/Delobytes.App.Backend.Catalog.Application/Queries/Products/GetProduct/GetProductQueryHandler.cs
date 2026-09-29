@@ -1,6 +1,8 @@
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProduct;
@@ -8,10 +10,12 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProduct;
 public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProductResponse>
 {
     private readonly IProductRepository _repository;
+    private readonly IProductPhotoService _photoService;
 
-    public GetProductQueryHandler(IProductRepository repository)
+    public GetProductQueryHandler(IProductRepository repository, IProductPhotoService photoService)
     {
         _repository = repository;
+        _photoService = photoService;
     }
 
     public async Task<GetProductResponse> Handle(GetProductQuery request, CancellationToken cancellationToken)
@@ -46,6 +50,20 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                 })
                 .ToList(),
             PackingUnit = ToPackingUnitDto(product.PackingUnits.FirstOrDefault(pu => pu.IsActive)),
+            Photos = product.Photos
+                .Where(ph => ph.Status == ProductPhotoStatus.Uploaded)
+                .OrderBy(ph => ph.DisplayOrder)
+                .ThenBy(ph => ph.SizeVariant)
+                .Select(ph => new ProductPhotoDto
+                {
+                    Id = ph.Id,
+                    DisplayOrder = ph.DisplayOrder,
+                    SizeVariant = ph.SizeVariant,
+                    Url = _photoService.GetPublicUrl(ph),
+                    Width = ph.Width,
+                    Height = ph.Height
+                })
+                .ToList(),
         };
     }
 

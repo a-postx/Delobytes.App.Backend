@@ -34,5 +34,9 @@ public class ProductItem
 
     public List<Products.ProductBarcodeDto>? Barcodes { get; set; }
 
+    // The list view does not show dimensions; the single-product endpoint does.
     public Products.PackingUnitDto? PackingUnit { get; set; }
+
+    // The list view returns only thumbnail photos; the single-product endpoint returns all variants.
+    public List<Products.ProductPhotoDto>? Photos { get; set; }
 }

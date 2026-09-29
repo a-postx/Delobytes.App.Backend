@@ -22,6 +22,7 @@ public class ProductRepository : IProductRepository
         return _context.Products
             .Include(p => p.Barcodes)
             .Include(p => p.PackingUnits)
+            .Include(p => p.Photos)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
@@ -29,13 +30,15 @@ public class ProductRepository : IProductRepository
     {
         return _context.Products
             .Include(p => p.ChannelProducts)
+            .Include(p => p.Photos)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
     public async Task<IReadOnlyList<Product>> GetAllByStatusAsync(ProductStatus? status, CancellationToken ct)
     {
         IQueryable<Product> query = _context.Products
-            .Include(p => p.Barcodes);
+            .Include(p => p.Barcodes)
+            .Include(p => p.Photos);
 
         // Null means "no filter": callers that build the full catalog view need every
         // status (active, archived, deletion states) to compute per-tab counters.

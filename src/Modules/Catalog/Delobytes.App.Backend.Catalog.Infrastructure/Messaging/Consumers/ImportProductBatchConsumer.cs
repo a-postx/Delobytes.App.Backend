@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
@@ -17,6 +18,7 @@ public class ImportProductBatchConsumer
 {
     private readonly CatalogDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
+    private readonly IProductPhotoService _photoService;
     private readonly ILogger<ImportProductBatchConsumer> _logger;
 
     /// <summary>
@@ -24,14 +26,17 @@ public class ImportProductBatchConsumer
     /// </summary>
     /// <param name="context">Catalog database context.</param>
     /// <param name="publishEndpoint">MassTransit publish endpoint.</param>
+    /// <param name="photoService">Photo import/delete service.</param>
     /// <param name="logger">Logger instance.</param>
     public ImportProductBatchConsumer(
         CatalogDbContext context,
         IPublishEndpoint publishEndpoint,
+        IProductPhotoService photoService,
         ILogger<ImportProductBatchConsumer> logger)
     {
         _context = context;
         _publishEndpoint = publishEndpoint;
+        _photoService = photoService;
         _logger = logger;
     }
 
@@ -176,6 +181,8 @@ public class ImportProductBatchConsumer
                 .ThenInclude(p => p.Barcodes)
             .Include(cp => cp.Product)
                 .ThenInclude(p => p.PackingUnits)
+            .Include(cp => cp.Product)
+                .ThenInclude(p => p.Photos)
             .FirstOrDefaultAsync(
                 cp => cp.ChannelId == channelId && cp.ExternalProductId == externalProductId,
                 cancellationToken);
@@ -203,6 +210,7 @@ public class ImportProductBatchConsumer
         List<Product> productsByVendorCode = await _context.Products
             .Include(p => p.Barcodes)
             .Include(p => p.PackingUnits)
+            .Include(p => p.Photos)
             .Where(p => p.Sku == card.VendorCode)
             .ToListAsync(cancellationToken);
 
@@ -238,6 +246,7 @@ public class ImportProductBatchConsumer
                 .Where(p => productIds.Contains(p.Id))
                 .Include(p => p.Barcodes)
                 .Include(p => p.PackingUnits)
+                .Include(p => p.Photos)
                 .ToListAsync(cancellationToken);
 
             if (productsByBarcode.Count == 1)
@@ -311,6 +320,24 @@ public class ImportProductBatchConsumer
             hasChanges = true;
         }
 
+        if (card.Photos.Count > 0)
+        {
+            List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
+
+            if (photoSources.Count > 0)
+            {
+                ProductPhotoImportResult photoResult =
+                    await _photoService.ImportPhotosAsync(channelProduct.Product, photoSources, cancellationToken);
+
+                if (photoResult.Failed > 0)
+                {
+                    _logger.LogWarning(
+                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
+                        card.NmId, photoResult.Imported, photoResult.Skipped, photoResult.Failed);
+                }
+            }
+        }
+
         channelProduct.LastSyncedAt = DateTimeOffset.UtcNow;
 
         return hasChanges
@@ -344,6 +371,24 @@ public class ImportProductBatchConsumer
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
+
+        if (card.Photos.Count > 0)
+        {
+            List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
+
+            if (photoSources.Count > 0)
+            {
+                ProductPhotoImportResult photoResult =
+                    await _photoService.ImportPhotosAsync(product, photoSources, cancellationToken);
+
+                if (photoResult.Failed > 0)
+                {
+                    _logger.LogWarning(
+                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
+                        card.NmId, photoResult.Imported, photoResult.Skipped, photoResult.Failed);
+                }
+            }
+        }
 
         return new ImportResult { Status = ImportStatus.Updated };
     }
@@ -384,7 +429,68 @@ public class ImportProductBatchConsumer
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
 
+        if (card.Photos.Count > 0)
+        {
+            List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
+
+            if (photoSources.Count > 0)
+            {
+                ProductPhotoImportResult photoResult =
+                    await _photoService.ImportPhotosAsync(product, photoSources, cancellationToken);
+
+                if (photoResult.Failed > 0)
+                {
+                    _logger.LogWarning(
+                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
+                        card.NmId, photoResult.Imported, photoResult.Skipped, photoResult.Failed);
+                }
+            }
+        }
+
         return new ImportResult { Status = ImportStatus.Created };
+    }
+
+    /// <summary>
+    /// Maps marketplace photo variants to import sources. Display order follows the
+    /// marketplace array order; both variants of one photo share the same order.
+    /// </summary>
+    private static List<MarketplacePhotoSource> BuildPhotoSources(WildberriesCardSnapshot card)
+    {
+        List<MarketplacePhotoSource> sources = new List<MarketplacePhotoSource>();
+        int displayOrder = 1;
+
+        foreach (WildberriesPhotoUrls photo in card.Photos)
+        {
+            if (!string.IsNullOrEmpty(photo.C246x328))
+            {
+                sources.Add(new MarketplacePhotoSource
+                {
+                    Url = photo.C246x328,
+                    ExternalId = $"{card.NmId}_{displayOrder}_thumbnail",
+                    DisplayOrder = displayOrder,
+                    SizeVariant = "thumbnail",
+                    Width = 246,
+                    Height = 328
+                });
+            }
+
+            if (!string.IsNullOrEmpty(photo.C516x688))
+            {
+                sources.Add(new MarketplacePhotoSource
+                {
+                    Url = photo.C516x688,
+                    ExternalId = $"{card.NmId}_{displayOrder}_large",
+                    DisplayOrder = displayOrder,
+                    SizeVariant = "large",
+                    Width = 516,
+                    Height = 688
+                });
+            }
+
+            displayOrder++;
+        }
+
+        return sources;
     }
 
     /// <summary>
