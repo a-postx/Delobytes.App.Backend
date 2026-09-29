@@ -104,6 +104,207 @@ public class ImportProductBatchConsumerTests
     }
 
     [Fact]
+    public async Task ProcessAsync_CreatesPackingUnit_WhenCardHasDimensions()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object);
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Test Product",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Test Description",
+            LengthCm = 30,
+            WidthCm = 20,
+            HeightCm = 10,
+            WeightKg = 0.5m
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = false
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        Product? product = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .FirstOrDefaultAsync(p => p.Sku == "SKU-001");
+
+        product.Should().NotBeNull();
+        product!.PackingUnits.Should().HaveCount(1);
+
+        PackingUnit packingUnit = product.PackingUnits.First();
+        packingUnit.LengthCm.Should().Be(30);
+        packingUnit.WidthCm.Should().Be(20);
+        packingUnit.HeightCm.Should().Be(10);
+        packingUnit.WeightKg.Should().Be(0.5m);
+        packingUnit.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DoesNotCreatePackingUnit_WhenCardHasNoDimensions()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object);
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Test Product",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Test Description"
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = false
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        Product? product = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .FirstOrDefaultAsync(p => p.Sku == "SKU-001");
+
+        product.Should().NotBeNull();
+        product!.PackingUnits.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UpdatesPackingUnit_WhenDimensionsChange()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product existingProduct = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "SKU-001",
+            Name = "Old Name",
+            Description = "Old Description",
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.WildberriesImport,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+
+        ChannelProduct existingChannelProduct = new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = existingProduct.Id,
+            ChannelId = _channelId,
+            ExternalProductId = "123456789",
+            ExternalSku = "SKU-001",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+
+        PackingUnit existingPackingUnit = new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = existingProduct.Id,
+            LengthCm = 10,
+            WidthCm = 10,
+            HeightCm = 10,
+            WeightKg = 0.1m,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+
+        existingProduct.ChannelProducts.Add(existingChannelProduct);
+        existingProduct.PackingUnits.Add(existingPackingUnit);
+        await setupContext.Products.AddAsync(existingProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object);
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Updated Name",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Updated Description",
+            LengthCm = 40,
+            WidthCm = 25,
+            HeightCm = 15,
+            WeightKg = 1.2m
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = false
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        Product? product = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
+
+        product.Should().NotBeNull();
+        product!.PackingUnits.Should().HaveCount(1, "existing packing unit must be updated, not duplicated");
+
+        PackingUnit packingUnit = product.PackingUnits.First();
+        packingUnit.LengthCm.Should().Be(40);
+        packingUnit.WidthCm.Should().Be(25);
+        packingUnit.HeightCm.Should().Be(15);
+        packingUnit.WeightKg.Should().Be(1.2m);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 0 &&
+                    e.RecordsUpdated == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ProcessAsync_UpdatesExistingProduct_WhenChannelProductExists()
     {
         // Arrange

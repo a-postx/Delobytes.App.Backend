@@ -76,6 +76,12 @@ public class WildberriesApiClientGetProductCardsTests
                     "vendorCode": "VENDOR-001",
                     "title": "Тестовый товар",
                     "description": "Описание товара",
+                    "dimensions": {
+                        "length": 30,
+                        "width": 20,
+                        "height": 10,
+                        "weightBrutto": 0.5
+                    },
                     "sizes": [
                         {
                             "chrtID": 111222333,
@@ -120,6 +126,41 @@ public class WildberriesApiClientGetProductCardsTests
         card.Barcodes.Should().HaveCount(2);
         card.Barcodes.Should().Contain("1234567890123");
         card.Barcodes.Should().Contain("9876543210987");
+
+        card.LengthCm.Should().Be(30);
+        card.WidthCm.Should().Be(20);
+        card.HeightCm.Should().Be(10);
+        card.WeightKg.Should().Be(0.5m);
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_CardWithoutDimensions_ReturnsNullDimensions()
+    {
+        string json = """
+        {
+            "cards": [
+                {
+                    "nmID": 111,
+                    "vendorCode": "NO-DIMENSIONS",
+                    "title": "Товар без габаритов"
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl).Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+
+        WildberriesCardSnapshot card = result.Data!.Cards.First();
+        card.LengthCm.Should().BeNull();
+        card.WidthCm.Should().BeNull();
+        card.HeightCm.Should().BeNull();
+        card.WeightKg.Should().BeNull();
     }
 
     [Fact]

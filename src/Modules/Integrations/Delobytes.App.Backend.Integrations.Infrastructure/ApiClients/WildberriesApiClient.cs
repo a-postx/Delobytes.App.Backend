@@ -410,6 +410,10 @@ public class WildberriesApiClient : IChannelApiClient
             VendorCode = dto.VendorCode ?? string.Empty,
             Barcodes = barcodes,
             Description = dto.Description,
+            LengthCm = dto.Dimensions?.Length,
+            WidthCm = dto.Dimensions?.Width,
+            HeightCm = dto.Dimensions?.Height,
+            WeightKg = dto.Dimensions?.WeightBrutto,
             ChannelSpecificData = channelSpecificData
         };
     }

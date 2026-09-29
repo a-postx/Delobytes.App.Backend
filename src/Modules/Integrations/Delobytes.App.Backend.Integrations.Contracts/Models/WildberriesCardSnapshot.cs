@@ -32,6 +32,26 @@ public record WildberriesCardSnapshot
     public string? Description { get; init; }
 
     /// <summary>
+    /// Outer package length in cm, as reported by the marketplace.
+    /// </summary>
+    public decimal? LengthCm { get; init; }
+
+    /// <summary>
+    /// Outer package width in cm, as reported by the marketplace.
+    /// </summary>
+    public decimal? WidthCm { get; init; }
+
+    /// <summary>
+    /// Outer package height in cm, as reported by the marketplace.
+    /// </summary>
+    public decimal? HeightCm { get; init; }
+
+    /// <summary>
+    /// Gross weight of the packed unit in kg, as reported by the marketplace.
+    /// </summary>
+    public decimal? WeightKg { get; init; }
+
+    /// <summary>
     /// Additional channel-specific data serialized as JSON.
     /// </summary>
     public string? ChannelSpecificData { get; init; }

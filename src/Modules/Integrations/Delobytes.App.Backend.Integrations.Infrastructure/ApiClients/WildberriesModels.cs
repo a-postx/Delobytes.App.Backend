@@ -161,7 +161,8 @@ internal sealed class WildberriesCardDto
 }
 
 /// <summary>
-/// Product dimensions from Wildberries.
+/// Product dimensions from Wildberries. Length/width/height are in cm,
+/// weightBrutto is the packed gross weight in kg (up to 3 decimal places).
 /// </summary>
 internal sealed class WildberriesDimensions
 {
@@ -173,6 +174,9 @@ internal sealed class WildberriesDimensions
 
     [JsonPropertyName("height")]
     public int? Height { get; set; }
+
+    [JsonPropertyName("weightBrutto")]
+    public decimal? WeightBrutto { get; set; }
 }
 
 /// <summary>

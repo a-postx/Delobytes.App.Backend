@@ -64,10 +64,10 @@ internal static class MassTransitExtensions
                     cfg.ReceiveEndpoint("integrations-products-import", e =>
                     {
                         e.ConfigureConsumer<ProcessProductsImportMassTransitConsumer>(ctx);
-                        
+
                         // Retry policy with exponential backoff
                         e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
-                        
+
                         // Concurrency limit for cursor-based pagination
                         e.UseConcurrencyLimit(1);
                     });
@@ -76,10 +76,10 @@ internal static class MassTransitExtensions
                     cfg.ReceiveEndpoint("catalog-products-import", e =>
                     {
                         e.ConfigureConsumer<ImportProductBatchMassTransitConsumer>(ctx);
-                        
+
                         // Retry policy with exponential backoff
                         e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
-                        
+
                         // Higher concurrency for batch processing
                         e.UseConcurrencyLimit(5);
                     });
@@ -88,7 +88,7 @@ internal static class MassTransitExtensions
                     cfg.ReceiveEndpoint("integrations-products-import-results", e =>
                     {
                         e.ConfigureConsumer<ProcessProductImportBatchCompletedMassTransitConsumer>(ctx);
-                        
+
                         // Retry policy with exponential backoff
                         e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
                     });

@@ -174,6 +174,8 @@ public class ImportProductBatchConsumer
         ChannelProduct? existingChannelProduct = await _context.ChannelProducts
             .Include(cp => cp.Product)
                 .ThenInclude(p => p.Barcodes)
+            .Include(cp => cp.Product)
+                .ThenInclude(p => p.PackingUnits)
             .FirstOrDefaultAsync(
                 cp => cp.ChannelId == channelId && cp.ExternalProductId == externalProductId,
                 cancellationToken);
@@ -200,6 +202,7 @@ public class ImportProductBatchConsumer
     {
         List<Product> productsByVendorCode = await _context.Products
             .Include(p => p.Barcodes)
+            .Include(p => p.PackingUnits)
             .Where(p => p.Sku == card.VendorCode)
             .ToListAsync(cancellationToken);
 
@@ -234,6 +237,7 @@ public class ImportProductBatchConsumer
             List<Product> productsByBarcode = await _context.Products
                 .Where(p => productIds.Contains(p.Id))
                 .Include(p => p.Barcodes)
+                .Include(p => p.PackingUnits)
                 .ToListAsync(cancellationToken);
 
             if (productsByBarcode.Count == 1)
@@ -300,6 +304,13 @@ public class ImportProductBatchConsumer
             hasChanges = true;
         }
 
+        bool packingUnitChanged = SynchronizePackingUnit(channelProduct.Product, card);
+
+        if (packingUnitChanged)
+        {
+            hasChanges = true;
+        }
+
         channelProduct.LastSyncedAt = DateTimeOffset.UtcNow;
 
         return hasChanges
@@ -332,6 +343,7 @@ public class ImportProductBatchConsumer
         product.Description = card.Description;
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
+        SynchronizePackingUnit(product, card);
 
         return new ImportResult { Status = ImportStatus.Updated };
     }
@@ -370,8 +382,74 @@ public class ImportProductBatchConsumer
         _context.ChannelProducts.Add(channelProduct);
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
+        SynchronizePackingUnit(product, card);
 
         return new ImportResult { Status = ImportStatus.Created };
+    }
+
+    /// <summary>
+    /// Creates or updates the product's packing unit from marketplace-reported dimensions.
+    /// Length/width/height are required on PackingUnit, so a card without all three
+    /// leaves any existing packing unit untouched.
+    /// </summary>
+    private static bool SynchronizePackingUnit(Product product, WildberriesCardSnapshot card)
+    {
+        if (card.LengthCm == null || card.WidthCm == null || card.HeightCm == null)
+        {
+            return false;
+        }
+
+        PackingUnit? existing = product.PackingUnits.FirstOrDefault(pu => pu.IsActive);
+
+        if (existing == null)
+        {
+            product.PackingUnits.Add(new PackingUnit
+            {
+                Id = Guid.NewGuid(),
+                ProductId = product.Id,
+                LengthCm = card.LengthCm.Value,
+                WidthCm = card.WidthCm.Value,
+                HeightCm = card.HeightCm.Value,
+                WeightKg = card.WeightKg,
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+
+            return true;
+        }
+
+        bool hasChanges = false;
+
+        if (existing.LengthCm != card.LengthCm.Value)
+        {
+            existing.LengthCm = card.LengthCm.Value;
+            hasChanges = true;
+        }
+
+        if (existing.WidthCm != card.WidthCm.Value)
+        {
+            existing.WidthCm = card.WidthCm.Value;
+            hasChanges = true;
+        }
+
+        if (existing.HeightCm != card.HeightCm.Value)
+        {
+            existing.HeightCm = card.HeightCm.Value;
+            hasChanges = true;
+        }
+
+        if (existing.WeightKg != card.WeightKg)
+        {
+            existing.WeightKg = card.WeightKg;
+            hasChanges = true;
+        }
+
+        if (hasChanges)
+        {
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        return hasChanges;
     }
 
     private async Task<bool> SynchronizeBarcodesAsync(
