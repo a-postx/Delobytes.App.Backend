@@ -52,4 +52,6 @@ public class Product : ITenantScoped, IAuditableEntity, IRowVersionedEntity
     public ICollection<PackingUnit> PackingUnits { get; set; } = new List<PackingUnit>();
 
     public ICollection<ProductBarcode> Barcodes { get; set; } = new List<ProductBarcode>();
+
+    public ICollection<ProductPhoto> Photos { get; set; } = new List<ProductPhoto>();
 }

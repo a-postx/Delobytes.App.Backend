@@ -1,9 +1,11 @@
 using System.Reflection;
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Interceptors;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Catalog.Infrastructure.Storage;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +55,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkRateRepository, WorkRateRepository>();
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+
+        // Marketplace photo downloads are plain unauthenticated GETs, so no message handler
+        // and no retry pipeline: a failed photo is reported as Failed and retried by the next
+        // import run, which knows the idempotency key and can therefore retry safely.
+        services.AddHttpClient(ProductPhotoService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        services.AddScoped<IProductPhotoService, ProductPhotoService>();
 
         services.AddScoped<ImportProductBatchConsumer>();
 

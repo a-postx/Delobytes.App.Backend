@@ -33,6 +33,7 @@ public class CatalogDbContext : DbContext
     public DbSet<ProductComponent> ProductComponents => Set<ProductComponent>();
     public DbSet<PackingUnit> PackingUnits => Set<PackingUnit>();
     public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
+    public DbSet<ProductPhoto> ProductPhotos => Set<ProductPhoto>();
     public DbSet<CostType> CostTypes => Set<CostType>();
     public DbSet<ProductChannelCost> ProductChannelCosts => Set<ProductChannelCost>();
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();
