@@ -98,6 +98,7 @@ public class ImportProductBatchConsumer
                                     {
                                         errors.Add($"NmId={card.NmId}: {result.ErrorMessage}");
                                     }
+
                                     break;
                             }
                         }

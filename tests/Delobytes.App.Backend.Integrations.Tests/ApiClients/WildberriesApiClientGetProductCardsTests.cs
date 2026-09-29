@@ -11,6 +11,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using RichardSzalay.MockHttp;
@@ -457,4 +458,211 @@ public class WildberriesApiClientGetProductCardsTests
         card.ChannelSpecificData.Should().Contain("TestBrand");
         card.ChannelSpecificData.Should().Contain("dimensions");
     }
+
+    [Fact]
+    public async Task GetProductCardsAsync_UnauthorizedError_DoesNotLogApiKey()
+    {
+        // Arrange
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl)
+            .Respond(HttpStatusCode.Unauthorized, "application/json", "{\"error\": \"Invalid API key\"}");
+
+        Mock<ILogger<WildberriesApiClient>> loggerMock = new Mock<ILogger<WildberriesApiClient>>();
+        List<string> loggedMessages = new List<string>();
+
+        // Capture all log messages
+        loggerMock
+            .Setup(x => x.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => true),
+                It.IsAny<Exception>(),
+                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)))
+            .Callback(new InvocationAction(invocation =>
+            {
+                LogLevel logLevel = (LogLevel)invocation.Arguments[0];
+                object state = invocation.Arguments[2];
+                Exception? exception = (Exception?)invocation.Arguments[3];
+                Delegate formatter = (Delegate)invocation.Arguments[4];
+
+                string message = formatter.DynamicInvoke(state, exception)?.ToString() ?? string.Empty;
+                loggedMessages.Add(message);
+            }));
+
+        HttpClient typedClient = mockHttp.ToHttpClient();
+        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
+
+        Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
+        endpointResolver
+            .Setup(r => r.GetEndpointUrlAsync(
+                TestTemplateId,
+                ChannelEndpointType.Content,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ContentBaseUrl);
+
+        WildberriesApiClient client = new WildberriesApiClient(
+            typedClient,
+            factory.Object,
+            endpointResolver.Object,
+            loggerMock.Object);
+
+        client.SetTemplate(TestTemplate);
+
+        // Act
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(401);
+
+        // Verify that API key does not appear in any logged messages
+        string sensitiveApiKey = "test-api-key";
+        string partialApiKey = "test-api";
+
+        foreach (string logMessage in loggedMessages)
+        {
+            logMessage.Should().NotContain(sensitiveApiKey,
+                "API key should not appear in log messages");
+            logMessage.Should().NotContain(partialApiKey,
+                "Partial API key should not appear in log messages");
+        }
+
+        // Verify that some logging occurred (but without sensitive data)
+        loggedMessages.Should().NotBeEmpty("Error should be logged");
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_ServerError_DoesNotLogApiKey()
+    {
+        // Arrange
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl)
+            .Respond(HttpStatusCode.InternalServerError, "application/json", "{\"error\": \"Internal error\"}");
+
+        Mock<ILogger<WildberriesApiClient>> loggerMock = new Mock<ILogger<WildberriesApiClient>>();
+        List<string> loggedMessages = new List<string>();
+
+        loggerMock
+            .Setup(x => x.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => true),
+                It.IsAny<Exception>(),
+                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)))
+            .Callback(new InvocationAction(invocation =>
+            {
+                LogLevel logLevel = (LogLevel)invocation.Arguments[0];
+                object state = invocation.Arguments[2];
+                Exception? exception = (Exception?)invocation.Arguments[3];
+                Delegate formatter = (Delegate)invocation.Arguments[4];
+
+                string message = formatter.DynamicInvoke(state, exception)?.ToString() ?? string.Empty;
+                loggedMessages.Add(message);
+            }));
+
+        HttpClient typedClient = mockHttp.ToHttpClient();
+        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
+
+        Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
+        endpointResolver
+            .Setup(r => r.GetEndpointUrlAsync(
+                TestTemplateId,
+                ChannelEndpointType.Content,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ContentBaseUrl);
+
+        WildberriesApiClient client = new WildberriesApiClient(
+            typedClient,
+            factory.Object,
+            endpointResolver.Object,
+            loggerMock.Object);
+
+        client.SetTemplate(TestTemplate);
+
+        // Act
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.StatusCode.Should().Be(500);
+
+        // Verify API key is not in logs
+        string sensitiveApiKey = "test-api-key";
+
+        foreach (string logMessage in loggedMessages)
+        {
+            logMessage.Should().NotContain(sensitiveApiKey,
+                "API key must not leak into logs during server errors");
+            logMessage.Should().NotContainAny(new[] { "Bearer ", "Authorization:" },
+                "Authorization details should not appear in logs");
+        }
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_NetworkFailure_DoesNotLogApiKey()
+    {
+        // Arrange
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl)
+            .Throw(new HttpRequestException("Network unreachable"));
+
+        Mock<ILogger<WildberriesApiClient>> loggerMock = new Mock<ILogger<WildberriesApiClient>>();
+        List<string> loggedMessages = new List<string>();
+
+        loggerMock
+            .Setup(x => x.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => true),
+                It.IsAny<Exception>(),
+                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)))
+            .Callback(new InvocationAction(invocation =>
+            {
+                LogLevel logLevel = (LogLevel)invocation.Arguments[0];
+                object state = invocation.Arguments[2];
+                Exception? exception = (Exception?)invocation.Arguments[3];
+                Delegate formatter = (Delegate)invocation.Arguments[4];
+
+                string message = formatter.DynamicInvoke(state, exception)?.ToString() ?? string.Empty;
+                loggedMessages.Add(message);
+            }));
+
+        HttpClient typedClient = mockHttp.ToHttpClient();
+        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
+
+        Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
+        endpointResolver
+            .Setup(r => r.GetEndpointUrlAsync(
+                TestTemplateId,
+                ChannelEndpointType.Content,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ContentBaseUrl);
+
+        WildberriesApiClient client = new WildberriesApiClient(
+            typedClient,
+            factory.Object,
+            endpointResolver.Object,
+            loggerMock.Object);
+
+        client.SetTemplate(TestTemplate);
+
+        // Act
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+
+        // Verify no API key in logs even during network failures
+        string sensitiveApiKey = "test-api-key";
+
+        foreach (string logMessage in loggedMessages)
+        {
+            logMessage.Should().NotContain(sensitiveApiKey,
+                "API key must never leak into logs, even during exceptions");
+        }
+    }
+
 }

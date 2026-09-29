@@ -553,4 +553,146 @@ public class ProcessProductsImportConsumerTests
         statusAfterFirstSave.Should().Be(SyncJobStatus.Running);
         syncJob.StartedAt.Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task ProcessAsync_MoreThan50Cards_PublishesSingleBatchWithAllCards()
+    {
+        // Arrange
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        // Создаём 51 карточку - WB API может вернуть больше, чем batchSize в одном ответе
+        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>();
+        for (long i = 1; i <= 51; i++)
+        {
+            cards.Add(BuildCard(i));
+        }
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(cards, nextCursor: null));
+
+        List<ProductImportBatchRequestedEvent> publishedBatches = new List<ProductImportBatchRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => publishedBatches.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
+
+        // Act
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // Assert
+        publishedBatches.Should().HaveCount(1, "все карточки из одного API ответа публикуются как один батч");
+
+        ProductImportBatchRequestedEvent batch = publishedBatches[0];
+        batch.Cards.Should().HaveCount(51, "все 51 карточка должны быть в единственном батче");
+        batch.IsLastBatch.Should().BeTrue("отсутствие курсора означает последний батч");
+
+        // Проверяем наличие всех карточек
+        batch.Cards.Select(c => c.NmId).Should().BeEquivalentTo(
+            Enumerable.Range(1, 51).Select(i => (long)i),
+            "все 51 карточка должны присутствовать");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MultiplePagesWithLargeResponses_EachPageIsSeparateBatch()
+    {
+        // Arrange
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        // Первая страница: 100 карточек с курсором
+        List<WildberriesCardSnapshot> firstPageCards = new List<WildberriesCardSnapshot>();
+        for (long i = 1; i <= 100; i++)
+        {
+            firstPageCards.Add(BuildCard(i));
+        }
+
+        ProductCardsCursor cursorAfterFirst = new ProductCardsCursor
+        {
+            UpdatedAt = "2024-01-10T12:00:00Z",
+            ProductId = 100
+        };
+
+        // Вторая страница: 75 карточек, без курсора (последняя страница)
+        List<WildberriesCardSnapshot> secondPageCards = new List<WildberriesCardSnapshot>();
+        for (long i = 101; i <= 175; i++)
+        {
+            secondPageCards.Add(BuildCard(i));
+        }
+
+        // ИСПРАВЛЕНО: Setup для первого вызова (cursor == null)
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(cur => cur == null),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(firstPageCards, cursorAfterFirst));
+
+        // ИСПРАВЛЕНО: Setup для второго вызова (cursor != null)
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(cur => cur != null),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(secondPageCards, nextCursor: null));
+
+        List<ProductImportBatchRequestedEvent> publishedBatches = new List<ProductImportBatchRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => publishedBatches.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
+
+        // Act
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // Assert
+        publishedBatches.Should().HaveCount(2, "две страницы API приводят к двум батчам");
+
+        // Первый батч: 100 карточек
+        ProductImportBatchRequestedEvent firstBatch = publishedBatches[0];
+        firstBatch.Cards.Should().HaveCount(100);
+        firstBatch.IsLastBatch.Should().BeFalse();
+        firstBatch.Cards.First().NmId.Should().Be(1);
+        firstBatch.Cards.Last().NmId.Should().Be(100);
+
+        // Второй батч: 75 карточек
+        ProductImportBatchRequestedEvent secondBatch = publishedBatches[1];
+        secondBatch.Cards.Should().HaveCount(75);
+        secondBatch.IsLastBatch.Should().BeTrue();
+        secondBatch.Cards.First().NmId.Should().Be(101);
+        secondBatch.Cards.Last().NmId.Should().Be(175);
+    }
 }

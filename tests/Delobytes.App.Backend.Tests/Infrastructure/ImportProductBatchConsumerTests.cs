@@ -635,6 +635,94 @@ public class ImportProductBatchConsumerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task ProcessAsync_VendorCodeChanged_UpdatesChannelProductExternalSku()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product existingProduct = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "OLD-VENDOR-CODE",
+            Name = "Test Product",
+            Description = "Original Description",
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.WildberriesImport,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+
+        ChannelProduct existingChannelProduct = new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = existingProduct.Id,
+            ChannelId = _channelId,
+            ExternalProductId = "123456789", // nmID остаётся тем же
+            ExternalSku = "OLD-VENDOR-CODE",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+
+        existingProduct.ChannelProducts.Add(existingChannelProduct);
+        await setupContext.Products.AddAsync(existingProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object);
+
+        // Новая карточка с тем же nmID, но другим vendorCode
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Updated Product Name",
+            VendorCode = "NEW-VENDOR-CODE", // Изменился!
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Updated Description"
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = false
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        Product? product = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.ChannelProducts)
+            .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
+
+        product.Should().NotBeNull();
+        product!.Sku.Should().Be("OLD-VENDOR-CODE", "Product.Sku не обновляется при импорте");
+        product.Name.Should().Be("Updated Product Name");
+        product.Description.Should().Be("Updated Description");
+
+        ChannelProduct? channelProduct = product.ChannelProducts.FirstOrDefault();
+        channelProduct.Should().NotBeNull();
+        channelProduct!.ExternalProductId.Should().Be("123456789", "nmID должен остаться неизменным");
+        channelProduct.ExternalSku.Should().Be("NEW-VENDOR-CODE", "ExternalSku должен обновиться на новый vendorCode");
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 0 &&
+                    e.RecordsUpdated == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+
     private CatalogDbContext BuildCatalogDbContext(Guid tenantId, string databaseName)
     {
         DbContextOptions<CatalogDbContext> options = new DbContextOptionsBuilder<CatalogDbContext>()
