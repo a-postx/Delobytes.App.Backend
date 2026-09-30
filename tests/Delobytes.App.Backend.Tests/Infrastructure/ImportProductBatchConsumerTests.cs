@@ -925,6 +925,280 @@ public class ImportProductBatchConsumerTests
     }
 
 
+    // -----------------------------------------------------------------------
+    // Photo import happens outside the database transaction and after products are durable
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_ImportsPhotosAfterProductsAreCommitted()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        Mock<IProductPhotoService> photoServiceMock = BuildPhotoServiceMock();
+
+        ImportProductBatchConsumer consumer = BuildConsumer(
+            consumerContext,
+            publishEndpointMock.Object,
+            photoServiceMock);
+
+        bool productWasVisibleWhenPhotosWereImported = false;
+
+        photoServiceMock
+            .Setup(s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Product, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((product, _, _) =>
+            {
+                // A separate context stands in for another connection: if the product is visible
+                // here, the transaction that created it has already been committed.
+                using CatalogDbContext observerContext = BuildCatalogDbContext(_tenantId, databaseName);
+                productWasVisibleWhenPhotosWereImported = observerContext.Products
+                    .IgnoreQueryFilters()
+                    .Any(p => p.Id == product.Id);
+            })
+            .ReturnsAsync(new ProductPhotoImportResult { Imported = 1 });
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Product With Photos",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Photos = new List<WildberriesPhotoUrls>
+            {
+                new WildberriesPhotoUrls { C246x328 = "https://example.test/t.webp", C516x688 = "https://example.test/l.webp" },
+            },
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = true,
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        photoServiceMock.Verify(
+            s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        productWasVisibleWhenPhotosWereImported.Should().BeTrue(
+            "photos must be downloaded only after the product transaction has committed");
+
+        // Counters reflect the database work only: photo import must not change them.
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 1 &&
+                    e.RecordsFailed == 0 &&
+                    e.IsLastBatch),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_PhotoImportFailure_DoesNotFailTheBatch()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        Mock<IProductPhotoService> photoServiceMock = BuildPhotoServiceMock();
+
+        ImportProductBatchConsumer consumer = BuildConsumer(
+            consumerContext,
+            publishEndpointMock.Object,
+            photoServiceMock);
+
+        photoServiceMock
+            .Setup(s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage unavailable"));
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Product With Broken Photos",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Photos = new List<WildberriesPhotoUrls>
+            {
+                new WildberriesPhotoUrls { C246x328 = "https://example.test/t.webp" },
+            },
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = false,
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        Product? product = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Sku == "SKU-001");
+
+        product.Should().NotBeNull("the product survives a failed photo download");
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 1 &&
+                    e.RecordsFailed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // -----------------------------------------------------------------------
+    // Photos of a card are imported after the database transaction has committed,
+    // and they do not distort the batch counters.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_ImportsPhotosAfterCommit_AndKeepsCountersUnchanged()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        Mock<IProductPhotoService> photoServiceMock = BuildPhotoServiceMock();
+
+        // The commit must have happened before any photo is downloaded.
+        bool committedBeforePhotoImport = false;
+        photoServiceMock
+            .Setup(s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                // A committed product is visible to a second context; an uncommitted one is not.
+                using CatalogDbContext probeContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+                committedBeforePhotoImport = probeContext.Products
+                    .IgnoreQueryFilters()
+                    .Any(p => p.Sku == "SKU-001");
+            })
+            .ReturnsAsync(new ProductPhotoImportResult { Imported = 2 });
+
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, photoServiceMock);
+
+        WildberriesCardSnapshot card = BuildCardWithPhotos();
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = true
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        committedBeforePhotoImport.Should().BeTrue(
+            "фото загружаются после коммита транзакции");
+
+        photoServiceMock.Verify(
+            s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 1 &&
+                    e.RecordsUpdated == 0 &&
+                    e.RecordsSkipped == 0 &&
+                    e.RecordsFailed == 0 &&
+                    e.IsLastBatch),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SkipsPhotoImport_WhenCardHasNoPhotos()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        Mock<IProductPhotoService> photoServiceMock = BuildPhotoServiceMock();
+
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, photoServiceMock);
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Test Product",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Test Description"
+        };
+
+        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        {
+            SyncJobId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = false
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        photoServiceMock.Verify(
+            s => s.ImportPhotosAsync(
+                It.IsAny<Product>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private CatalogDbContext BuildCatalogDbContext(Guid tenantId, string databaseName)
     {
         DbContextOptions<CatalogDbContext> options = new DbContextOptionsBuilder<CatalogDbContext>()
@@ -962,7 +1236,21 @@ public class ImportProductBatchConsumerTests
 
     private ImportProductBatchConsumer BuildConsumer(CatalogDbContext context, IPublishEndpoint publishEndpoint)
     {
+        return BuildConsumer(context, publishEndpoint, BuildPhotoServiceMock());
+    }
+
+    private ImportProductBatchConsumer BuildConsumer(
+        CatalogDbContext context,
+        IPublishEndpoint publishEndpoint,
+        Mock<IProductPhotoService> photoService)
+    {
         Mock<ILogger<ImportProductBatchConsumer>> loggerMock = new Mock<ILogger<ImportProductBatchConsumer>>();
+
+        return new ImportProductBatchConsumer(context, publishEndpoint, photoService.Object, loggerMock.Object);
+    }
+
+    private static Mock<IProductPhotoService> BuildPhotoServiceMock()
+    {
         Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
         photoServiceMock
             .Setup(s => s.ImportPhotosAsync(
@@ -971,6 +1259,26 @@ public class ImportProductBatchConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());
 
-        return new ImportProductBatchConsumer(context, publishEndpoint, photoServiceMock.Object, loggerMock.Object);
+        return photoServiceMock;
+    }
+
+    private static WildberriesCardSnapshot BuildCardWithPhotos()
+    {
+        return new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Test Product",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Test Description",
+            Photos = new List<WildberriesPhotoUrls>
+            {
+                new WildberriesPhotoUrls
+                {
+                    C246x328 = "https://cdn.wb.ru/photo-thumb.webp",
+                    C516x688 = "https://cdn.wb.ru/photo-large.webp",
+                },
+            },
+        };
     }
 }

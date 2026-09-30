@@ -62,6 +62,12 @@ public class ImportProductBatchConsumer
         int recordsFailed = 0;
         List<string> errors = new List<string>();
 
+        // Photos are downloaded only after the database transaction has committed: holding a
+        // transaction open across marketplace HTTP calls kept this batch busy for seconds, so
+        // its ProductImportBatchCompletedEvent reached the aggregator long after the terminal
+        // batch had already finalised the job.
+        List<PendingPhotoImport> pendingPhotoImports = new List<PendingPhotoImport>();
+
         using (IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken))
         {
             try
@@ -82,7 +88,7 @@ public class ImportProductBatchConsumer
                     {
                         try
                         {
-                            ImportResult result = await ProcessCardAsync(card, message.ChannelId, cancellationToken);
+                            ImportResult result = await ProcessCardAsync(card, message.ChannelId, pendingPhotoImports, cancellationToken);
 
                             recordsProcessed++;
 
@@ -121,38 +127,13 @@ public class ImportProductBatchConsumer
                 }
 
                 await transaction.CommitAsync(cancellationToken);
-
-                string? errorMessage = errors.Count > 0 ? string.Join("; ", errors) : null;
-
-                ProductImportBatchCompletedEvent completedEvent = new ProductImportBatchCompletedEvent
-                {
-                    SyncJobId = message.SyncJobId,
-                    RecordsProcessed = recordsProcessed,
-                    RecordsCreated = recordsCreated,
-                    RecordsUpdated = recordsUpdated,
-                    RecordsSkipped = recordsSkipped,
-                    RecordsFailed = recordsFailed,
-                    ErrorMessage = errorMessage,
-                    IsLastBatch = message.IsLastBatch,
-                };
-
-                await _publishEndpoint.Publish(completedEvent, cancellationToken);
-
-                _logger.LogInformation(
-                    "ImportProductBatchConsumer completed batch. SyncJobId={SyncJobId}, Processed={Processed}, Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
-                    message.SyncJobId,
-                    recordsProcessed,
-                    recordsCreated,
-                    recordsUpdated,
-                    recordsSkipped,
-                    recordsFailed);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 _logger.LogError(ex, "Failed to process batch. SyncJobId={SyncJobId}", message.SyncJobId);
 
-                ProductImportBatchCompletedEvent failedEvent = new ProductImportBatchCompletedEvent
+                ProductImportBatchCompletedEvent rollbackEvent = new ProductImportBatchCompletedEvent
                 {
                     SyncJobId = message.SyncJobId,
                     RecordsProcessed = 0,
@@ -160,18 +141,103 @@ public class ImportProductBatchConsumer
                     RecordsUpdated = 0,
                     RecordsSkipped = 0,
                     RecordsFailed = message.Cards.Count,
-                    ErrorMessage = $"Batch processing failed: {ex.Message}"
+                    ErrorMessage = $"Batch processing failed: {ex.Message}",
+                    IsLastBatch = message.IsLastBatch,
                 };
 
-                await _publishEndpoint.Publish(failedEvent, cancellationToken);
+                await _publishEndpoint.Publish(rollbackEvent, cancellationToken);
                 throw;
             }
         }
+
+        // The transaction is closed: products, channel products, barcodes and packing units are
+        // durable. Photos are downloaded and uploaded now, outside any database transaction.
+        await ImportPhotosAsync(pendingPhotoImports, cancellationToken);
+
+        string? errorMessage = errors.Count > 0 ? string.Join("; ", errors) : null;
+
+        ProductImportBatchCompletedEvent completedEvent = new ProductImportBatchCompletedEvent
+        {
+            SyncJobId = message.SyncJobId,
+            RecordsProcessed = recordsProcessed,
+            RecordsCreated = recordsCreated,
+            RecordsUpdated = recordsUpdated,
+            RecordsSkipped = recordsSkipped,
+            RecordsFailed = recordsFailed,
+            ErrorMessage = errorMessage,
+            IsLastBatch = message.IsLastBatch,
+        };
+
+        await _publishEndpoint.Publish(completedEvent, cancellationToken);
+
+        _logger.LogInformation(
+            "ImportProductBatchConsumer completed batch. SyncJobId={SyncJobId}, Processed={Processed}, Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
+            message.SyncJobId,
+            recordsProcessed,
+            recordsCreated,
+            recordsUpdated,
+            recordsSkipped,
+            recordsFailed);
+    }
+
+    /// <summary>
+    /// Imports the photos collected during the transactional phase. A photo that cannot be
+    /// imported is logged and skipped: it must neither fail the batch nor distort its counters,
+    /// since <see cref="IProductPhotoService.ImportPhotosAsync"/> keeps a Failed row so the next
+    /// import retries it.
+    /// </summary>
+    private async Task ImportPhotosAsync(
+        List<PendingPhotoImport> pendingPhotoImports,
+        CancellationToken cancellationToken)
+    {
+        if (pendingPhotoImports.Count == 0)
+        {
+            return;
+        }
+
+        foreach (PendingPhotoImport pending in pendingPhotoImports)
+        {
+            try
+            {
+                ProductPhotoImportResult photoResult = await _photoService.ImportPhotosAsync(
+                    pending.Product,
+                    pending.Sources,
+                    cancellationToken);
+
+                if (photoResult.Failed > 0)
+                {
+                    _logger.LogWarning(
+                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
+                        pending.NmId,
+                        photoResult.Imported,
+                        photoResult.Skipped,
+                        photoResult.Failed);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to import photos for NmId={NmId}, ProductId={ProductId}",
+                    pending.NmId,
+                    pending.Product.Id);
+            }
+        }
+
+        // Test/design note: the photo service deliberately does not call SaveChanges —
+        // it adds ProductPhoto rows to the tracked product and leaves the transaction boundary
+        // to the caller. This is that boundary.
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<ImportResult> ProcessCardAsync(
         WildberriesCardSnapshot card,
         Guid channelId,
+        List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
         string externalProductId = card.NmId.ToString();
@@ -189,17 +255,17 @@ public class ImportProductBatchConsumer
 
         if (existingChannelProduct != null)
         {
-            return await UpdateExistingProductAsync(existingChannelProduct, card, cancellationToken);
+            return await UpdateExistingProductAsync(existingChannelProduct, card, pendingPhotoImports, cancellationToken);
         }
 
         Product? matchedProduct = await FindMatchingProductAsync(card, channelId, cancellationToken);
 
         if (matchedProduct != null)
         {
-            return await LinkExistingProductAsync(matchedProduct, card, channelId, cancellationToken);
+            return await LinkExistingProductAsync(matchedProduct, card, channelId, pendingPhotoImports, cancellationToken);
         }
 
-        return await CreateNewProductAsync(card, channelId, cancellationToken);
+        return await CreateNewProductAsync(card, channelId, pendingPhotoImports, cancellationToken);
     }
 
     private async Task<Product?> FindMatchingProductAsync(
@@ -269,6 +335,7 @@ public class ImportProductBatchConsumer
     private async Task<ImportResult> UpdateExistingProductAsync(
         ChannelProduct channelProduct,
         WildberriesCardSnapshot card,
+        List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
         bool hasChanges = false;
@@ -320,23 +387,7 @@ public class ImportProductBatchConsumer
             hasChanges = true;
         }
 
-        if (card.Photos.Count > 0)
-        {
-            List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
-
-            if (photoSources.Count > 0)
-            {
-                ProductPhotoImportResult photoResult =
-                    await _photoService.ImportPhotosAsync(channelProduct.Product, photoSources, cancellationToken);
-
-                if (photoResult.Failed > 0)
-                {
-                    _logger.LogWarning(
-                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
-                        card.NmId, photoResult.Imported, photoResult.Skipped, photoResult.Failed);
-                }
-            }
-        }
+        QueuePhotos(channelProduct.Product, card, pendingPhotoImports);
 
         channelProduct.LastSyncedAt = DateTimeOffset.UtcNow;
 
@@ -349,6 +400,7 @@ public class ImportProductBatchConsumer
         Product product,
         WildberriesCardSnapshot card,
         Guid channelId,
+        List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
         ChannelProduct channelProduct = new ChannelProduct
@@ -372,23 +424,7 @@ public class ImportProductBatchConsumer
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
 
-        if (card.Photos.Count > 0)
-        {
-            List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
-
-            if (photoSources.Count > 0)
-            {
-                ProductPhotoImportResult photoResult =
-                    await _photoService.ImportPhotosAsync(product, photoSources, cancellationToken);
-
-                if (photoResult.Failed > 0)
-                {
-                    _logger.LogWarning(
-                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
-                        card.NmId, photoResult.Imported, photoResult.Skipped, photoResult.Failed);
-                }
-            }
-        }
+        QueuePhotos(product, card, pendingPhotoImports);
 
         return new ImportResult { Status = ImportStatus.Updated };
     }
@@ -396,6 +432,7 @@ public class ImportProductBatchConsumer
     private async Task<ImportResult> CreateNewProductAsync(
         WildberriesCardSnapshot card,
         Guid channelId,
+        List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
         Product product = new Product
@@ -429,25 +466,39 @@ public class ImportProductBatchConsumer
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
 
-        if (card.Photos.Count > 0)
-        {
-            List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
-
-            if (photoSources.Count > 0)
-            {
-                ProductPhotoImportResult photoResult =
-                    await _photoService.ImportPhotosAsync(product, photoSources, cancellationToken);
-
-                if (photoResult.Failed > 0)
-                {
-                    _logger.LogWarning(
-                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
-                        card.NmId, photoResult.Imported, photoResult.Skipped, photoResult.Failed);
-                }
-            }
-        }
+        QueuePhotos(product, card, pendingPhotoImports);
 
         return new ImportResult { Status = ImportStatus.Created };
+    }
+
+    /// <summary>
+    /// Records the photos of a card for download after the database transaction commits. The
+    /// tracked <see cref="Product"/> instance is kept, so the rows the photo service adds land in
+    /// the same context that owns the product.
+    /// </summary>
+    private static void QueuePhotos(
+        Product product,
+        WildberriesCardSnapshot card,
+        List<PendingPhotoImport> pendingPhotoImports)
+    {
+        if (card.Photos.Count == 0)
+        {
+            return;
+        }
+
+        List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
+
+        if (photoSources.Count == 0)
+        {
+            return;
+        }
+
+        pendingPhotoImports.Add(new PendingPhotoImport
+        {
+            Product = product,
+            Sources = photoSources,
+            NmId = card.NmId,
+        });
     }
 
     /// <summary>
@@ -596,6 +647,18 @@ public class ImportProductBatchConsumer
         }
 
         return hasChanges;
+    }
+
+    /// <summary>
+    /// A product whose photos still have to be downloaded once the transaction has committed.
+    /// </summary>
+    private class PendingPhotoImport
+    {
+        public Product Product { get; set; } = default!;
+
+        public List<MarketplacePhotoSource> Sources { get; set; } = new();
+
+        public long NmId { get; set; }
     }
 
     private class ImportResult

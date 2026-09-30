@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
@@ -352,6 +353,141 @@ public class ProcessProductsImportConsumerTests
     }
 
     // -----------------------------------------------------------------------
+    // Non-empty page followed by an empty terminal page -> ONE batch, marked last.
+    //
+    // Regression test for the Wildberries import counters bug: when the cursor is
+    // exhausted WB answers with an empty page. Publishing that page as its own
+    // IsLastBatch batch let the aggregator finalise the job with zero counters
+    // while the real batch was still downloading photos.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_NonEmptyPageThenEmptyTerminalPage_PublishesSingleBatchMarkedLast()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>
+        {
+            BuildCard(1), BuildCard(2), BuildCard(3)
+        };
+
+        ProductCardsCursor page1Cursor = new ProductCardsCursor
+        {
+            UpdatedAt = "2024-01-01T00:00:00Z",
+            ProductId = 3,
+        };
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(cards, nextCursor: page1Cursor));
+
+        // Cursor exhausted: WB returns an empty page, which must not become a batch.
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 3),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+
+        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // Exactly one batch, carrying the three cards and flagged as terminal.
+        published.Should().HaveCount(1, "пустой терминальный батч не публикуется");
+        published[0].IsLastBatch.Should().BeTrue();
+        published[0].Cards.Should().HaveCount(3);
+        published[0].Cards.Select(c => c.NmId).Should().BeEquivalentTo(new long[] { 1, 2, 3 });
+    }
+
+    // -----------------------------------------------------------------------
+    // Two non-empty pages then an empty terminal page -> two batches, the second marked last.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_TwoNonEmptyPagesThenEmptyTerminalPage_PublishesTwoBatchesSecondIsLast()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        List<WildberriesCardSnapshot> firstPage = new List<WildberriesCardSnapshot> { BuildCard(1), BuildCard(2) };
+        List<WildberriesCardSnapshot> secondPage = new List<WildberriesCardSnapshot> { BuildCard(3) };
+
+        ProductCardsCursor page1Cursor = new ProductCardsCursor
+        {
+            UpdatedAt = "2024-01-01T00:00:00Z",
+            ProductId = 2,
+        };
+
+        ProductCardsCursor page2Cursor = new ProductCardsCursor
+        {
+            UpdatedAt = "2024-01-02T00:00:00Z",
+            ProductId = 3,
+        };
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(firstPage, nextCursor: page1Cursor));
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 2),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(secondPage, nextCursor: page2Cursor));
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 3),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+
+        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        published.Should().HaveCount(2);
+        published[0].IsLastBatch.Should().BeFalse();
+        published[0].Cards.Should().HaveCount(2);
+        published[1].IsLastBatch.Should().BeTrue();
+        published[1].Cards.Should().HaveCount(1);
+    }
+
+    // -----------------------------------------------------------------------
     // Idempotency: Running status (redelivery) resumes from saved cursor
     // -----------------------------------------------------------------------
 
@@ -488,10 +624,12 @@ public class ProcessProductsImportConsumerTests
             .Setup(p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        string? capturedCursor = null;
+        // Every cursor write is recorded, so a two-page run can be checked for the absence of an
+        // intermediate checkpoint.
+        List<string?> checkpoints = new List<string?>();
         _syncJobRepo
             .Setup(r => r.Update(It.IsAny<SyncJob>()))
-            .Callback<SyncJob>(j => capturedCursor = j.NextCursor);
+            .Callback<SyncJob>(j => checkpoints.Add(j.NextCursor));
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
@@ -499,8 +637,87 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // After second page (last), cursor should be null (serialized as null)
+        // The job finished: the terminal write clears the cursor because there is nothing left to resume.
         syncJob.NextCursor.Should().BeNull();
+
+        // Two pages are not enough to flush the buffer: page 1 goes out only when page 2 turns out
+        // to be terminal, and that branch never checkpoints the page it pushes out. So no non-null
+        // cursor is persisted anywhere in this run.
+        List<string?> nonNullCheckpoints = checkpoints.Where(c => c != null).ToList();
+        nonNullCheckpoints.Should().BeEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // Intermediate checkpoint: with three pages the second page pushes the first one out of
+    // the buffer, and that is the only place a non-null cursor is written. A two-page run
+    // never reaches it — it goes straight to the terminal null checkpoint.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_ThreePages_CheckpointsCursorOfPublishedBatch()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        ProductCardsCursor page1Cursor = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 1 };
+        ProductCardsCursor page2Cursor = new ProductCardsCursor { UpdatedAt = "2024-01-02T00:00:00Z", ProductId = 2 };
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(1) }, nextCursor: page1Cursor));
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 1),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(2) }, nextCursor: page2Cursor));
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 2),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(3) }, nextCursor: null));
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        List<string?> checkpoints = new List<string?>();
+        _syncJobRepo
+            .Setup(r => r.Update(It.IsAny<SyncJob>()))
+            .Callback<SyncJob>(j => checkpoints.Add(j.NextCursor));
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // The terminal write clears the cursor; a completed job has nothing to resume.
+        syncJob.NextCursor.Should().BeNull();
+
+        // Exactly one non-null checkpoint, and it points at the batch that was actually published
+        // (page 1), not at the page that happened to be fetched next (page 2).
+        List<string> nonNullCheckpoints = checkpoints.Where(c => c != null).Select(c => c!).ToList();
+        nonNullCheckpoints.Should().HaveCount(1, "the first page is only pushed out of the buffer once the second page arrives");
+
+        System.Text.Json.JsonSerializer
+            .Deserialize<ProductCardsCursor>(nonNullCheckpoints[0])!
+            .ProductId
+            .Should().Be(1, "the checkpoint refers to the published batch, not the page fetched after it");
     }
 
     // -----------------------------------------------------------------------
