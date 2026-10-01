@@ -1,5 +1,3 @@
-using Delobytes.App.Backend.Identity.Domain.Enums;
-
 namespace Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
 
 /// <summary>
@@ -21,19 +19,4 @@ public class UpdateTenantLegalEntityResponse
     /// Gets or sets the updated INN.
     /// </summary>
     public string? Inn { get; set; }
-
-    /// <summary>
-    /// Gets or sets the updated tax type.
-    /// </summary>
-    public TaxType TaxType { get; set; }
-
-    /// <summary>
-    /// Gets or sets the updated tax rate.
-    /// </summary>
-    public decimal TaxRatePercent { get; set; }
-
-    /// <summary>
-    /// Gets or sets the updated VAT type.
-    /// </summary>
-    public VatType VatType { get; set; }
 }

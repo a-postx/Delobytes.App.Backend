@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Delobytes.App.Backend.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -13,7 +12,7 @@ using Xunit;
 namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
-/// Tests for the legal entity endpoints of TenantController (stage 10).
+/// Tests for the legal entity endpoints of TenantController.
 /// The tenant is always resolved from the JWT claim, never from the request body,
 /// so a client cannot read or modify another tenant's settings.
 /// </summary>
@@ -58,7 +57,7 @@ public class TenantControllerLegalEntityTests
         };
     }
 
-    // ── GET /api/tenant/legal-entity ──────────────────────────────────────────────
+    // ── GET /api/tenant/legal-entity ──────────────────────────────────────────
 
     [Fact]
     public async Task GetTenantLegalEntity_ValidTenantClaim_ReturnsOkWithSettings()
@@ -71,9 +70,6 @@ public class TenantControllerLegalEntityTests
             TenantId = tenantId,
             LegalName = "ООО «Ромашка»",
             Inn = "7712345678",
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
         };
 
         _mediatorMock
@@ -92,9 +88,8 @@ public class TenantControllerLegalEntityTests
             okResult.Value.Should().BeOfType<GetTenantLegalEntityResponse>().Subject;
 
         response.TenantId.Should().Be(tenantId);
-        response.TaxType.Should().Be(TaxType.Usn);
-        response.TaxRatePercent.Should().Be(6m);
-        response.VatType.Should().Be(VatType.None);
+        response.LegalName.Should().Be("ООО «Ромашка»");
+        response.Inn.Should().Be("7712345678");
     }
 
     [Fact]
@@ -173,7 +168,7 @@ public class TenantControllerLegalEntityTests
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
-    // ── PATCH /api/tenant/legal-entity ────────────────────────────────────────────
+    // ── PATCH /api/tenant/legal-entity ────────────────────────────────────────
 
     [Fact]
     public async Task UpdateTenantLegalEntity_ValidRequest_ReturnsOkWithUpdatedSettings()
@@ -186,9 +181,6 @@ public class TenantControllerLegalEntityTests
             TenantId = tenantId,
             LegalName = "ООО «Ромашка»",
             Inn = "7712345678",
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
         };
 
         _mediatorMock
@@ -199,9 +191,6 @@ public class TenantControllerLegalEntityTests
         {
             LegalName = "ООО «Ромашка»",
             Inn = "7712345678",
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
         };
 
         SetupUserClaims(tenantId, role: "Administrator");
@@ -216,7 +205,7 @@ public class TenantControllerLegalEntityTests
             okResult.Value.Should().BeOfType<UpdateTenantLegalEntityResponse>().Subject;
 
         response.TenantId.Should().Be(tenantId);
-        response.TaxType.Should().Be(TaxType.Usn);
+        response.LegalName.Should().Be("ООО «Ромашка»");
     }
 
     [Fact]
@@ -233,9 +222,6 @@ public class TenantControllerLegalEntityTests
         {
             LegalName = "ООО «Лютик»",
             Inn = "771234567890",
-            TaxType = TaxType.Osno,
-            TaxRatePercent = 20.5m,
-            VatType = VatType.Seven,
         };
 
         SetupUserClaims(tenantId, role: "Administrator");
@@ -249,10 +235,7 @@ public class TenantControllerLegalEntityTests
                 It.Is<UpdateTenantLegalEntityCommand>(c =>
                     c.TenantId == tenantId &&
                     c.LegalName == "ООО «Лютик»" &&
-                    c.Inn == "771234567890" &&
-                    c.TaxType == TaxType.Osno &&
-                    c.TaxRatePercent == 20.5m &&
-                    c.VatType == VatType.Seven),
+                    c.Inn == "771234567890"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -269,9 +252,7 @@ public class TenantControllerLegalEntityTests
 
         UpdateTenantLegalEntityRequest request = new UpdateTenantLegalEntityRequest
         {
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
+            LegalName = "ООО «Ромашка»",
         };
 
         SetupUserClaims(claimTenantId, role: "Administrator");
@@ -293,9 +274,7 @@ public class TenantControllerLegalEntityTests
         // Arrange
         UpdateTenantLegalEntityRequest request = new UpdateTenantLegalEntityRequest
         {
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
+            LegalName = "ООО «Ромашка»",
         };
 
         SetupUserClaims(null, role: "Administrator");
@@ -318,9 +297,7 @@ public class TenantControllerLegalEntityTests
         // Arrange
         UpdateTenantLegalEntityRequest request = new UpdateTenantLegalEntityRequest
         {
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
+            LegalName = "ООО «Ромашка»",
         };
 
         SetupUserClaims(null, rawTenantIdClaim: "not-a-guid", role: "Administrator");

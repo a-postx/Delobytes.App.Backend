@@ -31,6 +31,16 @@ public class GetCurrentUserResponse
     public string TenantName { get; set; } = default!;
 
     /// <summary>
+    /// Gets or sets the active tenant accounting currency (ISO 4217).
+    /// </summary>
+    public string Currency { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the active tenant time zone identifier (IANA).
+    /// </summary>
+    public string TimeZone { get; set; } = default!;
+
+    /// <summary>
     /// Gets or sets the user role in the active tenant.
     /// </summary>
     public string Role { get; set; } = default!;

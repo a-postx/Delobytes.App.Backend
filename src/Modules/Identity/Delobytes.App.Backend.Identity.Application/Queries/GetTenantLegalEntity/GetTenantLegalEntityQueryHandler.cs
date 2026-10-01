@@ -33,9 +33,6 @@ public class GetTenantLegalEntityQueryHandler : IRequestHandler<GetTenantLegalEn
             TenantId = tenant.Id,
             LegalName = tenant.LegalName,
             Inn = tenant.Inn,
-            TaxType = tenant.TaxType,
-            TaxRatePercent = tenant.TaxRatePercent,
-            VatType = tenant.VatType,
         };
     }
 }

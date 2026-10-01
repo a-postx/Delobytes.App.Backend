@@ -99,6 +99,73 @@ public class GetCurrentUserQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ValidUserAndTenant_ReturnsActiveTenantCurrencyAndTimeZone()
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+        Guid tenantId = Guid.NewGuid();
+
+        User user = new User
+        {
+            Id = userId,
+            ExternalId = "user@example.com",
+            IdentityProvider = "Local",
+            Email = "user@example.com",
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
+        Tenant tenant = new Tenant
+        {
+            Id = tenantId,
+            Name = "Acme Corp",
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+            Currency = "RUB",
+            TimeZone = "Europe/Moscow",
+        };
+
+        TenantMembership tenantMembership = new TenantMembership
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Tenant = tenant,
+            UserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
+        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _tenantRepo.Setup(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenant);
+
+        _tenantMembRepo.Setup(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantMembership> { tenantMembership });
+
+        _tenantMembRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenantMembership);
+
+        GetCurrentUserQuery query = new GetCurrentUserQuery
+        {
+            UserId = userId,
+            TenantId = tenantId,
+        };
+
+        // Act
+        GetCurrentUserResponse response = await BuildHandler().Handle(query, CancellationToken.None);
+
+        // Assert
+        response.Currency.Should().Be("RUB");
+        response.TimeZone.Should().Be("Europe/Moscow");
+
+        // The tenant is already loaded for the name, so the accounting settings must be
+        // read off that same instance rather than fetched again.
+        _tenantRepo.Verify(r => r.FindByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Handle_NullDisplayName_ReturnedAsNull()
     {
         // Arrange

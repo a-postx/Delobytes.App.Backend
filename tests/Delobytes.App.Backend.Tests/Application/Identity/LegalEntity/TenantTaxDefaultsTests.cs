@@ -2,17 +2,20 @@ using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Options;
+using Delobytes.App.Backend.Identity.Domain.Constants;
 using Delobytes.App.Backend.Identity.Domain.Entities;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
-
 namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
-/// Tests the stage-10 requirement that tax rates are never filled in automatically:
-/// a freshly created tenant must not silently acquire a tax regime or a VAT mode.
+/// Tests that a freshly created tenant never silently acquires a tax regime.
+///
+/// The old model kept the tax settings on Tenant itself and relied on sentinel enum
+/// values (0, matching no declared member) to mean "not chosen". That sentinel is gone:
+/// TenantTaxProfile no longer exists for a new tenant, and the absence of rows is the
+/// single representation of "tax is not configured".
 /// </summary>
 public class TenantTaxDefaultsTests
 {
@@ -43,12 +46,8 @@ public class TenantTaxDefaultsTests
             optionsMock.Object);
     }
 
-    [Fact]
-    public async Task CreateTenant_LeavesTaxRegimeAndVatUnset()
+    private void SetupFirstTenantCreation(Guid userId)
     {
-        // Arrange
-        Guid userId = Guid.NewGuid();
-
         _userRepositoryMock
             .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new User
@@ -65,6 +64,14 @@ public class TenantTaxDefaultsTests
         _jwtTokenServiceMock
             .Setup(s => s.GenerateToken(userId, It.IsAny<Guid>(), Role.Administrator))
             .Returns("jwt-token");
+    }
+
+    [Fact]
+    public async Task CreateTenant_ProducesATenantWithNoTaxConfigurationAtAll()
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+        SetupFirstTenantCreation(userId);
 
         Tenant? createdTenant = null;
 
@@ -85,15 +92,42 @@ public class TenantTaxDefaultsTests
         // Assert
         Assert.NotNull(createdTenant);
 
-        // The sentinel values below match no declared enum member, which is what the
-        // frontend relies on to render an em dash instead of a preselected regime.
-        Assert.False(
-            Enum.IsDefined(typeof(TaxType), createdTenant!.TaxType),
-            $"Newly created tenant must not default TaxType, but got {createdTenant.TaxType}.");
-        Assert.False(
-            Enum.IsDefined(typeof(VatType), createdTenant.VatType),
-            $"Newly created tenant must not default VatType, but got {createdTenant.VatType}.");
-        Assert.Equal(0m, createdTenant.TaxRatePercent);
+        // "Tax not configured" is now expressed by the absence of TenantTaxProfile rows.
+        // Tenant itself no longer has any tax member the creation flow could accidentally
+        // set, so there is nothing to leave at a sentinel default here.
+        Assert.Empty(
+            typeof(Tenant).GetProperties()
+                .Where(p => p.Name.Contains("Tax", StringComparison.Ordinal))
+                .Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task CreateTenant_LeavesCurrencyAndTimeZoneAtTheirDefaults()
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+        SetupFirstTenantCreation(userId);
+
+        Tenant? createdTenant = null;
+
+        _tenantRepositoryMock
+            .Setup(r => r.Add(It.IsAny<Tenant>()))
+            .Callback<Tenant>(tenant => createdTenant = tenant);
+
+        CreateTenantCommand command = new CreateTenantCommand
+        {
+            UserId = userId,
+            TenantName = "My First Company",
+            CurrentTenantId = null,
+        };
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(createdTenant);
+        Assert.Equal(TenantCurrencies.Rub, createdTenant!.Currency);
+        Assert.Equal("Europe/Moscow", createdTenant.TimeZone);
     }
 
     [Fact]
@@ -101,23 +135,7 @@ public class TenantTaxDefaultsTests
     {
         // Arrange
         Guid userId = Guid.NewGuid();
-
-        _userRepositoryMock
-            .Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new User
-            {
-                Id = userId,
-                Email = "user@example.com",
-                PasswordHash = "hash",
-            });
-
-        _membershipRepositoryMock
-            .Setup(r => r.CountActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(0);
-
-        _jwtTokenServiceMock
-            .Setup(s => s.GenerateToken(userId, It.IsAny<Guid>(), Role.Administrator))
-            .Returns("jwt-token");
+        SetupFirstTenantCreation(userId);
 
         Tenant? createdTenant = null;
 

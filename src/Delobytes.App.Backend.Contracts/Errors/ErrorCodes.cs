@@ -17,4 +17,11 @@ public static class ErrorCodes
     {
         public static readonly ErrorCode ProductWorkRateNotFound = new ErrorCode("catalog.product_work_rate.not_found", 404, "Норма выработки не найдена.");
     }
+
+    public static class Identity
+    {
+        public static readonly ErrorCode TenantTaxProfileNotFound = new ErrorCode("identity.tenant_tax_profile.not_found", 404, "Налоговый профиль не найден.");
+        public static readonly ErrorCode TenantTaxProfileConflict = new ErrorCode("identity.tenant_tax_profile.conflict", 409, "Версия налогового профиля с такой датой начала уже существует.");
+        public static readonly ErrorCode TenantTaxProfileNotLatest = new ErrorCode("identity.tenant_tax_profile.not_latest", 409, "Удалить можно только последнюю версию налогового профиля.");
+    }
 }

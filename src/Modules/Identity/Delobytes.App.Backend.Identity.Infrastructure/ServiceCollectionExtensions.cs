@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
@@ -63,6 +64,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITenantRepository, Persistence.Repositories.TenantRepository>();
         services.AddScoped<ITenantMembershipRepository, Persistence.Repositories.TenantMembershipRepository>();
         services.AddScoped<IInvitationRepository, Persistence.Repositories.InvitationRepository>();
+        services.AddScoped<ITenantTaxProfileRepository, Persistence.Repositories.TenantTaxProfileRepository>();
+        services.AddScoped<ITenantSettingsProvider, Services.TenantSettingsProvider>();
 
         services.AddDbContext<IdentityDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>

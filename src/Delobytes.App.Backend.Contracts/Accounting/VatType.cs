@@ -1,11 +1,11 @@
-namespace Delobytes.App.Backend.Identity.Domain.Enums;
+namespace Delobytes.App.Backend.Contracts.Accounting;
 
 /// <summary>
-/// НДС regime applied to the tenant's revenue.
+/// Режим НДС, применяемый к доходу тенанта.
 /// </summary>
 public enum VatType
 {
-    /// <summary>Не облагается</summary>
+    /// <summary>Не облагается.</summary>
     None = 1,
 
     /// <summary>5%</summary>

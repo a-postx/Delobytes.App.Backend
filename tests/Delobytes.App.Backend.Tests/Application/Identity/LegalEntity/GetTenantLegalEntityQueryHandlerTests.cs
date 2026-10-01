@@ -1,14 +1,17 @@
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Domain.Entities;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using Moq;
 using Xunit;
 
 namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
-/// Tests for GetTenantLegalEntityQueryHandler (stage 10).
+/// Tests for GetTenantLegalEntityQueryHandler.
+///
+/// The response no longer contains tax fields — they moved to the tax profile — so these
+/// tests pin only the legal entity payload, plus the guarantee that reading it performs
+/// exactly one lookup.
 /// </summary>
 public class GetTenantLegalEntityQueryHandlerTests
 {
@@ -22,7 +25,7 @@ public class GetTenantLegalEntityQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ConfiguredTenant_ReturnsAllFiveLegalEntityProperties()
+    public async Task Handle_ConfiguredTenant_ReturnsAllLegalEntityProperties()
     {
         // Arrange
         Guid tenantId = Guid.NewGuid();
@@ -34,9 +37,6 @@ public class GetTenantLegalEntityQueryHandlerTests
             IsActive = true,
             LegalName = "ООО «Ромашка»",
             Inn = "7712345678",
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
         };
 
         _tenantRepositoryMock
@@ -55,17 +55,12 @@ public class GetTenantLegalEntityQueryHandlerTests
         Assert.Equal(tenantId, response.TenantId);
         Assert.Equal("ООО «Ромашка»", response.LegalName);
         Assert.Equal("7712345678", response.Inn);
-        Assert.Equal(TaxType.Usn, response.TaxType);
-        Assert.Equal(6m, response.TaxRatePercent);
-        Assert.Equal(VatType.None, response.VatType);
     }
 
     [Fact]
-    public async Task Handle_TenantWithoutConfiguredTaxSettings_DoesNotSubstituteAnyDefault()
+    public async Task Handle_TenantWithoutLegalEntityDetails_SubstitutesNoDefault()
     {
         // Arrange
-        // A freshly created tenant has never had its tax settings set, so the
-        // enum-backed and decimal properties keep their CLR defaults.
         Guid tenantId = Guid.NewGuid();
         Tenant tenant = new Tenant
         {
@@ -90,9 +85,6 @@ public class GetTenantLegalEntityQueryHandlerTests
         // Assert
         Assert.Null(response.LegalName);
         Assert.Null(response.Inn);
-        Assert.Equal(0m, response.TaxRatePercent);
-        Assert.False(Enum.IsDefined(typeof(TaxType), response.TaxType));
-        Assert.False(Enum.IsDefined(typeof(VatType), response.VatType));
     }
 
     [Fact]
@@ -131,9 +123,7 @@ public class GetTenantLegalEntityQueryHandlerTests
             Name = "Requested",
             CreatedAt = DateTimeOffset.UtcNow,
             IsActive = true,
-            TaxType = TaxType.Osno,
-            TaxRatePercent = 20m,
-            VatType = VatType.TwentyTwo,
+            LegalName = "ООО «Ромашка»",
         };
 
         _tenantRepositoryMock
@@ -150,7 +140,6 @@ public class GetTenantLegalEntityQueryHandlerTests
 
         // Assert
         Assert.Equal(requestedTenantId, response.TenantId);
-        Assert.Equal(TaxType.Osno, response.TaxType);
         Assert.NotEqual(otherTenantId, response.TenantId);
 
         _tenantRepositoryMock.Verify(
@@ -159,15 +148,10 @@ public class GetTenantLegalEntityQueryHandlerTests
     }
 
     [Theory]
-    [InlineData(TaxType.Usn, 6, VatType.None)]
-    [InlineData(TaxType.Osno, 20, VatType.TwentyTwo)]
-    [InlineData(TaxType.Npd, 4, VatType.None)]
-    [InlineData(TaxType.Osno, 5, VatType.Five)]
-    [InlineData(TaxType.Osno, 7, VatType.Seven)]
-    public async Task Handle_EveryDeclaredTaxCombination_IsReturnedUnchanged(
-        TaxType taxType,
-        decimal taxRatePercent,
-        VatType vatType)
+    [InlineData("ООО «Ромашка»", "7712345678")]
+    [InlineData("ИП Иванов И.И.", "771234567890")]
+    [InlineData(null, null)]
+    public async Task Handle_EveryLegalEntityShape_IsReturnedUnchanged(string? legalName, string? inn)
     {
         // Arrange
         Guid tenantId = Guid.NewGuid();
@@ -177,9 +161,8 @@ public class GetTenantLegalEntityQueryHandlerTests
             Name = "Tenant",
             CreatedAt = DateTimeOffset.UtcNow,
             IsActive = true,
-            TaxType = taxType,
-            TaxRatePercent = taxRatePercent,
-            VatType = vatType,
+            LegalName = legalName,
+            Inn = inn,
         };
 
         _tenantRepositoryMock
@@ -195,8 +178,7 @@ public class GetTenantLegalEntityQueryHandlerTests
         GetTenantLegalEntityResponse response = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        Assert.Equal(taxType, response.TaxType);
-        Assert.Equal(taxRatePercent, response.TaxRatePercent);
-        Assert.Equal(vatType, response.VatType);
+        Assert.Equal(legalName, response.LegalName);
+        Assert.Equal(inn, response.Inn);
     }
 }

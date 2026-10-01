@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Contracts.Authorization;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
@@ -23,21 +22,6 @@ public class UpdateTenantLegalEntityCommand : IRequest<UpdateTenantLegalEntityRe
     /// Gets or sets the taxpayer identification number (ИНН).
     /// </summary>
     public string? Inn { get; set; }
-
-    /// <summary>
-    /// Gets or sets the tax regime (УСН, ОСНО).
-    /// </summary>
-    public TaxType TaxType { get; set; }
-
-    /// <summary>
-    /// Gets or sets the tax rate as a fraction (e.g. 0.06 for 6%).
-    /// </summary>
-    public decimal TaxRatePercent { get; set; }
-
-    /// <summary>
-    /// Gets or sets the VAT type.
-    /// </summary>
-    public VatType VatType { get; set; }
 
     /// <inheritdoc/>
     public Role[] AllowedRoles => new[] { Role.Administrator };

@@ -30,9 +30,6 @@ public class UpdateTenantLegalEntityCommandHandler : IRequestHandler<UpdateTenan
 
         tenant.LegalName = request.LegalName;
         tenant.Inn = request.Inn;
-        tenant.TaxType = request.TaxType;
-        tenant.TaxRatePercent = request.TaxRatePercent;
-        tenant.VatType = request.VatType;
         tenant.UpdatedAt = DateTimeOffset.UtcNow;
 
         _tenantRepository.Update(tenant);
@@ -43,9 +40,6 @@ public class UpdateTenantLegalEntityCommandHandler : IRequestHandler<UpdateTenan
             TenantId = tenant.Id,
             LegalName = tenant.LegalName,
             Inn = tenant.Inn,
-            TaxType = tenant.TaxType,
-            TaxRatePercent = tenant.TaxRatePercent,
-            VatType = tenant.VatType,
         };
     }
 }

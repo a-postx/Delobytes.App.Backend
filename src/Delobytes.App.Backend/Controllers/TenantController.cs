@@ -1,17 +1,22 @@
 ﻿using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Commands.AcceptInvitation;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateInvitation;
 using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
 using Delobytes.App.Backend.Identity.Application.Commands.RemoveTenantMember;
 using Delobytes.App.Backend.Identity.Application.Commands.RevokeInvitation;
 using Delobytes.App.Backend.Identity.Application.Commands.SwitchTenant;
+using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.CreateTenantTaxProfile;
+using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.DeleteTenantTaxProfile;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateMembershipRole;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantMembers;
-using Delobytes.App.Backend.Identity.Domain.Enums;
+using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles.GetActiveTenantTaxProfile;
+using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles.GetTenantTaxProfiles;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -86,9 +91,6 @@ public class TenantController : ControllerBase
                 TenantId = tenantId,
                 LegalName = request.LegalName,
                 Inn = request.Inn,
-                TaxType = request.TaxType,
-                TaxRatePercent = request.TaxRatePercent,
-                VatType = request.VatType,
             },
             cancellationToken);
 
@@ -403,6 +405,165 @@ public class TenantController : ControllerBase
 
         return Ok(response);
     }
+
+    /// <summary>
+    /// Returns all versions of the current tenant tax profile, newest first.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of tax profile versions.</returns>
+    [HttpGet("tax-profiles")]
+    public async Task<ActionResult<GetTenantTaxProfilesResponse>> GetTaxProfiles(CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        GetTenantTaxProfilesResponse response = await _mediator.Send(
+            new GetTenantTaxProfilesQuery
+            {
+                TenantId = tenantId,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Returns the tax profile effective at the given moment (defaults to now).
+    /// The absence of any profile is a normal state for a new tenant, so it is
+    /// reported as found = false with 200 rather than 404.
+    /// </summary>
+    /// <param name="at">Moment the profile is looked up for.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Active tax profile, or found = false.</returns>
+    [HttpGet("tax-profiles/active")]
+    public async Task<ActionResult<GetActiveTenantTaxProfileResponse>> GetActiveTaxProfile(
+        [FromQuery] DateTimeOffset? at,
+        CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        GetActiveTenantTaxProfileResponse response = await _mediator.Send(
+            new GetActiveTenantTaxProfileQuery
+            {
+                TenantId = tenantId,
+                At = at,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Creates a new version of the current tenant tax profile. Requires Administrator role.
+    /// </summary>
+    /// <param name="request">Create tax profile request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Created tax profile version.</returns>
+    [HttpPost("tax-profiles")]
+    public async Task<ActionResult<CreateTenantTaxProfileResponse>> CreateTaxProfile(
+        [FromBody] CreateTenantTaxProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        CreateTenantTaxProfileResponse response = await _mediator.Send(
+            new CreateTenantTaxProfileCommand
+            {
+                TenantId = tenantId,
+                Regime = request.Regime,
+                RatePercent = request.RatePercent,
+                Vat = request.Vat,
+                ValidFrom = request.ValidFrom,
+            },
+            cancellationToken);
+
+        if (response.Conflict)
+        {
+            return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileConflict));
+        }
+
+        return CreatedAtAction(nameof(GetTaxProfiles), null, response);
+    }
+
+    /// <summary>
+    /// Deletes the latest version of the current tenant tax profile. Requires Administrator role.
+    /// Earlier versions cannot be deleted: that would retroactively change closed periods.
+    /// </summary>
+    /// <param name="id">Tax profile version identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Success status.</returns>
+    [HttpDelete("tax-profiles/{id}")]
+    public async Task<ActionResult<DeleteTenantTaxProfileResponse>> DeleteTaxProfile(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        DeleteTenantTaxProfileResponse response = await _mediator.Send(
+            new DeleteTenantTaxProfileCommand
+            {
+                TenantId = tenantId,
+                Id = id,
+            },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileNotFound));
+        }
+
+        if (response.NotLatest)
+        {
+            return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileNotLatest));
+        }
+
+        return Ok(response);
+    }
+}
+
+/// <summary>
+/// Request model for creating a new version of the tenant tax profile.
+/// </summary>
+public class CreateTenantTaxProfileRequest
+{
+    /// <summary>
+    /// Gets or sets the tax regime.
+    /// </summary>
+    public TaxRegime Regime { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tax rate in percent (0-100).
+    /// </summary>
+    public decimal RatePercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the VAT mode.
+    /// </summary>
+    public VatType Vat { get; set; }
+
+    /// <summary>
+    /// Gets or sets the date the version takes effect (tenant-local calendar date).
+    /// </summary>
+    public DateOnly ValidFrom { get; set; }
 }
 
 /// <summary>
@@ -457,21 +618,6 @@ public class UpdateTenantLegalEntityRequest
     /// Gets or sets the taxpayer identification number (ИНН).
     /// </summary>
     public string? Inn { get; set; }
-
-    /// <summary>
-    /// Gets or sets the tax regime.
-    /// </summary>
-    public TaxType TaxType { get; set; }
-
-    /// <summary>
-    /// Gets or sets the tax rate as a fraction (e.g. 0.06 for 6%).
-    /// </summary>
-    public decimal TaxRatePercent { get; set; }
-
-    /// <summary>
-    /// Gets or sets the VAT type.
-    /// </summary>
-    public VatType VatType { get; set; }
 }
 
 /// <summary>

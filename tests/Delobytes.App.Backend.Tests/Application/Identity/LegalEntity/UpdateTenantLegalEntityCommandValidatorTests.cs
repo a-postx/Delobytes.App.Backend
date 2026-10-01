@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using FluentAssertions;
 using FluentValidation.Results;
 using Xunit;
@@ -7,9 +6,11 @@ using Xunit;
 namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
-/// Tests for UpdateTenantLegalEntityCommandValidator (stage 10).
-/// The validator is the contract that keeps a tenant from being saved with a tax
-/// regime that the user never chose.
+/// Tests for UpdateTenantLegalEntityCommandValidator.
+///
+/// The validator used to be the last line of defence against a tenant being saved with a
+/// tax regime the user never chose. That responsibility moved to the tax profile, so the
+/// tax rules are gone from here and only the legal entity text fields remain.
 /// </summary>
 public class UpdateTenantLegalEntityCommandValidatorTests
 {
@@ -20,9 +21,6 @@ public class UpdateTenantLegalEntityCommandValidatorTests
         TenantId = Guid.NewGuid(),
         LegalName = "ООО «Ромашка»",
         Inn = "7712345678",
-        TaxType = TaxType.Usn,
-        TaxRatePercent = 6m,
-        VatType = VatType.None,
     };
 
     private static bool HasErrorFor(ValidationResult result, string propertyName) =>
@@ -56,93 +54,16 @@ public class UpdateTenantLegalEntityCommandValidatorTests
         HasErrorFor(result, nameof(UpdateTenantLegalEntityCommand.TenantId)).Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(4)]
-    [InlineData(99)]
-    [InlineData(-1)]
-    public void Validate_TaxTypeOutsideDeclaredEnum_IsInvalid(int rawTaxType)
-    {
-        // Arrange
-        UpdateTenantLegalEntityCommand command = BuildValidCommand();
-        command.TaxType = (TaxType)rawTaxType;
-
-        // Act
-        ValidationResult result = _validator.Validate(command);
-
-        // Assert
-        result.IsValid.Should().BeFalse();
-        HasErrorFor(result, nameof(UpdateTenantLegalEntityCommand.TaxType)).Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(5)]
-    [InlineData(99)]
-    [InlineData(-1)]
-    public void Validate_VatTypeOutsideDeclaredEnum_IsInvalid(int rawVatType)
-    {
-        // Arrange
-        UpdateTenantLegalEntityCommand command = BuildValidCommand();
-        command.VatType = (VatType)rawVatType;
-
-        // Act
-        ValidationResult result = _validator.Validate(command);
-
-        // Assert
-        result.IsValid.Should().BeFalse();
-        HasErrorFor(result, nameof(UpdateTenantLegalEntityCommand.VatType)).Should().BeTrue();
-    }
-
     [Fact]
-    public void Validate_DefaultCommand_IsInvalidBecauseTaxRegimeWasNeverChosen()
+    public void Validate_CommandWithOnlyTenantId_IsValidBecauseTextFieldsAreOptional()
     {
         // Arrange
-        // A command that carries only the tenant id is exactly what a client would
-        // send when the user submits the form without picking a tax regime.
+        // Without the tax fields there is nothing left that a client could omit and
+        // still produce an invalid command, so this shape must now pass.
         UpdateTenantLegalEntityCommand command = new UpdateTenantLegalEntityCommand
         {
             TenantId = Guid.NewGuid(),
         };
-
-        // Act
-        ValidationResult result = _validator.Validate(command);
-
-        // Assert
-        result.IsValid.Should().BeFalse();
-        HasErrorFor(result, nameof(UpdateTenantLegalEntityCommand.TaxType)).Should().BeTrue();
-        HasErrorFor(result, nameof(UpdateTenantLegalEntityCommand.VatType)).Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData(-0.01)]
-    [InlineData(100.01)]
-    [InlineData(-1)]
-    [InlineData(1000)]
-    public void Validate_TaxRateOutsideAllowedRange_IsInvalid(decimal taxRatePercent)
-    {
-        // Arrange
-        UpdateTenantLegalEntityCommand command = BuildValidCommand();
-        command.TaxRatePercent = taxRatePercent;
-
-        // Act
-        ValidationResult result = _validator.Validate(command);
-
-        // Assert
-        result.IsValid.Should().BeFalse();
-        HasErrorFor(result, nameof(UpdateTenantLegalEntityCommand.TaxRatePercent)).Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(6)]
-    [InlineData(15.5)]
-    [InlineData(100)]
-    public void Validate_TaxRateWithinAllowedRange_IsValid(decimal taxRatePercent)
-    {
-        // Arrange
-        UpdateTenantLegalEntityCommand command = BuildValidCommand();
-        command.TaxRatePercent = taxRatePercent;
 
         // Act
         ValidationResult result = _validator.Validate(command);

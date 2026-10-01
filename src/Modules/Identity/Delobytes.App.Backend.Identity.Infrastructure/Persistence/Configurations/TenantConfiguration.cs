@@ -42,15 +42,13 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.Bik);
         builder.Property(t => t.CorrespondentAccount);
 
-        builder.Property(cps => cps.TaxType);
+        builder.Property(t => t.Currency)
+            .IsRequired()
+            .HasMaxLength(3);
 
-        builder.Property(cps => cps.TaxRatePercent)
-            .HasPrecision(8, 6);
-
-        builder.Property(cps => cps.VatType);
-
-        builder.Property(t => t.Currency);
-        builder.Property(t => t.TimeZone);
+        builder.Property(t => t.TimeZone)
+            .IsRequired()
+            .HasMaxLength(64);
 
         builder.HasIndex(t => t.Name);
 

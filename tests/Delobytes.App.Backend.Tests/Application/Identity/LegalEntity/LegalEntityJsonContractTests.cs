@@ -1,19 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using FluentAssertions;
 using Xunit;
 
 namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
-/// Pins the JSON contract of the legal entity payload (stage 10).
+/// Pins the JSON contract of the legal entity payload.
 ///
-/// The application registers JsonStringEnumConverter, so TaxType and VatType leave the
-/// API as member names ("Usn", "None"). A client that treats them as numbers silently
-/// fails to match the value it receives, which is exactly what happened before, so the
-/// wire format is asserted here rather than left implicit.
+/// Tax fields used to travel in this payload and left the API as enum member names
+/// ("Usn", "None") because the application registers JsonStringEnumConverter. They now
+/// live in the separate tax-profile contract, and the legal entity response must no
+/// longer carry them at all — a client that still reads taxType here would silently
+/// keep showing a stale regime.
 /// </summary>
 public class LegalEntityJsonContractTests
 {
@@ -33,7 +33,7 @@ public class LegalEntityJsonContractTests
     }
 
     [Fact]
-    public void Serialize_Response_WritesTaxTypeAndVatTypeAsMemberNames()
+    public void Serialize_Response_NoLongerCarriesAnyTaxField()
     {
         // Arrange
         GetTenantLegalEntityResponse response = new GetTenantLegalEntityResponse
@@ -41,17 +41,15 @@ public class LegalEntityJsonContractTests
             TenantId = Guid.Parse("d40fc941-b390-4d6d-b346-8aff2c2716bd"),
             LegalName = "ООО «Ромашка»",
             Inn = "7712345678",
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
         };
 
         // Act
         string json = JsonSerializer.Serialize(response, SerializerOptions);
 
         // Assert
-        json.Should().Contain("\"taxType\":\"Usn\"");
-        json.Should().Contain("\"vatType\":\"None\"");
+        json.Should().NotContain("taxType");
+        json.Should().NotContain("taxRatePercent");
+        json.Should().NotContain("vatType");
     }
 
     [Fact]
@@ -63,9 +61,6 @@ public class LegalEntityJsonContractTests
             TenantId = Guid.NewGuid(),
             LegalName = "ООО «Ромашка»",
             Inn = "7712345678",
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6m,
-            VatType = VatType.None,
         };
 
         // Act
@@ -75,58 +70,15 @@ public class LegalEntityJsonContractTests
         json.Should().Contain("\"tenantId\"");
         json.Should().Contain("\"legalName\"");
         json.Should().Contain("\"inn\"");
-        json.Should().Contain("\"taxRatePercent\"");
-    }
-
-    [Theory]
-    [InlineData(TaxType.Usn, "Usn")]
-    [InlineData(TaxType.Osno, "Osno")]
-    [InlineData(TaxType.Npd, "Npd")]
-    public void Serialize_EveryTaxType_WritesItsDeclaredName(TaxType taxType, string expectedName)
-    {
-        // Arrange
-        GetTenantLegalEntityResponse response = new GetTenantLegalEntityResponse
-        {
-            TenantId = Guid.NewGuid(),
-            TaxType = taxType,
-            VatType = VatType.None,
-        };
-
-        // Act
-        JsonElement root = JsonSerializer.Deserialize<JsonElement>(
-            JsonSerializer.Serialize(response, SerializerOptions));
-
-        // Assert
-        root.GetProperty("taxType").GetString().Should().Be(expectedName);
-    }
-
-    [Theory]
-    [InlineData(VatType.None, "None")]
-    [InlineData(VatType.Five, "Five")]
-    [InlineData(VatType.Seven, "Seven")]
-    [InlineData(VatType.TwentyTwo, "TwentyTwo")]
-    public void Serialize_EveryVatType_WritesItsDeclaredName(VatType vatType, string expectedName)
-    {
-        // Arrange
-        GetTenantLegalEntityResponse response = new GetTenantLegalEntityResponse
-        {
-            TenantId = Guid.NewGuid(),
-            TaxType = TaxType.Usn,
-            VatType = vatType,
-        };
-
-        // Act
-        JsonElement root = JsonSerializer.Deserialize<JsonElement>(
-            JsonSerializer.Serialize(response, SerializerOptions));
-
-        // Assert
-        root.GetProperty("vatType").GetString().Should().Be(expectedName);
     }
 
     [Fact]
-    public void Deserialize_FrontendPayload_BindsStringEnumNamesToEnumMembers()
+    public void Deserialize_LegacyFrontendPayload_IgnoresRetiredTaxFields()
     {
         // Arrange
+        // A frontend build that has not been updated yet still posts the old fields;
+        // ignoring them is the intended tolerant behaviour, and the legal entity values
+        // must survive.
         const string FrontendPayload = """
             {
               "legalName": "ООО «Ромашка»",
@@ -143,30 +95,8 @@ public class LegalEntityJsonContractTests
 
         // Assert
         request.Should().NotBeNull();
-        request!.TaxType.Should().Be(TaxType.Osno);
-        request.TaxRatePercent.Should().Be(20.5m);
-        request.VatType.Should().Be(VatType.Seven);
-    }
-
-    [Fact]
-    public void Deserialize_CommandResponse_PreservesDecimalPrecisionOfTheTaxRate()
-    {
-        // Arrange
-        GetTenantLegalEntityResponse response = new GetTenantLegalEntityResponse
-        {
-            TenantId = Guid.NewGuid(),
-            TaxType = TaxType.Usn,
-            TaxRatePercent = 6.5m,
-            VatType = VatType.None,
-        };
-
-        // Act
-        string json = JsonSerializer.Serialize(response, SerializerOptions);
-        GetTenantLegalEntityResponse? roundTripped =
-            JsonSerializer.Deserialize<GetTenantLegalEntityResponse>(json, SerializerOptions);
-
-        // Assert
-        roundTripped!.TaxRatePercent.Should().Be(6.5m);
+        request!.LegalName.Should().Be("ООО «Ромашка»");
+        request.Inn.Should().Be("7712345678");
     }
 
     /// <summary>
@@ -178,11 +108,5 @@ public class LegalEntityJsonContractTests
         public string? LegalName { get; set; }
 
         public string? Inn { get; set; }
-
-        public TaxType TaxType { get; set; }
-
-        public decimal TaxRatePercent { get; set; }
-
-        public VatType VatType { get; set; }
     }
 }

@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
-using Delobytes.App.Backend.Identity.Domain.Enums;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -13,7 +12,7 @@ using Xunit;
 namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
-/// Tests for the authorization contract of the legal entity update command (stage 10).
+/// Tests for the authorization contract of the legal entity update command.
 /// The command declares its allowed roles through IRequireRole, and the MediatR
 /// pipeline behaviour enforces them independently of the controller.
 /// </summary>
@@ -59,9 +58,7 @@ public class UpdateTenantLegalEntityAuthorizationTests
     private static UpdateTenantLegalEntityCommand BuildCommand() => new UpdateTenantLegalEntityCommand
     {
         TenantId = Guid.NewGuid(),
-        TaxType = TaxType.Usn,
-        TaxRatePercent = 6m,
-        VatType = VatType.None,
+        LegalName = "ООО «Ромашка»",
     };
 
     [Fact]

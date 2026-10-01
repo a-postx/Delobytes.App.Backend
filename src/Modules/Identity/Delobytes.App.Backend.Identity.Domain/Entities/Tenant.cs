@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Identity.Domain.Enums;
+using Delobytes.App.Backend.Identity.Domain.Constants;
 
 namespace Delobytes.App.Backend.Identity.Domain.Entities;
 
@@ -32,7 +32,7 @@ public class Tenant
     /// </summary>
     public bool IsActive { get; set; }
 
-    // ── Legal entity details ─────────────────────────────────────────────────
+    // ── Legal entity details ───────────────────────────────────────────────────
 
     /// <summary>Full legal name (e.g., ООО "Ромашка").</summary>
     public string? LegalName { get; set; }
@@ -76,21 +76,10 @@ public class Tenant
     /// <summary>Correspondent account (корреспондентский счёт).</summary>
     public string? CorrespondentAccount { get; set; }
 
-    // ── Tax settings ─────────────────────────────────────────────────────────
+    // ── Business settings ──────────────────────────────────────────────────────
 
-    /// <summary>Tax regime (УСН, ОСНО).</summary>
-    public TaxType TaxType { get; set; }
-
-    /// <summary>Tax rate, as a fraction (e.g., 0.06 for УСН 6%).</summary>
-    public decimal TaxRatePercent { get; set; }
-
-    /// <summary>VAT tax rate regime.</summary>
-    public VatType VatType { get; set; }
-
-    // ── Business settings ────────────────────────────────────────────────────
-
-    /// <summary>Primary business currency (ISO 4217 code: RUB, USD, EUR).</summary>
-    public string Currency { get; set; } = "RUB";
+    /// <summary>Primary business currency (ISO 4217 code).</summary>
+    public string Currency { get; set; } = TenantCurrencies.Rub;
 
     /// <summary>Timezone ID (e.g., "Europe/Moscow").</summary>
     public string TimeZone { get; set; } = "Europe/Moscow";

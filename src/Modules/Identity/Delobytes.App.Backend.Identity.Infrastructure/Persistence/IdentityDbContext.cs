@@ -49,6 +49,11 @@ public class IdentityDbContext : DbContext
     /// </summary>
     public DbSet<Invitation> Invitations => Set<Invitation>();
 
+    /// <summary>
+    /// Gets or sets the TenantTaxProfiles entity set.
+    /// </summary>
+    public DbSet<TenantTaxProfile> TenantTaxProfiles => Set<TenantTaxProfile>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -52,6 +52,8 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, G
             Email = user.Email,
             TenantId = tenant.Id,
             TenantName = tenant.Name,
+            Currency = tenant.Currency,
+            TimeZone = tenant.TimeZone,
             Role = role,
             Tenants = allMemberships.Select(m => new UserTenantInfo
             {
