@@ -40,6 +40,6 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
 
     public Task<int> SaveChangesAsync(CancellationToken ct)
     {
-        return _context.SaveChangesAsync(ct);
+        return _context.SaveChangesWithConflictTranslationAsync(ct);
     }
 }

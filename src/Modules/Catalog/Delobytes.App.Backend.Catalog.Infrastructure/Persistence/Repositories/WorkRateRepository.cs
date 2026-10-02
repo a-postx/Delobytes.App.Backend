@@ -34,13 +34,8 @@ public class WorkRateRepository : IWorkRateRepository
 
     public async Task<int> SaveChangesAsync(CancellationToken ct)
     {
-        try
-        {
-            return await _context.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            throw new AppException(ErrorCodes.Common.Conflict, ex.Message);
-        }
+        // Concurrency and unique-constraint violations surface as 409 with a domain code,
+        // not as a raw DbUpdateException that middleware can only render as 500.
+        return await _context.SaveChangesWithConflictTranslationAsync(ct);
     }
 }

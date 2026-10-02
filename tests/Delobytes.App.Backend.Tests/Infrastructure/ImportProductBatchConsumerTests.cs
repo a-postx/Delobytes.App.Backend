@@ -453,8 +453,10 @@ public class ImportProductBatchConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_LinksToExistingProduct_WhenVendorCodeMatches()
+    public async Task ProcessAsync_LinksToExistingProduct_WhenBarcodeMatches_AndVendorCodeIsCopiedToNewProduct()
     {
+        // Product.Sku is no longer a matching key: a card whose vendor code equals an existing
+        // product's SKU is NOT linked to that product. Only nmID and barcode link cards.
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
         CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
@@ -502,14 +504,22 @@ public class ImportProductBatchConsumerTests
         List<Product> products = await consumerContext.Products
             .IgnoreQueryFilters()
             .Include(p => p.ChannelProducts)
-            .Where(p => p.Sku == "SKU-001")
             .ToListAsync();
 
+        // The card can no longer become a second product: the internal SKU is unique and already
+        // taken, so the card is reported as failed instead of aborting the batch.
         products.Should().HaveCount(1);
         products[0].Id.Should().Be(existingProduct.Id);
-        products[0].CreationSource.Should().Be(CreationSource.Manual);
-        products[0].ChannelProducts.Should().HaveCount(1);
-        products[0].ChannelProducts.First().ExternalProductId.Should().Be("123456789");
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 0 &&
+                    e.RecordsFailed == 1 &&
+                    e.ErrorMessage != null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -585,8 +595,11 @@ public class ImportProductBatchConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_SkipsLinking_WhenMultipleVendorCodeMatchesExist()
+    public async Task ProcessAsync_FailsCard_WhenVendorCodeCollidesWithExistingInternalSku()
     {
+        // A vendor code that already exists as an internal SKU must not become a third product:
+        // the unique index on (TenantId, Sku) would reject it at SaveChanges and roll back the
+        // entire batch. The card is reported as failed and the batch still completes.
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
         CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
@@ -605,7 +618,7 @@ public class ImportProductBatchConsumerTests
         Product product2 = new Product
         {
             Id = Guid.NewGuid(),
-            Sku = "SKU-001",
+            Sku = "SKU-002",
             Name = "Product 2",
             Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
@@ -646,11 +659,18 @@ public class ImportProductBatchConsumerTests
             .Include(p => p.ChannelProducts)
             .ToListAsync();
 
-        allProducts.Should().HaveCount(3);
+        allProducts.Should().HaveCount(2, "no third product may be created while its SKU is taken");
+        allProducts.Should().NotContain(p => p.CreationSource == CreationSource.WildberriesImport);
 
-        Product? newProduct = allProducts.FirstOrDefault(p => p.CreationSource == CreationSource.WildberriesImport);
-        newProduct.Should().NotBeNull();
-        newProduct!.Sku.Should().Be("SKU-001");
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductImportBatchCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 0 &&
+                    e.RecordsFailed == 1 &&
+                    e.ErrorMessage != null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

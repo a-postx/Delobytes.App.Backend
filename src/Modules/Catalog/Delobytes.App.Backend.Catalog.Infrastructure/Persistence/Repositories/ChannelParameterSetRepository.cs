@@ -45,6 +45,6 @@ public class ChannelParameterSetRepository : IChannelParameterSetRepository
 
     public Task<int> SaveChangesAsync(CancellationToken ct)
     {
-        return _context.SaveChangesAsync(ct);
+        return _context.SaveChangesWithConflictTranslationAsync(ct);
     }
 }

@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -123,7 +124,10 @@ public class ImportProductBatchConsumer
                         }
                     }
 
-                    await _context.SaveChangesAsync(cancellationToken);
+                    // Conflict translation keeps a unique-constraint violation (e.g. two cards in
+                    // one batch carrying the same barcode) from reaching the rollback handler as a
+                    // raw provider exception, whose message quotes schema names.
+                    await _context.SaveChangesWithConflictTranslationAsync(cancellationToken);
                 }
 
                 await transaction.CommitAsync(cancellationToken);
@@ -234,6 +238,10 @@ public class ImportProductBatchConsumer
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Resolves a card to a product in two steps: the channel link by nmID first, then an existing
+    /// product by barcode. A card that matches neither is imported as a new product.
+    /// </summary>
     private async Task<ImportResult> ProcessCardAsync(
         WildberriesCardSnapshot card,
         Guid channelId,
@@ -258,7 +266,7 @@ public class ImportProductBatchConsumer
             return await UpdateExistingProductAsync(existingChannelProduct, card, pendingPhotoImports, cancellationToken);
         }
 
-        Product? matchedProduct = await FindMatchingProductAsync(card, channelId, cancellationToken);
+        Product? matchedProduct = await FindProductByBarcodeAsync(card, cancellationToken);
 
         if (matchedProduct != null)
         {
@@ -268,66 +276,76 @@ public class ImportProductBatchConsumer
         return await CreateNewProductAsync(card, channelId, pendingPhotoImports, cancellationToken);
     }
 
-    private async Task<Product?> FindMatchingProductAsync(
-    WildberriesCardSnapshot card,
-    Guid channelId,
-    CancellationToken cancellationToken)
+    /// <summary>
+    /// Finds a product already known to the catalog whose barcode appears on the marketplace card.
+    /// This is the only automatic matching rule besides the nmID link: Product.Sku is deliberately
+    /// not consulted, so renaming the internal SKU can never re-route or duplicate an import.
+    /// Returns null when the card carries no barcodes or when the match is ambiguous.
+    /// </summary>
+    private async Task<Product?> FindProductByBarcodeAsync(
+        WildberriesCardSnapshot card,
+        CancellationToken cancellationToken)
     {
-        List<Product> productsByVendorCode = await _context.Products
-            .Include(p => p.Barcodes)
-            .Include(p => p.PackingUnits)
-            .Include(p => p.Photos)
-            .Where(p => p.Sku == card.VendorCode)
-            .ToListAsync(cancellationToken);
-
-        if (productsByVendorCode.Count == 1)
+        if (card.Barcodes.Count == 0)
         {
-            return productsByVendorCode[0];
-        }
-
-        if (productsByVendorCode.Count > 1)
-        {
-            _logger.LogWarning(
-                "Multiple products found with Sku={VendorCode} for NmId={NmId}. Skipping automatic matching.",
-                card.VendorCode,
-                card.NmId);
             return null;
         }
 
-        if (card.Barcodes.Count > 0)
+        HashSet<Guid> productIds = new HashSet<Guid>();
+
+        List<Guid> persistedProductIds = await _context.ProductBarcodes
+            .Where(pb => card.Barcodes.Contains(pb.Value))
+            .Select(pb => pb.ProductId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        productIds.UnionWith(persistedProductIds);
+
+        // Barcodes added earlier in this same batch are still unsaved and therefore invisible to
+        // the query above. Without this pass a second card carrying a barcode already claimed in
+        // this batch would create a duplicate row and fail the unique index on barcode value,
+        // rolling back every card that came before it.
+        foreach (EntityEntry<ProductBarcode> entry in _context.ChangeTracker.Entries<ProductBarcode>())
         {
-            // FIX: Спочатку отримаємо ProductId, потім завантажимо Products з Include
-            List<Guid> productIds = await _context.ProductBarcodes
-                .Where(pb => card.Barcodes.Contains(pb.Value))
-                .Select(pb => pb.ProductId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            if (productIds.Count == 0)
+            if (entry.State == EntityState.Added && card.Barcodes.Contains(entry.Entity.Value))
             {
-                return null;
-            }
-
-            List<Product> productsByBarcode = await _context.Products
-                .Where(p => productIds.Contains(p.Id))
-                .Include(p => p.Barcodes)
-                .Include(p => p.PackingUnits)
-                .Include(p => p.Photos)
-                .ToListAsync(cancellationToken);
-
-            if (productsByBarcode.Count == 1)
-            {
-                return productsByBarcode[0];
-            }
-
-            if (productsByBarcode.Count > 1)
-            {
-                _logger.LogWarning(
-                    "Multiple products found with barcodes matching NmId={NmId}. Skipping automatic matching.",
-                    card.NmId);
-                return null;
+                productIds.Add(entry.Entity.ProductId);
             }
         }
+
+        if (productIds.Count == 0)
+        {
+            return null;
+        }
+
+        List<Product> productsByBarcode = await _context.Products
+            .Where(p => productIds.Contains(p.Id))
+            .Include(p => p.Barcodes)
+            .Include(p => p.PackingUnits)
+            .Include(p => p.Photos)
+            .ToListAsync(cancellationToken);
+
+        // Products created earlier in this batch are still unsaved, so they are picked up from the
+        // change tracker rather than from the database.
+        foreach (Product tracked in _context.Products.Local)
+        {
+            if (productIds.Contains(tracked.Id) && productsByBarcode.All(p => p.Id != tracked.Id))
+            {
+                productsByBarcode.Add(tracked);
+            }
+        }
+
+        if (productsByBarcode.Count == 1)
+        {
+            return productsByBarcode[0];
+        }
+
+        // Ambiguous: several catalog products share a barcode with this card. Linking to an
+        // arbitrary one would silently attach an order history to the wrong product, so the card
+        // is left unmatched and falls through to import as a new product.
+        _logger.LogWarning(
+            "Multiple products found with barcodes matching NmId={NmId}. Skipping automatic matching.",
+            card.NmId);
 
         return null;
     }
@@ -396,6 +414,14 @@ public class ImportProductBatchConsumer
             : new ImportResult { Status = ImportStatus.Skipped };
     }
 
+    /// <summary>
+    /// Links a product found by barcode to the importing channel, for the case where the card's
+    /// nmID is not yet known. A product may hold only one link per channel (unique index on
+    /// ProductId + ChannelId), so when a link already exists the card is skipped with a warning
+    /// rather than a second link created: creating one would violate the index and roll back the
+    /// whole batch, and overwriting the existing link would make its data flip between the two
+    /// nmID each time either card is imported.
+    /// </summary>
     private async Task<ImportResult> LinkExistingProductAsync(
         Product product,
         WildberriesCardSnapshot card,
@@ -403,6 +429,25 @@ public class ImportProductBatchConsumer
         List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
+        // Queried explicitly rather than via product.ChannelProducts: lazy loading is disabled in
+        // this project, so the navigation collection is empty unless the caller included it.
+        ChannelProduct? existingLink = await _context.ChannelProducts
+            .FirstOrDefaultAsync(
+                cp => cp.ProductId == product.Id && cp.ChannelId == channelId,
+                cancellationToken);
+
+        if (existingLink != null)
+        {
+            _logger.LogWarning(
+                "NmId={NmId} matched ProductId={ProductId} by barcode, but that product is already linked to ChannelId={ChannelId} via nmID={LinkedNmId}. Skipping the card: one product can hold only one link per channel.",
+                card.NmId,
+                product.Id,
+                channelId,
+                existingLink.ExternalProductId);
+
+            return new ImportResult { Status = ImportStatus.Skipped };
+        }
+
         ChannelProduct channelProduct = new ChannelProduct
         {
             Id = Guid.NewGuid(),
@@ -435,6 +480,24 @@ public class ImportProductBatchConsumer
         List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
+        // Product.Sku is unique per tenant, and the internal SKU is copied from the marketplace
+        // vendor code. A second card presenting the same vendor code therefore cannot become a
+        // second internal product. It must not fall through to the insert either: the unique index
+        // would reject it at SaveChanges and take the whole batch down with it.
+        if (await IsSkuTakenAsync(card.VendorCode, cancellationToken))
+        {
+            _logger.LogWarning(
+                "NmId={NmId}: cannot import. Internal SKU {VendorCode} is already used by another product in this tenant.",
+                card.NmId,
+                card.VendorCode);
+
+            return new ImportResult
+            {
+                Status = ImportStatus.Failed,
+                ErrorMessage = $"SKU '{card.VendorCode}' is already assigned to another product.",
+            };
+        }
+
         Product product = new Product
         {
             Id = Guid.NewGuid(),
@@ -469,6 +532,23 @@ public class ImportProductBatchConsumer
         QueuePhotos(product, card, pendingPhotoImports);
 
         return new ImportResult { Status = ImportStatus.Created };
+    }
+
+    /// <summary>
+    /// Reports whether another product of the current tenant already holds this internal SKU.
+    /// Checked before insert because the unique index on (TenantId, Sku) would otherwise abort
+    /// the entire batch on behalf of one conflicting card. Products created earlier in the same
+    /// batch are part of the check too: they are not in the database yet, but they will be at
+    /// SaveChanges time, where the index sees them.
+    /// </summary>
+    private async Task<bool> IsSkuTakenAsync(string sku, CancellationToken cancellationToken)
+    {
+        if (await _context.Products.AnyAsync(p => p.Sku == sku, cancellationToken))
+        {
+            return true;
+        }
+
+        return _context.Products.Local.Any(p => p.Sku == sku);
     }
 
     /// <summary>
