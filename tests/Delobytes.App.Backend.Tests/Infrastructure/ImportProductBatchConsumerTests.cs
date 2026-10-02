@@ -82,7 +82,7 @@ public class ImportProductBatchConsumerTests
 
         product.Barcodes.Should().HaveCount(1);
         product.Barcodes.First().Value.Should().Be("1234567890123");
-        product.Barcodes.First().Type.Should().Be("WB");
+        product.Barcodes.First().Type.Should().Be("wildberries");
 
         product.ChannelProducts.Should().HaveCount(1);
         ChannelProduct channelProduct = product.ChannelProducts.First();
@@ -431,7 +431,7 @@ public class ImportProductBatchConsumerTests
 
         products.Should().HaveCount(1);
         products[0].ChannelProducts.Should().HaveCount(1);
-        products[0].Barcodes.Where(b => b.Type == "WB").Should().HaveCount(1);
+        products[0].Barcodes.Where(b => b.Type == "wildberries").Should().HaveCount(1);
 
         publishEndpointMock.Verify(
             p => p.Publish(
@@ -591,7 +591,7 @@ public class ImportProductBatchConsumerTests
         products[0].Id.Should().Be(existingProduct.Id);
         products[0].ChannelProducts.Should().HaveCount(1);
         products[0].ChannelProducts.First().ExternalProductId.Should().Be("123456789");
-        products[0].Barcodes.Where(b => b.Type == "WB").Should().HaveCount(2);
+        products[0].Barcodes.Where(b => b.Type == "wildberries").Should().HaveCount(2);
     }
 
     [Fact]
@@ -749,7 +749,7 @@ public class ImportProductBatchConsumerTests
             .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
 
         product.Should().NotBeNull();
-        product!.Barcodes.Where(b => b.Type == "WB").Should().HaveCount(2);
+        product!.Barcodes.Where(b => b.Type == "wildberries").Should().HaveCount(2);
         product.Barcodes.Should().Contain(b => b.Value == "1111111111111");
         product.Barcodes.Should().Contain(b => b.Value == "2222222222222");
     }

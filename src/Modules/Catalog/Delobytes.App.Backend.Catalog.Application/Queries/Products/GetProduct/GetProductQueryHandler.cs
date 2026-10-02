@@ -64,6 +64,17 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                     Height = ph.Height
                 })
                 .ToList(),
+            ChannelLinks = product.ChannelProducts
+                .Select(cp => new ProductChannelLinkDto
+                {
+                    ChannelId = cp.ChannelId,
+                    ChannelName = cp.Channel.Name,
+                    ChannelCode = cp.Channel.Code,
+                    ExternalProductId = cp.ExternalProductId,
+                    ExternalSku = cp.ExternalSku,
+                    IsActive = cp.IsActive,
+                })
+                .ToList(),
         };
     }
 

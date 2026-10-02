@@ -23,6 +23,7 @@ public class ProductRepository : IProductRepository
             .Include(p => p.Barcodes)
             .Include(p => p.PackingUnits)
             .Include(p => p.Photos)
+            .Include(p => p.ChannelProducts).ThenInclude(cp => cp.Channel)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
@@ -38,7 +39,8 @@ public class ProductRepository : IProductRepository
     {
         IQueryable<Product> query = _context.Products
             .Include(p => p.Barcodes)
-            .Include(p => p.Photos);
+            .Include(p => p.Photos)
+            .Include(p => p.ChannelProducts).ThenInclude(cp => cp.Channel);
 
         // Null means "no filter": callers that build the full catalog view need every
         // status (active, archived, deletion states) to compute per-tab counters.

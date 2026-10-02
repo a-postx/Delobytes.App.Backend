@@ -26,6 +26,13 @@ public class Channel : ITenantScoped, IAuditableEntity, IRowVersionedEntity
     public string Name { get; set; } = default!;
 
     /// <summary>
+    /// Gets or sets the system channel template code (e.g. "wildberries", "ozon", "yandex.kit"),
+    /// or null for a custom channel. Duplicates SystemChannelTemplate.Code but is written at
+    /// channel creation time so that Catalog does not need to depend on Integrations to read it.
+    /// </summary>
+    public string? Code { get; set; }
+
+    /// <summary>
     /// Gets or sets the custom API URL (only for custom channels).
     /// </summary>
     public string? CustomApiUrl { get; set; }

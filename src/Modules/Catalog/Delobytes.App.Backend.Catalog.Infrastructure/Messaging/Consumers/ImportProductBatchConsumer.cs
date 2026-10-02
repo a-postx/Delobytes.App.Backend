@@ -356,6 +356,11 @@ public class ImportProductBatchConsumer
         List<PendingPhotoImport> pendingPhotoImports,
         CancellationToken cancellationToken)
     {
+        // Temporary measure: Product is the source of truth, but until marketplace write-back
+        // exists, import keeps overwriting Name/Description/Barcodes/PackingUnit for linked
+        // products. The frontend disables editing these fields whenever the product has a
+        // ChannelProduct link (see ProductChannelLinkDto). Once write-back ships, import must
+        // stop overwriting these fields and the frontend restriction can be lifted.
         bool hasChanges = false;
 
         if (channelProduct.Product.Name != card.Name)
@@ -703,7 +708,7 @@ public class ImportProductBatchConsumer
 
         List<ProductBarcode> existingBarcodes = product.Barcodes.ToList();
         HashSet<string> existingBarcodeValues = existingBarcodes
-            .Where(b => b.Type == "WB")
+            .Where(b => b.Type == "wildberries")
             .Select(b => b.Value)
             .ToHashSet();
 
@@ -716,7 +721,7 @@ public class ImportProductBatchConsumer
                     Id = Guid.NewGuid(),
                     ProductId = product.Id,
                     Value = barcodeValue,
-                    Type = "WB",
+                    Type = "wildberries",
                     IsDefault = false,
                     CreatedAt = DateTimeOffset.UtcNow
                 };

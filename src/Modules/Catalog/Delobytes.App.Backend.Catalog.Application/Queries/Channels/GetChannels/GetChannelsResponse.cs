@@ -8,6 +8,9 @@ public class ChannelDto
 
     public Guid? SystemChannelTemplateId { get; set; }
 
+    /// <summary>System channel template code ("wildberries", "ozon", "yandex.kit"), or null for a custom channel.</summary>
+    public string? Code { get; set; }
+
     public bool IsCustom { get; set; }
 
     public bool IsActive { get; set; }

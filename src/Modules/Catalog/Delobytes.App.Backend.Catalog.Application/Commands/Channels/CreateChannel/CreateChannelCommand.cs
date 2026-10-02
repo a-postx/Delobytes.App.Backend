@@ -18,6 +18,13 @@ public class CreateChannelCommand : IRequest<CreateChannelResponse>, IRequireRol
     /// </summary>
     public Guid? SystemChannelTemplateId { get; set; }
 
+    /// <summary>
+    /// System channel template code (e.g. "wildberries", "ozon", "yandex.kit"), or null for a
+    /// custom channel. Passed by the caller instead of looked up, because Catalog has no FK
+    /// reference to SystemChannelTemplate in Integrations.
+    /// </summary>
+    public string? Code { get; set; }
+
     /// <summary>Custom API URL, only meaningful when SystemChannelTemplateId is null.</summary>
     public string? CustomApiUrl { get; set; }
 

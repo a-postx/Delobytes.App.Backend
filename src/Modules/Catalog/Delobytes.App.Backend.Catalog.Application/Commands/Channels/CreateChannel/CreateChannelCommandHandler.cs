@@ -20,6 +20,7 @@ public class CreateChannelCommandHandler : IRequestHandler<CreateChannelCommand,
             Id = Guid.NewGuid(),
             SystemChannelTemplateId = request.SystemChannelTemplateId,
             Name = request.Name,
+            Code = request.Code,
             CustomApiUrl = request.CustomApiUrl,
             IsCustom = request.SystemChannelTemplateId == null,
             IsActive = true

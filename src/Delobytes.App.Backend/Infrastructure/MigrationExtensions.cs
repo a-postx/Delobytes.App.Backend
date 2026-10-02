@@ -25,9 +25,9 @@ public static class MigrationExtensions
         ILogger<Program> logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
         await ApplyAsync<IdentityDbContext>(scope, logger, "Identity");
+        await ApplyAsync<IntegrationsDbContext>(scope, logger, "Integrations");
         await ApplyAsync<CatalogDbContext>(scope, logger, "Catalog");
         await ApplyAsync<SalesDbContext>(scope, logger, "Sales");
-        await ApplyAsync<IntegrationsDbContext>(scope, logger, "Integrations");
 
         await SeedIntegrationsDataAsync(scope, logger);
     }

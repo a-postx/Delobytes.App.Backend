@@ -39,4 +39,10 @@ public class ProductItem
 
     // The list view returns only thumbnail photos; the single-product endpoint returns all variants.
     public List<Products.ProductPhotoDto>? Photos { get; set; }
+
+    /// <summary>
+    /// Links of this product to its external cards on sales channels (ChannelProduct).
+    /// Empty/null means the product has no marketplace connections and is fully editable.
+    /// </summary>
+    public List<Products.ProductChannelLinkDto>? ChannelLinks { get; set; }
 }

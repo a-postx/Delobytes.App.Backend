@@ -23,6 +23,7 @@ public class GetChannelsQueryHandler : IRequestHandler<GetChannelsQuery, GetChan
                 Id = c.Id,
                 Name = c.Name,
                 SystemChannelTemplateId = c.SystemChannelTemplateId,
+                Code = c.Code,
                 IsCustom = c.IsCustom,
                 IsActive = c.IsActive,
                 CreatedAt = c.CreatedAt,

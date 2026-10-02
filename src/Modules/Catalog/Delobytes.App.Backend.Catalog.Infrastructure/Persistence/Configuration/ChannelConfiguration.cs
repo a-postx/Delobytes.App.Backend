@@ -22,6 +22,13 @@ public class ChannelConfiguration : IEntityTypeConfiguration<Channel>
             .IsRequired()
             .HasMaxLength(200);
 
+        // Code is the system channel template code ("wildberries", "ozon", "yandex.kit"), or
+        // null for a custom channel. Duplicates SystemChannelTemplate.Code but is written at
+        // channel creation time so Catalog can read it without depending on Integrations.
+        builder.Property(c => c.Code)
+            .HasMaxLength(50)
+            .IsRequired(false);
+
         builder.Property(c => c.CustomApiUrl)
             .HasMaxLength(500);
 
@@ -39,6 +46,7 @@ public class ChannelConfiguration : IEntityTypeConfiguration<Channel>
         builder.HasIndex(c => c.SystemChannelTemplateId);
         builder.HasIndex(c => c.IsActive);
         builder.HasIndex(c => c.IsCustom);
+        builder.HasIndex(c => c.Code);
 
         // SystemChannelTemplate lives in Integrations — no FK navigation, only the ID is stored.
         builder.HasMany(c => c.ChannelProducts)

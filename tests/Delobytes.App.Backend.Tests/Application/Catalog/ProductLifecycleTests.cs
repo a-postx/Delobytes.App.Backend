@@ -925,11 +925,26 @@ public class ProductLifecycleTests
 
         for (int i = 0; i < channelProductCount; i++)
         {
+            Guid channelId = Guid.NewGuid();
+
+            // GetProductQueryHandler/GetProductsQueryHandler map cp.Channel.Name/Code, which in
+            // production is always loaded via Include(cp => cp.Channel) -- a manually built
+            // ChannelProduct needs the same navigation set, or the mapping throws a NullReferenceException.
+            Channel channel = new Channel
+            {
+                Id = channelId,
+                Name = "Test channel",
+                Code = "wildberries",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
+            };
+
             product.ChannelProducts.Add(new ChannelProduct
             {
                 Id = Guid.NewGuid(),
                 ProductId = product.Id,
-                ChannelId = Guid.NewGuid(),
+                ChannelId = channelId,
+                Channel = channel,
                 ExternalProductId = "EXT-" + Guid.NewGuid().ToString("N").Substring(0, 8),
                 IsActive = status == ProductStatus.Active,
                 CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),

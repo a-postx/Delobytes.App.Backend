@@ -41,6 +41,7 @@ public class ChannelsController : ControllerBase
             {
                 Name = request.Name,
                 SystemChannelTemplateId = request.SystemChannelTemplateId,
+                Code = request.Code,
                 CustomApiUrl = request.CustomApiUrl,
             },
             cancellationToken);
@@ -77,6 +78,8 @@ public class CreateChannelRequest
     public string Name { get; set; } = default!;
 
     public Guid? SystemChannelTemplateId { get; set; }
+
+    public string? Code { get; set; }
 
     public string? CustomApiUrl { get; set; }
 }
