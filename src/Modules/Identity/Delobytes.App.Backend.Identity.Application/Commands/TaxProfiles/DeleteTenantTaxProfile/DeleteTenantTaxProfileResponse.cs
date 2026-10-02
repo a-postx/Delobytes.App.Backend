@@ -14,4 +14,9 @@ public class DeleteTenantTaxProfileResponse
     /// Gets or sets признак того, что удаляемая версия не является последней.
     /// </summary>
     public bool NotLatest { get; set; }
+
+    /// <summary>
+    /// Gets or sets признак того, что удаляемая версия уже используется.
+    /// </summary>
+    public bool AlreadyEffective { get; set; }
 }

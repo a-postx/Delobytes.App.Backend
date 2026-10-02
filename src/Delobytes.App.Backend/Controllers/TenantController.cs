@@ -536,6 +536,11 @@ public class TenantController : ControllerBase
             return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileNotLatest));
         }
 
+        if (response.AlreadyEffective)
+        {
+            return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileAlreadyEffective));
+        }
+
         return Ok(response);
     }
 }

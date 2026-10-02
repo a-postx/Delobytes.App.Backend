@@ -464,6 +464,28 @@ public class TenantControllerTaxProfileTests
     }
 
     [Fact]
+    public async Task DeleteTaxProfile_AlreadyEffectiveVersion_ReturnsConflict()
+    {
+        // Arrange
+        // Even the latest (and possibly only) version must be refused once its ValidFrom
+        // has arrived: it may already be used in reports.
+        Guid tenantId = Guid.NewGuid();
+
+        _mediatorMock
+            .Setup(m => m.Send(It.IsAny<DeleteTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteTenantTaxProfileResponse { Found = true, AlreadyEffective = true });
+
+        SetupUserClaims(tenantId);
+
+        // Act
+        ActionResult<DeleteTenantTaxProfileResponse> result =
+            await _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        result.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
     public async Task DeleteTaxProfile_WithoutTenantClaim_ReturnsUnauthorized()
     {
         // Arrange
