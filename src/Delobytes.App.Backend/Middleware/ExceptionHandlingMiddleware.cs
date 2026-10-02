@@ -4,6 +4,7 @@ using System.Text.Unicode;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Services;
+using FluentValidation;
 
 namespace Delobytes.App.Backend.Middleware;
 
@@ -46,6 +47,7 @@ public class ExceptionHandlingMiddleware
     {
         ErrorCode errorCode;
         string? message = null;
+        IReadOnlyDictionary<string, string[]>? validationErrors = null;
 
         switch (exception)
         {
@@ -53,6 +55,22 @@ public class ExceptionHandlingMiddleware
                 errorCode = appEx.Code;
                 message = appEx.Message;
                 _logger.LogWarning("AppException [{Code}]: {Message}. {InnerException}", appEx.Code.Value, appEx.Message, appEx.InnerException);
+                break;
+
+            case ValidationException validationEx:
+                // Raised by ValidationBehaviour when FluentValidation rejects a request. Without
+                // this case the exception fell through to the default branch and every rejected
+                // request answered 500 common.unexpected_error, naming no field -- so a client
+                // could not tell an empty SKU from a genuine server fault.
+                errorCode = ErrorCodes.Common.ValidationFailed;
+                validationErrors = validationEx.Errors
+                    .GroupBy(failure => ToCamelCaseField(failure.PropertyName))
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.Select(failure => failure.ErrorMessage).ToArray());
+                _logger.LogWarning(
+                    "Validation failed: {ValidationErrors}",
+                    string.Join("; ", validationEx.Errors.Select(f => $"{f.PropertyName}: {f.ErrorMessage}")));
                 break;
 
             case UnauthorizedAccessException:
@@ -92,8 +110,22 @@ public class ExceptionHandlingMiddleware
                 context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
         }
 
-        ErrorResponse body = ErrorResponse.FromCode(errorCode, message);
+        ErrorResponse body = ErrorResponse.FromCode(errorCode, message, validationErrors);
         string json = JsonSerializer.Serialize(body, JsonOptions);
         await context.Response.WriteAsync(json);
+    }
+
+    /// <summary>
+    /// Converts a FluentValidation property name ("Sku", "Barcodes[0].Value") to the camelCase
+    /// form the client sends, so the frontend can map errors back onto form fields.
+    /// </summary>
+    private static string ToCamelCaseField(string propertyName)
+    {
+        if (string.IsNullOrEmpty(propertyName) || char.IsLower(propertyName[0]))
+        {
+            return propertyName;
+        }
+
+        return char.ToLowerInvariant(propertyName[0]) + propertyName.Substring(1);
     }
 }

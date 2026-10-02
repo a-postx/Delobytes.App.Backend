@@ -4,6 +4,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Reflection;
 using System.Text.Json;
 using Delobytes.App.Backend.Application.Behaviours;
+using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Infrastructure;
@@ -137,6 +138,11 @@ public partial class Program
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
             builder.Services.AddValidatorsFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
+
+            // Catalog validators live in the same assembly as its MediatR handlers (registered
+            // above). The module had no validators until UpdateProductCommandValidator, so nothing
+            // was ever resolved from here before.
+            builder.Services.AddValidatorsFromAssembly(typeof(UpdateProductCommand).Assembly);
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
             {

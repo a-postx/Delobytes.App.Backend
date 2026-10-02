@@ -78,6 +78,12 @@ public class ProductsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
+    /// <summary>
+    /// Applies a partial update: fields omitted from the body (JSON null or absent) are left
+    /// untouched, which lets a marketplace-linked product accept an SKU change while every other
+    /// field keeps being driven by the import. An empty SKU is rejected with 422, and a SKU
+    /// already taken within the tenant with 409 catalog.product.sku_conflict.
+    /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(
         Guid id,
@@ -88,6 +94,7 @@ public class ProductsController : ControllerBase
             new UpdateProductCommand
             {
                 Id = id,
+                Sku = request.Sku,
                 Name = request.Name,
                 Description = request.Description,
                 Barcodes = request.Barcodes,
@@ -191,6 +198,9 @@ public class ProductsController : ControllerBase
     }
 }
 
+/// <summary>
+/// Body of a product creation. SKU and name are mandatory, as the entity requires both.
+/// </summary>
 public class CreateProductRequest
 {
     public string Sku { get; set; } = default!;
@@ -204,9 +214,15 @@ public class CreateProductRequest
     public PackingUnitDto? PackingUnit { get; set; }
 }
 
+/// <summary>
+/// Body of a partial product update. Every property is optional and a null means "leave as is":
+/// an omitted SKU is not an empty SKU, and an omitted Name is not a request to blank the product.
+/// </summary>
 public class UpdateProductRequest
 {
-    public string Name { get; set; } = default!;
+    public string? Sku { get; set; }
+
+    public string? Name { get; set; }
 
     public string? Description { get; set; }
 
