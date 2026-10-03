@@ -17,6 +17,8 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ImportProductBatchConsumer
 {
+    private const string WildberriesBarcodeType = "wildberries";
+
     private readonly CatalogDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly IProductPhotoService _photoService;
@@ -708,7 +710,7 @@ public class ImportProductBatchConsumer
 
         List<ProductBarcode> existingBarcodes = product.Barcodes.ToList();
         HashSet<string> existingBarcodeValues = existingBarcodes
-            .Where(b => b.Type == "wildberries")
+            .Where(b => b.Type == WildberriesBarcodeType)
             .Select(b => b.Value)
             .ToHashSet();
 
@@ -721,7 +723,7 @@ public class ImportProductBatchConsumer
                     Id = Guid.NewGuid(),
                     ProductId = product.Id,
                     Value = barcodeValue,
-                    Type = "wildberries",
+                    Type = WildberriesBarcodeType,
                     IsDefault = false,
                     CreatedAt = DateTimeOffset.UtcNow
                 };

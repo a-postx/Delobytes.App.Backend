@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -24,6 +25,11 @@ public class ComponentConfiguration : IEntityTypeConfiguration<Component>
             .HasMaxLength(50)
             .HasConversion<string>();
 
+        builder.Property(pc => pc.Category)
+            .HasConversion<int>()
+            .HasDefaultValue(ComponentCategory.Material)
+            .IsRequired();
+
         builder.Property(pc => pc.IsActive)
             .IsRequired();
 
@@ -37,9 +43,9 @@ public class ComponentConfiguration : IEntityTypeConfiguration<Component>
             .HasForeignKey(p => p.ComponentId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasMany(pc => pc.ProductComponents)
-            .WithOne(ppc => ppc.Component)
-            .HasForeignKey(ppc => ppc.ComponentId)
+        builder.HasMany(pc => pc.BomLines)
+            .WithOne(b => b.Component)
+            .HasForeignKey(b => b.ComponentId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

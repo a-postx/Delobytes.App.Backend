@@ -43,7 +43,7 @@ public class Product : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 
     public ICollection<ChannelProduct> ChannelProducts { get; set; } = new List<ChannelProduct>();
 
-    public ICollection<ProductComponent> ProductComponents { get; set; } = new List<ProductComponent>();
+    public ICollection<BomLine> BomLines { get; set; } = new List<BomLine>();
 
     public ICollection<ProductChannelInput> ProductChannelInputs { get; set; } = new List<ProductChannelInput>();
 

@@ -1,0 +1,4 @@
+using Delobytes.App.Backend.Catalog.Domain.Enums;
+namespace Delobytes.App.Backend.Catalog.Application.Queries.BomLines;
+public class BomLineDto { public Guid Id { get; set; } public Guid ProductId { get; set; } public Guid ComponentId { get; set; } public decimal Quantity { get; set; } public DateOnly ValidFrom { get; set; } public bool IsActive { get; set; } public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset? UpdatedAt { get; set; } public BomComponentDto? Component { get; set; } }
+public class BomComponentDto { public Guid Id { get; set; } public string Name { get; set; } = default!; public Unit Unit { get; set; } public ComponentCategory Category { get; set; } public decimal? ActivePricePerUnit { get; set; } }

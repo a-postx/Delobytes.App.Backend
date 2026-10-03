@@ -15,6 +15,8 @@ public class Component : ITenantScoped, IAuditableEntity, IRowVersionedEntity
     public string? Description { get; set; }
     public Unit Unit { get; set; }
 
+    public ComponentCategory Category { get; set; } = ComponentCategory.Material;
+
     /// <summary>Whether the logical component is archived. Does not depend on price versions.</summary>
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -29,5 +31,5 @@ public class Component : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 
     public ICollection<ComponentPrice> Prices { get; set; } = new List<ComponentPrice>();
 
-    public ICollection<ProductComponent> ProductComponents { get; set; } = new List<ProductComponent>();
+    public ICollection<BomLine> BomLines { get; set; } = new List<BomLine>();
 }
