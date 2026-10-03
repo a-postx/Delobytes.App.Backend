@@ -1,0 +1,180 @@
+using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.UpsertProductBom;
+using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Errors;
+using FluentAssertions;
+using FluentAssertions.Specialized;
+using Moq;
+
+namespace Delobytes.App.Backend.Tests.Application.Catalog.BomLines;
+
+public class UpsertProductBomCommandHandlerTests
+{
+    private readonly Mock<IBomLineRepository> _bomLineRepositoryMock;
+    private readonly Mock<IComponentRepository> _componentRepositoryMock;
+    private readonly UpsertProductBomCommandHandler _handler;
+
+    public UpsertProductBomCommandHandlerTests()
+    {
+        _bomLineRepositoryMock = new Mock<IBomLineRepository>();
+        _componentRepositoryMock = new Mock<IComponentRepository>();
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _componentRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                (Guid id, CancellationToken _) => new Component
+                {
+                    Id = id,
+                    Name = "Component",
+                });
+
+        _handler = new UpsertProductBomCommandHandler(
+            _bomLineRepositoryMock.Object,
+            _componentRepositoryMock.Object);
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateComponentIds_ThrowsValidationError()
+    {
+        Guid duplicateId = Guid.NewGuid();
+
+        UpsertProductBomCommand command = new UpsertProductBomCommand
+        {
+            ProductId = Guid.NewGuid(),
+            Lines = new List<UpsertProductBomItem>
+            {
+                new UpsertProductBomItem
+                {
+                    ComponentId = duplicateId,
+                    Quantity = 1m,
+                },
+                new UpsertProductBomItem
+                {
+                    ComponentId = duplicateId,
+                    Quantity = 2m,
+                },
+            },
+        };
+
+        Func<Task> action = () => _handler.Handle(command, CancellationToken.None);
+
+        ExceptionAssertions<AppException> exception =
+            await action.Should().ThrowAsync<AppException>();
+
+        exception.Which.Code.Should().Be(ErrorCodes.Common.ValidationFailed);
+
+        _bomLineRepositoryMock.Verify(
+            repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_InvalidQuantity_ThrowsDomainError()
+    {
+        UpsertProductBomCommand command = new UpsertProductBomCommand
+        {
+            ProductId = Guid.NewGuid(),
+            Lines = new List<UpsertProductBomItem>
+            {
+                new UpsertProductBomItem
+                {
+                    ComponentId = Guid.NewGuid(),
+                    Quantity = -1m,
+                },
+            },
+        };
+
+        Func<Task> action = () => _handler.Handle(command, CancellationToken.None);
+
+        ExceptionAssertions<AppException> exception =
+            await action.Should().ThrowAsync<AppException>();
+
+        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomLineInvalidQuantity);
+    }
+
+    [Fact]
+    public async Task Handle_ReplacesAllActiveLinesWithNewLines()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid firstComponentId = Guid.NewGuid();
+        Guid secondComponentId = Guid.NewGuid();
+
+        BomLine previous = new BomLine
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ComponentId = Guid.NewGuid(),
+            Quantity = 5m,
+            ValidFrom = new DateOnly(2025, 1, 1),
+            IsActive = true,
+        };
+
+        List<BomLine> addedLines = new List<BomLine>();
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetActiveByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine> { previous });
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.Add(It.IsAny<BomLine>()))
+            .Callback<BomLine>(line => addedLines.Add(line));
+
+        UpsertProductBomCommand command = new UpsertProductBomCommand
+        {
+            ProductId = productId,
+            Lines = new List<UpsertProductBomItem>
+            {
+                new UpsertProductBomItem
+                {
+                    ComponentId = firstComponentId,
+                    Quantity = 1.5m,
+                },
+                new UpsertProductBomItem
+                {
+                    ComponentId = secondComponentId,
+                    Quantity = 2m,
+                },
+            },
+        };
+
+        UpsertProductBomResponse response =
+            await _handler.Handle(command, CancellationToken.None);
+
+        response.Count.Should().Be(2);
+
+        previous.IsActive.Should().BeFalse();
+        previous.UpdatedAt.Should().NotBeNull();
+
+        addedLines.Should().HaveCount(2);
+        addedLines.Should().OnlyContain(line =>
+            line.ProductId == productId &&
+            line.IsActive);
+
+        addedLines
+            .Select(line => line.ComponentId)
+            .Should()
+            .BeEquivalentTo(new[] { firstComponentId, secondComponentId });
+
+        addedLines
+            .Select(line => line.Quantity)
+            .Should()
+            .BeEquivalentTo(new[] { 1.5m, 2m });
+
+        addedLines
+            .Select(line => line.ValidFrom)
+            .Should()
+            .OnlyContain(date => date == DateOnly.FromDateTime(DateTime.UtcNow));
+
+        _bomLineRepositoryMock.Verify(
+            repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+}
