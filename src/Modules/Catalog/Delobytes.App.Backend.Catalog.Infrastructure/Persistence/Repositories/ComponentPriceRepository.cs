@@ -32,6 +32,18 @@ public class ComponentPriceRepository : IComponentPriceRepository
             .FirstOrDefaultAsync(ct);
     }
 
+    public Task<ComponentPrice?> GetEffectiveAtAsync(Guid componentId, DateOnly asOf, CancellationToken ct)
+    {
+        // IsActive is intentionally not filtered: a version deactivated by a later one was still the
+        // effective price on earlier dates, and historical cost calculations must not shift.
+        return _context.ComponentPrices
+            .Include(p => p.Supplier)
+            .Where(p => p.ComponentId == componentId && p.ValidFrom <= asOf)
+            .OrderByDescending(p => p.ValidFrom)
+            .ThenByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public void Add(ComponentPrice price)
     {
         _context.ComponentPrices.Add(price);

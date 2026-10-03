@@ -33,6 +33,18 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
             .ToListAsync(ct);
     }
 
+    public Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct)
+    {
+        // IsActive is intentionally not filtered. Note that this method cannot tell a version
+        // superseded by a newer one from a soft-deleted one, so a deleted rate keeps resolving for
+        // every date from its ValidFrom onwards. The calculation treats that as the data it was asked for.
+        return _context.ProductWorkRates
+            .Where(r => r.ProductId == productId && r.ValidFrom <= asOf)
+            .OrderByDescending(r => r.ValidFrom)
+            .ThenByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public void Add(ProductWorkRate rate)
     {
         _context.ProductWorkRates.Add(rate);

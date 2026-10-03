@@ -41,8 +41,11 @@ public class BomLineRepository : IBomLineRepository
 
     public async Task<IReadOnlyList<BomLine>> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct)
     {
+        // The component is included because the cost calculation needs its name and category;
+        // without it every cost line would have to resolve the component separately.
         List<BomLine> candidates = await _context.BomLines
             .Where(b => b.ProductId == productId && b.ValidFrom <= asOf)
+            .Include(b => b.Component)
             .ToListAsync(ct);
 
         return candidates

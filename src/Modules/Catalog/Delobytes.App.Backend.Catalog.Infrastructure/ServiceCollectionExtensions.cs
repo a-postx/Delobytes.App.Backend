@@ -1,6 +1,7 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Interceptors;
@@ -56,6 +57,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
         services.AddScoped<IBomLineRepository, BomLineRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+
+        // Scoped because the repositories it reads through are bound to the scoped DbContext.
+        services.AddScoped<ICostCalculator, ProductCostCalculator>();
+
 
         // Marketplace photo downloads are plain unauthenticated GETs, so no message handler
         // and no retry pipeline: a failed photo is reported as Failed and retried by the next

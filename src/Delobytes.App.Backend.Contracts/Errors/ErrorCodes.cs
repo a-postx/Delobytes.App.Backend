@@ -16,6 +16,7 @@ public static class ErrorCodes
     public static class Catalog
     {
         public static readonly ErrorCode ProductWorkRateNotFound = new ErrorCode("catalog.product_work_rate.not_found", 404, "Норма выработки не найдена.");
+        public static readonly ErrorCode WorkRateNotFound = new ErrorCode("catalog.work_rate.not_found", 404, "Ставка работы не найдена.");
         public static readonly ErrorCode ProductSkuConflict = new ErrorCode("catalog.product.sku_conflict", 409, "Товар с таким артикулом уже существует.");
         public static readonly ErrorCode BomLineNotFound = new ErrorCode("catalog.bom_line.not_found", 404, "Строка BOM не найдена.");
         public static readonly ErrorCode BomLineInvalidQuantity = new ErrorCode("catalog.bom_line.invalid_quantity", 422, "Количество компонента должно быть больше нуля.");

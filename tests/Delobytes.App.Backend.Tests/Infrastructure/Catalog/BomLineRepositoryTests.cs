@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Contracts.Interfaces;
@@ -22,6 +23,7 @@ public class BomLineRepositoryTests
 
         using (CatalogDbContext context = BuildContext(options, tenantId))
         {
+            context.Components.Add(BuildComponent(componentId));
             context.BomLines.AddRange(
                 BuildLine(productId, componentId, firstDate, 1m, DateTimeOffset.UtcNow.AddDays(-2)),
                 BuildLine(productId, componentId, secondDate, 2m, DateTimeOffset.UtcNow.AddDays(-1)));
@@ -52,6 +54,7 @@ public class BomLineRepositoryTests
 
         using (CatalogDbContext context = BuildContext(options, tenantId))
         {
+            context.Components.Add(BuildComponent(componentId));
             context.BomLines.Add(BuildLine(productId, componentId, validFrom, 4m, DateTimeOffset.UtcNow));
             await context.SaveChangesAsync();
         }
@@ -77,6 +80,7 @@ public class BomLineRepositoryTests
 
         using (CatalogDbContext context = BuildContext(options, tenantId))
         {
+            context.Components.Add(BuildComponent(componentId));
             context.BomLines.Add(BuildLine(
                 productId,
                 componentId,
@@ -109,6 +113,9 @@ public class BomLineRepositoryTests
 
         using (CatalogDbContext context = BuildContext(options, tenantId))
         {
+            context.Components.AddRange(
+                BuildComponent(firstComponentId),
+                BuildComponent(secondComponentId));
             context.BomLines.AddRange(
                 BuildLine(productId, firstComponentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-4)),
                 BuildLine(productId, firstComponentId, new DateOnly(2026, 5, 1), 2m, DateTimeOffset.UtcNow.AddDays(-3)),
@@ -141,6 +148,7 @@ public class BomLineRepositoryTests
 
         using (CatalogDbContext otherTenantContext = BuildContext(options, otherTenantId))
         {
+            otherTenantContext.Components.Add(BuildComponent(componentId));
             otherTenantContext.BomLines.Add(BuildLine(productId, componentId, new DateOnly(2026, 1, 1), 99m, DateTimeOffset.UtcNow));
             await otherTenantContext.SaveChangesAsync();
         }
@@ -188,6 +196,24 @@ public class BomLineRepositoryTests
             ValidFrom = validFrom,
             IsActive = true,
             CreatedAt = createdAt,
+        };
+    }
+
+    // BomLine.ComponentId is a required foreign key, so a composition row without its
+    // component cannot exist in Postgres. The in-memory provider does not enforce that
+    // constraint, which lets a fixture with a dangling ComponentId pass here while the
+    // exact same data would be rejected by the real database. Every fixture therefore
+    // creates the components it references.
+    private static Component BuildComponent(Guid id)
+    {
+        return new Component
+        {
+            Id = id,
+            Name = "Компонент " + id.ToString("N").Substring(0, 8),
+            Unit = Unit.Piece,
+            Category = ComponentCategory.Material,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
         };
     }
 }

@@ -27,6 +27,17 @@ public class WorkRateRepository : IWorkRateRepository
             .ToListAsync(ct);
     }
 
+    public Task<WorkRate?> GetEffectiveAtAsync(Guid workRateId, DateOnly asOf, CancellationToken ct)
+    {
+        // IsActive is intentionally not filtered, matching the component price lookup: a rate
+        // superseded later is still the correct one for a date that falls before it was replaced.
+        return _context.WorkRates
+            .Where(wr => wr.Id == workRateId && wr.ValidFrom <= asOf)
+            .OrderByDescending(wr => wr.ValidFrom)
+            .ThenByDescending(wr => wr.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public void Add(WorkRate workRate)
     {
         _context.WorkRates.Add(workRate);
