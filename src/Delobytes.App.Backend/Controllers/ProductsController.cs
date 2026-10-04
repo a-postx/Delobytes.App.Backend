@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.CaptureProductCostSnapshot;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.CreateProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
@@ -111,24 +110,6 @@ public class ProductsController : ControllerBase
         }
 
         return NoContent();
-    }
-
-    /// <summary>Archives a product. Synchronous. Product is hidden but data is preserved.</summary>
-    [HttpPost("{id:guid}/cost/snapshot")]
-    public async Task<ActionResult<CaptureProductCostSnapshotResponse>> CaptureCostSnapshot(
-        Guid id,
-        CancellationToken cancellationToken)
-    {
-        CaptureProductCostSnapshotResponse response = await _mediator.Send(
-            new CaptureProductCostSnapshotCommand { ProductId = id },
-            cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
-        return Ok(response);
     }
 
     [HttpGet("{id:guid}/cost/history")]

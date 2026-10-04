@@ -24,7 +24,7 @@ public class ProductCostSnapshotServiceTests
             .Setup(repository => repository.GetExistingProductIdsAsync(
                 It.IsAny<IReadOnlyCollection<Guid>>(),
                 today,
-                "Manual",
+                "TestTrigger",
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<Guid>());
         snapshotRepositoryMock
@@ -43,7 +43,7 @@ public class ProductCostSnapshotServiceTests
 
         await service.CaptureBeforeChangeAsync(
             new[] { firstProductId, firstProductId, secondProductId },
-            "Manual",
+            "TestTrigger",
             CancellationToken.None);
 
         snapshots.Should().HaveCount(2);
@@ -52,7 +52,7 @@ public class ProductCostSnapshotServiceTests
             .BeEquivalentTo(new[] { firstProductId, secondProductId });
         snapshots.Should().OnlyContain(snapshot =>
             snapshot.AsOfDate == today
-            && snapshot.TriggerReason == "Manual"
+            && snapshot.TriggerReason == "TestTrigger"
             && snapshot.MaterialCost == 100m
             && snapshot.LogisticsCost == 20m
             && snapshot.PackagingCost == 30m

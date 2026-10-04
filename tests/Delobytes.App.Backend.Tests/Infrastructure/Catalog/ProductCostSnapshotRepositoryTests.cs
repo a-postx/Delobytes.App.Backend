@@ -25,10 +25,10 @@ public class ProductCostSnapshotRepositoryTests
             Product otherProduct = BuildProduct(otherProductId, "OTHER");
             context.Products.AddRange(product, otherProduct);
             context.ProductCostSnapshots.AddRange(
-                BuildSnapshot(matchingProductId, asOfDate, "Manual"),
-                BuildSnapshot(matchingProductId, asOfDate.AddDays(-1), "Manual"),
+                BuildSnapshot(matchingProductId, asOfDate, "TestTrigger"),
+                BuildSnapshot(matchingProductId, asOfDate.AddDays(-1), "TestTrigger"),
                 BuildSnapshot(matchingProductId, asOfDate, "BomChanged"),
-                BuildSnapshot(otherProductId, asOfDate, "Manual"));
+                BuildSnapshot(otherProductId, asOfDate, "TestTrigger"));
             await context.SaveChangesAsync();
         }
 
@@ -38,7 +38,7 @@ public class ProductCostSnapshotRepositoryTests
         IReadOnlySet<Guid> result = await repository.GetExistingProductIdsAsync(
             new[] { matchingProductId, otherProductId },
             asOfDate,
-            "Manual",
+            "TestTrigger",
             CancellationToken.None);
 
         result.Should().Equal(matchingProductId, otherProductId);
@@ -57,8 +57,8 @@ public class ProductCostSnapshotRepositoryTests
         {
             context.Products.Add(BuildProduct(productId, "PRODUCT"));
             context.ProductCostSnapshots.AddRange(
-                BuildSnapshot(productId, firstDate, "Manual", new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero), 10m),
-                BuildSnapshot(productId, secondDate, "Manual", new DateTimeOffset(2026, 2, 1, 8, 0, 0, TimeSpan.Zero), 20m),
+                BuildSnapshot(productId, firstDate, "TestTrigger", new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero), 10m),
+                BuildSnapshot(productId, secondDate, "TestTrigger", new DateTimeOffset(2026, 2, 1, 8, 0, 0, TimeSpan.Zero), 20m),
                 BuildSnapshot(productId, secondDate, "BomChanged", new DateTimeOffset(2026, 2, 1, 9, 0, 0, TimeSpan.Zero), 30m));
             await context.SaveChangesAsync();
         }
