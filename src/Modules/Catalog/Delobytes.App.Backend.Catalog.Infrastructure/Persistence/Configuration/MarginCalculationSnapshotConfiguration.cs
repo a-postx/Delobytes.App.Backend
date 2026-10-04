@@ -18,11 +18,7 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
         builder.Property(mcs => mcs.WorkRateId)
             .IsRequired();
 
-        builder.Property(mcs => mcs.RawMaterialCost).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.MaterialLogisticsCost).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.WorkCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.ChannelCostTotal).HasPrecision(18, 4).IsRequired();
-        builder.Property(mcs => mcs.TotalCost).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.BuyerPrice).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.CommissionAmount).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.AcquiringAmount).HasPrecision(18, 4).IsRequired();
@@ -33,6 +29,16 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
 
         builder.Property(mcs => mcs.CalculatedAt)
             .IsRequired();
+
+        builder.Property(mcs => mcs.ProductCostSnapshotId)
+            .IsRequired();
+
+        builder.HasIndex(mcs => mcs.ProductCostSnapshotId);
+
+        builder.HasOne(mcs => mcs.ProductCostSnapshot)
+            .WithMany()
+            .HasForeignKey(mcs => mcs.ProductCostSnapshotId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(mcs => mcs.ProductChannelInputId);
         builder.HasIndex(mcs => mcs.CalculatedAt);

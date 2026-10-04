@@ -57,9 +57,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
         services.AddScoped<IBomLineRepository, BomLineRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<IProductCostSnapshotRepository, ProductCostSnapshotRepository>();
 
         // Scoped because the repositories it reads through are bound to the scoped DbContext.
         services.AddScoped<ICostCalculator, ProductCostCalculator>();
+        services.AddScoped<IProductCostSnapshotService, ProductCostSnapshotService>();
 
 
         // Marketplace photo downloads are plain unauthenticated GETs, so no message handler

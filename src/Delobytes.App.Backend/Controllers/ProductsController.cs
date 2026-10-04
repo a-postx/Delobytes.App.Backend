@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
+using Delobytes.App.Backend.Catalog.Application.Commands.Products.CaptureProductCostSnapshot;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.CreateProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
@@ -6,6 +7,8 @@ using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProduct;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductDeletionStatus;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductCost;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductCostHistory;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
@@ -111,6 +114,42 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>Archives a product. Synchronous. Product is hidden but data is preserved.</summary>
+    [HttpPost("{id:guid}/cost/snapshot")]
+    public async Task<ActionResult<CaptureProductCostSnapshotResponse>> CaptureCostSnapshot(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        CaptureProductCostSnapshotResponse response = await _mediator.Send(
+            new CaptureProductCostSnapshotCommand { ProductId = id },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return Ok(response);
+    }
+
+    [HttpGet("{id:guid}/cost/history")]
+    public async Task<ActionResult<GetProductCostHistoryResponse>> GetCostHistory(
+        Guid id,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        GetProductCostHistoryResponse response = await _mediator.Send(
+            new GetProductCostHistoryQuery { ProductId = id, Skip = skip, Take = take },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return Ok(response);
+    }
+
     [HttpPost("{id:guid}/archive")]
     public async Task<ActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {

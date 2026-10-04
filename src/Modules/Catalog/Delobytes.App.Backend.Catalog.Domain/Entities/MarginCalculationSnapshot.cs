@@ -15,13 +15,9 @@ public class MarginCalculationSnapshot : ITenantScoped
 
     public Guid WorkRateId { get; set; }
 
+    public Guid ProductCostSnapshotId { get; set; }
+
     // ── Calculated cost components ───────────────────────────────────────────
-
-    public decimal RawMaterialCost { get; set; }
-
-    public decimal MaterialLogisticsCost { get; set; }
-
-    public decimal WorkCost { get; set; }
 
     /// <summary>
     /// Aggregate of all ProductChannelCost entries for the product+channel pair
@@ -30,7 +26,10 @@ public class MarginCalculationSnapshot : ITenantScoped
     public decimal ChannelCostTotal { get; set; }
 
     /// <summary>Total cost of goods: sum of all cost components.</summary>
-    public decimal TotalCost { get; set; }
+    public decimal TotalCost
+    {
+        get { return ProductCostSnapshot.TotalCost + ChannelCostTotal; }
+    }
 
     // ── Calculated revenue components ────────────────────────────────────────
 
@@ -55,4 +54,6 @@ public class MarginCalculationSnapshot : ITenantScoped
     public DateTimeOffset CalculatedAt { get; set; }
 
     public ProductChannelInput ProductChannelInput { get; set; } = default!;
+
+    public ProductCostSnapshot ProductCostSnapshot { get; set; } = default!;
 }

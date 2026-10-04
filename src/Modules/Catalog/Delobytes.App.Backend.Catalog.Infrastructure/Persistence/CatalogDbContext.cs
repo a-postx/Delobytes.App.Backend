@@ -40,6 +40,7 @@ public class CatalogDbContext : DbContext
     public DbSet<ProductWorkRate> ProductWorkRates => Set<ProductWorkRate>();
     public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
+    public DbSet<ProductCostSnapshot> ProductCostSnapshots => Set<ProductCostSnapshot>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
