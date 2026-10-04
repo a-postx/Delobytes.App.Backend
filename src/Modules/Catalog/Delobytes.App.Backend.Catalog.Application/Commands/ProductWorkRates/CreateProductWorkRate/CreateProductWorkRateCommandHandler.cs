@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
@@ -9,19 +10,20 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
 {
     private readonly IProductWorkRateRepository _repository;
     private readonly IWorkRateRepository _workRateRepository;
+    private readonly IProductCostSnapshotService _snapshotService;
 
     public CreateProductWorkRateCommandHandler(
         IProductWorkRateRepository repository,
-        IWorkRateRepository workRateRepository)
+        IWorkRateRepository workRateRepository,
+        IProductCostSnapshotService snapshotService)
     {
         _repository = repository;
         _workRateRepository = workRateRepository;
+        _snapshotService = snapshotService;
     }
 
     public async Task<CreateProductWorkRateResponse> Handle(CreateProductWorkRateCommand request, CancellationToken cancellationToken)
     {
-        // The reference must exist, but a deactivated rate is accepted: rates are versioned and a
-        // product rate may legitimately be backdated to a period when that version was the effective one.
         WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken);
 
         if (workRate == null)
@@ -29,7 +31,8 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
             throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
         }
 
-        // Each new rate creates a versioned record; previous records are never modified.
+        await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "WorkRateChanged", cancellationToken);
+
         ProductWorkRate rate = new ProductWorkRate
         {
             Id = Guid.NewGuid(),

@@ -1,5 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.CreateBomLine;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Errors;
 using FluentAssertions;
@@ -12,12 +18,14 @@ public class CreateBomLineCommandHandlerTests
 {
     private readonly Mock<IBomLineRepository> _bomLineRepositoryMock;
     private readonly Mock<IComponentRepository> _componentRepositoryMock;
+    private readonly Mock<IProductCostSnapshotService> _snapshotServiceMock;
     private readonly CreateBomLineCommandHandler _handler;
 
     public CreateBomLineCommandHandlerTests()
     {
         _bomLineRepositoryMock = new Mock<IBomLineRepository>();
         _componentRepositoryMock = new Mock<IComponentRepository>();
+        _snapshotServiceMock = new Mock<IProductCostSnapshotService>();
 
         _bomLineRepositoryMock
             .Setup(repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -25,7 +33,8 @@ public class CreateBomLineCommandHandlerTests
 
         _handler = new CreateBomLineCommandHandler(
             _bomLineRepositoryMock.Object,
-            _componentRepositoryMock.Object);
+            _componentRepositoryMock.Object,
+            _snapshotServiceMock.Object);
     }
 
     [Fact]
@@ -147,5 +156,134 @@ public class CreateBomLineCommandHandlerTests
         _bomLineRepositoryMock.Verify(
             repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // ── Этап 5: автоматическая фиксация снапшота ─────────────────────────────────────
+
+    [Fact]
+    public async Task Handle_ValidCommand_CapturesSnapshotForProductWithBomChangedReason()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+
+        _componentRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(
+                componentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Component { Id = componentId, Name = "Material" });
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetActiveByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine>());
+
+        CreateBomLineCommand command = new CreateBomLineCommand
+        {
+            ProductId = productId,
+            ComponentId = componentId,
+            Quantity = 2m,
+            ValidFrom = new DateOnly(2026, 5, 1),
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        _snapshotServiceMock.Verify(
+            service => service.CaptureBeforeChangeAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids =>
+                    ids.Count == 1 && ids.Contains(productId)),
+                "BomChanged",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ValidCommand_CapturesSnapshotBeforeStateChanges()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+
+        BomLine previous = new BomLine
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ComponentId = componentId,
+            Quantity = 1m,
+            ValidFrom = new DateOnly(2025, 1, 1),
+            IsActive = true,
+        };
+
+        bool previousLineWasActiveAtCapture = false;
+        bool newLineExistedAtCapture = false;
+        int addedLineCount = 0;
+
+        _componentRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(
+                componentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Component { Id = componentId, Name = "Material" });
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetActiveByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine> { previous });
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.Add(It.IsAny<BomLine>()))
+            .Callback<BomLine>(_ => addedLineCount++);
+
+        _snapshotServiceMock
+            .Setup(service => service.CaptureBeforeChangeAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<Guid>, string, CancellationToken>(
+                (_, _, _) =>
+                {
+                    // The snapshot has to reflect the composition as it was, so neither the
+                    // deactivation of the previous line nor the insertion of the new one may
+                    // have happened yet.
+                    previousLineWasActiveAtCapture = previous.IsActive;
+                    newLineExistedAtCapture = addedLineCount > 0;
+                })
+            .Returns(Task.CompletedTask);
+
+        CreateBomLineCommand command = new CreateBomLineCommand
+        {
+            ProductId = productId,
+            ComponentId = componentId,
+            Quantity = 3m,
+            ValidFrom = new DateOnly(2026, 5, 1),
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        previousLineWasActiveAtCapture.Should().BeTrue();
+        newLineExistedAtCapture.Should().BeFalse();
+        previous.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Handle_InvalidCommand_DoesNotCaptureSnapshot()
+    {
+        CreateBomLineCommand command = new CreateBomLineCommand
+        {
+            ProductId = Guid.NewGuid(),
+            ComponentId = Guid.NewGuid(),
+            Quantity = -1m,
+            ValidFrom = new DateOnly(2026, 1, 1),
+        };
+
+        Func<Task> action = () => _handler.Handle(command, CancellationToken.None);
+
+        await action.Should().ThrowAsync<AppException>();
+
+        _snapshotServiceMock.Verify(
+            service => service.CaptureBeforeChangeAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

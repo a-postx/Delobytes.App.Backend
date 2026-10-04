@@ -59,6 +59,15 @@ public class BomLineRepository : IBomLineRepository
         _context.BomLines.Add(line);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetProductIdsByComponentIdAsync(Guid componentId, CancellationToken ct)
+    {
+        return await _context.BomLines
+            .Where(b => b.ComponentId == componentId && b.IsActive)
+            .Select(b => b.ProductId)
+            .Distinct()
+            .ToListAsync(ct);
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken ct)
     {
         return _context.SaveChangesWithConflictTranslationAsync(ct);

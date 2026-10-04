@@ -12,6 +12,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.Components;
 using Delobytes.App.Backend.Catalog.Application.Queries.Components.GetComponent;
 using Delobytes.App.Backend.Catalog.Application.Queries.Components.GetComponents;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using FluentAssertions;
@@ -26,6 +27,23 @@ public class ComponentCommandHandlerTests
 
     private readonly Mock<IComponentRepository> _repoMock = new();
     private readonly Mock<IComponentPriceRepository> _priceRepoMock = new();
+    private readonly Mock<IBomLineRepository> _bomLineRepoMock = new();
+    private readonly Mock<IProductCostSnapshotService> _snapshotServiceMock = new();
+
+    private CreateComponentPriceCommandHandler CreatePriceHandler()
+    {
+        _bomLineRepoMock
+            .Setup(r => r.GetProductIdsByComponentIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Guid>());
+
+        return new CreateComponentPriceCommandHandler(
+            _repoMock.Object,
+            _priceRepoMock.Object,
+            _bomLineRepoMock.Object,
+            _snapshotServiceMock.Object);
+    }
 
     private static ComponentPrice BuildPrice(
         Guid componentId,
@@ -421,7 +439,7 @@ public class ComponentCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_repoMock.Object, _priceRepoMock.Object);
+            CreatePriceHandler();
 
         Guid newSupplierId = Guid.NewGuid();
         DateOnly newValidFrom = new DateOnly(2026, 6, 1);
@@ -469,7 +487,7 @@ public class ComponentCommandHandlerTests
             .ReturnsAsync((Component?)null);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_repoMock.Object, _priceRepoMock.Object);
+            CreatePriceHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -507,7 +525,7 @@ public class ComponentCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_repoMock.Object, _priceRepoMock.Object);
+            CreatePriceHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {

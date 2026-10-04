@@ -21,6 +21,8 @@ public interface IProductWorkRateRepository
     /// <returns>The effective rate version, or null when none existed by that date.</returns>
     Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct);
 
+    Task<IReadOnlyList<Guid>> GetProductIdsByWorkRateIdAsync(Guid workRateId, CancellationToken ct);
+
     void Add(ProductWorkRate rate);
 
     Task<int> SaveChangesAsync(CancellationToken ct);

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.Components.CreateComponentPrice;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using FluentAssertions;
@@ -16,7 +17,26 @@ public class ComponentPriceCommandHandlerTests
 {
     private readonly Mock<IComponentRepository> _componentRepoMock = new();
     private readonly Mock<IComponentPriceRepository> _priceRepoMock = new();
-    private readonly Mock<ISupplierRepository> _supplierRepoMock = new();
+    private readonly Mock<IBomLineRepository> _bomLineRepoMock = new();
+    private readonly Mock<IProductCostSnapshotService> _snapshotServiceMock = new();
+
+    private CreateComponentPriceCommandHandler BuildHandler(
+        IReadOnlyCollection<Guid>? affectedProductIds = null)
+    {
+        // The stub is configured here and only here: a separate Setup inside a test body would be
+        // silently overridden, because Moq honours the last matching configuration.
+        _bomLineRepoMock
+            .Setup(r => r.GetProductIdsByComponentIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(affectedProductIds != null ? affectedProductIds.ToList() : Array.Empty<Guid>());
+
+        return new CreateComponentPriceCommandHandler(
+            _componentRepoMock.Object,
+            _priceRepoMock.Object,
+            _bomLineRepoMock.Object,
+            _snapshotServiceMock.Object);
+    }
 
     private static Component BuildComponent(Guid? id = null)
     {
@@ -61,7 +81,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -105,7 +125,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -140,7 +160,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync((Component?)null);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -187,7 +207,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -240,7 +260,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -276,7 +296,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -315,7 +335,7 @@ public class ComponentPriceCommandHandlerTests
             .ReturnsAsync(1);
 
         CreateComponentPriceCommandHandler handler =
-            new CreateComponentPriceCommandHandler(_componentRepoMock.Object, _priceRepoMock.Object);
+            BuildHandler();
 
         CreateComponentPriceCommand command = new CreateComponentPriceCommand
         {
@@ -336,6 +356,179 @@ public class ComponentPriceCommandHandlerTests
             r => r.Add(It.Is<ComponentPrice>(p =>
                 p.PricePerUnit == 100.0m &&
                 p.ValidFrom == new DateOnly(2026, 6, 1))),
+            Times.Once);
+    }
+
+    // ── Этап 5: автоматическая фиксация снапшота ─────────────────────────────────────
+
+    [Fact]
+    public async Task CreateComponentPrice_UsedByProducts_CapturesSnapshotForEveryAffectedProduct()
+    {
+        // Arrange
+        Component component = BuildComponent();
+        Guid firstProductId = Guid.NewGuid();
+        Guid secondProductId = Guid.NewGuid();
+
+        _componentRepoMock
+            .Setup(r => r.GetByIdAsync(component.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(component);
+
+        _priceRepoMock
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        CreateComponentPriceCommandHandler handler = BuildHandler(new[] { firstProductId, secondProductId });
+
+        CreateComponentPriceCommand command = new CreateComponentPriceCommand
+        {
+            ComponentId = component.Id,
+            PricePerUnit = 200.0m,
+            ValidFrom = new DateOnly(2026, 7, 1),
+        };
+
+        // Act
+        await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        _bomLineRepoMock.Verify(
+            r => r.GetProductIdsByComponentIdAsync(component.Id, It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _snapshotServiceMock.Verify(
+            s => s.CaptureBeforeChangeAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids =>
+                    ids.Count == 2 &&
+                    ids.Contains(firstProductId) &&
+                    ids.Contains(secondProductId)),
+                "ComponentPriceChanged",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateComponentPrice_CapturesSnapshotBeforePreviousPriceIsDeactivated()
+    {
+        // Arrange
+        Component component = BuildComponent();
+        ComponentPrice previous = new ComponentPrice
+        {
+            Id = Guid.NewGuid(),
+            ComponentId = component.Id,
+            PricePerUnit = 100.0m,
+            SupplierId = null,
+            ValidFrom = new DateOnly(2025, 1, 1),
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddMonths(-1),
+        };
+
+        Guid productId = Guid.NewGuid();
+        bool previousPriceWasActiveAtCapture = false;
+
+        _componentRepoMock
+            .Setup(r => r.GetByIdAsync(component.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(component);
+
+        _priceRepoMock
+            .Setup(r => r.GetActiveByComponentIdAsync(component.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(previous);
+
+        _priceRepoMock
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _snapshotServiceMock
+            .Setup(s => s.CaptureBeforeChangeAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<Guid>, string, CancellationToken>(
+                (_, _, _) =>
+                {
+                    // Touching IsActive in memory before the capture would make the calculation
+                    // inside the snapshot ignore the price that is still in force, so the
+                    // capture has to happen while the old version is untouched.
+                    previousPriceWasActiveAtCapture = previous.IsActive;
+                })
+            .Returns(Task.CompletedTask);
+
+        CreateComponentPriceCommandHandler handler = BuildHandler(new[] { productId });
+
+        CreateComponentPriceCommand command = new CreateComponentPriceCommand
+        {
+            ComponentId = component.Id,
+            PricePerUnit = 250.0m,
+            ValidFrom = new DateOnly(2026, 8, 1),
+        };
+
+        // Act
+        await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        previousPriceWasActiveAtCapture.Should().BeTrue();
+        previous.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CreateComponentPrice_UnknownComponent_DoesNotCaptureSnapshot()
+    {
+        // Arrange
+        _componentRepoMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Component?)null);
+
+        CreateComponentPriceCommandHandler handler = BuildHandler();
+
+        CreateComponentPriceCommand command = new CreateComponentPriceCommand
+        {
+            ComponentId = Guid.NewGuid(),
+            PricePerUnit = 100.0m,
+            ValidFrom = new DateOnly(2026, 1, 1),
+        };
+
+        // Act
+        await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        _snapshotServiceMock.Verify(
+            s => s.CaptureBeforeChangeAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateComponentPrice_NotUsedByAnyProduct_StillCallsCaptureWithEmptySet()
+    {
+        // Arrange
+        Component component = BuildComponent();
+
+        _componentRepoMock
+            .Setup(r => r.GetByIdAsync(component.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(component);
+
+        _priceRepoMock
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        CreateComponentPriceCommandHandler handler = BuildHandler(Array.Empty<Guid>());
+
+        CreateComponentPriceCommand command = new CreateComponentPriceCommand
+        {
+            ComponentId = component.Id,
+            PricePerUnit = 300.0m,
+            ValidFrom = new DateOnly(2026, 9, 1),
+        };
+
+        // Act
+        await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        _snapshotServiceMock.Verify(
+            s => s.CaptureBeforeChangeAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 0),
+                "ComponentPriceChanged",
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

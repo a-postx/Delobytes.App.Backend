@@ -50,6 +50,15 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
         _context.ProductWorkRates.Add(rate);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetProductIdsByWorkRateIdAsync(Guid workRateId, CancellationToken ct)
+    {
+        return await _context.ProductWorkRates
+            .Where(r => r.WorkRateId == workRateId && r.IsActive)
+            .Select(r => r.ProductId)
+            .Distinct()
+            .ToListAsync(ct);
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken ct)
     {
         return _context.SaveChangesWithConflictTranslationAsync(ct);

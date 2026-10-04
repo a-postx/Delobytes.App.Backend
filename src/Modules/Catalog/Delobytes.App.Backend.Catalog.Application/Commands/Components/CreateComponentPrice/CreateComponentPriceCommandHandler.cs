@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using MediatR;
 
@@ -8,13 +9,19 @@ public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponen
 {
     private readonly IComponentRepository _repository;
     private readonly IComponentPriceRepository _priceRepository;
+    private readonly IBomLineRepository _bomLineRepository;
+    private readonly IProductCostSnapshotService _snapshotService;
 
     public CreateComponentPriceCommandHandler(
         IComponentRepository repository,
-        IComponentPriceRepository priceRepository)
+        IComponentPriceRepository priceRepository,
+        IBomLineRepository bomLineRepository,
+        IProductCostSnapshotService snapshotService)
     {
         _repository = repository;
         _priceRepository = priceRepository;
+        _bomLineRepository = bomLineRepository;
+        _snapshotService = snapshotService;
     }
 
     public async Task<CreateComponentPriceResponse> Handle(CreateComponentPriceCommand request, CancellationToken cancellationToken)
@@ -26,10 +33,13 @@ public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponen
             return new CreateComponentPriceResponse { Found = false };
         }
 
+        IReadOnlyList<Guid> affectedProductIds = await _bomLineRepository.GetProductIdsByComponentIdAsync(
+            request.ComponentId, cancellationToken);
+
+        await _snapshotService.CaptureBeforeChangeAsync(affectedProductIds, "ComponentPriceChanged", cancellationToken);
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        // Deactivation and insertion go through the shared scoped DbContext and one SaveChanges,
-        // so the component is never left without an active price version.
         ComponentPrice? activePrice = await _priceRepository.GetActiveByComponentIdAsync(component.Id, cancellationToken);
         if (activePrice != null)
         {

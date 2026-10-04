@@ -10,8 +10,14 @@ public class DeleteBomLineCommandHandler : IRequestHandler<DeleteBomLineCommand,
     public async Task<DeleteBomLineResponse> Handle(DeleteBomLineCommand request, CancellationToken cancellationToken)
     {
         BomLine? line = await _repository.GetByIdAsync(request.Id, cancellationToken);
-        if (line == null || !line.IsActive) { throw new AppException(ErrorCodes.Catalog.BomLineNotFound); }
-        line.IsActive = false; line.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (line == null || !line.IsActive)
+        {
+            throw new AppException(ErrorCodes.Catalog.BomLineNotFound);
+        }
+
+        line.IsActive = false;
+        line.UpdatedAt = DateTimeOffset.UtcNow;
         await _repository.SaveChangesAsync(cancellationToken);
         return new DeleteBomLineResponse { Found = true };
     }

@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using MediatR;
 
@@ -8,7 +9,8 @@ public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateComman
 {
     private readonly IWorkRateRepository _repository;
 
-    public CreateWorkRateCommandHandler(IWorkRateRepository repository)
+    public CreateWorkRateCommandHandler(
+        IWorkRateRepository repository)
     {
         _repository = repository;
     }

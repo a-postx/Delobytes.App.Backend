@@ -19,6 +19,9 @@ public class WorkRateCommandHandlerTests
 {
     private readonly Mock<IWorkRateRepository> _repoMock = new();
 
+    private CreateWorkRateCommandHandler CreateWorkRateHandler()
+        => new CreateWorkRateCommandHandler(_repoMock.Object);
+
     private static WorkRate BuildWorkRate(Guid? id = null)
         => new WorkRate
         {
@@ -40,8 +43,7 @@ public class WorkRateCommandHandlerTests
             .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
-        CreateWorkRateCommandHandler handler =
-            new CreateWorkRateCommandHandler(_repoMock.Object);
+        CreateWorkRateCommandHandler handler = CreateWorkRateHandler();
 
         CreateWorkRateCommand command = new CreateWorkRateCommand
         {

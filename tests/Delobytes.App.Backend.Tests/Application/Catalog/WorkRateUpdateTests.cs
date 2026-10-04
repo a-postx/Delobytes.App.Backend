@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.UpdateWorkRate;
@@ -198,5 +199,25 @@ public class WorkRateUpdateTests
         existing.Name.Should().Be(originalName);
         existing.DailyWage.Should().Be(originalWage);
         existing.ValidFrom.Should().Be(originalValidFrom);
+    }
+
+    // ── Этап 5: отсутствие триггера снапшота ─────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateWorkRate_DoesNotTakeSnapshotDependency()
+    {
+        // UpdateWorkRate can only toggle IsActive, and deactivation is deliberately ignored by
+        // ProductWorkRateRepository.GetEffectiveAtAsync, so this command cannot move a product
+        // cost. It therefore takes no IProductCostSnapshotService — the constructor stays
+        // single-argument. The test pins that down, because giving this handler the snapshot
+        // service would mean capturing on a change that does not affect the calculation.
+        Type[] parameterTypes = typeof(UpdateWorkRateCommandHandler)
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        parameterTypes.Should().Equal(typeof(IWorkRateRepository));
     }
 }

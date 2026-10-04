@@ -45,8 +45,10 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                         IsDefault = b.IsDefault,
                     })
                     .ToList(),
+
                 // The list view does not show dimensions; the single-product endpoint does.
                 PackingUnit = null,
+
                 // The list view returns only thumbnail photos; the single-product endpoint returns all variants.
                 Photos = p.Photos
                     .Where(ph => ph.Status == ProductPhotoStatus.Uploaded && ph.SizeVariant == "thumbnail")
