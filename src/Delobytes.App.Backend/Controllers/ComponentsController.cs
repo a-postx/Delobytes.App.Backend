@@ -62,6 +62,7 @@ public class ComponentsController : ControllerBase
                 Name = request.Name,
                 Description = request.Description,
                 Unit = request.Unit,
+                Category = request.Category,
                 PricePerUnit = request.PricePerUnit,
                 SupplierId = request.SupplierId,
                 ValidFrom = request.ValidFrom,
@@ -84,6 +85,7 @@ public class ComponentsController : ControllerBase
                 Name = request.Name,
                 Description = request.Description,
                 Unit = request.Unit,
+                Category = request.Category,
             },
             cancellationToken);
 
@@ -161,6 +163,9 @@ public class CreateComponentRequest
 
     public Catalog.Domain.Enums.Unit Unit { get; set; }
 
+    /// <summary>Категория компонента, определяющая статью себестоимости. По умолчанию — материал.</summary>
+    public ComponentCategory Category { get; set; } = ComponentCategory.Material;
+
     public decimal PricePerUnit { get; set; }
 
     public Guid? SupplierId { get; set; }
@@ -177,6 +182,9 @@ public class UpdateComponentRequest
     public string? Description { get; set; }
 
     public Catalog.Domain.Enums.Unit Unit { get; set; }
+
+    /// <summary>Категория компонента, определяющая статью себестоимости. По умолчанию — материал.</summary>
+    public ComponentCategory Category { get; set; } = ComponentCategory.Material;
 }
 
 /// <summary>Request body for appending a new price version.</summary>

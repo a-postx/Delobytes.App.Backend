@@ -25,6 +25,7 @@ public class GetComponentsQueryHandler : IRequestHandler<GetComponentsQuery, Get
                 Name = c.Name,
                 Description = c.Description,
                 Unit = c.Unit,
+                Category = c.Category,
                 ActivePrice = ComponentPriceMapper.Map(c.Prices.FirstOrDefault(p => p.IsActive)),
                 IsActive = c.IsActive,
                 CreatedAt = c.CreatedAt,

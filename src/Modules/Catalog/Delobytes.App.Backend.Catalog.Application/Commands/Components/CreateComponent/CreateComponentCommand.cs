@@ -12,6 +12,9 @@ public class CreateComponentCommand : IRequest<CreateComponentResponse>, IRequir
 
     public Domain.Enums.Unit Unit { get; set; }
 
+    /// <summary>Категория компонента. По умолчанию — материал.</summary>
+    public ComponentCategory Category { get; set; } = ComponentCategory.Material;
+
     /// <summary>Price of the first price version created together with the component.</summary>
     public decimal PricePerUnit { get; set; }
 

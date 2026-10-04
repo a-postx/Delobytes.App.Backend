@@ -27,6 +27,7 @@ public class CreateComponentCommandHandler : IRequestHandler<CreateComponentComm
             Name = request.Name,
             Description = request.Description,
             Unit = request.Unit,
+            Category = request.Category,
             IsActive = true
         };
 

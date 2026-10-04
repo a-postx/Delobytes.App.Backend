@@ -12,6 +12,9 @@ public class GetComponentResponse
 
     public Unit Unit { get; set; }
 
+    /// <summary>Категория компонента, определяющая статью себестоимости.</summary>
+    public ComponentCategory Category { get; set; } = ComponentCategory.Material;
+
     /// <summary>Currently active price version, or null when the component has no active price.</summary>
     public ComponentPriceDto? ActivePrice { get; set; }
 

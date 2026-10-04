@@ -25,6 +25,7 @@ public class UpdateComponentCommandHandler : IRequestHandler<UpdateComponentComm
         component.Name = request.Name;
         component.Description = request.Description;
         component.Unit = request.Unit;
+        component.Category = request.Category;
 
         await _repository.SaveChangesAsync(cancellationToken);
 
