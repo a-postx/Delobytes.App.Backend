@@ -119,6 +119,10 @@ public class ProductCostCalculatorTests
             .Setup(repository => repository.GetEffectiveAtAsync(productId, asOf, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<BomLine>());
 
+        _productWorkRateRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(productId, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProductWorkRate?)null);
+
         CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
 
         breakdown.MaterialCost.Should().Be(0m);
@@ -127,8 +131,38 @@ public class ProductCostCalculatorTests
         breakdown.LaborCost.Should().Be(0m);
         breakdown.TotalCost.Should().Be(0m);
         breakdown.Lines.Should().BeEmpty();
-        breakdown.Warnings.Should().HaveCount(1);
-        breakdown.Warnings[0].Type.Should().Be(CostWarningType.MissingBom);
+
+        // Missing composition and missing labour rate are independent observations, so a product
+        // without both reports both instead of stopping at the first one.
+        breakdown.Warnings.Should().HaveCount(2);
+        breakdown.Warnings.Should().Contain(warning => warning.Type == CostWarningType.MissingBom);
+        breakdown.Warnings.Should().Contain(warning => warning.Type == CostWarningType.MissingWorkRate);
+        breakdown.IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CalculateAsync_NoBom_StillCountsLabourCost()
+    {
+        Guid productId = Guid.NewGuid();
+        DateOnly asOf = new DateOnly(2026, 3, 1);
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(productId, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<BomLine>());
+
+        SetupLabor(productId, asOf, dailyWage: 2500m, assemblyRatePerDay: 105);
+
+        CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
+
+        // Labour is a property of the assembly step, not of the composition, so an unfinished BOM
+        // must not hide a cost that is already known: 2500 / 105.
+        breakdown.MaterialCost.Should().Be(0m);
+        breakdown.LogisticsCost.Should().Be(0m);
+        breakdown.PackagingCost.Should().Be(0m);
+        breakdown.LaborCost.Should().BeApproximately(2500m / 105m, Tolerance);
+        breakdown.TotalCost.Should().BeApproximately(2500m / 105m, Tolerance);
+        breakdown.Lines.Should().BeEmpty();
+        breakdown.Warnings.Should().ContainSingle(warning => warning.Type == CostWarningType.MissingBom);
         breakdown.IsComplete.Should().BeFalse();
     }
 

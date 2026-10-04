@@ -53,6 +53,76 @@ public class ProductPhotoService : IProductPhotoService
         _logger = logger;
     }
 
+    // Stops reading one byte past the limit, so an unexpectedly huge or endless response
+    // cannot exhaust memory before it is rejected.
+    private static async Task CopyWithLimitAsync(
+        Stream source,
+        Stream destination,
+        long limitBytes,
+        CancellationToken cancellationToken)
+    {
+        byte[] chunk = new byte[81920];
+        long total = 0;
+
+        while (true)
+        {
+            int read = await source.ReadAsync(chunk, cancellationToken);
+
+            if (read <= 0)
+            {
+                break;
+            }
+
+            total += read;
+
+            if (total > limitBytes)
+            {
+                return;
+            }
+
+            await destination.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
+        }
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        return value.Length <= maxLength ? value : value[..maxLength];
+    }
+
+    // Every row starts as Pending and is moved to Uploaded or Failed by the caller,
+    // so the row lifecycle has exactly one entry point.
+    private static ProductPhoto CreatePhoto(Product product, MarketplacePhotoSource source, Guid tenantId)
+    {
+        ProductPhoto photo = new ProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            DisplayOrder = source.DisplayOrder,
+            SizeVariant = source.SizeVariant,
+            Source = source.Source,
+            ExternalId = source.ExternalId,
+            ContentType = WebPContentType,
+            Status = ProductPhotoStatus.Pending,
+
+            // AuditableEntityInterceptor fills CreatedAt on save, but callers may read the
+            // entity before SaveChanges is ever called, so the value is set here as well.
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        photo.StorageKey = ProductPhotoKeys.Build(tenantId, product.Id, photo.Id);
+
+        product.Photos.Add(photo);
+
+        return photo;
+    }
+
+    private static void MarkFailed(ProductPhoto photo, string errorMessage)
+    {
+        photo.Status = ProductPhotoStatus.Failed;
+        photo.ErrorMessage = Truncate(errorMessage, 1000);
+        photo.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     /// <inheritdoc/>
     public async Task<ProductPhotoImportResult> ImportPhotosAsync(
         Product product,
@@ -221,39 +291,6 @@ public class ProductPhotoService : IProductPhotoService
         return true;
     }
 
-    // Every row starts as Pending and is moved to Uploaded or Failed by the caller,
-    // so the row lifecycle has exactly one entry point.
-    private static ProductPhoto CreatePhoto(Product product, MarketplacePhotoSource source, Guid tenantId)
-    {
-        ProductPhoto photo = new ProductPhoto
-        {
-            Id = Guid.NewGuid(),
-            ProductId = product.Id,
-            DisplayOrder = source.DisplayOrder,
-            SizeVariant = source.SizeVariant,
-            Source = source.Source,
-            ExternalId = source.ExternalId,
-            ContentType = WebPContentType,
-            Status = ProductPhotoStatus.Pending,
-            // AuditableEntityInterceptor fills CreatedAt on save, but callers may read the
-            // entity before SaveChanges is ever called, so the value is set here as well.
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-
-        photo.StorageKey = ProductPhotoKeys.Build(tenantId, product.Id, photo.Id);
-
-        product.Photos.Add(photo);
-
-        return photo;
-    }
-
-    private static void MarkFailed(ProductPhoto photo, string errorMessage)
-    {
-        photo.Status = ProductPhotoStatus.Failed;
-        photo.ErrorMessage = Truncate(errorMessage, 1000);
-        photo.UpdatedAt = DateTimeOffset.UtcNow;
-    }
-
     /// <summary>
     /// Downloads a photo and validates it. Returns a null payload together with the reason
     /// when the bytes are unusable.
@@ -327,41 +364,5 @@ public class ProductPhotoService : IProductPhotoService
         }
 
         return (payload, null);
-    }
-
-    // Stops reading one byte past the limit, so an unexpectedly huge or endless response
-    // cannot exhaust memory before it is rejected.
-    private static async Task CopyWithLimitAsync(
-        Stream source,
-        Stream destination,
-        long limitBytes,
-        CancellationToken cancellationToken)
-    {
-        byte[] chunk = new byte[81920];
-        long total = 0;
-
-        while (true)
-        {
-            int read = await source.ReadAsync(chunk, cancellationToken);
-
-            if (read <= 0)
-            {
-                break;
-            }
-
-            total += read;
-
-            if (total > limitBytes)
-            {
-                return;
-            }
-
-            await destination.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
-        }
-    }
-
-    private static string Truncate(string value, int maxLength)
-    {
-        return value.Length <= maxLength ? value : value[..maxLength];
     }
 }

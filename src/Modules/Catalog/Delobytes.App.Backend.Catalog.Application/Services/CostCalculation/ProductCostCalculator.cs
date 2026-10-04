@@ -44,16 +44,15 @@ public class ProductCostCalculator : ICostCalculator
         IReadOnlyList<BomLine> bomLines = await _bomLineRepository.GetEffectiveAtAsync(productId, asOf, ct);
 
         // An empty result means the product had no composition at all on that date, which is
-        // different from a composition whose positions could not be priced. Both are zero totals,
-        // but only the first one hides every position from the user.
+        // different from a composition whose positions could not be priced. Both give zero material
+        // amounts, but only the first one hides every position from the user. Labour is not derived
+        // from the composition, so it is still calculated below and reported on its own.
         if (bomLines.Count == 0)
         {
             warnings.Add(new CostWarning(
                 CostWarningType.MissingBom,
                 string.Format(CultureInfo.InvariantCulture, "Состав товара не определён на дату {0}.", asOf),
                 null));
-
-            return Build(productId, asOf, 0m, 0m, 0m, 0m, new List<CostLine>(), warnings);
         }
 
         decimal materialCost = 0m;
