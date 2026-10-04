@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using MediatR;
@@ -31,36 +32,6 @@ public class GetProductCostQueryHandler : IRequestHandler<GetProductCostQuery, G
 
         CostBreakdown breakdown = await _costCalculator.CalculateAsync(request.ProductId, asOf, cancellationToken);
 
-        return new GetProductCostResponse
-        {
-            Found = true,
-            ProductId = breakdown.ProductId,
-            AsOfDate = breakdown.AsOfDate,
-            MaterialCost = breakdown.MaterialCost,
-            LogisticsCost = breakdown.LogisticsCost,
-            PackagingCost = breakdown.PackagingCost,
-            LaborCost = breakdown.LaborCost,
-            TotalCost = breakdown.TotalCost,
-            IsComplete = breakdown.IsComplete,
-            Lines = breakdown.Lines
-                .Select(line => new GetProductCostLineDto
-                {
-                    ComponentId = line.ComponentId,
-                    ComponentName = line.ComponentName,
-                    Category = line.Category,
-                    Quantity = line.Quantity,
-                    PricePerUnit = line.PricePerUnit,
-                    LineTotal = line.LineTotal,
-                })
-                .ToList(),
-            Warnings = breakdown.Warnings
-                .Select(warning => new GetProductCostWarningDto
-                {
-                    Type = warning.Type.ToString(),
-                    Message = warning.Message,
-                    ComponentId = warning.ComponentId,
-                })
-                .ToList(),
-        };
+        return ProductCostResponseMapper.Map(breakdown);
     }
 }

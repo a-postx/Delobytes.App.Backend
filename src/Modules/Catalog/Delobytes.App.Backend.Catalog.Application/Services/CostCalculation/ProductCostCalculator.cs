@@ -39,11 +39,39 @@ public class ProductCostCalculator : ICostCalculator
     /// <inheritdoc/>
     public async Task<CostBreakdown> CalculateAsync(Guid productId, DateOnly asOf, CancellationToken ct)
     {
-        List<CostWarning> warnings = new List<CostWarning>();
-
         IReadOnlyList<BomLine> bomLines = await _bomLineRepository.GetEffectiveAtAsync(productId, asOf, ct);
 
-        // An empty result means the product had no composition at all on that date, which is
+        List<CostCalculationLine> lines = bomLines
+            .Select(bomLine => new CostCalculationLine(bomLine.ComponentId, bomLine.Component, bomLine.Quantity))
+            .ToList();
+
+        return await CalculateCoreAsync(productId, asOf, lines, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<CostBreakdown> CalculateForLinesAsync(
+        Guid productId,
+        DateOnly asOf,
+        IReadOnlyList<CostCalculationLine> lines,
+        CancellationToken ct)
+    {
+        return await CalculateCoreAsync(productId, asOf, lines, ct);
+    }
+
+    /// <summary>
+    /// Prices any composition, whether it came from the database or from an unsaved draft.
+    /// Labour is resolved from the product and the date alone, because an assembly output rate does
+    /// not depend on which components are being assembled.
+    /// </summary>
+    private async Task<CostBreakdown> CalculateCoreAsync(
+        Guid productId,
+        DateOnly asOf,
+        IReadOnlyList<CostCalculationLine> bomLines,
+        CancellationToken ct)
+    {
+        List<CostWarning> warnings = new List<CostWarning>();
+
+        // An empty input means the product had no composition at all on that date, which is
         // different from a composition whose positions could not be priced. Both give zero material
         // amounts, but only the first one hides every position from the user. Labour is not derived
         // from the composition, so it is still calculated below and reported on its own.
@@ -61,7 +89,7 @@ public class ProductCostCalculator : ICostCalculator
 
         List<CostLine> lines = new List<CostLine>(bomLines.Count);
 
-        foreach (BomLine bomLine in bomLines)
+        foreach (CostCalculationLine bomLine in bomLines)
         {
             Component component = bomLine.Component;
             string componentName = component.Name;
