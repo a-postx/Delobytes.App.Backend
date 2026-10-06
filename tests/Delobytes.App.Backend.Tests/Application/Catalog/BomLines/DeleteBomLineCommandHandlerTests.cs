@@ -91,10 +91,12 @@ public class DeleteBomLineCommandHandlerTests
     public async Task Handle_ActiveLine_SoftDeletesAndSavesIt()
     {
         Guid lineId = Guid.NewGuid();
+        DateOnly validFrom = new DateOnly(2025, 1, 1);
 
         BomLine line = new BomLine
         {
             Id = lineId,
+            ValidFrom = validFrom,
             IsActive = true,
         };
 
@@ -115,8 +117,44 @@ public class DeleteBomLineCommandHandlerTests
         line.IsActive.Should().BeFalse();
         line.UpdatedAt.Should().NotBeNull();
 
+        // Closing the interval is the part that removes the line from the cost calculation: clearing
+        // IsActive alone would only hide it from the composition editor.
+        line.ValidTo.Should().Be(DateOnly.FromDateTime(DateTime.UtcNow));
+
         _bomLineRepositoryMock.Verify(
             repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_LineScheduledForTheFuture_ClosesItWithEmptyInterval()
+    {
+        Guid lineId = Guid.NewGuid();
+        DateOnly scheduledFrom = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+
+        BomLine line = new BomLine
+        {
+            Id = lineId,
+            ValidFrom = scheduledFrom,
+            IsActive = true,
+        };
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(
+                lineId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(line);
+
+        await _handler.Handle(
+            new DeleteBomLineCommand
+            {
+                Id = lineId,
+            },
+            CancellationToken.None);
+
+        // An inverted interval would leave the line priced on every date from the removal onwards, so
+        // the end is clamped to the start instead.
+        line.ValidTo.Should().Be(scheduledFrom);
+        line.IsActive.Should().BeFalse();
     }
 }

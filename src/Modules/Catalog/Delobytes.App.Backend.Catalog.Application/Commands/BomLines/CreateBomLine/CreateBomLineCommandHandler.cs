@@ -43,7 +43,9 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
 
         if (previous != null)
         {
-            previous.IsActive = false;
+            // The replacement starts on the date the caller asked for, so the version it supersedes
+            // has to end there too; any other boundary would leave the two overlapping.
+            previous.CloseAt(request.ValidFrom);
             previous.UpdatedAt = now;
         }
 

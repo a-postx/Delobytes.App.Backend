@@ -16,7 +16,9 @@ public class DeleteBomLineCommandHandler : IRequestHandler<DeleteBomLineCommand,
             throw new AppException(ErrorCodes.Catalog.BomLineNotFound);
         }
 
-        line.IsActive = false;
+        // Closing the interval is what removes the line from the cost calculation on later dates;
+        // clearing IsActive on its own only hides it from the composition editor.
+        line.CloseAt(DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime));
         line.UpdatedAt = DateTimeOffset.UtcNow;
         await _repository.SaveChangesAsync(cancellationToken);
         return new DeleteBomLineResponse { Found = true };
