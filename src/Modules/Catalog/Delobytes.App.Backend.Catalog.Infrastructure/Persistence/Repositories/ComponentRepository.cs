@@ -21,6 +21,21 @@ public class ComponentRepository : IComponentRepository
             .FirstOrDefaultAsync(pc => pc.Id == id, ct);
     }
 
+    public async Task<IReadOnlyList<Component>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct)
+    {
+        // A preview of an empty draft would otherwise issue a pointless round trip for zero rows.
+        if (ids.Count == 0)
+        {
+            return new List<Component>();
+        }
+
+        List<Component> components = await _context.Components
+            .Where(component => ids.Contains(component.Id))
+            .ToListAsync(ct);
+
+        return components;
+    }
+
     public Task<Component?> GetWithPricesByIdAsync(Guid id, CancellationToken ct)
     {
         return _context.Components

@@ -46,13 +46,51 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
             throw new AppException(ErrorCodes.Common.ValidationFailed);
         }
 
-        List<CostCalculationLine> lines = new List<CostCalculationLine>(request.Lines.Count);
+        List<CostCalculationLine> lines = await ResolveDraftLinesAsync(request.Lines, cancellationToken);
 
-        foreach (PreviewProductBomCostLine line in request.Lines)
+        DateOnly asOf = request.AsOf ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
+
+        CostBreakdown previewBreakdown = await _costCalculator.CalculateForLinesAsync(
+            request.ProductId,
+            asOf,
+            lines,
+            cancellationToken);
+
+        // The baseline is priced in the same request, against the same date, so "было" and "стало"
+        // always describe one consistent picture even if someone else saves the composition meanwhile.
+        CostBreakdown baselineBreakdown = await _costCalculator.CalculateAsync(
+            request.ProductId,
+            asOf,
+            cancellationToken);
+
+        return new PreviewProductBomCostResponse
         {
-            Component? component = await _componentRepository.GetByIdAsync(line.ComponentId, cancellationToken);
+            Found = true,
+            Preview = ProductCostResponseMapper.Map(previewBreakdown),
+            Baseline = MapBaseline(baselineBreakdown),
+            Delta = MapDelta(previewBreakdown, baselineBreakdown),
+        };
+    }
 
-            if (component == null)
+    /// <summary>
+    /// Resolves the whole draft with one component lookup and restores the order the client sent,
+    /// because the batch query is free to return rows in any order and the preview highlights rows by position.
+    /// </summary>
+    private async Task<List<CostCalculationLine>> ResolveDraftLinesAsync(
+        List<PreviewProductBomCostLine> draftLines,
+        CancellationToken cancellationToken)
+    {
+        List<Guid> componentIds = draftLines.Select(line => line.ComponentId).ToList();
+
+        IReadOnlyList<Component> components = await _componentRepository.GetByIdsAsync(componentIds, cancellationToken);
+
+        Dictionary<Guid, Component> componentsById = components.ToDictionary(component => component.Id);
+
+        List<CostCalculationLine> lines = new List<CostCalculationLine>(draftLines.Count);
+
+        foreach (PreviewProductBomCostLine line in draftLines)
+        {
+            if (!componentsById.TryGetValue(line.ComponentId, out Component? component))
             {
                 throw new AppException(ErrorCodes.Catalog.BomComponentNotFound);
             }
@@ -60,18 +98,31 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
             lines.Add(new CostCalculationLine(line.ComponentId, component, line.Quantity));
         }
 
-        DateOnly asOf = request.AsOf ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
+        return lines;
+    }
 
-        CostBreakdown breakdown = await _costCalculator.CalculateForLinesAsync(
-            request.ProductId,
-            asOf,
-            lines,
-            cancellationToken);
-
-        return new PreviewProductBomCostResponse
+    private static PreviewProductBomCostBaseline MapBaseline(CostBreakdown breakdown)
+    {
+        return new PreviewProductBomCostBaseline
         {
-            Found = true,
-            Preview = ProductCostResponseMapper.Map(breakdown),
+            MaterialCost = breakdown.MaterialCost,
+            LogisticsCost = breakdown.LogisticsCost,
+            PackagingCost = breakdown.PackagingCost,
+            LaborCost = breakdown.LaborCost,
+            TotalCost = breakdown.TotalCost,
+            IsComplete = breakdown.IsComplete,
+        };
+    }
+
+    private static PreviewProductBomCostDelta MapDelta(CostBreakdown preview, CostBreakdown baseline)
+    {
+        return new PreviewProductBomCostDelta
+        {
+            MaterialDelta = preview.MaterialCost - baseline.MaterialCost,
+            LogisticsDelta = preview.LogisticsCost - baseline.LogisticsCost,
+            PackagingDelta = preview.PackagingCost - baseline.PackagingCost,
+            LaborDelta = preview.LaborCost - baseline.LaborCost,
+            TotalDelta = preview.TotalCost - baseline.TotalCost,
         };
     }
 }
