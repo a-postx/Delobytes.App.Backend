@@ -3,8 +3,9 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
 /// <summary>
-/// Represents a work rate entry used to calculate assembly labour cost.
-/// Each entry is versioned via ValidFrom; the record active at a given date is used for cost calculation.
+/// Represents a work rate (role) used to calculate assembly labour cost.
+/// Carries descriptive data only; the daily wage lives in <see cref="WorkRateVersion"/>
+/// versions so that historical cost calculations remain intact.
 /// </summary>
 public class WorkRate : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
@@ -12,12 +13,7 @@ public class WorkRate : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 
     public string Name { get; set; } = default!;
 
-    /// <summary>Average gross daily wage for one assembly worker, in currency units.</summary>
-    public decimal DailyWage { get; set; }
-
-    /// <summary>Date from which this rate becomes effective.</summary>
-    public DateOnly ValidFrom { get; set; }
-
+    /// <summary>Whether the logical work rate is archived. Does not depend on wage versions.</summary>
     public bool IsActive { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
@@ -29,6 +25,8 @@ public class WorkRate : ITenantScoped, IAuditableEntity, IRowVersionedEntity
     public Guid? UpdatedByUserId { get; set; }
 
     public uint RowVersion { get; set; }
+
+    public ICollection<WorkRateVersion> Versions { get; set; } = new List<WorkRateVersion>();
 
     public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
 }

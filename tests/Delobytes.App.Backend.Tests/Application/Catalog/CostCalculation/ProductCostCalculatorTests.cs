@@ -14,7 +14,7 @@ public class ProductCostCalculatorTests
     private readonly Mock<IBomLineRepository> _bomLineRepositoryMock;
     private readonly Mock<IComponentPriceRepository> _componentPriceRepositoryMock;
     private readonly Mock<IProductWorkRateRepository> _productWorkRateRepositoryMock;
-    private readonly Mock<IWorkRateRepository> _workRateRepositoryMock;
+    private readonly Mock<IWorkRateVersionRepository> _workRateVersionRepositoryMock;
     private readonly ProductCostCalculator _calculator;
 
     public ProductCostCalculatorTests()
@@ -22,13 +22,13 @@ public class ProductCostCalculatorTests
         _bomLineRepositoryMock = new Mock<IBomLineRepository>();
         _componentPriceRepositoryMock = new Mock<IComponentPriceRepository>();
         _productWorkRateRepositoryMock = new Mock<IProductWorkRateRepository>();
-        _workRateRepositoryMock = new Mock<IWorkRateRepository>();
+        _workRateVersionRepositoryMock = new Mock<IWorkRateVersionRepository>();
 
         _calculator = new ProductCostCalculator(
             _bomLineRepositoryMock.Object,
             _componentPriceRepositoryMock.Object,
             _productWorkRateRepositoryMock.Object,
-            _workRateRepositoryMock.Object);
+            _workRateVersionRepositoryMock.Object);
     }
 
     [Fact]
@@ -290,9 +290,9 @@ public class ProductCostCalculatorTests
             });
 
         // The referenced rate was removed physically; the calculation must survive it.
-        _workRateRepositoryMock
+        _workRateVersionRepositoryMock
             .Setup(repository => repository.GetEffectiveAtAsync(workRateId, asOf, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((WorkRate?)null);
+            .ReturnsAsync((WorkRateVersion?)null);
 
         CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
 
@@ -315,6 +315,115 @@ public class ProductCostCalculatorTests
         _bomLineRepositoryMock.Verify(
             repository => repository.GetEffectiveAtAsync(productId, asOf, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // ── Wage versions ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CalculateAsync_WageVersionEffectiveAtAsOf_IsUsed()
+    {
+        // The wage is no longer a column on the work rate row: it is resolved through the version
+        // that was in force on the requested date.
+        Guid productId = Guid.NewGuid();
+        DateOnly asOf = new DateOnly(2026, 3, 15);
+
+        Component material = CreateComponent("Ткань", ComponentCategory.Material);
+        SetupBom(productId, asOf, new[] { CreateBomLine(productId, material, 1m) });
+        SetupPrices(asOf, new Dictionary<Guid, decimal> { { material.Id, 100m } });
+
+        Guid workRateId = SetupProductWorkRate(productId, asOf, assemblyRatePerDay: 10);
+
+        WorkRateVersion effective = new WorkRateVersion
+        {
+            Id = Guid.NewGuid(),
+            WorkRateId = workRateId,
+            DailyWage = 2000m,
+            ValidFrom = new DateOnly(2026, 1, 1),
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddMonths(-2),
+        };
+
+        _workRateVersionRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(workRateId, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(effective);
+
+        CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
+
+        // Labour 2000 / 10 = 200, material 1 * 100 = 100.
+        breakdown.MaterialCost.Should().BeApproximately(100m, Tolerance);
+        breakdown.LaborCost.Should().BeApproximately(200m, Tolerance);
+        breakdown.TotalCost.Should().BeApproximately(300m, Tolerance);
+        breakdown.Warnings.Should().BeEmpty();
+
+        // The wage must be asked for the calculation date, not for today.
+        _workRateVersionRepositoryMock.Verify(
+            repository => repository.GetEffectiveAtAsync(workRateId, asOf, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_NoWageVersionEffectiveAtAsOf_YieldsZeroLaborWithMissingWorkRate()
+    {
+        // A wage introduced after the requested date means the product had no resolvable labour on
+        // that date. The calculation reports it instead of falling back to the current wage.
+        Guid productId = Guid.NewGuid();
+        DateOnly asOf = new DateOnly(2026, 2, 1);
+
+        Component material = CreateComponent("Ткань", ComponentCategory.Material);
+        SetupBom(productId, asOf, new[] { CreateBomLine(productId, material, 2m) });
+        SetupPrices(asOf, new Dictionary<Guid, decimal> { { material.Id, 100m } });
+
+        Guid workRateId = SetupProductWorkRate(productId, asOf, assemblyRatePerDay: 8);
+
+        _workRateVersionRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(workRateId, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((WorkRateVersion?)null);
+
+        CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
+
+        breakdown.MaterialCost.Should().BeApproximately(200m, Tolerance);
+        breakdown.LaborCost.Should().Be(0m);
+        breakdown.TotalCost.Should().BeApproximately(200m, Tolerance);
+        breakdown.Warnings.Should().Contain(warning => warning.Type == CostWarningType.MissingWorkRate);
+        breakdown.IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CalculateAsync_SupersededInactiveVersion_StillResolvesForAnEarlierDate()
+    {
+        // The repository contract ignores IsActive on purpose. The calculator must therefore not
+        // filter the result out on its side: a version deactivated by a newer one is still the
+        // correct wage for a date that falls before the replacement.
+        Guid productId = Guid.NewGuid();
+        DateOnly asOf = new DateOnly(2026, 1, 20);
+
+        Component material = CreateComponent("Ткань", ComponentCategory.Material);
+        SetupBom(productId, asOf, new[] { CreateBomLine(productId, material, 1m) });
+        SetupPrices(asOf, new Dictionary<Guid, decimal> { { material.Id, 0m } });
+
+        Guid workRateId = SetupProductWorkRate(productId, asOf, assemblyRatePerDay: 4);
+
+        WorkRateVersion superseded = new WorkRateVersion
+        {
+            Id = Guid.NewGuid(),
+            WorkRateId = workRateId,
+            DailyWage = 1600m,
+            ValidFrom = new DateOnly(2026, 1, 1),
+            IsActive = false,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow.AddMonths(-1),
+        };
+
+        _workRateVersionRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(workRateId, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(superseded);
+
+        CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
+
+        // Labour 1600 / 4 = 400, and no warning: the inactive flag on the version is irrelevant
+        // for a historical date.
+        breakdown.LaborCost.Should().BeApproximately(400m, Tolerance);
+        breakdown.Warnings.Should().NotContain(warning => warning.Type == CostWarningType.MissingWorkRate);
     }
 
     private static Component CreateComponent(string name, ComponentCategory category)
@@ -366,6 +475,29 @@ public class ProductCostCalculatorTests
         }
     }
 
+    /// <summary>
+    /// Stubs the assembly output rate for the product and returns the work rate id it references,
+    /// so the caller can stub the wage version lookup for the same id.
+    /// </summary>
+    private Guid SetupProductWorkRate(Guid productId, DateOnly asOf, int assemblyRatePerDay)
+    {
+        Guid workRateId = Guid.NewGuid();
+
+        _productWorkRateRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(productId, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductWorkRate
+            {
+                Id = Guid.NewGuid(),
+                ProductId = productId,
+                WorkRateId = workRateId,
+                AssemblyRatePerDay = assemblyRatePerDay,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                IsActive = true,
+            });
+
+        return workRateId;
+    }
+
     private void SetupLabor(Guid productId, DateOnly asOf, decimal dailyWage, int assemblyRatePerDay)
     {
         Guid workRateId = Guid.NewGuid();
@@ -381,12 +513,12 @@ public class ProductCostCalculatorTests
                 IsActive = true,
             });
 
-        _workRateRepositoryMock
+        _workRateVersionRepositoryMock
             .Setup(repository => repository.GetEffectiveAtAsync(workRateId, asOf, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WorkRate
+            .ReturnsAsync(new WorkRateVersion
             {
-                Id = workRateId,
-                Name = "Сборщик",
+                Id = Guid.NewGuid(),
+                WorkRateId = workRateId,
                 DailyWage = dailyWage,
                 ValidFrom = new DateOnly(2026, 1, 1),
                 IsActive = true,

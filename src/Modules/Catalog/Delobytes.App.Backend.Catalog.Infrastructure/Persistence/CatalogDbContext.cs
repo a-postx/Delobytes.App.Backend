@@ -37,6 +37,7 @@ public class CatalogDbContext : DbContext
     public DbSet<CostType> CostTypes => Set<CostType>();
     public DbSet<ProductChannelCost> ProductChannelCosts => Set<ProductChannelCost>();
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();
+    public DbSet<WorkRateVersion> WorkRateVersions => Set<WorkRateVersion>();
     public DbSet<ProductWorkRate> ProductWorkRates => Set<ProductWorkRate>();
     public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();

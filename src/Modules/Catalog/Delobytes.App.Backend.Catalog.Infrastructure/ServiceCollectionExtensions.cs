@@ -54,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICostTypeRepository, CostTypeRepository>();
         services.AddScoped<IProductChannelCostRepository, ProductChannelCostRepository>();
         services.AddScoped<IWorkRateRepository, WorkRateRepository>();
+        services.AddScoped<IWorkRateVersionRepository, WorkRateVersionRepository>();
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
         services.AddScoped<IBomLineRepository, BomLineRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();

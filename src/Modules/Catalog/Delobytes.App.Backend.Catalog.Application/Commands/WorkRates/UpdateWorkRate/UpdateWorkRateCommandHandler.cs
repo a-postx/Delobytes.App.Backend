@@ -22,6 +22,7 @@ public class UpdateWorkRateCommandHandler : IRequestHandler<UpdateWorkRateComman
             return new UpdateWorkRateResponse { Found = false };
         }
 
+        workRate.Name = request.Name;
         workRate.IsActive = request.IsActive;
         workRate.UpdatedAt = DateTimeOffset.UtcNow;
 

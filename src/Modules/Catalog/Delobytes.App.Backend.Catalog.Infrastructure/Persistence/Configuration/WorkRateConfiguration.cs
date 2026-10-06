@@ -16,13 +16,6 @@ public class WorkRateConfiguration : IEntityTypeConfiguration<WorkRate>
             .IsRequired()
             .HasMaxLength(200);
 
-        builder.Property(wr => wr.DailyWage)
-            .HasPrecision(18, 4)
-            .IsRequired();
-
-        builder.Property(wr => wr.ValidFrom)
-            .IsRequired();
-
         builder.Property(wr => wr.IsActive)
             .IsRequired();
 
@@ -31,7 +24,6 @@ public class WorkRateConfiguration : IEntityTypeConfiguration<WorkRate>
 
         builder.Property(wr => wr.UpdatedAt);
 
-        builder.HasIndex(wr => wr.ValidFrom);
         builder.HasIndex(wr => wr.IsActive);
     }
 }

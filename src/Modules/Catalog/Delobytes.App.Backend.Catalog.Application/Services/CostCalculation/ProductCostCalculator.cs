@@ -15,7 +15,7 @@ public class ProductCostCalculator : ICostCalculator
     private readonly IBomLineRepository _bomLineRepository;
     private readonly IComponentPriceRepository _componentPriceRepository;
     private readonly IProductWorkRateRepository _productWorkRateRepository;
-    private readonly IWorkRateRepository _workRateRepository;
+    private readonly IWorkRateVersionRepository _workRateVersionRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProductCostCalculator"/> class.
@@ -23,17 +23,17 @@ public class ProductCostCalculator : ICostCalculator
     /// <param name="bomLineRepository">Source of the product composition version.</param>
     /// <param name="componentPriceRepository">Source of component prices.</param>
     /// <param name="productWorkRateRepository">Source of the product assembly output rate.</param>
-    /// <param name="workRateRepository">Source of worker daily wages.</param>
+    /// <param name="workRateVersionRepository">Source of worker daily wages.</param>
     public ProductCostCalculator(
         IBomLineRepository bomLineRepository,
         IComponentPriceRepository componentPriceRepository,
         IProductWorkRateRepository productWorkRateRepository,
-        IWorkRateRepository workRateRepository)
+        IWorkRateVersionRepository workRateVersionRepository)
     {
         _bomLineRepository = bomLineRepository;
         _componentPriceRepository = componentPriceRepository;
         _productWorkRateRepository = productWorkRateRepository;
-        _workRateRepository = workRateRepository;
+        _workRateVersionRepository = workRateVersionRepository;
     }
 
     /// <inheritdoc/>
@@ -206,9 +206,9 @@ public class ProductCostCalculator : ICostCalculator
 
         // The rate may have been physically removed, which soft-delete should prevent but the
         // calculation still has to survive.
-        WorkRate? workRate = await _workRateRepository.GetEffectiveAtAsync(productWorkRate.WorkRateId, asOf, ct);
+        WorkRateVersion? version = await _workRateVersionRepository.GetEffectiveAtAsync(productWorkRate.WorkRateId, asOf, ct);
 
-        if (workRate == null)
+        if (version == null)
         {
             warnings.Add(new CostWarning(
                 CostWarningType.MissingWorkRate,
@@ -233,6 +233,6 @@ public class ProductCostCalculator : ICostCalculator
             return 0m;
         }
 
-        return workRate.DailyWage / productWorkRate.AssemblyRatePerDay;
+        return version.DailyWage / productWorkRate.AssemblyRatePerDay;
     }
 }

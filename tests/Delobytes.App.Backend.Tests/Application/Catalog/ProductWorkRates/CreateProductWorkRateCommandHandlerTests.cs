@@ -36,8 +36,6 @@ public class CreateProductWorkRateCommandHandlerTests
         {
             Id = id,
             Name = "Базовая ставка",
-            DailyWage = 3000m,
-            ValidFrom = new DateOnly(2026, 1, 1),
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };

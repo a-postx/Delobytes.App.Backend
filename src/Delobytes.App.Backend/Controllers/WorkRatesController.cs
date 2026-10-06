@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRate;
+using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRateVersion;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.DeleteWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.UpdateWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.WorkRates.GetWorkRate;
@@ -11,6 +12,8 @@ namespace Delobytes.App.Backend.Controllers;
 
 /// <summary>
 /// CRUD endpoints for the Work Rates catalog.
+/// Wage changes are versioned: POST /{id}/versions appends a new wage version and
+/// deactivates the previous one, while PUT /{id} touches descriptive fields only.
 /// </summary>
 [ApiController]
 [Route("api/catalogs/work-rates")]
@@ -73,6 +76,7 @@ public class WorkRatesController : ControllerBase
             new UpdateWorkRateCommand
             {
                 Id = id,
+                Name = request.Name,
                 IsActive = request.IsActive,
             },
             cancellationToken);
@@ -83,6 +87,30 @@ public class WorkRatesController : ControllerBase
         }
 
         return NoContent();
+    }
+
+    /// <summary>Appends a new wage version for the work rate.</summary>
+    [HttpPost("{id:guid}/versions")]
+    public async Task<ActionResult<CreateWorkRateVersionResponse>> CreateVersion(
+        Guid id,
+        [FromBody] CreateWorkRateVersionApiRequest request,
+        CancellationToken cancellationToken)
+    {
+        CreateWorkRateVersionResponse response = await _mediator.Send(
+            new CreateWorkRateVersionCommand
+            {
+                WorkRateId = id,
+                DailyWage = request.DailyWage,
+                ValidFrom = request.ValidFrom,
+            },
+            cancellationToken);
+
+        if (!response.Found)
+        {
+            return NotFound();
+        }
+
+        return Ok(response);
     }
 
     [HttpDelete("{id:guid}")]
@@ -110,7 +138,18 @@ public class CreateWorkRateApiRequest
     public DateOnly ValidFrom { get; set; }
 }
 
+/// <summary>Request body for updating descriptive fields of a work rate.</summary>
 public class UpdateWorkRateApiRequest
 {
+    public string Name { get; set; } = default!;
+
     public bool IsActive { get; set; }
+}
+
+/// <summary>Request body for appending a new wage version.</summary>
+public class CreateWorkRateVersionApiRequest
+{
+    public decimal DailyWage { get; set; }
+
+    public DateOnly ValidFrom { get; set; }
 }

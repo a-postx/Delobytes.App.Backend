@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.CreateBomLine;
 using Delobytes.App.Backend.Catalog.Application.Commands.Components.CreateComponentPrice;
+using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRateVersion;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
@@ -35,7 +36,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
     private readonly BomLineRepository _bomLineRepository;
     private readonly ComponentPriceRepository _componentPriceRepository;
     private readonly ProductWorkRateRepository _productWorkRateRepository;
-    private readonly WorkRateRepository _workRateRepository;
+    private readonly WorkRateVersionRepository _workRateVersionRepository;
     private readonly ComponentRepository _componentRepository;
     private readonly DateOnly _today;
 
@@ -53,14 +54,14 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
         _bomLineRepository = new BomLineRepository(_context);
         _componentPriceRepository = new ComponentPriceRepository(_context);
         _productWorkRateRepository = new ProductWorkRateRepository(_context);
-        _workRateRepository = new WorkRateRepository(_context);
+        _workRateVersionRepository = new WorkRateVersionRepository(_context);
         _componentRepository = new ComponentRepository(_context);
 
         ProductCostCalculator calculator = new ProductCostCalculator(
             _bomLineRepository,
             _componentPriceRepository,
             _productWorkRateRepository,
-            _workRateRepository);
+            _workRateVersionRepository);
 
         _snapshotService = new ProductCostSnapshotService(
             new ProductCostSnapshotRepository(_context),
@@ -289,6 +290,55 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task WorkRateVersionChange_CapturesCostThatWasInForceBeforeTheChange()
+    {
+        Guid productId = Guid.NewGuid();
+        await SeedProductAsync(productId);
+        Component component = await SeedComponentAsync("Ткань", ComponentCategory.Material, pricePerUnit: 100m);
+        await SeedBomLineAsync(productId, component.Id, quantity: 2m);
+
+        WorkRate workRate = await SeedWorkRateAsync(dailyWage: 2000m, validFrom: _today.AddDays(-30));
+        await SeedProductWorkRateAsync(productId, workRate.Id, assemblyRatePerDay: 8);
+
+        // Baseline: material 2 * 100 = 200, labour 2000 / 8 = 250.
+        CostBreakdown beforeChange = await CalculateAsync(productId);
+        beforeChange.TotalCost.Should().Be(450m);
+
+        CreateWorkRateVersionCommandHandler handler = new CreateWorkRateVersionCommandHandler(
+            new WorkRateRepository(_context),
+            _workRateVersionRepository,
+            _productWorkRateRepository,
+            _snapshotService);
+
+        CreateWorkRateVersionResponse response = await handler.Handle(
+            new CreateWorkRateVersionCommand
+            {
+                WorkRateId = workRate.Id,
+                DailyWage = 4000m,
+                ValidFrom = _today,
+            },
+            CancellationToken.None);
+
+        response.Found.Should().BeTrue();
+
+        await _context.SaveChangesAsync();
+
+        // Labour doubles with the wage: 200 + 4000 / 8 = 700.
+        CostBreakdown afterChange = await CalculateAsync(productId);
+        afterChange.TotalCost.Should().Be(700m);
+
+        List<ProductCostSnapshot> snapshots = await _context.ProductCostSnapshots
+            .Where(snapshot => snapshot.ProductId == productId)
+            .ToListAsync();
+
+        // The captured figure is the one in force *before* the wage change.
+        snapshots.Should().ContainSingle();
+        snapshots[0].TotalCost.Should().Be(450m);
+        snapshots[0].LaborCost.Should().Be(250m);
+        snapshots[0].TriggerReason.Should().Be("WorkRateChanged");
+    }
+
+    [Fact]
     public async Task WorkRateChange_IgnoresProductsWhoseProductWorkRateIsInactive()
     {
         Guid workRateId = Guid.NewGuid();
@@ -297,6 +347,15 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
         {
             Id = workRateId,
             Name = "Базовая ставка",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        // The wage lives on the version row now; the parent carries descriptive data only.
+        _context.WorkRateVersions.Add(new WorkRateVersion
+        {
+            Id = Guid.NewGuid(),
+            WorkRateId = workRateId,
             DailyWage = 2000m,
             ValidFrom = _today.AddDays(-30),
             IsActive = true,
@@ -337,13 +396,62 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
         affectedProductIds[0].Should().Be(liveProductId);
     }
 
+    private async Task<WorkRate> SeedWorkRateAsync(decimal dailyWage, DateOnly validFrom)
+    {
+        WorkRate workRate = new WorkRate
+        {
+            Id = Guid.NewGuid(),
+            Name = "Базовая ставка",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        _context.WorkRates.Add(workRate);
+
+        _context.WorkRateVersions.Add(new WorkRateVersion
+        {
+            Id = Guid.NewGuid(),
+            WorkRateId = workRate.Id,
+            DailyWage = dailyWage,
+            ValidFrom = validFrom,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        await _context.SaveChangesAsync();
+
+        return workRate;
+    }
+
+    private async Task<ProductWorkRate> SeedProductWorkRateAsync(
+        Guid productId,
+        Guid workRateId,
+        int assemblyRatePerDay)
+    {
+        ProductWorkRate productWorkRate = new ProductWorkRate
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            WorkRateId = workRateId,
+            AssemblyRatePerDay = assemblyRatePerDay,
+            ValidFrom = _today.AddDays(-30),
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        _context.ProductWorkRates.Add(productWorkRate);
+        await _context.SaveChangesAsync();
+
+        return productWorkRate;
+    }
+
     private async Task<CostBreakdown> CalculateAsync(Guid productId)
     {
         ProductCostCalculator calculator = new ProductCostCalculator(
             _bomLineRepository,
             _componentPriceRepository,
             _productWorkRateRepository,
-            _workRateRepository);
+            _workRateVersionRepository);
 
         return await calculator.CalculateAsync(productId, _today, CancellationToken.None);
     }

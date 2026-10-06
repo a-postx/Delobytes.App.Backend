@@ -8,11 +8,14 @@ namespace Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWor
 public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateCommand, CreateWorkRateResponse>
 {
     private readonly IWorkRateRepository _repository;
+    private readonly IWorkRateVersionRepository _versionRepository;
 
     public CreateWorkRateCommandHandler(
-        IWorkRateRepository repository)
+        IWorkRateRepository repository,
+        IWorkRateVersionRepository versionRepository)
     {
         _repository = repository;
+        _versionRepository = versionRepository;
     }
 
     public async Task<CreateWorkRateResponse> Handle(CreateWorkRateCommand request, CancellationToken cancellationToken)
@@ -21,6 +24,14 @@ public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateComman
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        WorkRateVersion version = new WorkRateVersion
+        {
+            Id = Guid.NewGuid(),
+            WorkRateId = workRate.Id,
             DailyWage = request.DailyWage,
             ValidFrom = request.ValidFrom,
             IsActive = true,
@@ -28,6 +39,9 @@ public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateComman
         };
 
         _repository.Add(workRate);
+        _versionRepository.Add(version);
+
+        // Both repositories share the scoped CatalogDbContext, so one SaveChanges persists the work rate and its first wage version atomically.
         await _repository.SaveChangesAsync(cancellationToken);
 
         return new CreateWorkRateResponse { Id = workRate.Id };

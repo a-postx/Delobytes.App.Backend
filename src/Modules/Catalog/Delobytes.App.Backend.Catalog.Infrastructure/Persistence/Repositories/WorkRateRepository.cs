@@ -23,19 +23,8 @@ public class WorkRateRepository : IWorkRateRepository
     public async Task<IReadOnlyList<WorkRate>> GetAllAsync(CancellationToken ct)
     {
         return await _context.WorkRates
-            .OrderByDescending(wr => wr.ValidFrom)
+            .OrderBy(wr => wr.Name)
             .ToListAsync(ct);
-    }
-
-    public Task<WorkRate?> GetEffectiveAtAsync(Guid workRateId, DateOnly asOf, CancellationToken ct)
-    {
-        // IsActive is intentionally not filtered, matching the component price lookup: a rate
-        // superseded later is still the correct one for a date that falls before it was replaced.
-        return _context.WorkRates
-            .Where(wr => wr.Id == workRateId && wr.ValidFrom <= asOf)
-            .OrderByDescending(wr => wr.ValidFrom)
-            .ThenByDescending(wr => wr.CreatedAt)
-            .FirstOrDefaultAsync(ct);
     }
 
     public void Add(WorkRate workRate)
