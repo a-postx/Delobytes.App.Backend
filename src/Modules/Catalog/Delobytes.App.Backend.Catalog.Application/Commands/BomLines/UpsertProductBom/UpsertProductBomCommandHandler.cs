@@ -50,11 +50,7 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
 
         foreach (BomLine line in active)
         {
-            // Superseded versions are closed on the date the composition changes, which is the same
-            // date their replacements start on. A line whose component the user just removed is
-            // closed as well and receives no successor — closing it is what takes the component out
-            // of the cost calculation; deactivating alone only hides it from the editor.
-            line.CloseAt(today);
+            line.IsActive = false;
             line.UpdatedAt = now;
         }
 

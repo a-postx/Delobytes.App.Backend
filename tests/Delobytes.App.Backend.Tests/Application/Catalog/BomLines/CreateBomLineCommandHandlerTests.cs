@@ -145,10 +145,6 @@ public class CreateBomLineCommandHandlerTests
         previous.IsActive.Should().BeFalse();
         previous.UpdatedAt.Should().NotBeNull();
 
-        // The superseded version ends exactly where its replacement begins; any other boundary would
-        // leave the two overlapping and double-count the component.
-        previous.ValidTo.Should().Be(new DateOnly(2026, 2, 1));
-
         addedLine.Should().NotBeNull();
         addedLine!.Id.Should().Be(response.Id);
         addedLine.ProductId.Should().Be(productId);

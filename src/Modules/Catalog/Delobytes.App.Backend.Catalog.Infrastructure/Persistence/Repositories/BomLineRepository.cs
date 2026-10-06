@@ -43,21 +43,11 @@ public class BomLineRepository : IBomLineRepository
     {
         // The component is included because the cost calculation needs its name and category;
         // without it every cost line would have to resolve the component separately.
-        //
-        // IsActive is deliberately not part of the predicate: a version superseded by a later one is
-        // inactive, yet it remains the effective version for every date before its successor started.
-        // The interval carries that meaning instead. ValidTo is exclusive, so a version closed today
-        // no longer applies today; a component removed from the composition therefore drops out of
-        // the calculation while the figure for earlier dates stays reproducible.
         List<BomLine> candidates = await _context.BomLines
-            .Where(b => b.ProductId == productId
-                && b.ValidFrom <= asOf
-                && (b.ValidTo == null || b.ValidTo > asOf))
+            .Where(b => b.ProductId == productId && b.ValidFrom <= asOf)
             .Include(b => b.Component)
             .ToListAsync(ct);
 
-        // Versions of one component do not overlap once the interval is respected, so the ordering
-        // only has to settle records that share a start date.
         return candidates
             .GroupBy(b => b.ComponentId)
             .Select(group => group.OrderByDescending(b => b.ValidFrom).ThenByDescending(b => b.CreatedAt).First())

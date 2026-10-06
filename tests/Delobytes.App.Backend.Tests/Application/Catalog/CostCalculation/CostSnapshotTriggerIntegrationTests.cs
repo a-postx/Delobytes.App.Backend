@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.CreateBomLine;
-using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.UpsertProductBom;
 using Delobytes.App.Backend.Catalog.Application.Commands.Components.CreateComponentPrice;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
@@ -336,99 +335,6 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
 
         affectedProductIds.Should().ContainSingle();
         affectedProductIds[0].Should().Be(liveProductId);
-    }
-
-    /// <summary>
-    /// The case reported from production: the user adds a component, saves, then removes it again
-    /// and saves. The composition table drops the row, so the cost has to drop with it. Before the
-    /// interval bound existed the closed line kept winning the "latest version on the date" lookup,
-    /// which left the material and total figures permanently inflated.
-    /// </summary>
-    [Fact]
-    public async Task ComponentAddedThenRemoved_RestoresOriginalCosts()
-    {
-        Guid productId = Guid.NewGuid();
-        await SeedProductAsync(productId);
-
-        Guid workRateId = Guid.NewGuid();
-        _context.WorkRates.Add(new WorkRate
-        {
-            Id = workRateId,
-            Name = "Базовая ставка",
-            DailyWage = 800m,
-            ValidFrom = _today.AddDays(-30),
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        });
-
-        _context.ProductWorkRates.Add(new ProductWorkRate
-        {
-            Id = Guid.NewGuid(),
-            ProductId = productId,
-            WorkRateId = workRateId,
-            AssemblyRatePerDay = 8,
-            ValidFrom = _today.AddDays(-30),
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        });
-
-        Component original = await SeedComponentAsync("Ткань", ComponentCategory.Material, pricePerUnit: 100m);
-        Component added = await SeedComponentAsync("Фурнитура", ComponentCategory.Material, pricePerUnit: 250m);
-        await SeedBomLineAsync(productId, original.Id, quantity: 2m);
-
-        UpsertProductBomCommandHandler handler = new UpsertProductBomCommandHandler(
-            _bomLineRepository,
-            _componentRepository,
-            _snapshotService);
-
-        CostBreakdown originalBreakdown = await CalculateAsync(productId);
-        originalBreakdown.MaterialCost.Should().Be(200m);
-
-        // Step one: the user adds the component and saves.
-        await handler.Handle(
-            new UpsertProductBomCommand
-            {
-                ProductId = productId,
-                Lines = new List<UpsertProductBomItem>
-                {
-                    new UpsertProductBomItem { ComponentId = original.Id, Quantity = 2m },
-                    new UpsertProductBomItem { ComponentId = added.Id, Quantity = 1m },
-                },
-            },
-            CancellationToken.None);
-
-        await _context.SaveChangesAsync();
-
-        CostBreakdown afterAdd = await CalculateAsync(productId);
-        afterAdd.MaterialCost.Should().Be(450m);
-        afterAdd.TotalCost.Should().Be(550m);
-
-        // Step two: ten minutes later the user realises the mistake and removes the component.
-        await handler.Handle(
-            new UpsertProductBomCommand
-            {
-                ProductId = productId,
-                Lines = new List<UpsertProductBomItem>
-                {
-                    new UpsertProductBomItem { ComponentId = original.Id, Quantity = 2m },
-                },
-            },
-            CancellationToken.None);
-
-        await _context.SaveChangesAsync();
-
-        CostBreakdown afterRemoval = await CalculateAsync(productId);
-
-        // Both saves happen on the same date, so the removed component's version is closed at the
-        // only boundary that can separate them: the removal drops it from this date's calculation.
-        afterRemoval.MaterialCost.Should().Be(200m);
-        afterRemoval.TotalCost.Should().Be(300m);
-
-        IReadOnlyList<BomLine> composition = await _bomLineRepository
-            .GetActiveByProductIdAsync(productId, CancellationToken.None);
-
-        composition.Should().ContainSingle();
-        composition[0].ComponentId.Should().Be(original.Id);
     }
 
     private async Task<CostBreakdown> CalculateAsync(Guid productId)

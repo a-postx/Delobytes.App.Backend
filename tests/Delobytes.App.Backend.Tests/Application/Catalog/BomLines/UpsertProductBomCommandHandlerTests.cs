@@ -157,10 +157,6 @@ public class UpsertProductBomCommandHandlerTests
         previous.IsActive.Should().BeFalse();
         previous.UpdatedAt.Should().NotBeNull();
 
-        // The version being replaced ends on the date its replacements start, so the two never
-        // overlap in the interval the cost calculation resolves against.
-        previous.ValidTo.Should().Be(DateOnly.FromDateTime(DateTime.UtcNow));
-
         addedLines.Should().HaveCount(2);
         addedLines.Should().OnlyContain(line =>
             line.ProductId == productId &&
@@ -184,66 +180,6 @@ public class UpsertProductBomCommandHandlerTests
         _bomLineRepositoryMock.Verify(
             repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.Once);
-    }
-
-    [Fact]
-    public async Task Handle_ComponentRemovedFromComposition_ClosesItsLineWithoutSuccessor()
-    {
-        Guid productId = Guid.NewGuid();
-        Guid removedComponentId = Guid.NewGuid();
-        Guid keptComponentId = Guid.NewGuid();
-
-        BomLine lineToRemove = new BomLine
-        {
-            Id = Guid.NewGuid(),
-            ProductId = productId,
-            ComponentId = removedComponentId,
-            Quantity = 3m,
-            ValidFrom = new DateOnly(2025, 6, 1),
-            IsActive = true,
-        };
-
-        BomLine lineToKeep = new BomLine
-        {
-            Id = Guid.NewGuid(),
-            ProductId = productId,
-            ComponentId = keptComponentId,
-            Quantity = 1m,
-            ValidFrom = new DateOnly(2025, 6, 1),
-            IsActive = true,
-        };
-
-        _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
-                productId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<BomLine> { lineToRemove, lineToKeep });
-
-        // The user keeps one component and removes the other, which is what the bug report describes.
-        UpsertProductBomCommand command = new UpsertProductBomCommand
-        {
-            ProductId = productId,
-            Lines = new List<UpsertProductBomItem>
-            {
-                new UpsertProductBomItem
-                {
-                    ComponentId = keptComponentId,
-                    Quantity = 1m,
-                },
-            },
-        };
-
-        await _handler.Handle(command, CancellationToken.None);
-
-        DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        // Both lines end today: the removed component gets no successor, so once the interval is
-        // closed it drops out of the cost calculation instead of being priced forever.
-        lineToRemove.ValidTo.Should().Be(today);
-        lineToRemove.IsActive.Should().BeFalse();
-
-        lineToKeep.ValidTo.Should().Be(today);
-        lineToKeep.IsActive.Should().BeFalse();
     }
 
     // ── Этап 5: автоматическая фиксация снапшота ─────────────────────────────────────

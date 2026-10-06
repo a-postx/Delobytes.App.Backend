@@ -14,14 +14,10 @@ public class BomLineConfiguration : IEntityTypeConfiguration<BomLine>
         builder.Property(b => b.ComponentId).IsRequired();
         builder.Property(b => b.Quantity).HasPrecision(18, 4).IsRequired();
         builder.Property(b => b.ValidFrom).IsRequired();
-        builder.Property(b => b.ValidTo);
         builder.Property(b => b.IsActive).IsRequired();
         builder.Property(b => b.CreatedAt).IsRequired();
         builder.Property(b => b.UpdatedAt);
         builder.HasIndex(b => new { b.ProductId, b.ComponentId, b.ValidFrom });
-        // The cost calculation resolves a version by its interval rather than by IsActive, so that
-        // lookup needs an index of its own.
-        builder.HasIndex(b => new { b.ProductId, b.ValidFrom, b.ValidTo });
         builder.HasIndex(b => new { b.ProductId, b.IsActive });
         builder.HasOne(b => b.Product).WithMany(p => p.BomLines).HasForeignKey(b => b.ProductId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(b => b.Component).WithMany(c => c.BomLines).HasForeignKey(b => b.ComponentId).OnDelete(DeleteBehavior.Restrict);
