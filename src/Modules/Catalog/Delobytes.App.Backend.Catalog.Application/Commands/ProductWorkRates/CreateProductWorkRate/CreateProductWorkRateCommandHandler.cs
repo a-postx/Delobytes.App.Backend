@@ -31,7 +31,30 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
             throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
         }
 
+        // Checked before any snapshot work: a duplicate ValidFrom would resolve unpredictably via
+        // the ThenByDescending(CreatedAt) tie-break in GetEffectiveAtAsync, so the request is
+        // rejected outright rather than silently accepted.
+        IReadOnlyList<ProductWorkRate> existingVersions =
+            await _repository.GetByProductIdAsync(request.ProductId, cancellationToken);
+
+        if (existingVersions.Any(v => v.ValidFrom == request.ValidFrom))
+        {
+            throw new AppException(ErrorCodes.Catalog.ProductWorkRateValidFromConflict);
+        }
+
         await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "WorkRateChanged", cancellationToken);
+
+        // Supersede the version currently in force, mirroring CreateComponentPriceCommandHandler:
+        // without this, several rows per product could stay IsActive = true simultaneously.
+        ProductWorkRate? activeRate = await _repository.GetActiveByProductIdAsync(request.ProductId, cancellationToken);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        if (activeRate != null)
+        {
+            activeRate.IsActive = false;
+            activeRate.UpdatedAt = now;
+        }
 
         ProductWorkRate rate = new ProductWorkRate
         {
@@ -41,9 +64,12 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
             AssemblyRatePerDay = request.AssemblyRatePerDay,
             ValidFrom = request.ValidFrom,
             IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = now,
         };
 
+        // The deactivation and the insert commit in the same SaveChangesAsync call: with RowVersion
+        // now in place, a failed concurrency check on the deactivated row must not leave the new
+        // row persisted without it, which would otherwise produce two active versions.
         _repository.Add(rate);
         await _repository.SaveChangesAsync(cancellationToken);
 

@@ -22,6 +22,8 @@ public static class ErrorCodes
         public static readonly ErrorCode BomLineInvalidQuantity = new ErrorCode("catalog.bom_line.invalid_quantity", 422, "Количество компонента должно быть больше нуля.");
         public static readonly ErrorCode BomComponentNotFound = new ErrorCode("catalog.bom_line.component_not_found", 404, "Компонент не найден.");
         public static readonly ErrorCode ProductBarcodeConflict = new ErrorCode("catalog.product_barcode.value_conflict", 409, "Этот штрихкод уже привязан к другому товару.");
+        public static readonly ErrorCode ProductWorkRateValidFromConflict = new ErrorCode("catalog.product_work_rate.valid_from_conflict", 409, "Версия нормы с такой датой начала уже существует.");
+        public static readonly ErrorCode ProductWorkRateValidFromNotLatest = new ErrorCode("catalog.product_work_rate.valid_from_not_latest", 409, "Дата начала действия должна быть позже даты предыдущей версии.");
     }
 
     public static class Identity

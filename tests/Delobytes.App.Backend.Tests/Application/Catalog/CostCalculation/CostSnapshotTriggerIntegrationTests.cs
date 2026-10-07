@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.CreateBomLine;
 using Delobytes.App.Backend.Catalog.Application.Commands.Components.CreateComponentPrice;
+using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRateVersion;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
@@ -394,6 +395,74 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
 
         affectedProductIds.Should().ContainSingle();
         affectedProductIds[0].Should().Be(liveProductId);
+    }
+
+    [Fact]
+    public async Task ProductWorkRateSupersede_EffectiveCalculationUsesVersionForTheQueriedDate()
+    {
+        Guid productId = Guid.NewGuid();
+        await SeedProductAsync(productId);
+        Component component = await SeedComponentAsync("Ткань", ComponentCategory.Material, pricePerUnit: 100m);
+        await SeedBomLineAsync(productId, component.Id, quantity: 2m);
+
+        WorkRate workRate = await SeedWorkRateAsync(dailyWage: 2000m, validFrom: _today.AddDays(-30));
+
+        CreateProductWorkRateCommandHandler handler = new CreateProductWorkRateCommandHandler(
+            _productWorkRateRepository,
+            new WorkRateRepository(_context),
+            _snapshotService);
+
+        // First version: in force from -20 days, 8 units/day -> labour = 2000 / 8 = 250.
+        await handler.Handle(
+            new CreateProductWorkRateCommand
+            {
+                ProductId = productId,
+                WorkRateId = workRate.Id,
+                AssemblyRatePerDay = 8,
+                ValidFrom = _today.AddDays(-20),
+            },
+            CancellationToken.None);
+
+        await _context.SaveChangesAsync();
+
+        // Second version supersedes the first: in force from -5 days, 10 units/day -> labour = 200.
+        await handler.Handle(
+            new CreateProductWorkRateCommand
+            {
+                ProductId = productId,
+                WorkRateId = workRate.Id,
+                AssemblyRatePerDay = 10,
+                ValidFrom = _today.AddDays(-5),
+            },
+            CancellationToken.None);
+
+        await _context.SaveChangesAsync();
+
+        List<ProductWorkRate> rates = await _context.ProductWorkRates
+            .Where(r => r.ProductId == productId)
+            .ToListAsync();
+
+        rates.Should().HaveCount(2);
+        rates.Count(r => r.IsActive).Should().Be(1);
+
+        ProductCostCalculator calculator = new ProductCostCalculator(
+            _bomLineRepository,
+            _componentPriceRepository,
+            _productWorkRateRepository,
+            _workRateVersionRepository);
+
+        // Before the second version's ValidFrom: the first version is still the effective one,
+        // even though it has since been deactivated by the supersede.
+        CostBreakdown beforeSecondVersion = await calculator.CalculateAsync(
+            productId, _today.AddDays(-10), CancellationToken.None);
+        beforeSecondVersion.TotalCost.Should().Be(450m); // 2 * 100 material + 250 labour
+        beforeSecondVersion.LaborCost.Should().Be(250m);
+
+        // On the second version's ValidFrom: the new version becomes effective.
+        CostBreakdown onSecondVersion = await calculator.CalculateAsync(
+            productId, _today.AddDays(-5), CancellationToken.None);
+        onSecondVersion.TotalCost.Should().Be(400m); // 2 * 100 material + 200 labour
+        onSecondVersion.LaborCost.Should().Be(200m);
     }
 
     private async Task<WorkRate> SeedWorkRateAsync(decimal dailyWage, DateOnly validFrom)

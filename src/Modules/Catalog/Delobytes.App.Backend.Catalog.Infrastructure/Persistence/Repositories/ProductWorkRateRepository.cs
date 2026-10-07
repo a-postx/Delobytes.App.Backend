@@ -33,6 +33,19 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
             .ToListAsync(ct);
     }
 
+    public Task<ProductWorkRate?> GetActiveByProductIdAsync(Guid productId, CancellationToken ct)
+    {
+        // Normally at most one row is IsActive per product. The ordering is a defensive tie-break,
+        // not an assumption that it cannot happen: it mirrors GetEffectiveAtAsync so that, even if
+        // data ever drifted (e.g. a manual fix in the database), the most recently started version
+        // wins deterministically instead of leaving the choice to query-plan-dependent ordering.
+        return _context.ProductWorkRates
+            .Where(r => r.ProductId == productId && r.IsActive)
+            .OrderByDescending(r => r.ValidFrom)
+            .ThenByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct)
     {
         // IsActive is intentionally not filtered. Note that this method cannot tell a version
