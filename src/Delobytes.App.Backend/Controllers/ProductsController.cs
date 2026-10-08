@@ -37,10 +37,11 @@ public class ProductsController : ControllerBase
     /// Returns products filtered by status, sorted and optionally paged.
     /// Omitted status means all statuses. Omitted page keeps the legacy behaviour: the full list
     /// is returned and no Skip/Take is applied. When page is supplied, pageSize defaults to 50 and
-    /// is clamped to 1..200, sortBy must be one of name (default), sku, status, createdAt, and
-    /// sortDir is asc (default) or desc. Invalid sortBy, sortDir or page values fall back silently
-    /// to their defaults instead of failing the request. Set includeCounts to also receive
-    /// per-status totals for the filter tabs.
+    /// is clamped to 1..200, sortBy must be one of name (default), sku, status, createdAt,
+    /// updatedAt, and sortDir is asc (default) or desc. Sorting by updatedAt uses the creation
+    /// moment for products that were never edited. Invalid sortBy, sortDir or page values fall
+    /// back silently to their defaults instead of failing the request. Set includeCounts to also
+    /// receive per-status totals for the filter tabs.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(GetProductsResponse), StatusCodes.Status200OK)]

@@ -130,6 +130,11 @@ public class ProductRepository : IProductRepository
                 return Order(query, p => p.Status, descending);
             case "createdat":
                 return Order(query, p => p.CreatedAt, descending);
+            case "updatedat":
+                // A product that was never edited has a null UpdatedAt, and the list view shows
+                // its creation moment in the "Изменено" column. Order by that same effective
+                // value, otherwise such rows would sort to one end regardless of their date.
+                return Order(query, p => p.UpdatedAt ?? p.CreatedAt, descending);
             case "name":
             default:
                 return Order(query, p => p.Name, descending);

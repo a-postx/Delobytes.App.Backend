@@ -18,7 +18,9 @@ public interface IProductRepository
     /// <param name="status">Status filter; null means "all statuses".</param>
     /// <param name="skip">Rows to skip; null or negative means none. Applied after ordering.</param>
     /// <param name="take">Rows to take; null means no limit. Applied after ordering.</param>
-    /// <param name="sortBy">Sort key resolved against a fixed whitelist; unknown keys fall back to name.</param>
+    /// <param name="sortBy">Sort key resolved against a fixed whitelist (name, sku, status, createdAt,
+    /// updatedAt); unknown keys fall back to name. Sorting by updatedAt uses CreatedAt for products
+    /// that have never been edited.</param>
     /// <param name="descending">True for descending order, false for ascending.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The unpaged total count and the requested slice of products.</returns>
