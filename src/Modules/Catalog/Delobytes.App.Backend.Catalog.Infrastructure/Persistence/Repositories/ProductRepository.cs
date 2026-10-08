@@ -11,6 +11,10 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 
 public class ProductRepository : IProductRepository
 {
+    // Search terms longer than the longest searchable column are pointless: Product.Name caps at
+    // 200 characters, so a longer term cannot match anything anyway.
+    private const int SearchTermMaxLength = 200;
+
     private readonly CatalogDbContext _context;
 
     public ProductRepository(CatalogDbContext context)
@@ -38,7 +42,7 @@ public class ProductRepository : IProductRepository
 
     public async Task<IReadOnlyList<Product>> GetAllByStatusAsync(ProductStatus? status, CancellationToken ct)
     {
-        return await BuildListQuery(status)
+        return await BuildListQuery(status, null)
             .OrderBy(p => p.Name)
             .ThenBy(p => p.Id)
             .ToListAsync(ct);
@@ -50,9 +54,10 @@ public class ProductRepository : IProductRepository
         int? take,
         string? sortBy,
         bool descending,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? search = null)
     {
-        IQueryable<Product> query = BuildListQuery(status);
+        IQueryable<Product> query = BuildListQuery(status, search);
         int totalCount = await query.CountAsync(ct);
         IQueryable<Product> ordered = ApplyOrdering(query, sortBy, descending);
 
@@ -72,12 +77,15 @@ public class ProductRepository : IProductRepository
         return (totalCount, items);
     }
 
-    public async Task<(int Active, int Archived, int All)> GetStatusCountsAsync(CancellationToken ct)
+    public async Task<(int Active, int Archived, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null)
     {
+        // The counters must be derived from the same filtered set the list is showing, otherwise
+        // the tabs advertise totals for products the user cannot see under an active search.
+        IQueryable<Product> query = ApplySearch(_context.Products.AsNoTracking(), search);
+
         // One grouped statement instead of three round trips; the tab counters only need
         // these two statuses plus the total.
-        List<StatusCountRow> rows = await _context.Products
-            .AsNoTracking()
+        List<StatusCountRow> rows = await query
             .GroupBy(p => p.Status)
             .Select(g => new StatusCountRow { Status = g.Key, Count = g.Count() })
             .ToListAsync(ct);
@@ -101,7 +109,7 @@ public class ProductRepository : IProductRepository
         return await _context.SaveChangesWithConflictTranslationAsync(ct);
     }
 
-    private IQueryable<Product> BuildListQuery(ProductStatus? status)
+    private IQueryable<Product> BuildListQuery(ProductStatus? status, string? search)
     {
         IQueryable<Product> query = _context.Products
             .Include(p => p.Barcodes)
@@ -116,7 +124,38 @@ public class ProductRepository : IProductRepository
             query = query.Where(p => p.Status == filterStatus);
         }
 
-        return query;
+        return ApplySearch(query, search);
+    }
+
+    private static IQueryable<Product> ApplySearch(IQueryable<Product> query, string? search)
+    {
+        string? term = NormalizeSearch(search);
+
+        if (term is null)
+        {
+            return query;
+        }
+
+        // Case-insensitive substring match. Lower-casing both sides keeps this translatable to SQL
+        // while staying provider-agnostic: EF.Functions.ILike works on PostgreSQL but throws on the
+        // InMemory provider the repository tests run against.
+        string lowered = term.ToLowerInvariant();
+
+        return query.Where(p => p.Name.ToLower().Contains(lowered) || p.Sku.ToLower().Contains(lowered));
+    }
+
+    private static string? NormalizeSearch(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return null;
+        }
+
+        string trimmed = search.Trim();
+
+        return trimmed.Length > SearchTermMaxLength
+            ? trimmed.Substring(0, SearchTermMaxLength)
+            : trimmed;
     }
 
     private static IQueryable<Product> ApplyOrdering(IQueryable<Product> query, string? sortBy, bool descending)

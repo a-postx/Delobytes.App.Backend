@@ -4,7 +4,7 @@ using MediatR;
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
 
 /// <summary>
-/// Returns the product list, optionally filtered by status and optionally paged.
+/// Returns the product list, optionally filtered by status and search term, and optionally paged.
 /// </summary>
 /// <remarks>
 /// Paging is opt-in: when <see cref="Page"/> is null the query reproduces the original
@@ -22,6 +22,14 @@ public class GetProductsQuery : IRequest<GetProductsResponse>
     /// <see cref="IncludeCounts"/> is set).
     /// </summary>
     public ProductStatus? Status { get; set; }
+
+    /// <summary>
+    /// Optional free-text filter over the product name and SKU: case-insensitive substring match,
+    /// a product is kept when either field contains the term. Combined with <see cref="Status"/>
+    /// using AND. Blank or whitespace-only values are treated as "no search". The value is trimmed
+    /// and capped at 200 characters.
+    /// </summary>
+    public string? Search { get; set; }
 
     /// <summary>
     /// Optional 1-based page number. Null means "no pagination": the full list is returned.
@@ -48,7 +56,8 @@ public class GetProductsQuery : IRequest<GetProductsResponse>
     /// <summary>
     /// When true, <see cref="GetProductsResponse.StatusCounts"/> is populated with per-status
     /// totals computed over the whole (unpaged) result set, so tab counters stay correct
-    /// while the list itself is paged.
+    /// while the list itself is paged. The same search filter is applied, so the counters
+    /// describe the current search results rather than the whole catalog.
     /// </summary>
     public bool IncludeCounts { get; set; }
 }

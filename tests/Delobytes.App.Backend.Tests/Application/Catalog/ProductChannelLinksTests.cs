@@ -160,7 +160,8 @@ public class ProductChannelLinksTests
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
             .ReturnsAsync((2, new List<Product> { linkedProduct, manualProduct }));
 
         GetProductsQueryHandler handler = new GetProductsQueryHandler(_repositoryMock.Object, _photoServiceMock.Object);
@@ -215,7 +216,8 @@ public class ProductChannelLinksTests
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
             .ReturnsAsync((1, new List<Product> { product }));
 
         GetProductsQueryHandler handler = new GetProductsQueryHandler(_repositoryMock.Object, _photoServiceMock.Object);

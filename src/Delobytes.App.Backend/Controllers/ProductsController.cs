@@ -34,19 +34,22 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// Returns products filtered by status, sorted and optionally paged.
-    /// Omitted status means all statuses. Omitted page keeps the legacy behaviour: the full list
-    /// is returned and no Skip/Take is applied. When page is supplied, pageSize defaults to 50 and
-    /// is clamped to 1..200, sortBy must be one of name (default), sku, status, createdAt,
-    /// updatedAt, and sortDir is asc (default) or desc. Sorting by updatedAt uses the creation
-    /// moment for products that were never edited. Invalid sortBy, sortDir or page values fall
-    /// back silently to their defaults instead of failing the request. Set includeCounts to also
-    /// receive per-status totals for the filter tabs.
+    /// Returns products filtered by status and search term, sorted and optionally paged.
+    /// Omitted status means all statuses. An omitted search keeps the full list; when supplied it is
+    /// trimmed, capped at 200 characters and matched case-insensitively as a substring of the product
+    /// name or SKU (a match in either field is enough), alongside the status filter. Omitted page keeps
+    /// the legacy behaviour: the full list is returned and no Skip/Take is applied. When page is
+    /// supplied, pageSize defaults to 50 and is clamped to 1..200, sortBy must be one of name (default),
+    /// sku, status, createdAt, updatedAt, and sortDir is asc (default) or desc. Sorting by updatedAt uses
+    /// the creation moment for products that were never edited. Invalid sortBy, sortDir or page values
+    /// fall back silently to their defaults instead of failing the request. Set includeCounts to also
+    /// receive per-status totals for the filter tabs, computed over the searched result set.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(GetProductsResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<GetProductsResponse>> GetAll(
         [FromQuery] ProductStatus? status,
+        [FromQuery] string? search,
         [FromQuery] int? page,
         [FromQuery] int? pageSize,
         [FromQuery] string? sortBy,
@@ -58,6 +61,7 @@ public class ProductsController : ControllerBase
             new GetProductsQuery
             {
                 Status = status,
+                Search = search,
                 Page = page,
                 PageSize = pageSize,
                 SortBy = sortBy,

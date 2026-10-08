@@ -39,7 +39,8 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
             take,
             request.SortBy,
             descending,
-            cancellationToken);
+            cancellationToken,
+            request.Search);
 
         GetProductsResponse response = new()
         {
@@ -101,7 +102,7 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
 
         if (request.IncludeCounts)
         {
-            (int active, int archived, int all) = await _repository.GetStatusCountsAsync(cancellationToken);
+            (int active, int archived, int all) = await _repository.GetStatusCountsAsync(cancellationToken, request.Search);
             response.StatusCounts = new ProductStatusCounts
             {
                 Active = active,

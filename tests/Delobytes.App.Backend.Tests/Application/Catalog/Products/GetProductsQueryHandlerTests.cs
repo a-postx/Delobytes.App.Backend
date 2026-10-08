@@ -15,7 +15,7 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.Products;
 /// Tests for GetProductsQueryHandler.
 /// Validates the opt-in paging contract: a null page reproduces the legacy full-list
 /// behaviour, a supplied page drives Skip/Take and clamping, sortBy/sortDir resolve through
-/// the handler before reaching the repository, and status/includeCounts are passed through.
+/// the handler before reaching the repository, and status/search/includeCounts are passed through.
 /// </summary>
 public class GetProductsQueryHandlerTests
 {
@@ -36,8 +36,15 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
             .ReturnsAsync((0, new List<Product>()));
+
+        _repositoryMock
+            .Setup(r => r.GetStatusCountsAsync(
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
+            .ReturnsAsync((0, 0, 0));
     }
 
     [Fact]
@@ -47,7 +54,13 @@ public class GetProductsQueryHandlerTests
         List<Product> products = new() { BuildProduct(), BuildProduct(), BuildProduct() };
         _repositoryMock
             .Setup(r => r.GetPagedAsync(
-                null, null, null, It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                null,
+                null,
+                null,
+                It.IsAny<string?>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
             .ReturnsAsync((products.Count, products));
 
         // Act
@@ -65,7 +78,8 @@ public class GetProductsQueryHandlerTests
                 null,
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
             Times.Once);
     }
 
@@ -86,7 +100,8 @@ public class GetProductsQueryHandlerTests
                 10,
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
             Times.Once);
     }
 
@@ -111,7 +126,8 @@ public class GetProductsQueryHandlerTests
                 expectedPageSize,
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
             Times.Once);
     }
 
@@ -135,7 +151,8 @@ public class GetProductsQueryHandlerTests
                 50,
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
             Times.Once);
     }
 
@@ -162,7 +179,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<int?>(),
                 sortBy,
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
             Times.Once);
     }
 
@@ -187,7 +205,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
                 expectedDescending,
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
             Times.Once);
     }
 
@@ -196,7 +215,7 @@ public class GetProductsQueryHandlerTests
     {
         // Arrange
         _repositoryMock
-            .Setup(r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), It.IsAny<string?>()))
             .ReturnsAsync((5, 2, 7));
 
         GetProductsQuery query = new() { IncludeCounts = true };
@@ -210,7 +229,9 @@ public class GetProductsQueryHandlerTests
         response.StatusCounts.Archived.Should().Be(2);
         response.StatusCounts.All.Should().Be(7);
 
-        _repositoryMock.Verify(r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _repositoryMock.Verify(
+            r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), It.IsAny<string?>()),
+            Times.Once);
     }
 
     [Fact]
@@ -224,7 +245,9 @@ public class GetProductsQueryHandlerTests
 
         // Assert
         response.StatusCounts.Should().BeNull();
-        _repositoryMock.Verify(r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _repositoryMock.Verify(
+            r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), It.IsAny<string?>()),
+            Times.Never);
     }
 
     [Fact]
@@ -244,7 +267,37 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData("widget")]
+    [InlineData("  widget  ")]
+    [InlineData(null)]
+    public async Task Handle_SearchIsForwardedVerbatim_BothToTheListAndToTheCounters(string? search)
+    {
+        // The handler does not trim or otherwise rewrite the term -- normalisation lives in the
+        // repository. It only has to make sure the counters are queried with the same term as
+        // the list, otherwise the tabs would show numbers for a different result set.
+        GetProductsQuery query = new() { Search = search, IncludeCounts = true };
+
+        await _handler.Handle(query, CancellationToken.None);
+
+        _repositoryMock.Verify(
+            r => r.GetPagedAsync(
+                It.IsAny<ProductStatus?>(),
+                It.IsAny<int?>(),
+                It.IsAny<int?>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>(),
+                search),
+            Times.Once);
+
+        _repositoryMock.Verify(
+            r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), search),
             Times.Once);
     }
 
