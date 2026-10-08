@@ -145,6 +145,7 @@ public class ProcessProductImportBatchCompletedConsumer
             // All records failed or a fatal error occurred.
             syncJob.Status = SyncJobStatus.Failed;
             syncJob.ErrorMessage = totals.CombinedErrors;
+            _logger.LogError("Error importing products batch: {Message}", totals.CombinedErrors);
         }
 
         _syncJobRepository.Update(syncJob);
