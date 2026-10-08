@@ -33,14 +33,36 @@ public class ProductsController : ControllerBase
         _mediator = mediator;
     }
 
-    /// <summary>Returns products filtered by status. When status is omitted, products of all statuses are returned.</summary>
+    /// <summary>
+    /// Returns products filtered by status, sorted and optionally paged.
+    /// Omitted status means all statuses. Omitted page keeps the legacy behaviour: the full list
+    /// is returned and no Skip/Take is applied. When page is supplied, pageSize defaults to 50 and
+    /// is clamped to 1..200, sortBy must be one of name (default), sku, status, createdAt, and
+    /// sortDir is asc (default) or desc. Invalid sortBy, sortDir or page values fall back silently
+    /// to their defaults instead of failing the request. Set includeCounts to also receive
+    /// per-status totals for the filter tabs.
+    /// </summary>
     [HttpGet]
+    [ProducesResponseType(typeof(GetProductsResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<GetProductsResponse>> GetAll(
         [FromQuery] ProductStatus? status,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDir,
+        [FromQuery] bool? includeCounts,
         CancellationToken cancellationToken)
     {
         GetProductsResponse response = await _mediator.Send(
-            new GetProductsQuery { Status = status },
+            new GetProductsQuery
+            {
+                Status = status,
+                Page = page,
+                PageSize = pageSize,
+                SortBy = sortBy,
+                SortDir = sortDir,
+                IncludeCounts = includeCounts ?? false,
+            },
             cancellationToken);
 
         return Ok(response);

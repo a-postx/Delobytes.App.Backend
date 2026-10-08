@@ -152,9 +152,16 @@ public class ProductChannelLinksTests
 
         Product manualProduct = BuildProduct(name: "Manual product");
 
+        // The list query now goes through GetPagedAsync; TotalCount mirrors the returned slice.
         _repositoryMock
-            .Setup(r => r.GetAllByStatusAsync(It.IsAny<ProductStatus?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Product> { linkedProduct, manualProduct });
+            .Setup(r => r.GetPagedAsync(
+                It.IsAny<ProductStatus?>(),
+                It.IsAny<int?>(),
+                It.IsAny<int?>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((2, new List<Product> { linkedProduct, manualProduct }));
 
         GetProductsQueryHandler handler = new GetProductsQueryHandler(_repositoryMock.Object, _photoServiceMock.Object);
 
@@ -202,8 +209,14 @@ public class ProductChannelLinksTests
         });
 
         _repositoryMock
-            .Setup(r => r.GetAllByStatusAsync(It.IsAny<ProductStatus?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Product> { product });
+            .Setup(r => r.GetPagedAsync(
+                It.IsAny<ProductStatus?>(),
+                It.IsAny<int?>(),
+                It.IsAny<int?>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((1, new List<Product> { product }));
 
         GetProductsQueryHandler handler = new GetProductsQueryHandler(_repositoryMock.Object, _photoServiceMock.Object);
 

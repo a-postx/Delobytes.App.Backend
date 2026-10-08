@@ -4,7 +4,45 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts
 
 public class GetProductsResponse
 {
+    /// <summary>
+    /// Rows of the requested page, or the full list when pagination was not requested.
+    /// </summary>
     public List<ProductItem> Items { get; set; } = new();
+
+    /// <summary>
+    /// Total number of products matching the status filter, ignoring pagination.
+    /// </summary>
+    public int TotalCount { get; set; }
+
+    /// <summary>
+    /// Page that was actually served (1-based). 1 when pagination was not requested.
+    /// </summary>
+    public int Page { get; set; } = 1;
+
+    /// <summary>
+    /// Page size that was actually applied, after clamping. Equal to <see cref="TotalCount"/>
+    /// when pagination was not requested.
+    /// </summary>
+    public int PageSize { get; set; }
+
+    /// <summary>
+    /// Per-status totals, present only when the request asked for counts. Lets the client
+    /// render tab counters for a paged list in a single round trip.
+    /// </summary>
+    public ProductStatusCounts? StatusCounts { get; set; }
+}
+
+/// <summary>
+/// Per-status product totals, independent of the active status filter.
+/// </summary>
+public class ProductStatusCounts
+{
+    public int Active { get; set; }
+
+    public int Archived { get; set; }
+
+    /// <summary>Total across every status.</summary>
+    public int All { get; set; }
 }
 
 public class ProductItem

@@ -9,6 +9,10 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts
 
 public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProductsResponse>
 {
+    private const int DefaultPageSize = 50;
+    private const int MaxPageSize = 200;
+    private const int MinPageSize = 1;
+
     private readonly IProductRepository _repository;
     private readonly IProductPhotoService _photoService;
 
@@ -20,10 +24,28 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
 
     public async Task<GetProductsResponse> Handle(GetProductsQuery request, CancellationToken cancellationToken)
     {
-        IReadOnlyList<Product> products = await _repository.GetAllByStatusAsync(request.Status, cancellationToken);
+        // No page requested means "give me everything" — the legacy contract that the work-rate
+        // and channel-cost views still rely on. Paging is applied only when a page number arrives.
+        int page = Math.Max(request.Page ?? 1, 1);
+        int pageSize = Math.Clamp(request.PageSize ?? DefaultPageSize, MinPageSize, MaxPageSize);
+        int? skip = request.Page.HasValue ? (page - 1) * pageSize : null;
+        int? take = request.Page.HasValue ? pageSize : null;
 
-        return new GetProductsResponse
+        bool descending = string.Equals(request.SortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        (int totalCount, IReadOnlyList<Product> products) = await _repository.GetPagedAsync(
+            request.Status,
+            skip,
+            take,
+            request.SortBy,
+            descending,
+            cancellationToken);
+
+        GetProductsResponse response = new()
         {
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
             Items = products.Select(p => new ProductItem
             {
                 Id = p.Id,
@@ -76,5 +98,18 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                     .ToList(),
             }).ToList(),
         };
+
+        if (request.IncludeCounts)
+        {
+            (int active, int archived, int all) = await _repository.GetStatusCountsAsync(cancellationToken);
+            response.StatusCounts = new ProductStatusCounts
+            {
+                Active = active,
+                Archived = archived,
+                All = all,
+            };
+        }
+
+        return response;
     }
 }
