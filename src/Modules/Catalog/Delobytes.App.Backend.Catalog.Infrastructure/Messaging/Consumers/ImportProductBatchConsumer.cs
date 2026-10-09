@@ -27,10 +27,17 @@ public class ImportProductBatchConsumer
     private const int DescriptionMaxLength = 20000;
     private const int NameMaxLength = 2000;
 
+    private const string CardSavepointName = "import_card";
+
     private readonly CatalogDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly IProductPhotoService _photoService;
     private readonly ILogger<ImportProductBatchConsumer> _logger;
+
+    // Cached per consumer instance (scoped per message): Npgsql in production supports
+    // savepoints, EF Core InMemory used in unit tests does not. Detected once so the
+    // NotSupportedException path isn't retried on every card in the batch.
+    private bool? _savepointsSupported;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ImportProductBatchConsumer"/> class.
@@ -117,10 +124,9 @@ public class ImportProductBatchConsumer
                 {
                     foreach (WildberriesCardSnapshot card in message.Cards)
                     {
-                        string savepointName = "import_card";
                         HashSet<object> trackedBefore = _context.ChangeTracker.Entries().Select(e => e.Entity).ToHashSet();
 
-                        await transaction.CreateSavepointAsync(savepointName, cancellationToken);
+                        bool hasSavepoint = await TryCreateSavepointAsync(transaction, cancellationToken);
 
                         try
                         {
@@ -128,7 +134,11 @@ public class ImportProductBatchConsumer
 
                             // Now one flush per card instead of one per batch.
                             await _context.SaveChangesWithConflictTranslationAsync(cancellationToken);
-                            await transaction.ReleaseSavepointAsync(savepointName, cancellationToken);
+
+                            if (hasSavepoint)
+                            {
+                                await transaction.ReleaseSavepointAsync(CardSavepointName, cancellationToken);
+                            }
 
                             recordsProcessed++;
 
@@ -156,8 +166,11 @@ public class ImportProductBatchConsumer
                         catch (Exception ex)
                         {
                             // Back to the state before this card, both in PostgreSQL and in the change tracker.
-                            await transaction.RollbackToSavepointAsync(savepointName, cancellationToken);
-                            await transaction.ReleaseSavepointAsync(savepointName, cancellationToken);
+                            if (hasSavepoint)
+                            {
+                                await transaction.RollbackToSavepointAsync(CardSavepointName, cancellationToken);
+                                await transaction.ReleaseSavepointAsync(CardSavepointName, cancellationToken);
+                            }
 
                             // Обязательно: EF не знает об откате и повторит те же INSERT на следующей карточке.
                             foreach (EntityEntry entry in _context.ChangeTracker.Entries().ToList())
@@ -673,6 +686,28 @@ public class ImportProductBatchConsumer
         }
 
         return sources;
+    }
+
+    private async Task<bool> TryCreateSavepointAsync(
+        IDbContextTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (_savepointsSupported == false)
+        {
+            return false;
+        }
+
+        try
+        {
+            await transaction.CreateSavepointAsync(CardSavepointName, cancellationToken);
+            _savepointsSupported = true;
+            return true;
+        }
+        catch (NotSupportedException)
+        {
+            _savepointsSupported = false;
+            return false;
+        }
     }
 
     /// <summary>
