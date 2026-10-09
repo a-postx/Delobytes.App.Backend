@@ -19,6 +19,14 @@ public class ImportProductBatchConsumer
 {
     private const string WildberriesBarcodeType = "wildberries";
 
+    /// <summary>
+    /// Mirrors ProductConfiguration: Product.Description is varchar(20000). WB allows
+    /// descriptions up to 5000 characters, so a longer card would otherwise be rejected by
+    /// PostgreSQL at SaveChanges and roll back the whole batch.
+    /// </summary>
+    private const int DescriptionMaxLength = 20000;
+    private const int NameMaxLength = 2000;
+
     private readonly CatalogDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly IProductPhotoService _photoService;
@@ -41,6 +49,26 @@ public class ImportProductBatchConsumer
         _publishEndpoint = publishEndpoint;
         _photoService = photoService;
         _logger = logger;
+    }
+
+    private static string TrimName(string name)
+    {
+        if (string.IsNullOrEmpty(name) || name.Length <= NameMaxLength)
+        {
+            return name;
+        }
+
+        return name[..NameMaxLength];
+    }
+
+    private static string? TrimDescription(string? description)
+    {
+        if (string.IsNullOrEmpty(description) || description.Length <= DescriptionMaxLength)
+        {
+            return description;
+        }
+
+        return description[..DescriptionMaxLength];
     }
 
     /// <summary>
@@ -89,9 +117,18 @@ public class ImportProductBatchConsumer
                 {
                     foreach (WildberriesCardSnapshot card in message.Cards)
                     {
+                        string savepointName = "import_card";
+                        HashSet<object> trackedBefore = _context.ChangeTracker.Entries().Select(e => e.Entity).ToHashSet();
+
+                        await transaction.CreateSavepointAsync(savepointName, cancellationToken);
+
                         try
                         {
                             ImportResult result = await ProcessCardAsync(card, message.ChannelId, pendingPhotoImports, cancellationToken);
+
+                            // Now one flush per card instead of one per batch.
+                            await _context.SaveChangesWithConflictTranslationAsync(cancellationToken);
+                            await transaction.ReleaseSavepointAsync(savepointName, cancellationToken);
 
                             recordsProcessed++;
 
@@ -118,18 +155,25 @@ public class ImportProductBatchConsumer
                         }
                         catch (Exception ex)
                         {
+                            // Back to the state before this card, both in PostgreSQL and in the change tracker.
+                            await transaction.RollbackToSavepointAsync(savepointName, cancellationToken);
+                            await transaction.ReleaseSavepointAsync(savepointName, cancellationToken);
+
+                            // Обязательно: EF не знает об откате и повторит те же INSERT на следующей карточке.
+                            foreach (EntityEntry entry in _context.ChangeTracker.Entries().ToList())
+                            {
+                                if (!trackedBefore.Contains(entry.Entity))
+                                {
+                                    entry.State = EntityState.Detached;
+                                }
+                            }
+
                             recordsProcessed++;
                             recordsFailed++;
-                            string itemError = $"NmId={card.NmId}: {ex.Message}";
-                            errors.Add(itemError);
+                            errors.Add($"NmId={card.NmId}: {ex.Message}");
                             _logger.LogError(ex, "Failed to process card NmId={NmId}", card.NmId);
                         }
                     }
-
-                    // Conflict translation keeps a unique-constraint violation (e.g. two cards in
-                    // one batch carrying the same barcode) from reaching the rollback handler as a
-                    // raw provider exception, whose message quotes schema names.
-                    await _context.SaveChangesWithConflictTranslationAsync(cancellationToken);
                 }
 
                 await transaction.CommitAsync(cancellationToken);
@@ -367,13 +411,13 @@ public class ImportProductBatchConsumer
 
         if (channelProduct.Product.Name != card.Name)
         {
-            channelProduct.Product.Name = card.Name;
+            channelProduct.Product.Name = TrimName(card.Name);
             hasChanges = true;
         }
 
         if (channelProduct.Product.Description != card.Description)
         {
-            channelProduct.Product.Description = card.Description;
+            channelProduct.Product.Description = TrimDescription(card.Description);
             hasChanges = true;
         }
 
@@ -470,8 +514,8 @@ public class ImportProductBatchConsumer
 
         _context.ChannelProducts.Add(channelProduct);
 
-        product.Name = card.Name;
-        product.Description = card.Description;
+        product.Name = TrimName(card.Name);
+        product.Description = TrimDescription(card.Description);
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
@@ -509,8 +553,8 @@ public class ImportProductBatchConsumer
         {
             Id = Guid.NewGuid(),
             Sku = card.VendorCode,
-            Name = card.Name,
-            Description = card.Description,
+            Name = TrimName(card.Name),
+            Description = TrimDescription(card.Description),
             Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow
