@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -18,6 +19,22 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// </summary>
 public class WildberriesApiClient : IChannelApiClient
 {
+    /// <summary>
+    /// Number of attempts made when a response body cannot be deserialized. Kept small because
+    /// a payload that trips the deserializer is usually deterministic within one import run.
+    /// </summary>
+    private const int DeserializationMaxAttempts = 3;
+
+    /// <summary>
+    /// Base delay between deserialization attempts; grows linearly per attempt.
+    /// </summary>
+    private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Maximum number of response body characters written to logs.
+    /// </summary>
+    private const int ResponseBodyLogLimit = 500;
+
     private readonly HttpClient _httpClient;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IEndpointResolver _endpointResolver;
@@ -39,6 +56,13 @@ public class WildberriesApiClient : IChannelApiClient
         _endpointResolver = endpointResolver;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Base delay before retrying a response body that failed to deserialize. Exposed as a
+    /// settable property rather than a constructor parameter so the container keeps a single
+    /// unambiguous constructor; tests shorten it to keep retry assertions fast.
+    /// </summary>
+    internal TimeSpan DeserializationRetryDelay { get; set; } = DefaultDeserializationRetryDelay;
 
     /// <summary>
     /// Binds this client instance to a system channel template.
@@ -181,184 +205,214 @@ public class WildberriesApiClient : IChannelApiClient
             Filter = new WildberriesCardFilter()
         };
 
-        try
+        string requestJson = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
         {
-            string requestJson = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
-            {
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            });
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
 
-            StringContent content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+        string requestUrl = $"{baseUrl}/content/v2/get/cards/list";
 
-            using HttpRequestMessage request = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"{baseUrl}/content/v2/get/cards/list")
-            {
-                Content = content
-            };
-
-            using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
-
-            ApiResponse<ProductCardsData> apiResponse = new ApiResponse<ProductCardsData>
-            {
-                StatusCode = (int)response.StatusCode,
-                Timestamp = DateTimeOffset.UtcNow
-            };
-
-            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
-            {
-                string responseBody = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning(
-                    "Wildberries cards API returned {StatusCode}. Authentication failed.",
-                    (int)response.StatusCode);
-
-                apiResponse.IsSuccess = false;
-                apiResponse.ErrorMessage = $"Authentication failed: {response.StatusCode}";
-                apiResponse.Data = new ProductCardsData
-                {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
-                };
-
-                return apiResponse;
-            }
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                string retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds.ToString() ?? "unknown";
-                _logger.LogWarning(
-                    "Wildberries cards API rate limit exceeded. Retry after {RetryAfter} seconds.",
-                    retryAfter);
-
-                apiResponse.IsSuccess = false;
-                apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAfter} seconds.";
-                apiResponse.Data = new ProductCardsData
-                {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
-                };
-
-                return apiResponse;
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                string responseBody = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning(
-                    "Wildberries cards API returned {StatusCode}. Response: {Response}",
-                    (int)response.StatusCode,
-                    responseBody.Length > 500 ? responseBody.Substring(0, 500) : responseBody);
-
-                apiResponse.IsSuccess = false;
-                apiResponse.ErrorMessage = $"API error: {response.StatusCode}";
-                apiResponse.Data = new ProductCardsData
-                {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
-                };
-
-                return apiResponse;
-            }
-
-            WildberriesGetCardsResponse? cardsResponse =
-                await response.Content.ReadFromJsonAsync<WildberriesGetCardsResponse>(ct);
-
-            if (cardsResponse == null)
-            {
-                _logger.LogWarning("Wildberries cards API returned null response body.");
-
-                apiResponse.IsSuccess = false;
-                apiResponse.ErrorMessage = "Empty response from API.";
-                apiResponse.Data = new ProductCardsData
-                {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
-                };
-
-                return apiResponse;
-            }
-
-            List<WildberriesCardSnapshot> snapshots = cardsResponse.Cards
-                .Select(MapToSnapshot)
-                .ToList();
-
-            ProductCardsCursor? nextCursor = null;
-            if (cardsResponse.Cursor?.UpdatedAt != null && cardsResponse.Cursor?.NmId != null)
-            {
-                nextCursor = new ProductCardsCursor
-                {
-                    UpdatedAt = cardsResponse.Cursor.UpdatedAt,
-                    ProductId = cardsResponse.Cursor.NmId.Value
-                };
-            }
-
-            apiResponse.IsSuccess = true;
-            apiResponse.Data = new ProductCardsData
-            {
-                Cards = snapshots,
-                NextCursor = nextCursor,
-                TotalCount = cardsResponse.Cursor?.Total ?? snapshots.Count
-            };
-
-            _logger.LogInformation(
-                "Retrieved {Count} product cards from Wildberries. Total: {Total}, HasNextPage: {HasNext}",
-                snapshots.Count,
-                apiResponse.Data.TotalCount,
-                nextCursor != null);
-
-            return apiResponse;
-        }
-        catch (HttpRequestException ex)
+        for (int attempt = 1; ; attempt++)
         {
-            _logger.LogError(ex, "HTTP request failed when retrieving Wildberries product cards.");
-
-            return new ApiResponse<ProductCardsData>
+            try
             {
-                IsSuccess = false,
-                ErrorMessage = $"Network error: {ex.Message}",
-                StatusCode = null,
-                Timestamp = DateTimeOffset.UtcNow,
-                Data = new ProductCardsData
+                StringContent content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+                using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
                 {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
+                    Content = content
+                };
+
+                using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
+
+                ApiResponse<ProductCardsData> apiResponse = new ApiResponse<ProductCardsData>
+                {
+                    StatusCode = (int)response.StatusCode,
+                    Timestamp = DateTimeOffset.UtcNow
+                };
+
+                if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    string responseBody = await response.Content.ReadAsStringAsync(ct);
+                    _logger.LogWarning(
+                        "Wildberries cards API returned {StatusCode}. Authentication failed. Response: {Response}",
+                        (int)response.StatusCode,
+                        TruncateForLog(responseBody));
+
+                    apiResponse.IsSuccess = false;
+                    apiResponse.ErrorMessage = $"Authentication failed: {response.StatusCode}";
+                    apiResponse.Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    };
+
+                    return apiResponse;
                 }
-            };
-        }
-        catch (TaskCanceledException ex)
-        {
-            _logger.LogWarning(ex, "Request timeout when retrieving Wildberries product cards.");
 
-            return new ApiResponse<ProductCardsData>
-            {
-                IsSuccess = false,
-                ErrorMessage = "Request timeout.",
-                StatusCode = null,
-                Timestamp = DateTimeOffset.UtcNow,
-                Data = new ProductCardsData
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
-                }
-            };
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "Failed to parse Wildberries cards API response.");
+                    string retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds.ToString() ?? "unknown";
+                    _logger.LogWarning(
+                        "Wildberries cards API rate limit exceeded. Retry after {RetryAfter} seconds.",
+                        retryAfter);
 
-            return new ApiResponse<ProductCardsData>
-            {
-                IsSuccess = false,
-                ErrorMessage = "Invalid JSON response from API.",
-                StatusCode = null,
-                Timestamp = DateTimeOffset.UtcNow,
-                Data = new ProductCardsData
-                {
-                    Cards = new List<WildberriesCardSnapshot>(),
-                    TotalCount = 0
+                    apiResponse.IsSuccess = false;
+                    apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAfter} seconds.";
+                    apiResponse.Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    };
+
+                    return apiResponse;
                 }
-            };
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string responseBody = await response.Content.ReadAsStringAsync(ct);
+                    _logger.LogWarning(
+                        "Wildberries cards API returned {StatusCode}. Response: {Response}",
+                        (int)response.StatusCode,
+                        TruncateForLog(responseBody));
+
+                    apiResponse.IsSuccess = false;
+                    apiResponse.ErrorMessage = $"API error: {response.StatusCode}";
+                    apiResponse.Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    };
+
+                    return apiResponse;
+                }
+
+                WildberriesGetCardsResponse? cardsResponse =
+                    await response.Content.ReadFromJsonAsync<WildberriesGetCardsResponse>(ct);
+
+                if (cardsResponse == null)
+                {
+                    _logger.LogWarning("Wildberries cards API returned null response body.");
+
+                    apiResponse.IsSuccess = false;
+                    apiResponse.ErrorMessage = "Empty response from API.";
+                    apiResponse.Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    };
+
+                    return apiResponse;
+                }
+
+                List<WildberriesCardSnapshot> snapshots = cardsResponse.Cards
+                    .Select(MapToSnapshot)
+                    .ToList();
+
+                ProductCardsCursor? nextCursor = null;
+                if (cardsResponse.Cursor?.UpdatedAt != null && cardsResponse.Cursor?.NmId != null)
+                {
+                    nextCursor = new ProductCardsCursor
+                    {
+                        UpdatedAt = cardsResponse.Cursor.UpdatedAt,
+                        ProductId = cardsResponse.Cursor.NmId.Value
+                    };
+                }
+
+                apiResponse.IsSuccess = true;
+                apiResponse.Data = new ProductCardsData
+                {
+                    Cards = snapshots,
+                    NextCursor = nextCursor,
+                    TotalCount = cardsResponse.Cursor?.Total ?? snapshots.Count
+                };
+
+                _logger.LogInformation(
+                    "Retrieved {Count} product cards from Wildberries. Total: {Total}, HasNextPage: {HasNext}",
+                    snapshots.Count,
+                    apiResponse.Data.TotalCount,
+                    nextCursor != null);
+
+                return apiResponse;
+            }
+            catch (JsonException ex) when (attempt < DeserializationMaxAttempts)
+            {
+                // Retried in-place: a single malformed payload should not fail the whole import
+                // job. The HTTP request is rebuilt each attempt because HttpRequestMessage
+                // cannot be sent twice.
+                TimeSpan delay = DeserializationRetryDelay * attempt;
+
+                _logger.LogWarning(
+                    ex,
+                    "Failed to parse Wildberries cards API response (attempt {Attempt} of {MaxAttempts}). Retrying in {DelayMs} ms.",
+                    attempt,
+                    DeserializationMaxAttempts,
+                    delay.TotalMilliseconds);
+
+                await Task.Delay(delay, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "HTTP request failed when retrieving Wildberries product cards.");
+
+                return new ApiResponse<ProductCardsData>
+                {
+                    IsSuccess = false,
+                    ErrorMessage = $"Network error: {ex.Message}",
+                    StatusCode = null,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    }
+                };
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Request timeout when retrieving Wildberries product cards.");
+
+                return new ApiResponse<ProductCardsData>
+                {
+                    IsSuccess = false,
+                    ErrorMessage = "Request timeout.",
+                    StatusCode = null,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    }
+                };
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse Wildberries cards API response.");
+
+                return new ApiResponse<ProductCardsData>
+                {
+                    IsSuccess = false,
+                    ErrorMessage = "Invalid JSON response from API.",
+                    StatusCode = null,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Data = new ProductCardsData
+                    {
+                        Cards = new List<WildberriesCardSnapshot>(),
+                        TotalCount = 0
+                    }
+                };
+            }
         }
+    }
+
+    private static string TruncateForLog(string responseBody)
+    {
+        if (string.IsNullOrEmpty(responseBody) || responseBody.Length <= ResponseBodyLogLimit)
+        {
+            return responseBody;
+        }
+
+        return responseBody.Substring(0, ResponseBodyLogLimit);
     }
 
     private WildberriesCardSnapshot MapToSnapshot(WildberriesCardDto dto)

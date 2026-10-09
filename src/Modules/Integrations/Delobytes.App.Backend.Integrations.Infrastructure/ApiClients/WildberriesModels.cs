@@ -190,7 +190,12 @@ internal sealed class WildberriesCharacteristic
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
+    /// <summary>
+    /// Wildberries sends a string array for list attributes but a bare number, string or
+    /// boolean for scalar ones, so the default collection converter cannot read this member.
+    /// </summary>
     [JsonPropertyName("value")]
+    [JsonConverter(typeof(WildberriesCharacteristicValueConverter))]
     public List<string>? Value { get; set; }
 }
 
