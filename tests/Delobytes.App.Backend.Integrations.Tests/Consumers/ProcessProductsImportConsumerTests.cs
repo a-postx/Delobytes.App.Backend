@@ -122,6 +122,18 @@ public class ProcessProductsImportConsumerTests
         };
     }
 
+    private static List<WildberriesCardSnapshot> BuildCards(long firstNmId, int count)
+    {
+        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>();
+
+        for (int i = 0; i < count; i++)
+        {
+            cards.Add(BuildCard(firstNmId + i));
+        }
+
+        return cards;
+    }
+
     // -----------------------------------------------------------------------
     // SyncJob not found
     // -----------------------------------------------------------------------
@@ -911,5 +923,88 @@ public class ProcessProductsImportConsumerTests
         secondBatch.IsLastBatch.Should().BeTrue();
         secondBatch.Cards.First().NmId.Should().Be(101);
         secondBatch.Cards.Last().NmId.Should().Be(175);
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression test for the Wildberries import counters bug (publisher side).
+    //
+    // 117 cards, BatchSize = 50 -> 3 batches: 50 + 50 + 17. Only the terminal batch
+    // carries the total count, because the publisher cannot know it until pagination
+    // finishes. Downstream, the aggregator uses that number to wait for all three
+    // batch results instead of finalising on the small 17-card batch that happens to
+    // finish first. If this number is wrong or zero, the job freezes at 17 forever.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_ThreePages_TerminalBatchCarriesTotalBatchCount()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        ProductCardsCursor page1Cursor = new ProductCardsCursor { UpdatedAt = "2024-02-01T00:00:00Z", ProductId = 50 };
+        ProductCardsCursor page2Cursor = new ProductCardsCursor { UpdatedAt = "2024-02-02T00:00:00Z", ProductId = 100 };
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 50), page1Cursor));
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 50),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(51, 50), page2Cursor));
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 100),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(101, 17), nextCursor: null));
+
+        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        published.Should().HaveCount(3, "117 карточек при batchSize=50 дают три батча: 50 + 50 + 17");
+
+        // Non-terminal batches carry no total: at publish time the publisher has not yet
+        // walked the cursor to its end, so any number it put here would be a guess.
+        published[0].IsLastBatch.Should().BeFalse();
+        published[0].Cards.Should().HaveCount(50);
+        published[0].TotalBatches.Should().Be(0);
+
+        // The buffered first page only leaves the buffer once the second response proves it
+        // is non-terminal, so the second 50-card page is the one still in flight here.
+        published[1].IsLastBatch.Should().BeFalse();
+        published[1].Cards.Should().HaveCount(50);
+        published[1].TotalBatches.Should().Be(0);
+
+        // Terminal batch: the small trailing page carries the total, which is exactly what
+        // the aggregator needs to avoid finalising the job at 17 records.
+        published[2].IsLastBatch.Should().BeTrue();
+        published[2].Cards.Should().HaveCount(17);
+        published[2].TotalBatches.Should().Be(3);
+        published[2].Cards.Sum(c => 1).Should().Be(17);
     }
 }

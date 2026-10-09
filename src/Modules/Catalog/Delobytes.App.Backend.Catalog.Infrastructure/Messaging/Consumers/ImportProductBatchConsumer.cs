@@ -206,6 +206,7 @@ public class ImportProductBatchConsumer
                     RecordsFailed = message.Cards.Count,
                     ErrorMessage = $"Batch processing failed: {ex.Message}",
                     IsLastBatch = message.IsLastBatch,
+                    TotalBatches = message.TotalBatches,
                 };
 
                 await _publishEndpoint.Publish(rollbackEvent, cancellationToken);
@@ -229,6 +230,7 @@ public class ImportProductBatchConsumer
             RecordsFailed = recordsFailed,
             ErrorMessage = errorMessage,
             IsLastBatch = message.IsLastBatch,
+            TotalBatches = message.TotalBatches,
         };
 
         await _publishEndpoint.Publish(completedEvent, cancellationToken);

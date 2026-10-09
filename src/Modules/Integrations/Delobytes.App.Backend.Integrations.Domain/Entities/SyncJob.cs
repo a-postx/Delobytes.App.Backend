@@ -100,6 +100,17 @@ public class SyncJob : ITenantScoped
     public int RecordsFailed { get; set; }
 
     /// <summary>
+    /// Gets or sets the total number of batches expected for this import, known only once the
+    /// terminal batch (ProductImportBatchRequestedEvent.IsLastBatch) has been published by
+    /// ProcessProductsImportConsumer. Null until then. Used by the aggregator to decide whether
+    /// all batch results have been recorded, instead of finalising as soon as any batch happens
+    /// to arrive with IsLastBatch=true — a small trailing batch can otherwise finish (and its
+    /// completion event arrive) before larger batches still in flight, which previously caused
+    /// the job to be finalised with only a fraction of the records actually counted.
+    /// </summary>
+    public int? TotalImportBatches { get; set; }
+
+    /// <summary>
     /// Navigation property: the connection.
     /// </summary>
     public Connection Connection { get; set; } = default!;

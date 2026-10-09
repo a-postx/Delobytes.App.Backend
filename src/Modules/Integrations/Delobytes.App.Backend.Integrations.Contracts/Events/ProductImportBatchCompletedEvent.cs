@@ -43,7 +43,16 @@ public record ProductImportBatchCompletedEvent
 
     /// <summary>
     /// True if this is the last batch in the import job.
-    /// When true, the aggregator finalises the SyncJob after recording this result.
+    /// When true, it carries <see cref="TotalBatches"/> — the aggregator finalises the SyncJob
+    /// once it has recorded that many batch results in total, which may happen on this event
+    /// or on a later-arriving one (see ProcessProductImportBatchCompletedConsumer).
     /// </summary>
     public bool IsLastBatch { get; init; }
+
+    /// <summary>
+    /// Total number of batches expected for this import job. Propagated unchanged from
+    /// <see cref="ProductImportBatchRequestedEvent.TotalBatches"/>; 0/unused unless
+    /// <see cref="IsLastBatch"/> is true.
+    /// </summary>
+    public int TotalBatches { get; init; }
 }

@@ -32,4 +32,15 @@ public record ProductImportBatchRequestedEvent
     /// True if this is the last batch in the current import job.
     /// </summary>
     public bool IsLastBatch { get; init; }
+
+    /// <summary>
+    /// Total number of batches published for this import job. Only meaningful when
+    /// <see cref="IsLastBatch"/> is true — the publisher (ProcessProductsImportConsumer) only
+    /// knows the final count once it has produced the terminal batch. Carried through to
+    /// <see cref="ProductImportBatchCompletedEvent.TotalBatches"/> so the aggregator can tell
+    /// how many batch results it must wait for, instead of finalising as soon as any batch
+    /// happens to report IsLastBatch=true regardless of whether larger sibling batches are
+    /// still being processed.
+    /// </summary>
+    public int TotalBatches { get; init; }
 }

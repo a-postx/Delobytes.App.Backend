@@ -125,6 +125,12 @@ public class SyncJobRepository : ISyncJobRepository
     }
 
     /// <inheritdoc/>
+    public Task<int> CountBatchResultsAsync(Guid syncJobId, CancellationToken cancellationToken)
+    {
+        return _context.SyncJobBatchResults.CountAsync(r => r.SyncJobId == syncJobId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
     {
         return _context.SaveChangesAsync(cancellationToken);

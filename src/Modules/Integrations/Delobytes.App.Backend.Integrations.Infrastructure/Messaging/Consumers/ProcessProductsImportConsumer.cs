@@ -181,6 +181,7 @@ public class ProcessProductsImportConsumer
                         terminalCards,
                         isLastBatch: true,
                         batchNumber,
+                        totalBatches: batchNumber,
                         cancellationToken);
 
                     syncJob.NextCursor = null;
@@ -204,6 +205,7 @@ public class ProcessProductsImportConsumer
                             bufferedBatch.Cards,
                             isLastBatch: false,
                             batchNumber,
+                            totalBatches: 0,
                             cancellationToken);
                     }
 
@@ -215,6 +217,7 @@ public class ProcessProductsImportConsumer
                         cards,
                         isLastBatch: true,
                         batchNumber,
+                        totalBatches: batchNumber,
                         cancellationToken);
 
                     syncJob.NextCursor = null;
@@ -237,6 +240,7 @@ public class ProcessProductsImportConsumer
                         bufferedBatch.Cards,
                         isLastBatch: false,
                         batchNumber,
+                        totalBatches: 0,
                         cancellationToken);
 
                     // Checkpoint the cursor of the page just published — not of the page just
@@ -281,6 +285,7 @@ public class ProcessProductsImportConsumer
         List<WildberriesCardSnapshot> cards,
         bool isLastBatch,
         int batchNumber,
+        int totalBatches,
         CancellationToken cancellationToken)
     {
         ProductImportBatchRequestedEvent batchEvent = new ProductImportBatchRequestedEvent
@@ -290,6 +295,7 @@ public class ProcessProductsImportConsumer
             ChannelId = connection.ChannelId,
             Cards = cards,
             IsLastBatch = isLastBatch,
+            TotalBatches = totalBatches,
         };
 
         await _eventPublisher.PublishAsync(batchEvent, cancellationToken);

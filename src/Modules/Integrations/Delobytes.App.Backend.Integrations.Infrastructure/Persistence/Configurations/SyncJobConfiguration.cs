@@ -27,7 +27,8 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
         builder.Property(s => s.Status)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(50);
+            .HasMaxLength(50)
+            .IsConcurrencyToken();
 
         builder.Property(s => s.DateRangeFrom)
             .IsRequired();
@@ -67,6 +68,9 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
 
         builder.Property(s => s.RecordsFailed)
             .IsRequired();
+
+        // Nullable by design: unknown until the terminal batch reports the final batch count.
+        builder.Property(s => s.TotalImportBatches);
 
         builder.HasIndex(s => s.ConnectionId);
         builder.HasIndex(s => s.Status);

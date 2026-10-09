@@ -47,6 +47,13 @@ public interface ISyncJobRepository
     Task<SyncJobBatchResultTotals> GetBatchResultTotalsAsync(Guid syncJobId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns the number of batch result rows recorded so far for the given SyncJob.
+    /// Used by the aggregator to decide whether every expected batch (see
+    /// <see cref="SyncJob.TotalImportBatches"/>) has already been reported.
+    /// </summary>
+    Task<int> CountBatchResultsAsync(Guid syncJobId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Persists all pending changes.
     /// </summary>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
