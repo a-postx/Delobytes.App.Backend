@@ -19,10 +19,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.Property(p => p.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(2000);
 
         builder.Property(p => p.Description)
-            .HasMaxLength(2000);
+            .HasMaxLength(20000);
 
         builder.Property(p => p.Status)
             .HasConversion<int>()

@@ -78,15 +78,7 @@ public class YandexKitApiClient : IChannelApiClient
     /// <inheritdoc/>
     public Task<ApiResponse<OrdersData>> GetOrdersAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        ApiResponse<OrdersData> response = new ApiResponse<OrdersData>
-        {
-            IsSuccess = true,
-            Data = new OrdersData { Orders = new List<OrderItem>(), TotalCount = 0 },
-            StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow,
-        };
-
-        return Task.FromResult(response);
+        throw new NotImplementedException();
     }
 
     public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct)
@@ -97,15 +89,7 @@ public class YandexKitApiClient : IChannelApiClient
     /// <inheritdoc/>
     public Task<ApiResponse<StocksData>> GetStocksAsync(CancellationToken ct)
     {
-        ApiResponse<StocksData> response = new ApiResponse<StocksData>
-        {
-            IsSuccess = true,
-            Data = new StocksData { Stocks = new List<StockItem>(), TotalCount = 0 },
-            StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow,
-        };
-
-        return Task.FromResult(response);
+        throw new NotImplementedException();
     }
 
     private sealed class YandexKitStoreResponse
