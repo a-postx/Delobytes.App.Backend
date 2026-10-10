@@ -19,6 +19,9 @@ public class OzonApiClient : IChannelApiClient
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<OzonApiClient> _logger;
 
+    /// <inheritdoc/>
+    public string ChannelCode => "ozon";
+
     public OzonApiClient(
         HttpClient httpClient,
         IHttpClientFactory httpClientFactory,
@@ -85,36 +88,14 @@ public class OzonApiClient : IChannelApiClient
     }
 
     /// <inheritdoc/>
-    public Task<ApiResponse<OrdersData>> GetOrdersAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public Task<ApiResponse<OrdersPage>> GetOrdersPageAsync(OrdersPageRequest request, CancellationToken ct)
     {
-        ApiResponse<OrdersData> response = new ApiResponse<OrdersData>
-        {
-            IsSuccess = true,
-            Data = new OrdersData { Orders = new List<OrderItem>(), TotalCount = 0 },
-            StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow,
-        };
-
-        return Task.FromResult(response);
+        throw new NotImplementedException();
     }
 
     public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct)
     {
         throw new NotImplementedException();
-    }
-
-    /// <inheritdoc/>
-    public Task<ApiResponse<StocksData>> GetStocksAsync(CancellationToken ct)
-    {
-        ApiResponse<StocksData> response = new ApiResponse<StocksData>
-        {
-            IsSuccess = true,
-            Data = new StocksData { Stocks = new List<StockItem>(), TotalCount = 0 },
-            StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow,
-        };
-
-        return Task.FromResult(response);
     }
 
     private sealed class OzonSellerInfoResponse

@@ -13,6 +13,13 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ProcessSyncJobConsumer
 {
+    /// <summary>
+    /// Orders requested per page. Fixed rather than configurable: full multi-page draining of a
+    /// sync job is the job of the dedicated orders fetch consumer that will publish
+    /// <see cref="Delobytes.App.Backend.Integrations.Contracts.Events.OrdersBatchFetchedEvent"/>.
+    /// </summary>
+    private const int OrdersPageSize = 100;
+
     private readonly ISyncJobRepository _syncJobRepository;
     private readonly IRawApiResponseRepository _rawApiResponseRepository;
     private readonly IChannelApiClientFactory _clientFactory;
@@ -76,17 +83,21 @@ public class ProcessSyncJobConsumer
         {
             IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
-            ApiResponse<OrdersData> apiResponse = await apiClient.GetOrdersAsync(
-                syncJob.DateRangeFrom,
-                syncJob.DateRangeTo,
-                cancellationToken);
+            OrdersPageRequest pageRequest = new OrdersPageRequest
+            {
+                From = syncJob.DateRangeFrom,
+                To = syncJob.DateRangeTo,
+                Limit = OrdersPageSize
+            };
+
+            ApiResponse<OrdersPage> apiResponse = await apiClient.GetOrdersPageAsync(pageRequest, cancellationToken);
 
             RawApiResponse rawResponse = new RawApiResponse
             {
                 Id = Guid.NewGuid(),
                 SyncJobId = syncJob.Id,
-                Endpoint = "GetOrders",
-                RequestPayload = JsonSerializer.Serialize(new { from = syncJob.DateRangeFrom, to = syncJob.DateRangeTo }),
+                Endpoint = "GetOrdersPage",
+                RequestPayload = JsonSerializer.Serialize(pageRequest),
                 ResponsePayload = JsonSerializer.Serialize(apiResponse),
                 HttpStatusCode = apiResponse.StatusCode ?? 0,
                 ReceivedAt = apiResponse.Timestamp
@@ -97,7 +108,7 @@ public class ProcessSyncJobConsumer
             if (apiResponse.IsSuccess)
             {
                 syncJob.Status = SyncJobStatus.Success;
-                syncJob.RecordsProcessed = apiResponse.Data?.Orders?.Count ?? 0;
+                syncJob.RecordsProcessed = apiResponse.Data?.Orders.Count ?? 0;
                 _logger.LogInformation("SyncJob {SyncJobId} completed successfully with {RecordCount} records", syncJob.Id, syncJob.RecordsProcessed);
             }
             else

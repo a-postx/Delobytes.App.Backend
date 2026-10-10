@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\Delobytes.App.Backend.Sales.Domain\\Delobytes.App.Backend.Sales.Domain.csproj" />
+    <ProjectReference Include="..\\..\\Integrations\\Delobytes.App.Backend.Integrations.Contracts\\Delobytes.App.Backend.Integrations.Contracts.csproj" />
+    <ProjectReference Include="..\\..\\Catalog\\Delobytes.App.Backend.Catalog.Contracts\\Delobytes.App.Backend.Catalog.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

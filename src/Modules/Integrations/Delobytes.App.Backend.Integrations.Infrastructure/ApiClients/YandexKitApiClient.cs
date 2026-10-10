@@ -76,18 +76,15 @@ public class YandexKitApiClient : IChannelApiClient
     }
 
     /// <inheritdoc/>
-    public Task<ApiResponse<OrdersData>> GetOrdersAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public string ChannelCode => "yandex.kit";
+
+    /// <inheritdoc/>
+    public Task<ApiResponse<OrdersPage>> GetOrdersPageAsync(OrdersPageRequest request, CancellationToken ct)
     {
         throw new NotImplementedException();
     }
 
     public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct)
-    {
-        throw new NotImplementedException();
-    }
-
-    /// <inheritdoc/>
-    public Task<ApiResponse<StocksData>> GetStocksAsync(CancellationToken ct)
     {
         throw new NotImplementedException();
     }

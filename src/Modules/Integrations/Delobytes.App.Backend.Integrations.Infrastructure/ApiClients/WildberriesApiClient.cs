@@ -42,6 +42,8 @@ public class WildberriesApiClient : IChannelApiClient
 
     private Guid? _templateId;
 
+    private string? _channelCode;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="WildberriesApiClient"/> class.
     /// </summary>
@@ -64,14 +66,24 @@ public class WildberriesApiClient : IChannelApiClient
     /// </summary>
     internal TimeSpan DeserializationRetryDelay { get; set; } = DefaultDeserializationRetryDelay;
 
+    /// <inheritdoc/>
+    public string ChannelCode =>
+        _channelCode ?? throw new InvalidOperationException(
+            "Template must be bound before reading ChannelCode. Obtain the client from IChannelApiClientFactory.");
+
     /// <summary>
     /// Binds this client instance to a system channel template.
     /// Called by <see cref="ChannelApiClientFactory"/> before the client is returned to a caller.
+    /// Both the template identity and the channel code are written here and nowhere else, so
+    /// they cannot disagree.
     /// </summary>
     /// <param name="template">System channel template whose endpoints should be used.</param>
     public void SetTemplate(SystemChannelTemplate template)
     {
+        ArgumentNullException.ThrowIfNull(template);
+
         _templateId = template.Id;
+        _channelCode = template.Code;
     }
 
     /// <inheritdoc/>
@@ -133,39 +145,9 @@ public class WildberriesApiClient : IChannelApiClient
     }
 
     /// <inheritdoc/>
-    public Task<ApiResponse<OrdersData>> GetOrdersAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public Task<ApiResponse<OrdersPage>> GetOrdersPageAsync(OrdersPageRequest request, CancellationToken ct)
     {
-        ApiResponse<OrdersData> response = new ApiResponse<OrdersData>
-        {
-            IsSuccess = true,
-            Data = new OrdersData
-            {
-                Orders = new List<OrderItem>(),
-                TotalCount = 0
-            },
-            StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow
-        };
-
-        return Task.FromResult(response);
-    }
-
-    /// <inheritdoc/>
-    public Task<ApiResponse<StocksData>> GetStocksAsync(CancellationToken ct)
-    {
-        ApiResponse<StocksData> response = new ApiResponse<StocksData>
-        {
-            IsSuccess = true,
-            Data = new StocksData
-            {
-                Stocks = new List<StockItem>(),
-                TotalCount = 0
-            },
-            StatusCode = 200,
-            Timestamp = DateTimeOffset.UtcNow
-        };
-
-        return Task.FromResult(response);
+        throw new NotImplementedException();
     }
 
     /// <inheritdoc/>
