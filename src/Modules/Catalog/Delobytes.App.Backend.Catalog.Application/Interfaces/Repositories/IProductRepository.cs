@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Domain.Entities;
+﻿using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 
 namespace Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
@@ -27,6 +27,9 @@ public interface IProductRepository
     /// a product matches when its name or its SKU contains the term, case-insensitively. The term is
     /// trimmed and truncated to 200 characters; null, empty or whitespace-only means "no filter".
     /// Paging is applied after this filter, so the returned total count describes the filtered set.</param>
+    /// <param name="includeWorkRateCoverage">When true, the work rate versions of each returned
+    /// product are loaded as well, so the caller can tell whether the product is covered by an
+    /// active rate. Off by default: it costs an extra collection include per product.</param>
     /// <returns>The unpaged total count and the requested slice of products.</returns>
     Task<(int TotalCount, IReadOnlyList<Product> Items)> GetPagedAsync(
         ProductStatus? status,
@@ -35,7 +38,8 @@ public interface IProductRepository
         string? sortBy,
         bool descending,
         CancellationToken ct,
-        string? search = null);
+        string? search = null,
+        bool includeWorkRateCoverage = false);
 
     /// <summary>
     /// Returns how many products exist per status tab:

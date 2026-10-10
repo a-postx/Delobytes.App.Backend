@@ -37,7 +37,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()))
+                It.IsAny<string?>(),
+                It.IsAny<bool>()))
             .ReturnsAsync((0, new List<Product>()));
 
         _repositoryMock
@@ -60,7 +61,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()))
+                It.IsAny<string?>(),
+                It.IsAny<bool>()))
             .ReturnsAsync((products.Count, products));
 
         // Act
@@ -79,7 +81,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -101,7 +104,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -127,7 +131,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -152,7 +157,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -180,7 +186,8 @@ public class GetProductsQueryHandlerTests
                 sortBy,
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -206,7 +213,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 expectedDescending,
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -268,7 +276,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<bool>()),
             Times.Once);
     }
 
@@ -293,7 +302,8 @@ public class GetProductsQueryHandlerTests
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
-                search),
+                search,
+                It.IsAny<bool>()),
             Times.Once);
 
         _repositoryMock.Verify(

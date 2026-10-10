@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
+﻿using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.CreateProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
@@ -43,7 +43,10 @@ public class ProductsController : ControllerBase
     /// sku, status, createdAt, updatedAt, and sortDir is asc (default) or desc. Sorting by updatedAt uses
     /// the creation moment for products that were never edited. Invalid sortBy, sortDir or page values
     /// fall back silently to their defaults instead of failing the request. Set includeCounts to also
-    /// receive per-status totals for the filter tabs, computed over the searched result set.
+    /// receive per-status totals for the filter tabs, computed over the searched result set. Set
+    /// includeWorkRateCoverage to add hasActiveWorkRate to every item, telling the client whether the
+    /// product already has an active assembly output rate; it is off by default because it costs an
+    /// extra collection include per returned product.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(GetProductsResponse), StatusCodes.Status200OK)]
@@ -55,6 +58,7 @@ public class ProductsController : ControllerBase
         [FromQuery] string? sortBy,
         [FromQuery] string? sortDir,
         [FromQuery] bool? includeCounts,
+        [FromQuery] bool? includeWorkRateCoverage,
         CancellationToken cancellationToken)
     {
         GetProductsResponse response = await _mediator.Send(
@@ -67,6 +71,7 @@ public class ProductsController : ControllerBase
                 SortBy = sortBy,
                 SortDir = sortDir,
                 IncludeCounts = includeCounts ?? false,
+                IncludeWorkRateCoverage = includeWorkRateCoverage ?? false,
             },
             cancellationToken);
 

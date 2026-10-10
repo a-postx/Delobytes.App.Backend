@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Domain.Enums;
+﻿using Delobytes.App.Backend.Catalog.Domain.Enums;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
 
@@ -83,4 +83,10 @@ public class ProductItem
     /// Empty/null means the product has no marketplace connections and is fully editable.
     /// </summary>
     public List<Products.ProductChannelLinkDto>? ChannelLinks { get; set; }
+
+    /// <summary>
+    /// True when the product has at least one active work rate. Populated only when the request
+    /// sets IncludeWorkRateCoverage; otherwise it stays false for every item.
+    /// </summary>
+    public bool HasActiveWorkRate { get; set; }
 }

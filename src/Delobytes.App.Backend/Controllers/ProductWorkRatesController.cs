@@ -1,8 +1,9 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
+﻿using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.DeleteProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.UpdateProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates.GetAllProductWorkRates;
 using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates.GetProductWorkRates;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -28,21 +29,55 @@ public class ProductWorkRatesController : ControllerBase
     }
 
     /// <summary>
-    /// Returns all product work rate versions across all products, active and inactive alike.
-    /// GetAllAsync does not filter by status; the active/all/inactive status filter is applied
-    /// client-side, as in ComponentsView.vue.
+    /// Returns the work rate list as a page of products, each with all of its versions.
+    /// An omitted search keeps the full list; when supplied it is trimmed, capped at 200 characters
+    /// and matched case-insensitively as a substring of the product name or SKU (a match in either
+    /// field is enough). The status filter is applied per product, not per version: active means the
+    /// product has at least one active version, inactive that it has at least one superseded or
+    /// removed one. Be aware that the source is the work rate table, so "All" returns every product
+    /// that has at least one version, not every product in the catalog — a product without a rate
+    /// cannot be returned here. An omitted page keeps the legacy behaviour: the whole list is
+    /// returned and no Skip/Take is applied. When page is supplied, pageSize defaults to 25 and is
+    /// clamped to 1..200, sortBy must be one of productName (default), updatedAt, validFrom, and
+    /// sortDir is asc (default) or desc; the date keys describe the latest version of each product.
+    /// Invalid sortBy, sortDir or page values fall back silently to their defaults instead of failing
+    /// the request. Set includeCounts to receive per-group totals for the filter labels, counted over
+    /// the searched result set and per product, not per version.
+    /// Paging counts products: a product with several versions always arrives whole on one page, so
+    /// totalCount is the number of matching products, not the number of rows in the response.
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<GetAllProductWorkRatesResponse>> GetAll(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(GetAllProductWorkRatesResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<GetAllProductWorkRatesResponse>> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] ProductWorkRateGroupFilter? status,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDir,
+        [FromQuery] bool? includeCounts,
+        CancellationToken cancellationToken)
     {
         GetAllProductWorkRatesResponse response = await _mediator.Send(
-            new GetAllProductWorkRatesQuery(),
+            new GetAllProductWorkRatesQuery
+            {
+                Search = search,
+                Status = status ?? ProductWorkRateGroupFilter.Active,
+                Page = page,
+                PageSize = pageSize,
+                SortBy = sortBy,
+                SortDir = sortDir,
+                IncludeCounts = includeCounts ?? false,
+            },
             cancellationToken);
 
         return Ok(response);
     }
 
-    /// <summary>Returns the version history of work rates for a given product.</summary>
+    /// <summary>
+    /// Returns the version history of work rates for a given product, newest version first.
+    /// Each item carries the product name and SKU, so the caller does not need a separate lookup.
+    /// </summary>
     [HttpGet("by-product/{productId:guid}")]
     public async Task<ActionResult<GetProductWorkRatesResponse>> GetByProduct(
         Guid productId,

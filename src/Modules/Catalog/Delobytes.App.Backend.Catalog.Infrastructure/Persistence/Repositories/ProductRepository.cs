@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Application.Exceptions;
+﻿using Delobytes.App.Backend.Catalog.Application.Exceptions;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -11,10 +11,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 
 public class ProductRepository : IProductRepository
 {
-    // Search terms longer than the longest searchable column are pointless: Product.Name caps at
-    // 200 characters, so a longer term cannot match anything anyway.
-    private const int SearchTermMaxLength = 200;
-
     private readonly CatalogDbContext _context;
 
     public ProductRepository(CatalogDbContext context)
@@ -55,9 +51,10 @@ public class ProductRepository : IProductRepository
         string? sortBy,
         bool descending,
         CancellationToken ct,
-        string? search = null)
+        string? search = null,
+        bool includeWorkRateCoverage = false)
     {
-        IQueryable<Product> query = BuildListQuery(status, search);
+        IQueryable<Product> query = BuildListQuery(status, search, includeWorkRateCoverage);
         int totalCount = await query.CountAsync(ct);
         IQueryable<Product> ordered = ApplyOrdering(query, sortBy, descending);
 
@@ -109,12 +106,20 @@ public class ProductRepository : IProductRepository
         return await _context.SaveChangesWithConflictTranslationAsync(ct);
     }
 
-    private IQueryable<Product> BuildListQuery(ProductStatus? status, string? search)
+    private IQueryable<Product> BuildListQuery(ProductStatus? status, string? search, bool includeWorkRateCoverage = false)
     {
         IQueryable<Product> query = _context.Products
             .Include(p => p.Barcodes)
             .Include(p => p.Photos)
             .Include(p => p.ChannelProducts).ThenInclude(cp => cp.Channel);
+
+        // The coverage flag is projected in memory from the loaded collection, and the list view
+        // is the only consumer that needs it -- loading the versions for everyone would add a
+        // fourth collection include to every catalog request.
+        if (includeWorkRateCoverage)
+        {
+            query = query.Include(p => p.ProductWorkRates);
+        }
 
         // Null means "no filter": callers that build the full catalog view need every
         // status (active, archived, deletion states) to compute per-tab counters.
@@ -129,7 +134,7 @@ public class ProductRepository : IProductRepository
 
     private static IQueryable<Product> ApplySearch(IQueryable<Product> query, string? search)
     {
-        string? term = NormalizeSearch(search);
+        string? term = CatalogSearchTerm.Normalize(search);
 
         if (term is null)
         {
@@ -142,20 +147,6 @@ public class ProductRepository : IProductRepository
         string lowered = term.ToLowerInvariant();
 
         return query.Where(p => p.Name.ToLower().Contains(lowered) || p.Sku.ToLower().Contains(lowered));
-    }
-
-    private static string? NormalizeSearch(string? search)
-    {
-        if (string.IsNullOrWhiteSpace(search))
-        {
-            return null;
-        }
-
-        string trimmed = search.Trim();
-
-        return trimmed.Length > SearchTermMaxLength
-            ? trimmed.Substring(0, SearchTermMaxLength)
-            : trimmed;
     }
 
     private static IQueryable<Product> ApplyOrdering(IQueryable<Product> query, string? sortBy, bool descending)

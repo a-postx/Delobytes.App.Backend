@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Domain.Enums;
+﻿using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
@@ -60,4 +60,11 @@ public class GetProductsQuery : IRequest<GetProductsResponse>
     /// describe the current search results rather than the whole catalog.
     /// </summary>
     public bool IncludeCounts { get; set; }
+
+    /// <summary>
+    /// When true, every returned item carries <see cref="ProductItem.HasActiveWorkRate"/>, telling
+    /// the caller whether the product has at least one active assembly output rate. Off by default:
+    /// it costs an extra collection include per product, and only the product picker needs it.
+    /// </summary>
+    public bool IncludeWorkRateCoverage { get; set; }
 }
