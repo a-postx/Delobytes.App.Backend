@@ -2,16 +2,17 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
-namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Conventions;
+namespace Delobytes.App.Backend.Persistence.Conventions;
 
 /// <summary>
 /// EF Core convention that configures audit properties for entities implementing
 /// <see cref="IAuditableEntity"/>. Timestamps and user identifiers are required
 /// to be IsRequired or nullable in the schema; actual values are populated at
-/// save time by <see cref="Interceptors.AuditableEntityInterceptor"/>.
+/// save time by the module's AuditableEntityInterceptor.
 /// </summary>
 public sealed class AuditableEntityConvention : IEntityTypeAddedConvention
 {
+    /// <inheritdoc/>
     public void ProcessEntityTypeAdded(
         IConventionEntityTypeBuilder entityTypeBuilder,
         IConventionContext<IConventionEntityTypeBuilder> context)

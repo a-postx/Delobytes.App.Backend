@@ -1,9 +1,10 @@
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Sales.Domain.Enums;
 
 namespace Delobytes.App.Backend.Sales.Domain.Entities;
 
 /// <summary>
-/// Represents a return of an order.
+/// A return registered against a specific order line.
 /// </summary>
 public class Return : ITenantScoped
 {
@@ -13,37 +14,62 @@ public class Return : ITenantScoped
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the order identifier.
+    /// Gets or sets the order line the goods came back from.
     /// </summary>
-    public Guid OrderId { get; set; }
+    public Guid OrderLineId { get; set; }
 
     /// <summary>
-    /// Gets or sets the quantity of items returned.
+    /// Gets or sets the channel-side return identity, where one exists.
+    /// </summary>
+    public string? ExternalReturnId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the quantity of units returned.
     /// </summary>
     public int Quantity { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time when the return was processed.
+    /// Gets or sets the date the return was registered by the channel.
     /// </summary>
     public DateTimeOffset ReturnDate { get; set; }
 
     /// <summary>
-    /// Gets or sets the reason for the return.
+    /// Gets or sets the canonical return kind.
+    /// </summary>
+    public ReturnKind Kind { get; set; } = ReturnKind.Other;
+
+    /// <summary>
+    /// Gets or sets the verbatim channel reason.
     /// </summary>
     public string? Reason { get; set; }
 
     /// <summary>
-    /// Gets or sets the refund amount.
+    /// Gets or sets the refund amount. Null means the channel did not report it — not zero.
     /// </summary>
-    public decimal RefundAmount { get; set; }
+    public decimal? RefundAmount { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time when the return was created.
+    /// Gets or sets the refund currency, where the channel reports one.
+    /// </summary>
+    public string? Currency { get; set; }
+
+    /// <summary>
+    /// Gets or sets where <see cref="RefundAmount"/> came from.
+    /// </summary>
+    public ValueSource RefundSource { get; set; } = ValueSource.Unknown;
+
+    /// <summary>
+    /// Gets or sets the identifier of the raw payload this return was built from.
+    /// </summary>
+    public Guid? RawDataId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the creation timestamp.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
-    /// Navigation property: the order.
+    /// Gets or sets the order line the goods came back from.
     /// </summary>
-    public Order Order { get; set; } = default!;
+    public OrderLine OrderLine { get; set; } = default!;
 }

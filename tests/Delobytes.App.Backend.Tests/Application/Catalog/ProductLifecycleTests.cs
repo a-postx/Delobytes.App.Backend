@@ -1033,20 +1033,33 @@ public class ProductLifecycleTests
 
     private static Order BuildOrder(Guid channelProductId)
     {
+        // The catalogue link and all money now live on the line; the header keeps reported facts only.
         return new Order
         {
             Id = Guid.NewGuid(),
-            ChannelProductId = channelProductId,
             ExternalOrderId = "ORD-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             ChannelId = Guid.NewGuid(),
             OrderDate = DateTimeOffset.UtcNow.AddDays(-1),
-            Quantity = 1,
-            Revenue = 1000m,
-            Commission = 150m,
-            NetRevenue = 850m,
-            Status = OrderStatus.Confirmed,
-            ImportedAt = DateTimeOffset.UtcNow,
+            Status = OrderStatus.Created,
+            ExternalStatus = "created",
+            Currency = "RUB",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastImportedAt = DateTimeOffset.UtcNow,
             CreatedAt = DateTimeOffset.UtcNow,
+            Lines = new List<OrderLine>
+            {
+                new OrderLine
+                {
+                    Id = Guid.NewGuid(),
+                    LineKey = "line-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                    ExternalProductId = channelProductId.ToString("N"),
+                    Quantity = 1,
+                    UnitPrice = 1000m,
+                    Currency = "RUB",
+                    ChannelProductId = channelProductId,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                },
+            },
         };
     }
 

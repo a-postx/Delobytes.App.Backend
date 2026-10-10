@@ -34,8 +34,13 @@ public class ProductDeletionRequestedHandler : INotificationHandler<ProductDelet
             notification.ProductId,
             notification.ChannelProductIds.Count);
 
-        int orderCount = await _salesContext.Orders
-            .Where(o => notification.ChannelProductIds.Contains(o.ChannelProductId))
+        // The catalogue link lives on the line, not on the header, so the guard counts distinct
+        // orders that have at least one line pointing at one of the requested channel products.
+        int orderCount = await _salesContext.OrderLines
+            .Where(l => l.ChannelProductId != null
+                && notification.ChannelProductIds.Contains(l.ChannelProductId.Value))
+            .Select(l => l.OrderId)
+            .Distinct()
             .CountAsync(cancellationToken);
 
         bool hasOrders = orderCount > 0;

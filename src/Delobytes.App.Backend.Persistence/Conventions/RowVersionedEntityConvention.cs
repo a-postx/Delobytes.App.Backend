@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
-namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Conventions;
+namespace Delobytes.App.Backend.Persistence.Conventions;
 
 /// <summary>
 /// EF Core convention that configures RowVersion property as a PostgreSQL xmin concurrency token
@@ -12,6 +12,7 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Conventions;
 /// </summary>
 public sealed class RowVersionedEntityConvention : IEntityTypeAddedConvention
 {
+    /// <inheritdoc/>
     public void ProcessEntityTypeAdded(
         IConventionEntityTypeBuilder entityTypeBuilder,
         IConventionContext<IConventionEntityTypeBuilder> context)

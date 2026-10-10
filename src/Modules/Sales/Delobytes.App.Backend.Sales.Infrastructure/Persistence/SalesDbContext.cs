@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Security;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Persistence;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -28,7 +29,16 @@ public class SalesDbContext : DbContext
     }
 
     public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderLine> OrderLines => Set<OrderLine>();
+    public DbSet<OrderSettlement> OrderSettlements => Set<OrderSettlement>();
     public DbSet<Return> Returns => Set<Return>();
+    public DbSet<ChannelProductRef> ChannelProductRefs => Set<ChannelProductRef>();
+
+    /// <inheritdoc/>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.AddSharedModelConventions();
+    }
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -43,10 +53,8 @@ public class SalesDbContext : DbContext
         {
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property<Guid?>("TenantId")
-                    .IsRequired();
-
+                // The TenantId shadow property itself is declared by TenantIdShadowPropertyConvention,
+                // which runs before any IEntityTypeConfiguration and gives the property its CLR type.
                 modelBuilder.Entity(entityType.ClrType)
                     .HasIndex("TenantId");
 

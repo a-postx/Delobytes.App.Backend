@@ -4,9 +4,9 @@ using Delobytes.App.Backend.Sales.Domain.Enums;
 namespace Delobytes.App.Backend.Sales.Domain.Entities;
 
 /// <summary>
-/// Represents an order from a sales channel.
+/// Order header. Holds only facts reported by the channel — no computed money.
 /// </summary>
-public class Order : ITenantScoped
+public class Order : ITenantScoped, IRowVersionedEntity
 {
     /// <summary>
     /// Gets or sets the order unique identifier.
@@ -14,67 +14,139 @@ public class Order : ITenantScoped
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the channel product identifier.
-    /// </summary>
-    public Guid ChannelProductId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the external order identifier in the marketplace system.
-    /// </summary>
-    public string ExternalOrderId { get; set; } = default!;
-
-    /// <summary>
-    /// Gets or sets the channel identifier.
+    /// Gets or sets the channel identifier (Catalog.Channel.Id — no FK across modules).
     /// </summary>
     public Guid ChannelId { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time when the order was placed.
+    /// Gets or sets the identifier of the marketplace cabinet that produced this order.
+    /// </summary>
+    public Guid? ConnectionId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the channel-side order identity. The upsert key together with
+    /// <see cref="ChannelId"/>.
+    /// </summary>
+    public string ExternalOrderId { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the human-facing order number, where the channel reports one that
+    /// differs from <see cref="ExternalOrderId"/>.
+    /// </summary>
+    public string? ExternalOrderNumber { get; set; }
+
+    /// <summary>
+    /// Gets or sets the channel-reported placement time.
     /// </summary>
     public DateTimeOffset OrderDate { get; set; }
 
     /// <summary>
-    /// Gets or sets the quantity of items ordered.
+    /// Gets or sets the channel-reported time of the last status change.
     /// </summary>
-    public int Quantity { get; set; }
+    public DateTimeOffset? StatusChangedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the total revenue from the order.
+    /// Gets or sets the canonical, channel-independent status. A lossy projection of the
+    /// external representation — see <see cref="ExternalStatus"/>.
     /// </summary>
-    public decimal Revenue { get; set; }
+    public OrderStatus Status { get; set; } = OrderStatus.Unknown;
 
     /// <summary>
-    /// Gets or sets the commission charged by the marketplace.
+    /// Gets or sets the verbatim channel status string. Never normalised: the canonical
+    /// <see cref="Status"/> must stay re-derivable from it.
     /// </summary>
-    public decimal Commission { get; set; }
+    public string ExternalStatus { get; set; } = default!;
 
     /// <summary>
-    /// Gets or sets the net revenue (Revenue - Commission).
+    /// Gets or sets the verbatim channel substatus, where the channel has one.
     /// </summary>
-    public decimal NetRevenue { get; set; }
+    public string? ExternalSubstatus { get; set; }
 
     /// <summary>
-    /// Gets or sets the order status.
+    /// Gets or sets the verbatim channel cancel type or reason.
     /// </summary>
-    public OrderStatus Status { get; set; }
+    public string? CancelReason { get; set; }
 
     /// <summary>
-    /// Gets or sets the raw API response identifier (nullable).
+    /// Gets or sets the order currency.
+    /// </summary>
+    public string Currency { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the delivery city reported by the channel.
+    /// </summary>
+    public string? DeliveryCity { get; set; }
+
+    /// <summary>
+    /// Gets or sets the delivery region reported by the channel.
+    /// </summary>
+    public string? DeliveryRegion { get; set; }
+
+    /// <summary>
+    /// Gets or sets the warehouse name reported by the channel.
+    /// </summary>
+    public string? WarehouseName { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the order ships from the seller's warehouse
+    /// rather than the channel's own.
+    /// </summary>
+    public bool? IsSellerWarehouse { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the order is business-to-business.
+    /// </summary>
+    public bool? IsB2b { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the channel flags the order as a test order.
+    /// </summary>
+    public bool? IsTestOrder { get; set; }
+
+    /// <summary>
+    /// Gets or sets the order-level total, but only when the channel literally reports one.
+    /// For Yandex Market this is the buyer's payment, not seller revenue.
+    /// </summary>
+    public decimal? ChannelReportedTotal { get; set; }
+
+    /// <summary>
+    /// Gets or sets the order-level delivery fee. Reported here (not on the line) because it is
+    /// not attributed to a single line by the channel.
+    /// </summary>
+    public decimal? ChannelReportedDeliveryFee { get; set; }
+
+    /// <summary>
+    /// Gets or sets the identifier of the raw API payload this version was built from.
     /// </summary>
     public Guid? RawDataId { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time when the order was imported.
+    /// Gets or sets the time of the first import. Set once and never moved.
     /// </summary>
-    public DateTimeOffset ImportedAt { get; set; }
+    public DateTimeOffset FirstImportedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time when the order was created.
+    /// Gets or sets the time of the most recent upsert.
+    /// </summary>
+    public DateTimeOffset LastImportedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the creation timestamp.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
-    /// Navigation property: returns associated with this order.
+    /// Gets or sets the last modification timestamp.
     /// </summary>
-    public ICollection<Return> Returns { get; set; } = new List<Return>();
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the row version for optimistic concurrency (PostgreSQL xmin).
+    /// </summary>
+    public uint RowVersion { get; set; }
+
+    /// <summary>
+    /// Gets or sets the order lines. Returns and settlements are reachable through the lines.
+    /// </summary>
+    public ICollection<OrderLine> Lines { get; set; } = new List<OrderLine>();
 }
