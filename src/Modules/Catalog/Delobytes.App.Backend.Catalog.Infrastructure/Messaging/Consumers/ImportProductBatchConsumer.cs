@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
+using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
@@ -28,6 +29,12 @@ public class ImportProductBatchConsumer
     private const int NameMaxLength = 2000;
 
     private const string CardSavepointName = "import_card";
+
+    /// <summary>
+    /// Size variant of the photo the Sales-side projection shows for a product. Matches the
+    /// convention used by <c>GetProductsQueryHandler</c> and <c>ProductPhotoService</c>.
+    /// </summary>
+    private const string ThumbnailSizeVariant = "thumbnail";
 
     private readonly CatalogDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
@@ -106,6 +113,12 @@ public class ImportProductBatchConsumer
         // batch had already finalised the job.
         List<PendingPhotoImport> pendingPhotoImports = new List<PendingPhotoImport>();
 
+        // Channel-product links observed during the transactional phase. Published only after the
+        // commit, because the Sales-side projection must never learn about a link that was rolled
+        // back, and because a message published inside the transaction can reach the Sales consumer
+        // before the row is visible to it.
+        List<PendingChannelProductLink> pendingChannelProductLinks = new List<PendingChannelProductLink>();
+
         using (IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken))
         {
             try
@@ -130,7 +143,7 @@ public class ImportProductBatchConsumer
 
                         try
                         {
-                            ImportResult result = await ProcessCardAsync(card, message.ChannelId, pendingPhotoImports, cancellationToken);
+                            ImportResult result = await ProcessCardAsync(card, message.ChannelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
 
                             // Now one flush per card instead of one per batch.
                             await _context.SaveChangesWithConflictTranslationAsync(cancellationToken);
@@ -217,6 +230,10 @@ public class ImportProductBatchConsumer
         // The transaction is closed: products, channel products, barcodes and packing units are
         // durable. Photos are downloaded and uploaded now, outside any database transaction.
         await ImportPhotosAsync(pendingPhotoImports, cancellationToken);
+
+        // Published after the photos so the Sales-side projection receives the primary photo URL
+        // together with the link, instead of learning the link first and the photo never.
+        await PublishChannelProductLinksAsync(pendingChannelProductLinks, cancellationToken);
 
         string? errorMessage = errors.Count > 0 ? string.Join("; ", errors) : null;
 
@@ -307,6 +324,7 @@ public class ImportProductBatchConsumer
         WildberriesCardSnapshot card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
         string externalProductId = card.NmId.ToString();
@@ -324,17 +342,17 @@ public class ImportProductBatchConsumer
 
         if (existingChannelProduct != null)
         {
-            return await UpdateExistingProductAsync(existingChannelProduct, card, pendingPhotoImports, cancellationToken);
+            return await UpdateExistingProductAsync(existingChannelProduct, card, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
         }
 
         Product? matchedProduct = await FindProductByBarcodeAsync(card, cancellationToken);
 
         if (matchedProduct != null)
         {
-            return await LinkExistingProductAsync(matchedProduct, card, channelId, pendingPhotoImports, cancellationToken);
+            return await LinkExistingProductAsync(matchedProduct, card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
         }
 
-        return await CreateNewProductAsync(card, channelId, pendingPhotoImports, cancellationToken);
+        return await CreateNewProductAsync(card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
     }
 
     /// <summary>
@@ -415,6 +433,7 @@ public class ImportProductBatchConsumer
         ChannelProduct channelProduct,
         WildberriesCardSnapshot card,
         List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
         // Temporary measure: Product is the source of truth, but until marketplace write-back
@@ -473,6 +492,11 @@ public class ImportProductBatchConsumer
 
         QueuePhotos(channelProduct.Product, card, pendingPhotoImports);
 
+        // Correctness of the Sales-side projection must not depend on whether this card happened to
+        // change anything: a link that was created before this event existed, or one whose earlier
+        // publication failed, is healed by the next import of the same card.
+        QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
+
         channelProduct.LastSyncedAt = DateTimeOffset.UtcNow;
 
         return hasChanges
@@ -493,6 +517,7 @@ public class ImportProductBatchConsumer
         WildberriesCardSnapshot card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
         // Queried explicitly rather than via product.ChannelProducts: lazy loading is disabled in
@@ -537,6 +562,8 @@ public class ImportProductBatchConsumer
 
         QueuePhotos(product, card, pendingPhotoImports);
 
+        QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
+
         return new ImportResult { Status = ImportStatus.Updated };
     }
 
@@ -544,6 +571,7 @@ public class ImportProductBatchConsumer
         WildberriesCardSnapshot card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
         // Product.Sku is unique per tenant, and the internal SKU is copied from the marketplace
@@ -597,6 +625,8 @@ public class ImportProductBatchConsumer
 
         QueuePhotos(product, card, pendingPhotoImports);
 
+        QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
+
         return new ImportResult { Status = ImportStatus.Created };
     }
 
@@ -615,6 +645,93 @@ public class ImportProductBatchConsumer
         }
 
         return _context.Products.Local.Any(p => p.Sku == sku);
+    }
+
+    /// <summary>
+    /// Records a channel-product link for publication after the transaction commits. The whole
+    /// <see cref="ChannelProduct"/> is kept rather than a copy of its fields, so the event is built
+    /// from the values the database actually holds once the commit succeeds.
+    /// </summary>
+    private static void QueueChannelProductLink(
+        ChannelProduct channelProduct,
+        List<PendingChannelProductLink> pendingChannelProductLinks)
+    {
+        pendingChannelProductLinks.Add(new PendingChannelProductLink
+        {
+            ChannelProduct = channelProduct,
+        });
+    }
+
+    /// <summary>
+    /// Publishes a <see cref="ChannelProductLinkedEvent"/> for every link touched by this batch.
+    /// </summary>
+    /// <remarks>
+    /// A publication failure is logged and swallowed. The link itself is already committed, so
+    /// failing the batch here would report a database failure that did not happen and would lose
+    /// the batch counters; the missing projection row is healed by the next import of the same card,
+    /// which re-publishes unconditionally. Publication is not transactional with the database, and
+    /// this method does not pretend otherwise.
+    /// </remarks>
+    private async Task PublishChannelProductLinksAsync(
+        List<PendingChannelProductLink> pendingChannelProductLinks,
+        CancellationToken cancellationToken)
+    {
+        if (pendingChannelProductLinks.Count == 0)
+        {
+            return;
+        }
+
+        foreach (PendingChannelProductLink pending in pendingChannelProductLinks)
+        {
+            try
+            {
+                ChannelProduct channelProduct = pending.ChannelProduct;
+
+                ChannelProductLinkedEvent linkedEvent = new ChannelProductLinkedEvent
+                {
+                    ChannelProductId = channelProduct.Id,
+                    ProductId = channelProduct.ProductId,
+                    ChannelId = channelProduct.ChannelId,
+                    ExternalProductId = channelProduct.ExternalProductId,
+                    ExternalSku = channelProduct.ExternalSku,
+                    Sku = channelProduct.Product.Sku,
+                    ProductName = channelProduct.Product.Name,
+                    PhotoUrl = ResolvePrimaryPhotoUrl(channelProduct.Product),
+                };
+
+                await _publishEndpoint.Publish(linkedEvent, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to publish ChannelProductLinkedEvent for ChannelProductId={ChannelProductId}",
+                    pending.ChannelProduct.Id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves the public URL of a product's first uploaded thumbnail. Read after the transaction,
+    /// so the outcome reflects the committed rows only.
+    /// </summary>
+    private string? ResolvePrimaryPhotoUrl(Product product)
+    {
+        ProductPhoto? primaryPhoto = product.Photos
+            .Where(p => p.Status == ProductPhotoStatus.Uploaded && p.SizeVariant == ThumbnailSizeVariant)
+            .OrderBy(p => p.DisplayOrder)
+            .FirstOrDefault();
+
+        if (primaryPhoto == null)
+        {
+            return null;
+        }
+
+        return _photoService.GetPublicUrl(primaryPhoto);
     }
 
     /// <summary>
@@ -815,6 +932,15 @@ public class ImportProductBatchConsumer
         }
 
         return hasChanges;
+    }
+
+    /// <summary>
+    /// A channel-product link whose <see cref="ChannelProductLinkedEvent"/> still has to be
+    /// published, once the transaction that created or updated it has committed.
+    /// </summary>
+    private class PendingChannelProductLink
+    {
+        public ChannelProduct ChannelProduct { get; set; } = default!;
     }
 
     /// <summary>

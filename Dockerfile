@@ -15,6 +15,7 @@ COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Application/Delobytes
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/Delobytes.App.Backend.Identity.Infrastructure.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/"]
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/Delobytes.App.Backend.Catalog.Domain.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/"]
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/Delobytes.App.Backend.Catalog.Application.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/"]
+COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Contracts/Delobytes.App.Backend.Catalog.Contracts.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Contracts/"]
 COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/Delobytes.App.Backend.Catalog.Infrastructure.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/"]
 COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/Delobytes.App.Backend.Integrations.Domain.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/"]
 COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Contracts/Delobytes.App.Backend.Integrations.Contracts.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Contracts/"]

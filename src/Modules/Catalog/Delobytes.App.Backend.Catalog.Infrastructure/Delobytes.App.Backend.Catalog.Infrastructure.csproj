@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Delobytes.App.Backend.Persistence\Delobytes.App.Backend.Persistence.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Contracts\Delobytes.App.Backend.Catalog.Contracts.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Domain\Delobytes.App.Backend.Catalog.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Application\Delobytes.App.Backend.Catalog.Application.csproj" />
     <ProjectReference Include="..\..\Integrations\Delobytes.App.Backend.Integrations.Contracts\Delobytes.App.Backend.Integrations.Contracts.csproj" />
