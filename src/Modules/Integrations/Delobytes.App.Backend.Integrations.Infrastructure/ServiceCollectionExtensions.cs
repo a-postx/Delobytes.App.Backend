@@ -61,13 +61,24 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();
 
+        // AsyncLocal-ambient контекст текущего SyncJob; читается RawApiResponseCaptureHandler,
+        // чтобы привязать перехваченный сырой ответ к задаче синхронизации, которая его вызвала.
+        services.AddScoped<SyncJobExecutionContext>();
+        services.AddScoped<ISyncJobExecutionContext>(sp => sp.GetRequiredService<SyncJobExecutionContext>());
+
         services.AddTransient<OzonAuthHandler>();
         services.AddTransient<WildberriesAuthHandler>();
         services.AddTransient<YandexKitAuthHandler>();
 
+        // Перехватывает и сохраняет сырые request/response каждого маркетплейса в
+        // RawApiResponses. Зарегистрирован один раз и подключается к пайплайну всех каналов
+        // ниже, чтобы запись аудита не дублировалась в каждом API-клиенте или консьюмере.
+        services.AddTransient<RawApiResponseCaptureHandler>();
+
         // WildberriesApiClient для операций синхронизации — с retry
         services.AddHttpClient<WildberriesApiClient>()
             .AddHttpMessageHandler<WildberriesAuthHandler>()
+            .AddHttpMessageHandler<RawApiResponseCaptureHandler>()
             .AddResilienceHandler("retry-policy", (builder, context) =>
             {
                 ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<WildberriesApiClient>>();
@@ -77,6 +88,7 @@ public static class ServiceCollectionExtensions
 
         services.AddHttpClient<OzonApiClient>()
             .AddHttpMessageHandler<OzonAuthHandler>()
+            .AddHttpMessageHandler<RawApiResponseCaptureHandler>()
             .AddResilienceHandler("retry-policy", (builder, context) =>
             {
                 ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<OzonApiClient>>();
@@ -86,6 +98,7 @@ public static class ServiceCollectionExtensions
 
         services.AddHttpClient<YandexKitApiClient>()
             .AddHttpMessageHandler<YandexKitAuthHandler>()
+            .AddHttpMessageHandler<RawApiResponseCaptureHandler>()
             .AddResilienceHandler("retry-policy", (builder, context) =>
              {
                  ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<YandexKitApiClient>>();

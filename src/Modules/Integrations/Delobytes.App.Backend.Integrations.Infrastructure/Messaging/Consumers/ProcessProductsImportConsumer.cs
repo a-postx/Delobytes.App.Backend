@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -18,21 +19,27 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 public class ProcessProductsImportConsumer
 {
     private readonly ISyncJobRepository _syncJobRepository;
+    private readonly IRawApiResponseRepository _rawApiResponseRepository;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
+    private readonly SyncJobExecutionContext _syncJobExecutionContext;
     private readonly WildberriesImportOptions _options;
     private readonly ILogger<ProcessProductsImportConsumer> _logger;
 
     public ProcessProductsImportConsumer(
         ISyncJobRepository syncJobRepository,
+        IRawApiResponseRepository rawApiResponseRepository,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
+        SyncJobExecutionContext syncJobExecutionContext,
         IOptions<WildberriesImportOptions> options,
         ILogger<ProcessProductsImportConsumer> logger)
     {
         _syncJobRepository = syncJobRepository;
+        _rawApiResponseRepository = rawApiResponseRepository;
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
+        _syncJobExecutionContext = syncJobExecutionContext;
         _options = options.Value;
         _logger = logger;
     }
@@ -91,6 +98,11 @@ public class ProcessProductsImportConsumer
             await _syncJobRepository.SaveChangesAsync(cancellationToken);
         }
 
+        // Correlates every HTTP call made through apiClient below with this SyncJob, so
+        // RawApiResponseCaptureHandler can attribute captured rows to it. Cleared in the
+        // finally block regardless of outcome.
+        _syncJobExecutionContext.SetCurrent(syncJob.Id);
+
         IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
         int batchSize = _options.BatchSize > 0 ? _options.BatchSize : 50;
@@ -127,9 +139,21 @@ public class ProcessProductsImportConsumer
                         batchNumber,
                         errorMsg);
 
+                    // Closes out the row(s) RawApiResponseCaptureHandler just created for this
+                    // failed attempt — business logic has now looked at it and is about to fail
+                    // the job because of it.
+                    await _rawApiResponseRepository.MarkPendingAsProcessedAsync(
+                        syncJob.Id, DateTimeOffset.UtcNow, cancellationToken);
+
                     await FailJobAsync(syncJob, errorMsg, cancellationToken);
                     return;
                 }
+
+                // Closes out the row(s) captured for this successful attempt (ordinarily one,
+                // but WildberriesApiClient may have captured more if it retried a malformed
+                // response body internally before this call returned).
+                await _rawApiResponseRepository.MarkPendingAsProcessedAsync(
+                    syncJob.Id, DateTimeOffset.UtcNow, cancellationToken);
 
                 ProductCardsData data = apiResponse.Data!;
                 List<WildberriesCardSnapshot> cards = data.Cards
@@ -276,6 +300,10 @@ public class ProcessProductsImportConsumer
         {
             _logger.LogError(ex, "SyncJob {SyncJobId}: unexpected error during import", syncJob.Id);
             await FailJobAsync(syncJob, ex.Message, cancellationToken);
+        }
+        finally
+        {
+            _syncJobExecutionContext.Clear();
         }
     }
 

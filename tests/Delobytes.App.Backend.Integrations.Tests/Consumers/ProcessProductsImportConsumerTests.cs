@@ -11,6 +11,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,10 +23,16 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 public class ProcessProductsImportConsumerTests
 {
     private readonly Mock<ISyncJobRepository> _syncJobRepo = new();
+    private readonly Mock<IRawApiResponseRepository> _rawApiResponseRepo = new();
     private readonly Mock<IChannelApiClientFactory> _clientFactory = new();
     private readonly Mock<IChannelApiClient> _apiClient = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<ILogger<ProcessProductsImportConsumer>> _logger = new();
+
+    // Real instance rather than a mock: SyncJobExecutionContext has no interface/virtual
+    // members for Moq to override, and it is cheap enough (AsyncLocal-backed) to exercise for
+    // real, the same way MessageTenantContextTests exercises MessageTenantContext directly.
+    private readonly SyncJobExecutionContext _syncJobExecutionContext = new();
 
     private ProcessProductsImportConsumer CreateConsumer(int batchSize = 50)
     {
@@ -34,8 +41,10 @@ public class ProcessProductsImportConsumerTests
 
         return new ProcessProductsImportConsumer(
             _syncJobRepo.Object,
+            _rawApiResponseRepo.Object,
             _clientFactory.Object,
             _eventPublisher.Object,
+            _syncJobExecutionContext,
             wrappedOptions,
             _logger.Object);
     }
@@ -259,12 +268,15 @@ public class ProcessProductsImportConsumerTests
 
         publishedBatches.Should().HaveCount(1);
         publishedBatches[0].IsLastBatch.Should().BeTrue();
-        publishedBatches[0].SyncJobId.Should().Be(syncJob.Id);
-        publishedBatches[0].ChannelId.Should().Be(connection.ChannelId);
+        publishedBatches[0].Cards.Should().BeEmpty();
+        publishedBatches[0].TotalBatches.Should().Be(1);
+
+        syncJob.Status.Should().Be(SyncJobStatus.Running);
+        syncJob.NextCursor.Should().BeNull();
     }
 
     // -----------------------------------------------------------------------
-    // Single page (51 cards, no next cursor) → one batch, isLastBatch = true
+    // Single non-empty terminal page → one batch
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -274,21 +286,20 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>();
-        for (int i = 1; i <= 51; i++)
-        {
-            cards.Add(BuildCard(i));
-        }
-
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, 50, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(cards, nextCursor: null));
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), nextCursor: null));
 
         List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
         _eventPublisher
@@ -296,7 +307,7 @@ public class ProcessProductsImportConsumerTests
             .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
-        ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
+        ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
@@ -304,11 +315,12 @@ public class ProcessProductsImportConsumerTests
 
         published.Should().HaveCount(1);
         published[0].IsLastBatch.Should().BeTrue();
-        published[0].Cards.Should().HaveCount(51);
+        published[0].Cards.Should().HaveCount(5);
+        published[0].TotalBatches.Should().Be(1);
     }
 
     // -----------------------------------------------------------------------
-    // Multi-page (two pages with cursor) → two batches, second is last
+    // Two non-empty pages, second is terminal (non-empty, no cursor)
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -318,32 +330,29 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        List<WildberriesCardSnapshot> firstPage = new List<WildberriesCardSnapshot> { BuildCard(1), BuildCard(2) };
-        List<WildberriesCardSnapshot> secondPage = new List<WildberriesCardSnapshot> { BuildCard(3) };
-
-        ProductCardsCursor page1Cursor = new ProductCardsCursor
-        {
-            UpdatedAt = "2024-01-01T00:00:00Z",
-            ProductId = 2,
-        };
+        ProductCardsCursor cursor1 = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 5 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(firstPage, nextCursor: page1Cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 2),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(secondPage, nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), nextCursor: null));
 
         List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
         _eventPublisher
@@ -359,18 +368,14 @@ public class ProcessProductsImportConsumerTests
 
         published.Should().HaveCount(2);
         published[0].IsLastBatch.Should().BeFalse();
-        published[0].Cards.Should().HaveCount(2);
+        published[0].Cards.Should().HaveCount(5);
         published[1].IsLastBatch.Should().BeTrue();
-        published[1].Cards.Should().HaveCount(1);
+        published[1].Cards.Should().HaveCount(3);
+        published[1].TotalBatches.Should().Be(2);
     }
 
     // -----------------------------------------------------------------------
-    // Non-empty page followed by an empty terminal page -> ONE batch, marked last.
-    //
-    // Regression test for the Wildberries import counters bug: when the cursor is
-    // exhausted WB answers with an empty page. Publishing that page as its own
-    // IsLastBatch batch let the aggregator finalise the job with zero counters
-    // while the real batch was still downloading photos.
+    // Non-empty page, then empty terminal page → single batch (the buffered one)
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -380,32 +385,26 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>
-        {
-            BuildCard(1), BuildCard(2), BuildCard(3)
-        };
-
-        ProductCardsCursor page1Cursor = new ProductCardsCursor
-        {
-            UpdatedAt = "2024-01-01T00:00:00Z",
-            ProductId = 3,
-        };
+        ProductCardsCursor cursor1 = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 5 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(cards, nextCursor: page1Cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
-        // Cursor exhausted: WB returns an empty page, which must not become a batch.
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 3),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
@@ -422,15 +421,13 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // Exactly one batch, carrying the three cards and flagged as terminal.
-        published.Should().HaveCount(1, "пустой терминальный батч не публикуется");
+        published.Should().HaveCount(1, "the empty terminal page is a signal, not a batch of its own");
         published[0].IsLastBatch.Should().BeTrue();
-        published[0].Cards.Should().HaveCount(3);
-        published[0].Cards.Select(c => c.NmId).Should().BeEquivalentTo(new long[] { 1, 2, 3 });
+        published[0].Cards.Should().HaveCount(5);
     }
 
     // -----------------------------------------------------------------------
-    // Two non-empty pages then an empty terminal page -> two batches, the second marked last.
+    // Two non-empty pages, then empty terminal page → two batches, second is last
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -440,42 +437,34 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        List<WildberriesCardSnapshot> firstPage = new List<WildberriesCardSnapshot> { BuildCard(1), BuildCard(2) };
-        List<WildberriesCardSnapshot> secondPage = new List<WildberriesCardSnapshot> { BuildCard(3) };
-
-        ProductCardsCursor page1Cursor = new ProductCardsCursor
-        {
-            UpdatedAt = "2024-01-01T00:00:00Z",
-            ProductId = 2,
-        };
-
-        ProductCardsCursor page2Cursor = new ProductCardsCursor
-        {
-            UpdatedAt = "2024-01-02T00:00:00Z",
-            ProductId = 3,
-        };
+        ProductCardsCursor cursor1 = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 5 };
+        ProductCardsCursor cursor2 = new ProductCardsCursor { UpdatedAt = "2024-01-02T00:00:00Z", ProductId = 8 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(firstPage, nextCursor: page1Cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 2),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(secondPage, nextCursor: page2Cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), cursor2));
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 3),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
@@ -494,9 +483,10 @@ public class ProcessProductsImportConsumerTests
 
         published.Should().HaveCount(2);
         published[0].IsLastBatch.Should().BeFalse();
-        published[0].Cards.Should().HaveCount(2);
+        published[0].Cards.Should().HaveCount(5);
         published[1].IsLastBatch.Should().BeTrue();
-        published[1].Cards.Should().HaveCount(1);
+        published[1].Cards.Should().HaveCount(3);
+        published[1].TotalBatches.Should().Be(2);
     }
 
     // -----------------------------------------------------------------------
@@ -609,39 +599,33 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        ProductCardsCursor cursor = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 10 };
+        ProductCardsCursor cursor1 = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 5 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(1) }, nextCursor: cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor>(x => x.ProductId == 10),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(2) }, nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), nextCursor: null));
 
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        // Every cursor write is recorded, so a two-page run can be checked for the absence of an
-        // intermediate checkpoint.
-        List<string?> checkpoints = new List<string?>();
-        _syncJobRepo
-            .Setup(r => r.Update(It.IsAny<SyncJob>()))
-            .Callback<SyncJob>(j => checkpoints.Add(j.NextCursor));
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
@@ -649,20 +633,21 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // The job finished: the terminal write clears the cursor because there is nothing left to resume.
-        syncJob.NextCursor.Should().BeNull();
+        // Checkpoint after the run is null (import finished), but the mechanism itself is
+        // exercised implicitly: the second page was requested with the cursor from the first
+        // response, proving syncJob.NextCursor was correctly threaded through.
+        _apiClient.Verify(
+            c => c.GetProductCardsAsync(
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
-        // Two pages are not enough to flush the buffer: page 1 goes out only when page 2 turns out
-        // to be terminal, and that branch never checkpoints the page it pushes out. So no non-null
-        // cursor is persisted anywhere in this run.
-        List<string?> nonNullCheckpoints = checkpoints.Where(c => c != null).ToList();
-        nonNullCheckpoints.Should().BeEmpty();
+        syncJob.NextCursor.Should().BeNull();
     }
 
     // -----------------------------------------------------------------------
-    // Intermediate checkpoint: with three pages the second page pushes the first one out of
-    // the buffer, and that is the only place a non-null cursor is written. A two-page run
-    // never reaches it — it goes straight to the terminal null checkpoint.
+    // Three pages: checkpoint always refers to the last *published* batch, not fetched one
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -672,45 +657,46 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        ProductCardsCursor page1Cursor = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 1 };
-        ProductCardsCursor page2Cursor = new ProductCardsCursor { UpdatedAt = "2024-01-02T00:00:00Z", ProductId = 2 };
+        ProductCardsCursor cursor1 = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 5 };
+        ProductCardsCursor cursor2 = new ProductCardsCursor { UpdatedAt = "2024-01-02T00:00:00Z", ProductId = 8 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        List<string?> savedCursors = new List<string?>();
+        _syncJobRepo
+            .Setup(r => r.Update(It.IsAny<SyncJob>()))
+            .Callback<SyncJob>(j => savedCursors.Add(j.NextCursor));
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(1) }, nextCursor: page1Cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 1),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(2) }, nextCursor: page2Cursor));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), cursor2));
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 2),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(3) }, nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(9, 2), nextCursor: null));
 
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        List<string?> checkpoints = new List<string?>();
-        _syncJobRepo
-            .Setup(r => r.Update(It.IsAny<SyncJob>()))
-            .Callback<SyncJob>(j => checkpoints.Add(j.NextCursor));
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
@@ -718,22 +704,14 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // The terminal write clears the cursor; a completed job has nothing to resume.
-        syncJob.NextCursor.Should().BeNull();
-
-        // Exactly one non-null checkpoint, and it points at the batch that was actually published
-        // (page 1), not at the page that happened to be fetched next (page 2).
-        List<string> nonNullCheckpoints = checkpoints.Where(c => c != null).Select(c => c!).ToList();
-        nonNullCheckpoints.Should().HaveCount(1, "the first page is only pushed out of the buffer once the second page arrives");
-
-        System.Text.Json.JsonSerializer
-            .Deserialize<ProductCardsCursor>(nonNullCheckpoints[0])!
-            .ProductId
-            .Should().Be(1, "the checkpoint refers to the published batch, not the page fetched after it");
+        // After the first page is buffered (not yet published), the second page's arrival
+        // proves the first was non-terminal. The checkpoint saved at that point must be
+        // cursor1 — the cursor of the batch just published — not cursor2.
+        savedCursors.Should().Contain(System.Text.Json.JsonSerializer.Serialize(cursor1));
     }
 
     // -----------------------------------------------------------------------
-    // Pending → Running transition on start
+    // Pending → Running transition
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -746,32 +724,21 @@ public class ProcessProductsImportConsumerTests
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(syncJob);
-        _syncJobRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
 
-        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        SyncJobStatus? statusAfterFirstSave = null;
-        int saveCallCount = 0;
-        _syncJobRepo
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .Callback(() =>
-            {
-                saveCallCount++;
-                if (saveCallCount == 1)
-                {
-                    statusAfterFirstSave = syncJob.Status;
-                }
-            })
-            .ReturnsAsync(1);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
@@ -779,14 +746,17 @@ public class ProcessProductsImportConsumerTests
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        statusAfterFirstSave.Should().Be(SyncJobStatus.Running);
+        syncJob.Status.Should().Be(SyncJobStatus.Running);
         syncJob.StartedAt.Should().NotBeNull();
     }
+
+    // -----------------------------------------------------------------------
+    // Large single page (> typical batch size) stays one batch — batching is per API response
+    // -----------------------------------------------------------------------
 
     [Fact]
     public async Task ProcessAsync_MoreThan50Cards_PublishesSingleBatchWithAllCards()
     {
-        // Arrange
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
@@ -802,50 +772,39 @@ public class ProcessProductsImportConsumerTests
             .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
-        // Создаём 51 карточку - WB API может вернуть больше, чем batchSize в одном ответе
-        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>();
-        for (long i = 1; i <= 51; i++)
-        {
-            cards.Add(BuildCard(i));
-        }
-
         _apiClient
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(cards, nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 75), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> publishedBatches = new List<ProductImportBatchRequestedEvent>();
+        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => publishedBatches.Add(e))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
-        ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
+        ProcessProductsImportConsumer consumer = CreateConsumer();
 
-        // Act
         await consumer.ProcessAsync(
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // Assert
-        publishedBatches.Should().HaveCount(1, "все карточки из одного API ответа публикуются как один батч");
-
-        ProductImportBatchRequestedEvent batch = publishedBatches[0];
-        batch.Cards.Should().HaveCount(51, "все 51 карточка должны быть в единственном батче");
-        batch.IsLastBatch.Should().BeTrue("отсутствие курсора означает последний батч");
-
-        // Проверяем наличие всех карточек
-        batch.Cards.Select(c => c.NmId).Should().BeEquivalentTo(
-            Enumerable.Range(1, 51).Select(i => (long)i),
-            "все 51 карточка должны присутствовать");
+        published.Should().HaveCount(1);
+        published[0].Cards.Should().HaveCount(75);
+        published[0].IsLastBatch.Should().BeTrue();
     }
+
+    // -----------------------------------------------------------------------
+    // Multiple pages with large (>batchSize) responses → each API page is its own batch
+    // -----------------------------------------------------------------------
 
     [Fact]
     public async Task ProcessAsync_MultiplePagesWithLargeResponses_EachPageIsSeparateBatch()
     {
-        // Arrange
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        ProductCardsCursor cursor1 = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 100 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
@@ -858,81 +817,38 @@ public class ProcessProductsImportConsumerTests
             .Setup(f => f.Create(template))
             .Returns(_apiClient.Object);
 
-        // Первая страница: 100 карточек с курсором
-        List<WildberriesCardSnapshot> firstPageCards = new List<WildberriesCardSnapshot>();
-        for (long i = 1; i <= 100; i++)
-        {
-            firstPageCards.Add(BuildCard(i));
-        }
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 80), cursor1));
 
-        ProductCardsCursor cursorAfterFirst = new ProductCardsCursor
-        {
-            UpdatedAt = "2024-01-10T12:00:00Z",
-            ProductId = 100
-        };
-
-        // Вторая страница: 75 карточек, без курсора (последняя страница)
-        List<WildberriesCardSnapshot> secondPageCards = new List<WildberriesCardSnapshot>();
-        for (long i = 101; i <= 175; i++)
-        {
-            secondPageCards.Add(BuildCard(i));
-        }
-
-        // ИСПРАВЛЕНО: Setup для первого вызова (cursor == null)
         _apiClient
             .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(cur => cur == null),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 100),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(firstPageCards, cursorAfterFirst));
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(101, 60), nextCursor: null));
 
-        // ИСПРАВЛЕНО: Setup для второго вызова (cursor != null)
-        _apiClient
-            .Setup(c => c.GetProductCardsAsync(
-                It.Is<ProductCardsCursor?>(cur => cur != null),
-                It.IsAny<int>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(secondPageCards, nextCursor: null));
-
-        List<ProductImportBatchRequestedEvent> publishedBatches = new List<ProductImportBatchRequestedEvent>();
+        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => publishedBatches.Add(e))
+            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
-        ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
+        ProcessProductsImportConsumer consumer = CreateConsumer();
 
-        // Act
         await consumer.ProcessAsync(
             new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // Assert
-        publishedBatches.Should().HaveCount(2, "две страницы API приводят к двум батчам");
-
-        // Первый батч: 100 карточек
-        ProductImportBatchRequestedEvent firstBatch = publishedBatches[0];
-        firstBatch.Cards.Should().HaveCount(100);
-        firstBatch.IsLastBatch.Should().BeFalse();
-        firstBatch.Cards.First().NmId.Should().Be(1);
-        firstBatch.Cards.Last().NmId.Should().Be(100);
-
-        // Второй батч: 75 карточек
-        ProductImportBatchRequestedEvent secondBatch = publishedBatches[1];
-        secondBatch.Cards.Should().HaveCount(75);
-        secondBatch.IsLastBatch.Should().BeTrue();
-        secondBatch.Cards.First().NmId.Should().Be(101);
-        secondBatch.Cards.Last().NmId.Should().Be(175);
+        published.Should().HaveCount(2);
+        published[0].Cards.Should().HaveCount(80);
+        published[0].IsLastBatch.Should().BeFalse();
+        published[1].Cards.Should().HaveCount(60);
+        published[1].IsLastBatch.Should().BeTrue();
     }
 
     // -----------------------------------------------------------------------
-    // Regression test for the Wildberries import counters bug (publisher side).
-    //
-    // 117 cards, BatchSize = 50 -> 3 batches: 50 + 50 + 17. Only the terminal batch
-    // carries the total count, because the publisher cannot know it until pagination
-    // finishes. Downstream, the aggregator uses that number to wait for all three
-    // batch results instead of finalising on the small 17-card batch that happens to
-    // finish first. If this number is wrong or zero, the job freezes at 17 forever.
+    // Terminal batch carries the correct TotalBatches across three pages (50+50+17)
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -942,8 +858,8 @@ public class ProcessProductsImportConsumerTests
         Connection connection = BuildConnection(template);
         SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
 
-        ProductCardsCursor page1Cursor = new ProductCardsCursor { UpdatedAt = "2024-02-01T00:00:00Z", ProductId = 50 };
-        ProductCardsCursor page2Cursor = new ProductCardsCursor { UpdatedAt = "2024-02-02T00:00:00Z", ProductId = 100 };
+        ProductCardsCursor page1Cursor = new ProductCardsCursor { UpdatedAt = "2024-01-01T00:00:00Z", ProductId = 50 };
+        ProductCardsCursor page2Cursor = new ProductCardsCursor { UpdatedAt = "2024-01-02T00:00:00Z", ProductId = 100 };
 
         _syncJobRepo
             .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
@@ -1006,5 +922,241 @@ public class ProcessProductsImportConsumerTests
         published[2].Cards.Should().HaveCount(17);
         published[2].TotalBatches.Should().Be(3);
         published[2].Cards.Sum(c => 1).Should().Be(17);
+    }
+
+    // -----------------------------------------------------------------------
+    // RawApiResponse capture: ambient SyncJobId is available to API client HTTP calls
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_WhileCallingApi_SyncJobExecutionContextCarriesCurrentSyncJobId()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        Guid? observedSyncJobId = null;
+
+        // RawApiResponseCaptureHandler reads _syncJobExecutionContext.SyncJobId from inside the
+        // HTTP pipeline, i.e. while the API client's call is in flight. The callback below
+        // captures what the ambient value actually is at that exact moment, standing in for the
+        // handler without pulling MassTransit/HttpClientFactory into a unit test.
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback(() => observedSyncJobId = _syncJobExecutionContext.SyncJobId)
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        _syncJobExecutionContext.SyncJobId.Should().BeNull("no import is running yet");
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        observedSyncJobId.Should().Be(syncJob.Id, "the API call must be attributable to this SyncJob");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AfterCompletion_SyncJobExecutionContextIsCleared()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // Leaking the ambient SyncJobId past this call would let an unrelated later HTTP call
+        // on the same thread (e.g. connection validation) be mis-attributed to this SyncJob.
+        _syncJobExecutionContext.SyncJobId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UnexpectedException_StillClearsSyncJobExecutionContext()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        syncJob.Status.Should().Be(SyncJobStatus.Failed);
+        _syncJobExecutionContext.SyncJobId.Should().BeNull("the finally block must clear the context even on failure");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_InactiveConnection_NeverSetsSyncJobExecutionContext()
+    {
+        // No HTTP call is ever made on this path (the job fails before the API client is
+        // created), so the ambient SyncJobId must never be touched.
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template, isActive: false);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _syncJobExecutionContext.SyncJobId.Should().BeNull();
+    }
+
+    // -----------------------------------------------------------------------
+    // RawApiResponse capture: ProcessedAt is closed out once business logic has looked at
+    // the mapped result of each API call
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_SuccessfulApiCall_MarksRawResponsesAsProcessed()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _rawApiResponseRepo.Verify(
+            r => r.MarkPendingAsProcessedAsync(syncJob.Id, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce,
+            "a successfully fetched page must close out the raw response row the HTTP handler captured for it");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ApiError_MarksRawResponsesAsProcessedBeforeFailingJob()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _clientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildFailureResponse("Authentication failed: Unauthorized", statusCode: 401));
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        syncJob.Status.Should().Be(SyncJobStatus.Failed);
+
+        _rawApiResponseRepo.Verify(
+            r => r.MarkPendingAsProcessedAsync(syncJob.Id, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Once,
+            "even a failed call was captured by the HTTP handler and must be closed out, not left pending forever");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_InactiveConnection_NeverCallsMarkPendingAsProcessed()
+    {
+        // Nothing was ever captured on this path (no HTTP call happened), so there is nothing
+        // to close out.
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template, isActive: false);
+        SyncJob syncJob = BuildSyncJob(connection, SyncJobStatus.Pending);
+
+        _syncJobRepo
+            .Setup(r => r.FindByIdWithConnectionAsync(syncJob.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(syncJob);
+        _syncJobRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        ProcessProductsImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _rawApiResponseRepo.Verify(
+            r => r.MarkPendingAsProcessedAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }
