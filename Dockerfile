@@ -9,6 +9,7 @@ COPY ["Directory.Build.props", "./"]
 # Копируем .csproj файлы для кеширования слоя восстановления зависимостей
 COPY ["src/Delobytes.App.Backend/Delobytes.App.Backend.csproj", "src/Delobytes.App.Backend/"]
 COPY ["src/Delobytes.App.Backend.Contracts/Delobytes.App.Backend.Contracts.csproj", "src/Delobytes.App.Backend.Contracts/"]
+COPY ["src/Delobytes.App.Backend.Persistence/Delobytes.App.Backend.Persistence.csproj", "src/Delobytes.App.Backend.Persistence/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/Delobytes.App.Backend.Identity.Domain.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Application/Delobytes.App.Backend.Identity.Application.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Application/"]
 COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/Delobytes.App.Backend.Identity.Infrastructure.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/"]
