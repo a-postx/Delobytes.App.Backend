@@ -24,19 +24,31 @@ public class ProductWorkRateConfiguration : IEntityTypeConfiguration<ProductWork
         builder.Property(r => r.ValidFrom)
             .IsRequired();
 
-        builder.Property(r => r.IsActive)
+        builder.Property(r => r.Status)
+            .HasConversion<int>()
             .IsRequired();
+
+        builder.Property(r => r.RemovedFrom)
+            .IsRequired(false);
 
         builder.Property(r => r.CreatedAt)
             .IsRequired();
 
         builder.Property(r => r.UpdatedAt);
 
-        builder.HasIndex(r => new { r.ProductId, r.ValidFrom });
+        // Unique and deliberately unfiltered on RemovedFrom: a removed version and a new one sharing
+        // a ValidFrom would both satisfy the effective-date query for a date before the removal, and
+        // the CreatedAt tie-break would then silently cancel the removal. One date, one version.
+        // The index name is written out because the conflict translator matches on it, and because
+        // PostgreSQL truncates identifiers at 63 characters.
+        builder.HasIndex("TenantId", nameof(ProductWorkRate.ProductId), nameof(ProductWorkRate.ValidFrom))
+            .IsUnique()
+            .HasDatabaseName("IX_ProductWorkRates_TenantId_ProductId_ValidFrom");
 
         builder.HasIndex(r => r.WorkRateId);
 
-        builder.HasIndex(r => r.IsActive);
+        builder.HasIndex(r => r.Status)
+            .HasDatabaseName("IX_ProductWorkRates_Status");
 
         builder.HasOne(r => r.Product)
             .WithMany(p => p.ProductWorkRates)

@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Catalog.Application.Interfaces;
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
@@ -55,7 +55,8 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                 Name = p.Name,
                 Description = p.Description,
                 Status = p.Status,
-                HasActiveWorkRate = request.IncludeWorkRateCoverage && p.ProductWorkRates.Any(r => r.IsActive),
+                HasActiveWorkRate = request.IncludeWorkRateCoverage
+                    && p.ProductWorkRates.Any(r => r.Status == ProductWorkRateStatus.Active),
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt,
                 ArchivedAt = p.ArchivedAt,

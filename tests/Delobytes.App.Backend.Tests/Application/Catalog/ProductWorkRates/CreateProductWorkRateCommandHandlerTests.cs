@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.Create
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Errors;
 using FluentAssertions;
 using Moq;
@@ -81,7 +82,7 @@ public class CreateProductWorkRateCommandHandlerTests
                 rate.WorkRateId == workRateId &&
                 rate.AssemblyRatePerDay == 8 &&
                 rate.ValidFrom == new DateOnly(2026, 4, 1) &&
-                rate.IsActive)),
+                rate.Status == ProductWorkRateStatus.Active)),
             Times.Once);
 
         _repositoryMock.Verify(
@@ -236,7 +237,7 @@ public class CreateProductWorkRateCommandHandlerTests
             WorkRateId = workRateId,
             AssemblyRatePerDay = 10,
             ValidFrom = validFrom,
-            IsActive = true,
+            Status = ProductWorkRateStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow.AddMonths(-1),
         };
 
@@ -272,11 +273,11 @@ public class CreateProductWorkRateCommandHandlerTests
 
         await handler.Handle(command, CancellationToken.None);
 
-        previousRate.IsActive.Should().BeFalse();
+        previousRate.Status.Should().Be(ProductWorkRateStatus.Superseded);
         previousRate.UpdatedAt.Should().NotBeNull();
 
         _repositoryMock.Verify(
-            r => r.Add(It.Is<ProductWorkRate>(rate => rate.IsActive && rate.ValidFrom == new DateOnly(2026, 6, 1))),
+            r => r.Add(It.Is<ProductWorkRate>(rate => rate.Status == ProductWorkRateStatus.Active && rate.ValidFrom == new DateOnly(2026, 6, 1))),
             Times.Once);
 
         _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -315,7 +316,7 @@ public class CreateProductWorkRateCommandHandlerTests
                 {
                     // The raw calculation resolves the effective version by date; the previous
                     // version must still be active (and the new one not yet added) at this point.
-                    previousRate.IsActive.Should().BeTrue();
+                    previousRate.Status.Should().Be(ProductWorkRateStatus.Active);
                     capturedBeforeDeactivation = true;
                 })
             .Returns(Task.CompletedTask);
@@ -331,7 +332,7 @@ public class CreateProductWorkRateCommandHandlerTests
         await handler.Handle(command, CancellationToken.None);
 
         capturedBeforeDeactivation.Should().BeTrue();
-        previousRate.IsActive.Should().BeFalse();
+        previousRate.Status.Should().Be(ProductWorkRateStatus.Superseded);
     }
 
     [Fact]
@@ -404,9 +405,99 @@ public class CreateProductWorkRateCommandHandlerTests
         await action.Should().NotThrowAsync();
 
         _repositoryMock.Verify(
-            r => r.Add(It.Is<ProductWorkRate>(rate => rate.IsActive)),
+            r => r.Add(It.Is<ProductWorkRate>(rate => rate.Status == ProductWorkRateStatus.Active)),
             Times.Once);
 
         _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ActiveVersionPresent_SupersedesItAndLeavesItsRemovedFromNull()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid workRateId = Guid.NewGuid();
+
+        ProductWorkRate previousRate = BuildActiveRate(productId, workRateId, new DateOnly(2026, 1, 1));
+
+        _workRateRepositoryMock
+            .Setup(r => r.GetByIdAsync(workRateId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildWorkRate(workRateId));
+
+        CreateProductWorkRateCommandHandler handler = BuildHandler();
+
+        _repositoryMock
+            .Setup(r => r.GetByProductIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { previousRate });
+
+        _repositoryMock
+            .Setup(r => r.GetActiveByProductIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(previousRate);
+
+        CreateProductWorkRateCommand command = new CreateProductWorkRateCommand
+        {
+            ProductId = productId,
+            WorkRateId = workRateId,
+            AssemblyRatePerDay = 20,
+            ValidFrom = new DateOnly(2026, 6, 1),
+        };
+
+        await handler.Handle(command, CancellationToken.None);
+
+        previousRate.Status.Should().Be(ProductWorkRateStatus.Superseded);
+        previousRate.RemovedFrom.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Handle_ExistingVersionRemoved_KeepsItRemovedWithItsRemovalDate()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid workRateId = Guid.NewGuid();
+        DateOnly removedFrom = new DateOnly(2026, 2, 10);
+
+        // The lookup is status-filtered, so a removed row is not returned as the supersede target:
+        // appending a version must never bring a withdrawn rate back into force.
+        ProductWorkRate removedRate = new ProductWorkRate
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            WorkRateId = workRateId,
+            AssemblyRatePerDay = 10,
+            ValidFrom = new DateOnly(2026, 1, 1),
+            Status = ProductWorkRateStatus.Removed,
+            RemovedFrom = removedFrom,
+            CreatedAt = DateTimeOffset.UtcNow.AddMonths(-1),
+        };
+
+        _workRateRepositoryMock
+            .Setup(r => r.GetByIdAsync(workRateId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildWorkRate(workRateId));
+
+        CreateProductWorkRateCommandHandler handler = BuildHandler();
+
+        _repositoryMock
+            .Setup(r => r.GetByProductIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { removedRate });
+
+        _repositoryMock
+            .Setup(r => r.GetActiveByProductIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProductWorkRate?)null);
+
+        CreateProductWorkRateCommand command = new CreateProductWorkRateCommand
+        {
+            ProductId = productId,
+            WorkRateId = workRateId,
+            AssemblyRatePerDay = 20,
+            ValidFrom = new DateOnly(2026, 6, 1),
+        };
+
+        await handler.Handle(command, CancellationToken.None);
+
+        removedRate.Status.Should().Be(ProductWorkRateStatus.Removed);
+        removedRate.RemovedFrom.Should().Be(removedFrom);
+        removedRate.UpdatedAt.Should().BeNull();
+
+        _repositoryMock.Verify(
+            r => r.Add(It.Is<ProductWorkRate>(rate => rate.Status == ProductWorkRateStatus.Active)),
+            Times.Once);
     }
 }

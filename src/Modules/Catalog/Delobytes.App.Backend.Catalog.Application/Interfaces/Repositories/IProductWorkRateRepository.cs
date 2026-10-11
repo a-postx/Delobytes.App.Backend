@@ -50,9 +50,10 @@ public interface IProductWorkRateRepository
     Task<IReadOnlyList<ProductWorkRate>> GetByProductIdAsync(Guid productId, CancellationToken ct);
 
     /// <summary>
-    /// Returns the version currently in force for the product (IsActive = true), so that a new
-    /// version appended through POST can supersede it. At most one row is expected to match;
-    /// see the repository implementation for the tie-break used if more than one ever does.
+    /// Returns the version currently in force for the product (Status = Active), so that a new
+    /// version appended through POST can supersede it. A superseded or removed version is never
+    /// returned. At most one row is expected to match; see the repository implementation for the
+    /// tie-break used if more than one ever does.
     /// </summary>
     /// <param name="productId">Product to look up.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -60,14 +61,18 @@ public interface IProductWorkRateRepository
     Task<ProductWorkRate?> GetActiveByProductIdAsync(Guid productId, CancellationToken ct);
 
     /// <summary>
-    /// Returns the assembly output rate version that was effective on <paramref name="asOf"/>.
-    /// Deactivation is deliberately ignored, so a soft-deleted rate keeps resolving for dates on
-    /// which it was the effective one. Pass the current date to honour deletion in new calculations.
+    /// Returns the assembly output rate version that was effective on <paramref name="asOf"/>: the
+    /// version with the latest ValidFrom not after that date, excluding any version that had
+    /// already been removed by then. A removed version therefore keeps resolving for dates before
+    /// its RemovedFrom, so historical cost calculations stay reproducible, and from RemovedFrom
+    /// onwards the caller reports a missing rate. Note that removal closes one version only: an
+    /// earlier version that was never superseded remains effective, so a removal does not by
+    /// itself open a gap in which the product has no rate.
     /// </summary>
     /// <param name="productId">Product to look up.</param>
     /// <param name="asOf">Date the rate is resolved against.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The effective rate version, or null when none existed by that date.</returns>
+    /// <returns>The effective rate version, or null when none was in force by that date.</returns>
     Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct);
 
     Task<IReadOnlyList<Guid>> GetProductIdsByWorkRateIdAsync(Guid workRateId, CancellationToken ct);

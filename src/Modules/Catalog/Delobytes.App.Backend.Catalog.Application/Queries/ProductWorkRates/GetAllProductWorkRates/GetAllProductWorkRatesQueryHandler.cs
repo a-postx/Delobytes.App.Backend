@@ -84,7 +84,8 @@ public class GetAllProductWorkRatesQueryHandler : IRequestHandler<GetAllProductW
             WorkRateId = rate.WorkRateId,
             AssemblyRatePerDay = rate.AssemblyRatePerDay,
             ValidFrom = rate.ValidFrom,
-            IsActive = rate.IsActive,
+            Status = rate.Status,
+            RemovedFrom = rate.RemovedFrom,
             CreatedAt = rate.CreatedAt,
             UpdatedAt = rate.UpdatedAt,
         };

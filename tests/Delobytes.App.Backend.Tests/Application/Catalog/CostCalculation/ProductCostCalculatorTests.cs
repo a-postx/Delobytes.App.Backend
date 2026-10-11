@@ -286,7 +286,7 @@ public class ProductCostCalculatorTests
                 WorkRateId = workRateId,
                 AssemblyRatePerDay = 10,
                 ValidFrom = asOf,
-                IsActive = true,
+                Status = ProductWorkRateStatus.Active,
             });
 
         // The referenced rate was removed physically; the calculation must survive it.
@@ -391,9 +391,9 @@ public class ProductCostCalculatorTests
     [Fact]
     public async Task CalculateAsync_SupersededInactiveVersion_StillResolvesForAnEarlierDate()
     {
-        // The repository contract ignores IsActive on purpose. The calculator must therefore not
-        // filter the result out on its side: a version deactivated by a newer one is still the
-        // correct wage for a date that falls before the replacement.
+        // The version was replaced by a newer one afterwards, which is exactly the case the
+        // effective-date resolution must keep answering for a date that falls before the
+        // replacement. The calculator must not second-guess the repository on its side.
         Guid productId = Guid.NewGuid();
         DateOnly asOf = new DateOnly(2026, 1, 20);
 
@@ -420,8 +420,8 @@ public class ProductCostCalculatorTests
 
         CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
 
-        // Labour 1600 / 4 = 400, and no warning: the inactive flag on the version is irrelevant
-        // for a historical date.
+        // Labour 1600 / 4 = 400, and no warning: the version was in force on the queried date,
+        // whatever replaced it afterwards.
         breakdown.LaborCost.Should().BeApproximately(400m, Tolerance);
         breakdown.Warnings.Should().NotContain(warning => warning.Type == CostWarningType.MissingWorkRate);
     }
@@ -492,7 +492,7 @@ public class ProductCostCalculatorTests
                 WorkRateId = workRateId,
                 AssemblyRatePerDay = assemblyRatePerDay,
                 ValidFrom = new DateOnly(2026, 1, 1),
-                IsActive = true,
+                Status = ProductWorkRateStatus.Active,
             });
 
         return workRateId;
@@ -510,7 +510,7 @@ public class ProductCostCalculatorTests
                 WorkRateId = workRateId,
                 AssemblyRatePerDay = assemblyRatePerDay,
                 ValidFrom = new DateOnly(2026, 1, 1),
-                IsActive = true,
+                Status = ProductWorkRateStatus.Active,
             });
 
         _workRateVersionRepositoryMock

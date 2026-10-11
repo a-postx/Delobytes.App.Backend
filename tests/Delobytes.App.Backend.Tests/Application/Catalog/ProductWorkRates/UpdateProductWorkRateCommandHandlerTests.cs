@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.Update
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Errors;
 using FluentAssertions;
 using Moq;
@@ -60,7 +61,8 @@ public class UpdateProductWorkRateCommandHandlerTests
         Guid productId,
         Guid workRateId,
         DateOnly validFrom,
-        bool isActive = true)
+        ProductWorkRateStatus status = ProductWorkRateStatus.Active,
+        DateOnly? removedFrom = null)
         => new ProductWorkRate
         {
             Id = Guid.NewGuid(),
@@ -68,7 +70,8 @@ public class UpdateProductWorkRateCommandHandlerTests
             WorkRateId = workRateId,
             AssemblyRatePerDay = 10,
             ValidFrom = validFrom,
-            IsActive = isActive,
+            Status = status,
+            RemovedFrom = removedFrom,
             CreatedAt = DateTimeOffset.UtcNow.AddMonths(-1),
         };
 
@@ -195,7 +198,11 @@ public class UpdateProductWorkRateCommandHandlerTests
         Guid productId = Guid.NewGuid();
         Guid workRateId = Guid.NewGuid();
 
-        ProductWorkRate rate = BuildRate(productId, workRateId, new DateOnly(2026, 1, 1), isActive: false);
+        ProductWorkRate rate = BuildRate(
+            productId,
+            workRateId,
+            new DateOnly(2026, 1, 1),
+            ProductWorkRateStatus.Superseded);
 
         _repositoryMock
             .Setup(r => r.GetByIdAsync(rate.Id, It.IsAny<CancellationToken>()))
@@ -215,6 +222,53 @@ public class UpdateProductWorkRateCommandHandlerTests
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
         exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateNotFound);
+
+        _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_RemovedVersion_IsRefusedAndKeepsItsRemovalDate()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid workRateId = Guid.NewGuid();
+        DateOnly removedFrom = new DateOnly(2026, 2, 10);
+
+        ProductWorkRate rate = BuildRate(
+            productId,
+            workRateId,
+            new DateOnly(2026, 1, 1),
+            ProductWorkRateStatus.Removed,
+            removedFrom);
+
+        _repositoryMock
+            .Setup(r => r.GetByIdAsync(rate.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(rate);
+
+        UpdateProductWorkRateCommandHandler handler = BuildHandler();
+
+        UpdateProductWorkRateCommand command = new UpdateProductWorkRateCommand
+        {
+            Id = rate.Id,
+            WorkRateId = workRateId,
+            AssemblyRatePerDay = 15,
+            ValidFrom = new DateOnly(2026, 2, 1),
+        };
+
+        Func<Task> action = () => handler.Handle(command, CancellationToken.None);
+
+        AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateNotFound);
+
+        rate.Status.Should().Be(ProductWorkRateStatus.Removed);
+        rate.RemovedFrom.Should().Be(removedFrom);
+        rate.AssemblyRatePerDay.Should().Be(10);
+
+        _snapshotServiceMock.Verify(
+            s => s.CaptureBeforeChangeAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
 
         _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }

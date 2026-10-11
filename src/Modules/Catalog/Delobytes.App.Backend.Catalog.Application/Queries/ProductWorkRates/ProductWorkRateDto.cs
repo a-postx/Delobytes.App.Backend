@@ -1,3 +1,5 @@
+using Delobytes.App.Backend.Catalog.Domain.Enums;
+
 namespace Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates;
 
 public record ProductWorkRateDto
@@ -14,7 +16,15 @@ public record ProductWorkRateDto
     public Guid WorkRateId { get; init; }
     public int AssemblyRatePerDay { get; init; }
     public DateOnly ValidFrom { get; init; }
+
+    /// <summary>
+    /// Lifecycle state of this version, serialised as a string: "Active", "Superseded" or "Removed".
+    /// </summary>
+    public ProductWorkRateStatus Status { get; init; }
+
+    /// <summary>First date on which the version is out of force; null unless removed.</summary>
+    public DateOnly? RemovedFrom { get; init; }
+
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
-    public bool IsActive { get; init; }
 }

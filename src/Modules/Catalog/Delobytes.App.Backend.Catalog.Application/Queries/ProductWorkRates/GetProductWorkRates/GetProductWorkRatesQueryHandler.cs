@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using MediatR;
 
@@ -28,7 +28,8 @@ public class GetProductWorkRatesQueryHandler : IRequestHandler<GetProductWorkRat
                 WorkRateId = r.WorkRateId,
                 AssemblyRatePerDay = r.AssemblyRatePerDay,
                 ValidFrom = r.ValidFrom,
-                IsActive = r.IsActive,
+                Status = r.Status,
+                RemovedFrom = r.RemovedFrom,
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt,
             }).ToList(),

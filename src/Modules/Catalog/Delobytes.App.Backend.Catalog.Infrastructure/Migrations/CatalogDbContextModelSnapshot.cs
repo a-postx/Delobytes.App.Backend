@@ -872,17 +872,20 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("RemovedFrom")
+                        .HasColumnType("date");
 
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
@@ -898,13 +901,18 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IsActive");
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_ProductWorkRates_Status");
 
                     b.HasIndex("TenantId");
 
                     b.HasIndex("WorkRateId");
 
-                    b.HasIndex("ProductId", "ValidFrom");
+                    b.HasIndex("TenantId", "ProductId", "ValidFrom")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ProductWorkRates_TenantId_ProductId_ValidFrom");
 
                     b.ToTable("ProductWorkRates", "catalog");
                 });

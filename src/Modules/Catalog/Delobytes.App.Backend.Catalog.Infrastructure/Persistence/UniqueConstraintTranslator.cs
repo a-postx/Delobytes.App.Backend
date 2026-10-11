@@ -18,6 +18,7 @@ internal static class UniqueConstraintTranslator
     {
         ["IX_Products_TenantId_Sku"] = ErrorCodes.Catalog.ProductSkuConflict,
         ["IX_ProductBarcodes_TenantId_Value"] = ErrorCodes.Catalog.ProductBarcodeConflict,
+        ["IX_ProductWorkRates_TenantId_ProductId_ValidFrom"] = ErrorCodes.Catalog.ProductWorkRateValidFromConflict,
     };
 
     /// <summary>

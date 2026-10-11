@@ -409,7 +409,8 @@ public class GetAllProductWorkRatesQueryHandlerTests
         item.ProductName.Should().Be("Blue Widget");
         item.ProductSku.Should().Be("SKU-1");
         item.ValidFrom.Should().Be(new DateOnly(2026, 3, 12));
-        item.IsActive.Should().BeTrue();
+        item.Status.Should().Be(ProductWorkRateStatus.Active);
+        item.RemovedFrom.Should().BeNull();
     }
 
     [Fact]
@@ -449,7 +450,7 @@ public class GetAllProductWorkRatesQueryHandlerTests
             WorkRateId = Guid.NewGuid(),
             AssemblyRatePerDay = 8,
             ValidFrom = new DateOnly(2026, 3, 12),
-            IsActive = true,
+            Status = ProductWorkRateStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
     }

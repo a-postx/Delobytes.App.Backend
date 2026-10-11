@@ -12,9 +12,10 @@ namespace Delobytes.App.Backend.Controllers;
 
 /// <summary>
 /// Endpoints for the Product Work Rates catalog.
-/// Creating a new rate (POST) deactivates the previously active version and appends a new one;
+/// Creating a new rate (POST) supersedes the version currently in force and appends a new one;
 /// an existing, still-active version can also be corrected in place (PUT), e.g. to fix a typo.
-/// Deletion is a soft-delete: IsActive is set to false, the record is retained for historical accuracy.
+/// Deletion withdraws the version from the removal date onwards (DELETE): the record is retained
+/// and keeps resolving for every earlier date, so historical cost calculations are unaffected.
 /// </summary>
 [ApiController]
 [Route("api/catalogs/product-work-rates")]
@@ -91,7 +92,7 @@ public class ProductWorkRatesController : ControllerBase
     }
 
     /// <summary>
-    /// Appends a new work rate version for a product and deactivates the version it supersedes.
+    /// Appends a new work rate version for a product and supersedes the version it replaces.
     /// Requires Manager or Administrator role.
     /// </summary>
     [HttpPost]
@@ -144,8 +145,10 @@ public class ProductWorkRatesController : ControllerBase
     }
 
     /// <summary>
-    /// Soft-deletes a rate record (IsActive = false).
-    /// The record is retained so historical margin calculation snapshots remain valid.
+    /// Withdraws a rate version from today (or from the day after its start, for a future-dated
+    /// version) onwards. The record is retained and keeps resolving for every earlier date, so
+    /// historical margin calculation snapshots remain valid. Idempotent: calling this again on an
+    /// already-removed version does not move the removal date.
     /// Requires Manager or Administrator role.
     /// </summary>
     [HttpDelete("{id:guid}")]

@@ -373,7 +373,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             WorkRateId = workRateId,
             AssemblyRatePerDay = 8,
             ValidFrom = _today.AddDays(-30),
-            IsActive = true,
+            Status = ProductWorkRateStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         });
 
@@ -384,7 +384,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             WorkRateId = workRateId,
             AssemblyRatePerDay = 8,
             ValidFrom = _today.AddDays(-30),
-            IsActive = false,
+            Status = ProductWorkRateStatus.Superseded,
             CreatedAt = DateTimeOffset.UtcNow,
         });
 
@@ -443,7 +443,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             .ToListAsync();
 
         rates.Should().HaveCount(2);
-        rates.Count(r => r.IsActive).Should().Be(1);
+        rates.Count(r => r.Status == ProductWorkRateStatus.Active).Should().Be(1);
 
         ProductCostCalculator calculator = new ProductCostCalculator(
             _bomLineRepository,
@@ -504,7 +504,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             WorkRateId = workRateId,
             AssemblyRatePerDay = assemblyRatePerDay,
             ValidFrom = _today.AddDays(-30),
-            IsActive = true,
+            Status = ProductWorkRateStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 

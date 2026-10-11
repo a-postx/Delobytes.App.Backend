@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
@@ -33,7 +34,8 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
 
         // Checked before any snapshot work: a duplicate ValidFrom would resolve unpredictably via
         // the ThenByDescending(CreatedAt) tie-break in GetEffectiveAtAsync, so the request is
-        // rejected outright rather than silently accepted.
+        // rejected outright rather than silently accepted. This is the friendly path; the unique
+        // index on (TenantId, ProductId, ValidFrom) is what makes the guarantee hold under a race.
         IReadOnlyList<ProductWorkRate> existingVersions =
             await _repository.GetByProductIdAsync(request.ProductId, cancellationToken);
 
@@ -45,14 +47,17 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
         await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "WorkRateChanged", cancellationToken);
 
         // Supersede the version currently in force, mirroring CreateComponentPriceCommandHandler:
-        // without this, several rows per product could stay IsActive = true simultaneously.
+        // without this, several rows per product could stay Active simultaneously. The lookup
+        // returns an Active row only, so a superseded or removed version keeps its own status and,
+        // for a removed one, its RemovedFrom -- reactivating it here would silently undo the
+        // removal the user asked for.
         ProductWorkRate? activeRate = await _repository.GetActiveByProductIdAsync(request.ProductId, cancellationToken);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         if (activeRate != null)
         {
-            activeRate.IsActive = false;
+            activeRate.Status = ProductWorkRateStatus.Superseded;
             activeRate.UpdatedAt = now;
         }
 
@@ -63,12 +68,12 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
             WorkRateId = request.WorkRateId,
             AssemblyRatePerDay = request.AssemblyRatePerDay,
             ValidFrom = request.ValidFrom,
-            IsActive = true,
+            Status = ProductWorkRateStatus.Active,
             CreatedAt = now,
         };
 
-        // The deactivation and the insert commit in the same SaveChangesAsync call: with RowVersion
-        // now in place, a failed concurrency check on the deactivated row must not leave the new
+        // The supersede and the insert commit in the same SaveChangesAsync call: with RowVersion
+        // now in place, a failed concurrency check on the superseded row must not leave the new
         // row persisted without it, which would otherwise produce two active versions.
         _repository.Add(rate);
         await _repository.SaveChangesAsync(cancellationToken);

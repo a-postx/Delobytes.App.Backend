@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
@@ -31,10 +32,11 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
             return new UpdateProductWorkRateResponse { Found = false };
         }
 
-        // Editing a superseded or deleted version would never change a calculation: it is not the
+        // Editing a superseded or removed version would never change a calculation: it is not the
         // effective one for any date going forward. Allowing the edit would reintroduce the
-        // "silently does nothing" behaviour this task removes.
-        if (!rate.IsActive)
+        // "silently does nothing" behaviour this task removes. RemovedFrom is deliberately not
+        // touched here: an active version has none, and a removed one cannot be reached.
+        if (rate.Status != ProductWorkRateStatus.Active)
         {
             throw new AppException(ErrorCodes.Catalog.ProductWorkRateNotFound);
         }

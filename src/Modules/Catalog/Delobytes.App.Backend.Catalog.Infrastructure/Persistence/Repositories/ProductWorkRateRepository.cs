@@ -99,11 +99,11 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
         // over an EXISTS subquery, which both providers translate predictably, and the counters are
         // only requested with the filter labels, not on every page load.
         int active = await query
-            .Where(p => p.ProductWorkRates.Any(r => r.IsActive))
+            .Where(p => p.ProductWorkRates.Any(r => r.Status == ProductWorkRateStatus.Active))
             .CountAsync(ct);
 
         int inactive = await query
-            .Where(p => p.ProductWorkRates.Any(r => !r.IsActive))
+            .Where(p => p.ProductWorkRates.Any(r => r.Status != ProductWorkRateStatus.Active))
             .CountAsync(ct);
 
         // "All" is the two groups merged, not a third scan: a product matches it when it carries a
@@ -126,12 +126,14 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
 
     public Task<ProductWorkRate?> GetActiveByProductIdAsync(Guid productId, CancellationToken ct)
     {
-        // Normally at most one row is IsActive per product. The ordering is a defensive tie-break,
+        // Normally at most one row is Active per product. The ordering is a defensive tie-break,
         // not an assumption that it cannot happen: it mirrors GetEffectiveAtAsync so that, even if
         // data ever drifted (e.g. a manual fix in the database), the most recently started version
         // wins deterministically instead of leaving the choice to query-plan-dependent ordering.
+        // Filtering on Status is also what keeps a Removed version out: a new version supersedes
+        // only the active one, so a withdrawn row can never be reactivated by appending a version.
         return _context.ProductWorkRates
-            .Where(r => r.ProductId == productId && r.IsActive)
+            .Where(r => r.ProductId == productId && r.Status == ProductWorkRateStatus.Active)
             .OrderByDescending(r => r.ValidFrom)
             .ThenByDescending(r => r.CreatedAt)
             .FirstOrDefaultAsync(ct);
@@ -139,11 +141,14 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
 
     public Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct)
     {
-        // IsActive is intentionally not filtered. Note that this method cannot tell a version
-        // superseded by a newer one from a soft-deleted one, so a deleted rate keeps resolving for
-        // every date from its ValidFrom onwards. The calculation treats that as the data it was asked for.
+        // A removed version keeps resolving for every date before its removal, so past cost
+        // calculations remain reproducible; from RemovedFrom onwards it is out of force and the
+        // caller reports a missing rate instead. Status alone cannot express this, which is why the
+        // removal is stored as a date.
         return _context.ProductWorkRates
-            .Where(r => r.ProductId == productId && r.ValidFrom <= asOf)
+            .Where(r => r.ProductId == productId
+                && r.ValidFrom <= asOf
+                && (r.RemovedFrom == null || r.RemovedFrom > asOf))
             .OrderByDescending(r => r.ValidFrom)
             .ThenByDescending(r => r.CreatedAt)
             .FirstOrDefaultAsync(ct);
@@ -157,7 +162,7 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
     public async Task<IReadOnlyList<Guid>> GetProductIdsByWorkRateIdAsync(Guid workRateId, CancellationToken ct)
     {
         return await _context.ProductWorkRates
-            .Where(r => r.WorkRateId == workRateId && r.IsActive)
+            .Where(r => r.WorkRateId == workRateId && r.Status == ProductWorkRateStatus.Active)
             .Select(r => r.ProductId)
             .Distinct()
             .ToListAsync(ct);
@@ -191,8 +196,8 @@ public class ProductWorkRateRepository : IProductWorkRateRepository
         // appears -- the filter reads the versions, not the catalog.
         return filter switch
         {
-            ProductWorkRateGroupFilter.Active => query.Where(p => p.ProductWorkRates.Any(r => r.IsActive)),
-            ProductWorkRateGroupFilter.Inactive => query.Where(p => p.ProductWorkRates.Any(r => !r.IsActive)),
+            ProductWorkRateGroupFilter.Active => query.Where(p => p.ProductWorkRates.Any(r => r.Status == ProductWorkRateStatus.Active)),
+            ProductWorkRateGroupFilter.Inactive => query.Where(p => p.ProductWorkRates.Any(r => r.Status != ProductWorkRateStatus.Active)),
             _ => query.Where(p => p.ProductWorkRates.Any()),
         };
     }
