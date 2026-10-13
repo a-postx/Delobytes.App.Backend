@@ -16,6 +16,13 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Components.GetCompon
 public class GetComponentsQuery : IRequest<GetComponentsResponse>
 {
     /// <summary>
+    /// Optional status filter. When omitted, components of both statuses are returned and the
+    /// caller is responsible for filtering (per-status counts are returned when
+    /// <see cref="IncludeCounts"/> is set).
+    /// </summary>
+    public bool? IsActive { get; set; }
+
+    /// <summary>
     /// Optional free-text filter over the component name: case-insensitive substring match.
     /// Blank or whitespace-only values are treated as "no search". The value is trimmed and
     /// capped at 200 characters.
@@ -43,4 +50,12 @@ public class GetComponentsQuery : IRequest<GetComponentsResponse>
     /// Sort direction: "asc" (default) or "desc". Any other value falls back to ascending.
     /// </summary>
     public string? SortDir { get; set; }
+
+    /// <summary>
+    /// When true, <see cref="GetComponentsResponse.StatusCounts"/> is populated with per-status
+    /// totals computed over the whole (unpaged) result set, so tab counters stay correct
+    /// while the list itself is paged. The same search filter is applied, so the counters
+    /// describe the current search results rather than the whole catalog.
+    /// </summary>
+    public bool IncludeCounts { get; set; }
 }

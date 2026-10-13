@@ -45,16 +45,8 @@ public class ComponentRepository : IComponentRepository
             .FirstOrDefaultAsync(pc => pc.Id == id, ct);
     }
 
-    public async Task<IReadOnlyList<Component>> GetAllAsync(CancellationToken ct)
-    {
-        return await _context.Components
-            .Include(pc => pc.Prices)
-                .ThenInclude(p => p.Supplier)
-            .OrderBy(pc => pc.Name)
-            .ToListAsync(ct);
-    }
-
     public async Task<(int TotalCount, IReadOnlyList<Component> Items)> GetPagedAsync(
+        bool? isActive,
         int? skip,
         int? take,
         string? sortBy,
@@ -62,7 +54,7 @@ public class ComponentRepository : IComponentRepository
         CancellationToken ct,
         string? search = null)
     {
-        IQueryable<Component> query = BuildListQuery(search);
+        IQueryable<Component> query = BuildListQuery(isActive, search);
         int totalCount = await query.CountAsync(ct);
         IQueryable<Component> ordered = ApplyOrdering(query, sortBy, descending);
 
@@ -82,6 +74,24 @@ public class ComponentRepository : IComponentRepository
         return (totalCount, items);
     }
 
+    public async Task<(int Active, int Inactive, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null)
+    {
+        // The counters must be derived from the same filtered set the list is showing, otherwise
+        // the tabs advertise totals for components the user cannot see under an active search.
+        IQueryable<Component> query = ApplySearch(_context.Components.AsNoTracking(), search);
+
+        List<StatusCountRow> rows = await query
+            .GroupBy(c => c.IsActive)
+            .Select(g => new StatusCountRow { IsActive = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        int active = rows.Where(r => r.IsActive).Sum(r => r.Count);
+        int inactive = rows.Where(r => !r.IsActive).Sum(r => r.Count);
+        int all = rows.Sum(r => r.Count);
+
+        return (active, inactive, all);
+    }
+
     public void Add(Component component)
     {
         _context.Components.Add(component);
@@ -94,11 +104,17 @@ public class ComponentRepository : IComponentRepository
         return await _context.SaveChangesWithConflictTranslationAsync(ct);
     }
 
-    private IQueryable<Component> BuildListQuery(string? search)
+    private IQueryable<Component> BuildListQuery(bool? isActive, string? search)
     {
         IQueryable<Component> query = _context.Components
             .Include(pc => pc.Prices)
                 .ThenInclude(p => p.Supplier);
+
+        if (isActive.HasValue)
+        {
+            bool filterActive = isActive.Value;
+            query = query.Where(c => c.IsActive == filterActive);
+        }
 
         return ApplySearch(query, search);
     }
@@ -126,18 +142,20 @@ public class ComponentRepository : IComponentRepository
         switch (sortBy?.ToLowerInvariant())
         {
             case "supplier":
-                // The active price (if any) carries the supplier; a component without one sorts
-                // as if its supplier name were null.
-                return Order(
+                // The "missing" flag tracks the active price itself, not whether that price has a
+                // supplier: a component without an active price sorts last, matching validFrom.
+                return OrderWithMissingLast(
                     query,
+                    c => c.Prices.Any(p => p.IsActive) ? 0 : 1,
                     c => c.Prices
                         .Where(p => p.IsActive)
                         .Select(p => p.Supplier != null ? p.Supplier.Name : null)
                         .FirstOrDefault(),
                     descending);
             case "validfrom":
-                return Order(
+                return OrderWithMissingLast(
                     query,
+                    c => c.Prices.Any(p => p.IsActive) ? 0 : 1,
                     c => c.Prices
                         .Where(p => p.IsActive)
                         .Select(p => (DateOnly?)p.ValidFrom)
@@ -160,5 +178,34 @@ public class ComponentRepository : IComponentRepository
         return descending
             ? query.OrderByDescending(keySelector).ThenBy(c => c.Id)
             : query.OrderBy(keySelector).ThenBy(c => c.Id);
+    }
+
+    /// <summary>
+    /// Orders by <paramref name="keySelector"/> while pinning components without a value
+    /// (<paramref name="missingFlagSelector"/> equal to 1) to the end of the list regardless of
+    /// direction. PostgreSQL and the InMemory test provider disagree on where a plain
+    /// <c>ORDER BY</c> puts nulls, so the position is pinned explicitly with a flag column
+    /// instead of relying on either provider's default.
+    /// </summary>
+    private static IQueryable<Component> OrderWithMissingLast<TKey>(
+        IQueryable<Component> query,
+        Expression<Func<Component, int>> missingFlagSelector,
+        Expression<Func<Component, TKey>> keySelector,
+        bool descending)
+    {
+        IOrderedQueryable<Component> ordered = query.OrderBy(missingFlagSelector);
+
+        ordered = descending
+            ? ordered.ThenByDescending(keySelector)
+            : ordered.ThenBy(keySelector);
+
+        return ordered.ThenBy(c => c.Id);
+    }
+
+    private sealed class StatusCountRow
+    {
+        public bool IsActive { get; set; }
+
+        public int Count { get; set; }
     }
 }

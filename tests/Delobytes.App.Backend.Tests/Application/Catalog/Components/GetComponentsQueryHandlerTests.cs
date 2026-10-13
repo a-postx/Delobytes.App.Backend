@@ -30,6 +30,7 @@ public class GetComponentsQueryHandlerTests
 
         _repositoryMock
             .Setup(r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 It.IsAny<int?>(),
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
@@ -47,6 +48,7 @@ public class GetComponentsQueryHandlerTests
         List<Component> components = new() { BuildComponent(), BuildComponent(), BuildComponent() };
         _repositoryMock
             .Setup(r => r.GetPagedAsync(
+                null,
                 null,
                 null,
                 null,
@@ -68,6 +70,7 @@ public class GetComponentsQueryHandlerTests
                 null,
                 null,
                 null,
+                null,
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
                 It.IsAny<string?>()),
@@ -86,6 +89,7 @@ public class GetComponentsQueryHandlerTests
         // Assert
         _repositoryMock.Verify(
             r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 10,
                 10,
                 It.IsAny<string?>(),
@@ -111,6 +115,7 @@ public class GetComponentsQueryHandlerTests
         response.PageSize.Should().Be(expectedPageSize);
         _repositoryMock.Verify(
             r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 0,
                 expectedPageSize,
                 It.IsAny<string?>(),
@@ -135,6 +140,7 @@ public class GetComponentsQueryHandlerTests
         response.Page.Should().Be(1);
         _repositoryMock.Verify(
             r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 0,
                 50,
                 It.IsAny<string?>(),
@@ -161,6 +167,7 @@ public class GetComponentsQueryHandlerTests
 
         _repositoryMock.Verify(
             r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 It.IsAny<int?>(),
                 It.IsAny<int?>(),
                 sortBy,
@@ -186,6 +193,7 @@ public class GetComponentsQueryHandlerTests
 
         _repositoryMock.Verify(
             r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 It.IsAny<int?>(),
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
@@ -209,12 +217,74 @@ public class GetComponentsQueryHandlerTests
 
         _repositoryMock.Verify(
             r => r.GetPagedAsync(
+                It.IsAny<bool?>(),
                 It.IsAny<int?>(),
                 It.IsAny<int?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>(),
                 search),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [InlineData(null)]
+    public async Task Handle_IsActiveIsForwardedVerbatim(bool? isActive)
+    {
+        // Status filtering lives entirely in the repository; the handler just passes it through.
+        GetComponentsQuery query = new() { IsActive = isActive };
+
+        await _handler.Handle(query, CancellationToken.None);
+
+        _repositoryMock.Verify(
+            r => r.GetPagedAsync(
+                isActive,
+                It.IsAny<int?>(),
+                It.IsAny<int?>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_IncludeCountsFalse_StatusCountsStaysNull()
+    {
+        // Arrange
+        GetComponentsQuery query = new() { IncludeCounts = false };
+
+        // Act
+        GetComponentsResponse response = await _handler.Handle(query, CancellationToken.None);
+
+        // Assert
+        response.StatusCounts.Should().BeNull();
+        _repositoryMock.Verify(
+            r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_IncludeCountsTrue_StatusCountsIsPopulatedFromTheRepository()
+    {
+        // Arrange
+        _repositoryMock
+            .Setup(r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), It.IsAny<string?>()))
+            .ReturnsAsync((3, 2, 5));
+        GetComponentsQuery query = new() { IncludeCounts = true, Search = "bolt" };
+
+        // Act
+        GetComponentsResponse response = await _handler.Handle(query, CancellationToken.None);
+
+        // Assert
+        response.StatusCounts.Should().NotBeNull();
+        response.StatusCounts!.Active.Should().Be(3);
+        response.StatusCounts!.Inactive.Should().Be(2);
+        response.StatusCounts!.All.Should().Be(5);
+        _repositoryMock.Verify(
+            r => r.GetStatusCountsAsync(It.IsAny<CancellationToken>(), "bolt"),
             Times.Once);
     }
 
@@ -247,6 +317,7 @@ public class GetComponentsQueryHandlerTests
 
         _repositoryMock
             .Setup(r => r.GetPagedAsync(
+                null,
                 null,
                 null,
                 null,

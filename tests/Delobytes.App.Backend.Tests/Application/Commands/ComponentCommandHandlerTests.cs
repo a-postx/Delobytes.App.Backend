@@ -560,6 +560,7 @@ public class ComponentCommandHandlerTests
                 null,
                 null,
                 null,
+                null,
                 false,
                 It.IsAny<CancellationToken>(),
                 null))

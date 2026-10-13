@@ -18,9 +18,8 @@ namespace Delobytes.App.Backend.Tests.Infrastructure.Catalog;
 /// <summary>
 /// ComponentRepository resolves sortBy against a whitelist: name, supplier, validFrom,
 /// createdAt. Sorting by supplier or validFrom reads the component's active price version
-/// (<c>Prices.FirstOrDefault(p =&gt; p.IsActive)</c>); a component without an active price must
-/// sort as if that value were null, matching the "deleted component has no active price"
-/// invariant.
+/// (<c>Prices.FirstOrDefault(p =&gt; p.IsActive)</c>); a component without an active price
+/// always sorts last, in both directions.
 /// </summary>
 public class ComponentRepositoryOrderingTests
 {
@@ -44,9 +43,10 @@ public class ComponentRepositoryOrderingTests
 
         // Act: sortBy null and descending false reproduce the default "name asc" order.
         (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
-            null,
-            null,
-            null,
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: null,
             descending: false,
             CancellationToken.None);
 
@@ -72,9 +72,10 @@ public class ComponentRepositoryOrderingTests
 
         // Act
         (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
-            null,
-            null,
-            "no-such-key",
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "no-such-key",
             descending: false,
             CancellationToken.None);
 
@@ -100,9 +101,10 @@ public class ComponentRepositoryOrderingTests
 
         // Act
         (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
-            null,
-            null,
-            "createdAt",
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "createdAt",
             descending: true,
             CancellationToken.None);
 
@@ -111,10 +113,11 @@ public class ComponentRepositoryOrderingTests
     }
 
     [Fact]
-    public async Task GetPagedAsync_SortBySupplierAscending_ComponentsWithoutActivePriceSortFirst()
+    public async Task GetPagedAsync_SortBySupplierAscending_ComponentsWithoutActivePriceSortLast()
     {
-        // Arrange: a deleted component has no active price (its only price was deactivated),
-        // so it must sort as if its supplier name were null -- first in ascending order.
+        // Arrange: a deleted component has no active price (its only price was deactivated).
+        // The two EF providers disagree on where ORDER BY places nulls, so the repository pins
+        // components without an active price to the end regardless of direction.
         string databaseName = Guid.NewGuid().ToString();
         CatalogDbContext setupContext = BuildContext(databaseName);
 
@@ -134,14 +137,79 @@ public class ComponentRepositoryOrderingTests
 
         // Act
         (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
-            null,
-            null,
-            "supplier",
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "supplier",
             descending: false,
             CancellationToken.None);
 
         // Assert
-        items.Select(c => c.Id).Should().ContainInOrder(withoutActivePrice.Id, withAcme.Id, withZenith.Id);
+        items.Select(c => c.Id).Should().ContainInOrder(withAcme.Id, withZenith.Id, withoutActivePrice.Id);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SortBySupplierDescending_ComponentsWithoutActivePriceSortLast()
+    {
+        // Arrange: same requirement as ascending -- missing values stay last, not first.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        Supplier acme = new Supplier { Id = Guid.NewGuid(), Inn = "1111111111", Name = "Acme", IsActive = true };
+        Supplier zenith = new Supplier { Id = Guid.NewGuid(), Inn = "2222222222", Name = "Zenith", IsActive = true };
+
+        Component withAcme = ComponentWithActivePrice("Has Acme", acme);
+        Component withZenith = ComponentWithActivePrice("Has Zenith", zenith);
+        Component withoutActivePrice = ComponentWithInactivePrice("No active price", acme);
+
+        setupContext.Suppliers.AddRange(acme, zenith);
+        setupContext.Components.AddRange(withAcme, withZenith, withoutActivePrice);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ComponentRepository repository = new ComponentRepository(readContext);
+
+        // Act
+        (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "supplier",
+            descending: true,
+            CancellationToken.None);
+
+        // Assert
+        items.Select(c => c.Id).Should().ContainInOrder(withZenith.Id, withAcme.Id, withoutActivePrice.Id);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SortByValidFromAscending_ComponentsWithoutActivePriceSortLast()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        Component earlier = ComponentWithActivePrice("Earlier", validFrom: new DateOnly(2024, 1, 1));
+        Component later = ComponentWithActivePrice("Later", validFrom: new DateOnly(2024, 6, 1));
+        Component withoutActivePrice = ComponentWithInactivePrice("No active price", null);
+
+        setupContext.Components.AddRange(earlier, later, withoutActivePrice);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ComponentRepository repository = new ComponentRepository(readContext);
+
+        // Act
+        (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "validFrom",
+            descending: false,
+            CancellationToken.None);
+
+        // Assert
+        items.Select(c => c.Id).Should().ContainInOrder(earlier.Id, later.Id, withoutActivePrice.Id);
     }
 
     [Fact]
@@ -161,16 +229,50 @@ public class ComponentRepositoryOrderingTests
         CatalogDbContext readContext = BuildContext(databaseName);
         ComponentRepository repository = new ComponentRepository(readContext);
 
-        // Act: descending -- the latest ValidFrom comes first, null (no active price) comes last.
+        // Act: descending -- the latest ValidFrom comes first, missing comes last regardless.
         (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
-            null,
-            null,
-            "validFrom",
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "validFrom",
             descending: true,
             CancellationToken.None);
 
         // Assert
         items.Select(c => c.Id).Should().ContainInOrder(later.Id, earlier.Id, withoutActivePrice.Id);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_TiedSortValue_IsBrokenStablyById()
+    {
+        // Arrange: two components share the same name, so the Id tiebreaker must decide the
+        // order deterministically -- otherwise paging across requests could reorder rows.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        Component first = Component("Same Name");
+        Component second = Component("Same Name");
+        bool firstIsLower = first.Id.CompareTo(second.Id) < 0;
+        Guid lowerId = firstIsLower ? first.Id : second.Id;
+        Guid higherId = firstIsLower ? second.Id : first.Id;
+
+        setupContext.Components.AddRange(first, second);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ComponentRepository repository = new ComponentRepository(readContext);
+
+        // Act
+        (int _, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            isActive: null,
+            skip: null,
+            take: null,
+            sortBy: "name",
+            descending: false,
+            CancellationToken.None);
+
+        // Assert
+        items.Select(c => c.Id).Should().ContainInOrder(lowerId, higherId);
     }
 
     private static Component Component(string name, DateTimeOffset? createdAt = null)

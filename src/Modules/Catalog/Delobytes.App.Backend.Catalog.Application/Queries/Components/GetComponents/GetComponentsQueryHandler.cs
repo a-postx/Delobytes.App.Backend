@@ -29,6 +29,7 @@ public class GetComponentsQueryHandler : IRequestHandler<GetComponentsQuery, Get
         bool descending = string.Equals(request.SortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
         (int totalCount, IReadOnlyList<Component> components) = await _repository.GetPagedAsync(
+            request.IsActive,
             skip,
             take,
             request.SortBy,
@@ -36,7 +37,7 @@ public class GetComponentsQueryHandler : IRequestHandler<GetComponentsQuery, Get
             cancellationToken,
             request.Search);
 
-        return new GetComponentsResponse
+        GetComponentsResponse response = new()
         {
             TotalCount = totalCount,
             Page = page,
@@ -53,5 +54,18 @@ public class GetComponentsQueryHandler : IRequestHandler<GetComponentsQuery, Get
                 CreatedAt = c.CreatedAt,
             }).ToList(),
         };
+
+        if (request.IncludeCounts)
+        {
+            (int active, int inactive, int all) = await _repository.GetStatusCountsAsync(cancellationToken, request.Search);
+            response.StatusCounts = new ComponentStatusCounts
+            {
+                Active = active,
+                Inactive = inactive,
+                All = all,
+            };
+        }
+
+        return response;
     }
 }

@@ -46,6 +46,7 @@ public class ComponentRepositorySearchTests
             null,
             null,
             null,
+            null,
             descending: false,
             CancellationToken.None,
             "болт");
@@ -73,6 +74,7 @@ public class ComponentRepositorySearchTests
 
         // Act
         (int totalCount, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            null,
             null,
             null,
             null,
@@ -106,6 +108,7 @@ public class ComponentRepositorySearchTests
             null,
             null,
             null,
+            null,
             descending: false,
             CancellationToken.None,
             "  болт  ");
@@ -134,6 +137,7 @@ public class ComponentRepositorySearchTests
 
         // Act
         (int totalCount, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            null,
             null,
             null,
             null,
@@ -170,6 +174,7 @@ public class ComponentRepositorySearchTests
             null,
             null,
             null,
+            null,
             descending: false,
             CancellationToken.None,
             overlongSearch);
@@ -193,6 +198,7 @@ public class ComponentRepositorySearchTests
 
         // Act
         (int totalCount, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            null,
             null,
             null,
             null,
@@ -231,6 +237,7 @@ public class ComponentRepositorySearchTests
 
         // Act: skip 2, take 2 out of the filtered set.
         (int totalCount, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            isActive: null,
             skip: 2,
             take: 2,
             sortBy: "name",
@@ -242,6 +249,41 @@ public class ComponentRepositorySearchTests
         totalCount.Should().Be(5);
         items.Should().HaveCount(2);
         items.Select(c => c.Name).Should().ContainInOrder("Match 2", "Match 3");
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SearchAndIsActive_AreCombinedWithAnd()
+    {
+        // Arrange: the term matches three components, but only one of them is active --
+        // isActive must keep filtering the search results, not replace the filter.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        Component activeMatch = Component("Bolt Steel");
+        Component inactiveMatch = Component("Bolt Brass");
+        inactiveMatch.IsActive = false;
+        Component otherInactive = Component("Nut Brass");
+        otherInactive.IsActive = false;
+
+        setupContext.Components.AddRange(activeMatch, inactiveMatch, otherInactive);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ComponentRepository repository = new ComponentRepository(readContext);
+
+        // Act
+        (int totalCount, IReadOnlyList<Component> items) = await repository.GetPagedAsync(
+            isActive: false,
+            null,
+            null,
+            null,
+            descending: false,
+            CancellationToken.None,
+            "bolt");
+
+        // Assert
+        totalCount.Should().Be(1);
+        items.Should().ContainSingle().Which.Id.Should().Be(inactiveMatch.Id);
     }
 
     private static Component Component(string name)

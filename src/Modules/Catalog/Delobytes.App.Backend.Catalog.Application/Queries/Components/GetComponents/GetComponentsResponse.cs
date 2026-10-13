@@ -24,6 +24,25 @@ public class GetComponentsResponse
     /// when pagination was not requested.
     /// </summary>
     public int PageSize { get; set; }
+
+    /// <summary>
+    /// Per-status totals, present only when the request asked for counts. Lets the client
+    /// render tab counters for a paged list in a single round trip.
+    /// </summary>
+    public ComponentStatusCounts? StatusCounts { get; set; }
+}
+
+/// <summary>
+/// Per-status component totals, independent of the active status filter.
+/// </summary>
+public class ComponentStatusCounts
+{
+    public int Active { get; set; }
+
+    public int Inactive { get; set; }
+
+    /// <summary>Total across both statuses.</summary>
+    public int All { get; set; }
 }
 
 public class ComponentItem
