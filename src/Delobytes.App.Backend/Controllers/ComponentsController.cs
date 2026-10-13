@@ -29,10 +29,39 @@ public class ComponentsController : ControllerBase
         _mediator = mediator;
     }
 
+    /// <summary>
+    /// Returns components filtered by search term, sorted and optionally paged.
+    /// An omitted search keeps the full list; when supplied it is trimmed, capped at 200 characters
+    /// and matched case-insensitively as a substring of the component name. Omitted page keeps the
+    /// legacy behaviour relied upon by the product BOM editor: the full list is returned and no
+    /// Skip/Take is applied. When page is supplied, pageSize defaults to 50 and is clamped to
+    /// 1..200, sortBy must be one of name (default), supplier, validFrom, createdAt, and sortDir is
+    /// asc (default) or desc. Sorting by supplier or validFrom uses the component's active price
+    /// version; a component without an active price sorts as if that value were null. Invalid
+    /// sortBy, sortDir or page values fall back silently to their defaults instead of failing the
+    /// request.
+    /// </summary>
     [HttpGet]
-    public async Task<ActionResult<GetComponentsResponse>> GetAll(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(GetComponentsResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<GetComponentsResponse>> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDir,
+        CancellationToken cancellationToken)
     {
-        GetComponentsResponse response = await _mediator.Send(new GetComponentsQuery(), cancellationToken);
+        GetComponentsResponse response = await _mediator.Send(
+            new GetComponentsQuery
+            {
+                Search = search,
+                Page = page,
+                PageSize = pageSize,
+                SortBy = sortBy,
+                SortDir = sortDir,
+            },
+            cancellationToken);
+
         return Ok(response);
     }
 

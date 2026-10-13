@@ -556,8 +556,14 @@ public class ComponentCommandHandlerTests
         };
 
         _repoMock
-            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(components);
+            .Setup(r => r.GetPagedAsync(
+                null,
+                null,
+                null,
+                false,
+                It.IsAny<CancellationToken>(),
+                null))
+            .ReturnsAsync((components.Count, (IReadOnlyList<Component>)components));
 
         GetComponentsQueryHandler handler =
             new GetComponentsQueryHandler(_repoMock.Object);
@@ -566,9 +572,10 @@ public class ComponentCommandHandlerTests
         GetComponentsResponse response =
             await handler.Handle(new GetComponentsQuery(), CancellationToken.None);
 
-        // Assert
+        // Assert: no page requested means the legacy "everything, unpaged" contract.
         response.Items.Should().HaveCount(2);
         response.Items.Should().OnlyContain(i => i.ActivePrice != null && i.ActivePrice.PricePerUnit == 12.50m);
+        response.TotalCount.Should().Be(2);
     }
 
     [Fact]
