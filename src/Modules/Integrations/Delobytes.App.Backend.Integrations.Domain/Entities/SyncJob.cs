@@ -29,16 +29,6 @@ public class SyncJob : ITenantScoped
     public SyncJobStatus Status { get; set; }
 
     /// <summary>
-    /// Gets or sets the start of the date range for synchronization.
-    /// </summary>
-    public DateTimeOffset DateRangeFrom { get; set; }
-
-    /// <summary>
-    /// Gets or sets the end of the date range for synchronization.
-    /// </summary>
-    public DateTimeOffset DateRangeTo { get; set; }
-
-    /// <summary>
     /// Gets or sets the date and time when the job started.
     /// </summary>
     public DateTimeOffset? StartedAt { get; set; }
@@ -57,11 +47,6 @@ public class SyncJob : ITenantScoped
     /// Gets or sets the number of records processed.
     /// </summary>
     public int RecordsProcessed { get; set; }
-
-    /// <summary>
-    /// Gets or sets the number of records imported.
-    /// </summary>
-    public int RecordsImported { get; set; }
 
     /// <summary>
     /// Gets or sets the cursor for cursor-based pagination (used by ProductsImport).

@@ -27,14 +27,7 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
         builder.Property(s => s.Status)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(50)
-            .IsConcurrencyToken();
-
-        builder.Property(s => s.DateRangeFrom)
-            .IsRequired();
-
-        builder.Property(s => s.DateRangeTo)
-            .IsRequired();
+            .HasMaxLength(50);
 
         builder.Property(s => s.StartedAt);
 
@@ -44,9 +37,6 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
             .HasMaxLength(2000);
 
         builder.Property(s => s.RecordsProcessed)
-            .IsRequired();
-
-        builder.Property(s => s.RecordsImported)
             .IsRequired();
 
         builder.Property(s => s.NextCursor)
@@ -75,7 +65,6 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
         builder.HasIndex(s => s.ConnectionId);
         builder.HasIndex(s => s.Status);
         builder.HasIndex(s => s.JobType);
-        builder.HasIndex(s => s.DateRangeFrom);
         builder.HasIndex(s => s.StartedAt);
 
         builder.HasOne(s => s.Connection)

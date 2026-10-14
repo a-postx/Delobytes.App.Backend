@@ -41,7 +41,6 @@ public class GetSyncJobsQueryHandler : IRequestHandler<GetSyncJobsQuery, GetSync
             CompletedAt = job.CompletedAt,
             ErrorMessage = job.ErrorMessage,
             RecordsProcessed = job.RecordsProcessed,
-            RecordsImported = job.RecordsImported,
             RecordsCreated = job.RecordsCreated,
             RecordsUpdated = job.RecordsUpdated,
             RecordsSkipped = job.RecordsSkipped,

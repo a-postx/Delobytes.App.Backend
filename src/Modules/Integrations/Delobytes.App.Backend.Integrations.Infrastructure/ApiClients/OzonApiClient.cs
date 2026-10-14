@@ -87,12 +87,6 @@ public class OzonApiClient : IChannelApiClient
         }
     }
 
-    /// <inheritdoc/>
-    public Task<ApiResponse<OrdersPage>> GetOrdersPageAsync(OrdersPageRequest request, CancellationToken ct)
-    {
-        throw new NotImplementedException();
-    }
-
     public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct)
     {
         throw new NotImplementedException();

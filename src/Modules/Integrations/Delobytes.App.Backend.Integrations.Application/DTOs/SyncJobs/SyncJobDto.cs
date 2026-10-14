@@ -11,7 +11,6 @@ public class SyncJobDto
     public DateTimeOffset? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
     public int RecordsProcessed { get; set; }
-    public int RecordsImported { get; set; }
     public int RecordsCreated { get; set; }
     public int RecordsUpdated { get; set; }
     public int RecordsSkipped { get; set; }

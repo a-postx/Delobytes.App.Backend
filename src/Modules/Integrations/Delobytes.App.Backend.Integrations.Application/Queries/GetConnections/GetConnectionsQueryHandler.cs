@@ -29,7 +29,6 @@ public class GetConnectionsQueryHandler : IRequestHandler<GetConnectionsQuery, G
                 TemplateCode = c.SystemChannelTemplate?.Code ?? string.Empty,
                 TemplateDisplayName = c.SystemChannelTemplate?.DisplayName ?? string.Empty,
                 IsActive = c.IsActive,
-                LastSyncAt = c.LastSyncAt,
                 CreatedAt = c.CreatedAt,
                 MaskedApiKey = c.ApiKey.Length >= 6
                     ? new string('*', c.ApiKey.Length - 6) + c.ApiKey[^6..]

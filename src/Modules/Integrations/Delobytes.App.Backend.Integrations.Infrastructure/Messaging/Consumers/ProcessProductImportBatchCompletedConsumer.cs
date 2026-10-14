@@ -161,7 +161,6 @@ public class ProcessProductImportBatchCompletedConsumer
         syncJob.RecordsUpdated = totals.TotalUpdated;
         syncJob.RecordsSkipped = totals.TotalSkipped;
         syncJob.RecordsFailed = totals.TotalFailed;
-        syncJob.RecordsImported = totals.TotalCreated + totals.TotalUpdated;
         syncJob.CompletedAt = DateTimeOffset.UtcNow;
 
         bool hasErrors = totals.TotalFailed > 0 || totals.CombinedErrors != null;

@@ -13,8 +13,6 @@ public class ConnectionDto
 
     public bool IsActive { get; set; }
 
-    public DateTimeOffset? LastSyncAt { get; set; }
-
     public DateTimeOffset CreatedAt { get; set; }
 
     public string? MaskedApiKey { get; set; }

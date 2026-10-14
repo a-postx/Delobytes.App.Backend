@@ -38,7 +38,6 @@ public class GetConnectionsQueryHandlerTests
     public async Task Handle_WithConnections_MapsAllFieldsCorrectly()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        DateTimeOffset lastSync = now.AddHours(-2);
         Guid channelId = Guid.NewGuid();
 
         SystemChannelTemplate template = new SystemChannelTemplate
@@ -60,7 +59,6 @@ public class GetConnectionsQueryHandlerTests
             Name = "Wildberries",
             ApiKey = "some-key-1234567890",
             IsActive = true,
-            LastSyncAt = lastSync,
             CreatedAt = now,
             SystemChannelTemplate = template,
             CustomerName = "My Store",
@@ -84,7 +82,6 @@ public class GetConnectionsQueryHandlerTests
         dto.TemplateCode.Should().Be("wildberries");
         dto.TemplateDisplayName.Should().Be("Wildberries");
         dto.IsActive.Should().BeTrue();
-        dto.LastSyncAt.Should().Be(lastSync);
         dto.CreatedAt.Should().Be(now);
         dto.MaskedApiKey.Should().Be("*************567890");
         dto.CustomerName.Should().Be("My Store");

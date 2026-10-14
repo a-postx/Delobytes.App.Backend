@@ -253,7 +253,6 @@ public class ProcessProductImportBatchCompletedConsumerTests
         syncJob.RecordsProcessed.Should().Be(10);
         syncJob.RecordsCreated.Should().Be(7);
         syncJob.RecordsUpdated.Should().Be(3);
-        syncJob.RecordsImported.Should().Be(10); // created + updated
         syncJob.ErrorMessage.Should().BeNull();
         syncJob.CompletedAt.Should().NotBeNull();
 
@@ -565,7 +564,6 @@ public class ProcessProductImportBatchCompletedConsumerTests
         syncJob.Status.Should().Be(SyncJobStatus.Success);
         syncJob.RecordsProcessed.Should().Be(117);
         syncJob.RecordsCreated.Should().Be(117);
-        syncJob.RecordsImported.Should().Be(117);
 
         _eventPublisher.Verify(
             p => p.PublishAsync(

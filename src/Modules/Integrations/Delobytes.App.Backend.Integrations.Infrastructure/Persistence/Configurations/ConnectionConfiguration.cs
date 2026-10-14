@@ -45,8 +45,6 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
         builder.Property(c => c.IsActive)
             .IsRequired();
 
-        builder.Property(c => c.LastSyncAt);
-
         builder.Property(c => c.CreatedAt)
             .IsRequired();
 
@@ -55,7 +53,6 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
         builder.HasIndex(c => c.ChannelId);
         builder.HasIndex(c => c.SystemChannelTemplateId);
         builder.HasIndex(c => c.IsActive);
-        builder.HasIndex(c => c.LastSyncAt);
 
         builder.HasOne(c => c.SystemChannelTemplate)
             .WithMany(s => s.Connections)

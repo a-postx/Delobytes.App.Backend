@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Security;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -31,6 +32,12 @@ public class IntegrationsDbContext : DbContext
     public DbSet<RawApiResponse> RawApiResponses => Set<RawApiResponse>();
     public DbSet<SyncJobBatchResult> SyncJobBatchResults => Set<SyncJobBatchResult>();
 
+    /// <inheritdoc/>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.AddSharedModelConventions();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -43,10 +50,6 @@ public class IntegrationsDbContext : DbContext
         {
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property<Guid?>("TenantId")
-                    .IsRequired();
-
                 modelBuilder.Entity(entityType.ClrType)
                     .HasIndex("TenantId");
 

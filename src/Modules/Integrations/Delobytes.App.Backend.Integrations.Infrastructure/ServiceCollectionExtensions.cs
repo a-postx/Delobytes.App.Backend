@@ -54,7 +54,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
-        services.AddScoped<ProcessSyncJobConsumer>();
         services.AddScoped<ProcessProductsImportConsumer>();
         services.AddScoped<ProcessProductImportBatchCompletedConsumer>();
 

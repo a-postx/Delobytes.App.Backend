@@ -48,11 +48,6 @@ public class Connection : ITenantScoped
     public bool IsActive { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time of the last synchronization.
-    /// </summary>
-    public DateTimeOffset? LastSyncAt { get; set; }
-
-    /// <summary>
     /// Gets or sets the date and time when the connection was created.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }

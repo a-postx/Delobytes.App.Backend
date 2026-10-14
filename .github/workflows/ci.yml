@@ -35,6 +35,15 @@ jobs:
           --logger "trx;LogFileName=test-results.trx"
           --results-directory ./TestResults
 
+      - name: Run Integrations unit tests
+        run: >
+          dotnet test tests/Delobytes.App.Backend.Integrations.Tests/Delobytes.App.Backend.Integrations.Tests.csproj
+          --no-build
+          --configuration Release
+          --verbosity normal
+          --logger "trx;LogFileName=integrations-test-results.trx"
+          --results-directory ./TestResults
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()

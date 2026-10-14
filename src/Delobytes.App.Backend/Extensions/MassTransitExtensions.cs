@@ -37,13 +37,12 @@ internal static class MassTransitExtensions
                 {
                     cfg.Host(new Uri(messageBusConnectionString));
 
-                    // Register tenant filters for all messages
-                    cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
-                    cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
+                    ConfigureCommonFilters(cfg, ctx);
+                    ConfigureSharedEndpoints(cfg, ctx);
 
-                    // Register correlation filters for all messages
-                    cfg.UsePublishFilter(typeof(CorrelationPublishFilter<>), ctx);
-                    cfg.UseConsumeFilter(typeof(CorrelationConsumeFilter<>), ctx);
+                    // Bus-wide retry baseline so RabbitMQ consumers without an endpoint-specific
+                    // UseMessageRetry override still get the same resilience as the InMemory transport.
+                    cfg.UseMessageRetry(r => r.Intervals(100, 500, 1000));
 
                     cfg.ConfigureEndpoints(ctx);
                 });
@@ -52,25 +51,8 @@ internal static class MassTransitExtensions
             {
                 bus.UsingInMemory((ctx, cfg) =>
                 {
-                    // Register tenant filters for all messages
-                    cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
-                    cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
-
-                    // Register correlation filters for all messages
-                    cfg.UsePublishFilter(typeof(CorrelationPublishFilter<>), ctx);
-                    cfg.UseConsumeFilter(typeof(CorrelationConsumeFilter<>), ctx);
-
-                    // Configure products import orchestration endpoint
-                    cfg.ReceiveEndpoint("integrations-products-import", e =>
-                    {
-                        e.ConfigureConsumer<ProcessProductsImportMassTransitConsumer>(ctx);
-
-                        // Retry policy with exponential backoff
-                        e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
-
-                        // Concurrency limit for cursor-based pagination
-                        e.UseConcurrencyLimit(1);
-                    });
+                    ConfigureCommonFilters(cfg, ctx);
+                    ConfigureSharedEndpoints(cfg, ctx);
 
                     // Configure product batch import endpoint
                     cfg.ReceiveEndpoint("catalog-products-import", e =>
@@ -84,20 +66,55 @@ internal static class MassTransitExtensions
                         e.UseConcurrencyLimit(5);
                     });
 
-                    // Configure product import batch completion endpoint
-                    cfg.ReceiveEndpoint("integrations-products-import-results", e =>
-                    {
-                        e.ConfigureConsumer<ProcessProductImportBatchCompletedMassTransitConsumer>(ctx);
-
-                        // Retry policy with exponential backoff
-                        e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
-                    });
-
                     cfg.ConfigureEndpoints(ctx);
                 });
             }
         });
 
         return services;
+    }
+
+    // Shared between RabbitMQ and InMemory transports so both branches enforce the same
+    // tenant/correlation/user propagation instead of only the one a developer remembered to edit.
+    private static void ConfigureCommonFilters(IBusFactoryConfigurator cfg, IBusRegistrationContext ctx)
+    {
+        // Register tenant filters for all messages
+        cfg.UsePublishFilter(typeof(TenantPublishFilter<>), ctx);
+        cfg.UseConsumeFilter(typeof(TenantConsumeFilter<>), ctx);
+
+        // Register correlation filters for all messages
+        cfg.UsePublishFilter(typeof(CorrelationPublishFilter<>), ctx);
+        cfg.UseConsumeFilter(typeof(CorrelationConsumeFilter<>), ctx);
+
+        // Register user filters for all messages, so a consumer can attribute its writes
+        // to the user who started the flow even for background-initiated jobs.
+        cfg.UsePublishFilter(typeof(UserPublishFilter<>), ctx);
+        cfg.UseConsumeFilter(typeof(UserConsumeFilter<>), ctx);
+    }
+
+    // Shared between RabbitMQ and InMemory transports: these endpoints previously existed only
+    // in the InMemory branch, so RabbitMQ silently ran with default concurrency/retry instead.
+    private static void ConfigureSharedEndpoints(IBusFactoryConfigurator cfg, IBusRegistrationContext ctx)
+    {
+        // Configure products import orchestration endpoint
+        cfg.ReceiveEndpoint("integrations-products-import", e =>
+        {
+            e.ConfigureConsumer<ProcessProductsImportMassTransitConsumer>(ctx);
+
+            // Retry policy with exponential backoff
+            e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+
+            // Concurrency limit for cursor-based pagination
+            e.UseConcurrencyLimit(1);
+        });
+
+        // Configure product import batch completion endpoint
+        cfg.ReceiveEndpoint("integrations-products-import-results", e =>
+        {
+            e.ConfigureConsumer<ProcessProductImportBatchCompletedMassTransitConsumer>(ctx);
+
+            // Retry policy with exponential backoff
+            e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+        });
     }
 }

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Delobytes.App.Backend.Persistence\Delobytes.App.Backend.Persistence.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Domain\Delobytes.App.Backend.Integrations.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Application\Delobytes.App.Backend.Integrations.Application.csproj" />
   </ItemGroup>

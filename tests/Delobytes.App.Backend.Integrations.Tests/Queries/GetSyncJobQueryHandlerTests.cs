@@ -59,7 +59,6 @@ public class GetSyncJobQueryHandlerTests
             CompletedAt = createdAt.AddMinutes(10),
             ErrorMessage = null,
             RecordsProcessed = 200,
-            RecordsImported = 150,
             RecordsCreated = 100,
             RecordsUpdated = 50,
             RecordsSkipped = 30,
@@ -85,7 +84,6 @@ public class GetSyncJobQueryHandlerTests
         dto.Status.Should().Be("Success");
         dto.CreatedAt.Should().Be(createdAt);
         dto.RecordsProcessed.Should().Be(200);
-        dto.RecordsImported.Should().Be(150);
         dto.RecordsCreated.Should().Be(100);
         dto.RecordsUpdated.Should().Be(50);
         dto.RecordsSkipped.Should().Be(30);

@@ -29,15 +29,6 @@ public interface IChannelApiClient
         CancellationToken ct);
 
     /// <summary>
-    /// Retrieves a single page of orders. Paging is part of the signature because no channel
-    /// returns a whole period in one call.
-    /// </summary>
-    /// <param name="request">Page request: period, cursor, page size and optional prefilter.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>API response containing one page of normalized orders.</returns>
-    public Task<ApiResponse<OrdersPage>> GetOrdersPageAsync(OrdersPageRequest request, CancellationToken ct);
-
-    /// <summary>
     /// Retrieves one page of product cards using cursor-based pagination.
     /// </summary>
     /// <param name="cursor">Cursor for pagination. Null for the first page.</param>
