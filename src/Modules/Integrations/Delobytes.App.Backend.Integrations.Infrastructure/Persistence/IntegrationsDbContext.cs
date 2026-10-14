@@ -31,6 +31,7 @@ public class IntegrationsDbContext : DbContext
     public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
     public DbSet<RawApiResponse> RawApiResponses => Set<RawApiResponse>();
     public DbSet<SyncJobBatchResult> SyncJobBatchResults => Set<SyncJobBatchResult>();
+    public DbSet<JobRun> JobRuns => Set<JobRun>();
 
     /// <inheritdoc/>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

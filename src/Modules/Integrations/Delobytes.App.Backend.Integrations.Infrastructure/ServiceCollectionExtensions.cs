@@ -50,6 +50,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IConnectionRepository, ConnectionRepository>();
         services.AddScoped<ISyncJobRepository, SyncJobRepository>();
+        services.AddScoped<IJobRunRepository, JobRunRepository>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
