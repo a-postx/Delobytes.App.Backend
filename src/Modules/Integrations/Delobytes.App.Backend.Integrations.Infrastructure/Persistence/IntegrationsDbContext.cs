@@ -32,6 +32,10 @@ public class IntegrationsDbContext : DbContext
     public DbSet<RawApiResponse> RawApiResponses => Set<RawApiResponse>();
     public DbSet<SyncJobBatchResult> SyncJobBatchResults => Set<SyncJobBatchResult>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
+    public DbSet<ProductsImportJob> ProductsImportJobs => Set<ProductsImportJob>();
+    public DbSet<OrdersImportJob> OrdersImportJobs => Set<OrdersImportJob>();
+    public DbSet<JobCheckpoint> JobCheckpoints => Set<JobCheckpoint>();
+    public DbSet<SyncCheckpoint> SyncCheckpoints => Set<SyncCheckpoint>();
 
     /// <inheritdoc/>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

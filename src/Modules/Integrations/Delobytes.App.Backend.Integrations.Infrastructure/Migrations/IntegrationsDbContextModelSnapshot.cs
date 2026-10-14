@@ -89,6 +89,24 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("Connections", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobCheckpoint", b =>
+                {
+                    b.Property<Guid>("JobRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("JobRunId");
+
+                    b.ToTable("JobCheckpoints", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -159,6 +177,29 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("JobRuns", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
+                {
+                    b.Property<Guid>("JobRunId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("JobRunId");
+
+                    b.ToTable("OrdersImportJobs", "integrations");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.ProductsImportJob", b =>
+                {
+                    b.Property<Guid>("JobRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("TotalImportBatches")
+                        .HasColumnType("integer");
+
+                    b.HasKey("JobRunId");
+
+                    b.ToTable("ProductsImportJobs", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.RawApiResponse", b =>
                 {
                     b.Property<Guid>("Id")
@@ -206,6 +247,43 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("RawApiResponses", "integrations");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncCheckpoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("JobType")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LastChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LastJobRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("LastSuccessAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastJobRunId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ConnectionId", "JobType")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SyncCheckpoints_ConnectionId_JobType");
+
+                    b.ToTable("SyncCheckpoints", "integrations");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJob", b =>
@@ -429,6 +507,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Navigation("SystemChannelTemplate");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobCheckpoint", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
+                        .WithOne()
+                        .HasForeignKey("Delobytes.App.Backend.Integrations.Domain.Entities.JobCheckpoint", "JobRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobRun");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", "Connection")
@@ -440,6 +529,28 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Navigation("Connection");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
+                        .WithOne()
+                        .HasForeignKey("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", "JobRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobRun");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.ProductsImportJob", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
+                        .WithOne()
+                        .HasForeignKey("Delobytes.App.Backend.Integrations.Domain.Entities.ProductsImportJob", "JobRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobRun");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.RawApiResponse", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJob", "SyncJob")
@@ -449,6 +560,24 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("SyncJob");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncCheckpoint", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "LastJobRun")
+                        .WithMany()
+                        .HasForeignKey("LastJobRunId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Connection");
+
+                    b.Navigation("LastJobRun");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJob", b =>

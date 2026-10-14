@@ -41,4 +41,24 @@ public interface IJobRunRepository
     /// <paramref name="threshold"/>, for the watchdog to reconcile stuck jobs.
     /// </summary>
     Task<List<JobRun>> GetRunningJobsOlderThanAsync(DateTimeOffset threshold, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds the type-specific ProductsImport data for the given job run.
+    /// </summary>
+    Task<ProductsImportJob?> GetProductsImportJobAsync(Guid jobRunId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds the type-specific OrdersSync data for the given job run.
+    /// </summary>
+    Task<OrdersImportJob?> GetOrdersImportJobAsync(Guid jobRunId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates the type-specific ProductsImport row linked to an existing JobRun and persists it.
+    /// </summary>
+    Task CreateProductsImportJobAsync(ProductsImportJob job, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates the type-specific OrdersSync row linked to an existing JobRun and persists it.
+    /// </summary>
+    Task CreateOrdersImportJobAsync(OrdersImportJob job, CancellationToken cancellationToken);
 }
