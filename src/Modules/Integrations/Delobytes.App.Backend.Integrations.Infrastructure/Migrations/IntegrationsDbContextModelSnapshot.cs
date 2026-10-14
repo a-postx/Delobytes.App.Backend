@@ -89,6 +89,76 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("Connections", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("JobType")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsFailed")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsSkipped")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsUpdated")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("RequestedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ConnectionId", "JobType")
+                        .IsUnique()
+                        .HasDatabaseName("IX_JobRuns_ActivePerConnectionType")
+                        .HasFilter("\"Status\" IN (0, 1)");
+
+                    b.HasIndex("Status", "StartedAt")
+                        .HasDatabaseName("IX_JobRuns_Status_StartedAt");
+
+                    b.HasIndex("ConnectionId", "JobType", "Status")
+                        .HasDatabaseName("IX_JobRuns_ConnectionId_JobType_Status");
+
+                    b.ToTable("JobRuns", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.RawApiResponse", b =>
                 {
                     b.Property<Guid>("Id")
@@ -357,6 +427,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("SystemChannelTemplate");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.RawApiResponse", b =>
