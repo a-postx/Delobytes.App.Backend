@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -7,6 +8,7 @@ using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -17,7 +19,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// <summary>
 /// Wildberries marketplace API client implementation.
 /// </summary>
-public class WildberriesApiClient : IChannelApiClient
+public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource
 {
     /// <summary>
     /// Number of attempts made when a response body cannot be deserialized. Kept small because
@@ -34,6 +36,17 @@ public class WildberriesApiClient : IChannelApiClient
     /// Maximum number of response body characters written to logs.
     /// </summary>
     private const int ResponseBodyLogLimit = 500;
+
+    /// <summary>
+    /// Wildberries has operated on a fixed UTC+3 offset (no DST) since 2014; the orders API
+    /// takes dates in this local time and does not accept a time zone designator.
+    /// </summary>
+    private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
+
+    /// <summary>
+    /// Wildberries settles in rubles; the orders endpoint reports no currency field of its own.
+    /// </summary>
+    private const string WildberriesCurrency = "RUB";
 
     private readonly HttpClient _httpClient;
     private readonly IEndpointResolver _endpointResolver;
@@ -388,6 +401,115 @@ public class WildberriesApiClient : IChannelApiClient
         }
     }
 
+    /// <inheritdoc cref="IProductsSource.GetProductCardsAsync"/>
+    ///
+    /// <remarks>
+    /// Thin adapter over the cursor/limit overload above: the capability interface carries no
+    /// success/failure flag of its own, so a non-success <see cref="ApiResponse{T}"/> is raised
+    /// as an exception instead of being returned silently.
+    /// </remarks>
+    public async Task<ProductCardsPage> GetProductCardsAsync(
+        Guid connectionId, ProductCardsPageRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ApiResponse<ProductCardsData> response =
+            await GetProductCardsAsync(connectionId, request.Cursor, request.Limit, cancellationToken);
+
+        if (!response.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Failed to retrieve Wildberries product cards: {response.ErrorMessage}");
+        }
+
+        return new ProductCardsPage
+        {
+            Cards = response.Data?.Cards.ToList() ?? new List<WildberriesCardSnapshot>(),
+            NextCursor = response.Data?.NextCursor,
+            TotalCount = response.Data?.TotalCount ?? 0
+        };
+    }
+
+    /// <inheritdoc cref="IOrdersSource.GetOrdersAsync"/>
+    ///
+    /// <remarks>
+    /// The underlying endpoint (<c>/api/v1/supplier/orders</c>) accepts only <c>dateFrom</c> and
+    /// <c>flag</c> and returns the full matching window in a single response - there is no
+    /// server-side <c>dateTo</c> or page size. <see cref="OrdersRequest.DateTo"/> and
+    /// <see cref="OrdersRequest.Limit"/> are therefore applied client-side after the fetch, and
+    /// <see cref="OrdersPage.HasMore"/> is always false because nothing was left unread.
+    /// </remarks>
+    public async Task<OrdersPage> GetOrdersAsync(
+        Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_templateId == null)
+        {
+            throw new InvalidOperationException(
+                "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
+        }
+
+        string baseUrl = await _endpointResolver.GetEndpointUrlAsync(
+            _templateId.Value,
+            ChannelEndpointType.Statistics,
+            cancellationToken);
+
+        DateTimeOffset dateFromMsk = request.DateFrom.ToOffset(MoscowOffset);
+        DateTimeOffset dateToMsk = request.DateTo.ToOffset(MoscowOffset);
+
+        string dateFromParameter = Uri.EscapeDataString(
+            dateFromMsk.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture));
+
+        string requestUrl = $"{baseUrl}/api/v1/supplier/orders?dateFrom={dateFromParameter}&flag={request.Flag}";
+
+        using HttpRequestMessage httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+        httpRequest.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, connectionId);
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning(
+                "Wildberries orders API returned {StatusCode}. Response: {Response}",
+                (int)response.StatusCode,
+                TruncateForLog(responseBody));
+
+            throw new HttpRequestException(
+                $"Wildberries orders API returned {(int)response.StatusCode}.",
+                null,
+                response.StatusCode);
+        }
+
+        List<WildberriesOrderDto>? orders =
+            await response.Content.ReadFromJsonAsync<List<WildberriesOrderDto>>(cancellationToken);
+
+        orders ??= new List<WildberriesOrderDto>();
+
+        List<ChannelOrderSnapshot> snapshots = orders
+            .Where(order => IsWithinRequestedWindow(order, request.Flag, dateToMsk))
+            .Select(MapToOrderSnapshot)
+            .ToList();
+
+        if (request.Limit > 0 && snapshots.Count > request.Limit)
+        {
+            snapshots = snapshots.Take(request.Limit).ToList();
+        }
+
+        _logger.LogInformation(
+            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}).",
+            snapshots.Count,
+            request.Flag,
+            dateFromMsk);
+
+        return new OrdersPage
+        {
+            Orders = snapshots,
+            HasMore = false
+        };
+    }
+
     private static string TruncateForLog(string responseBody)
     {
         if (string.IsNullOrEmpty(responseBody) || responseBody.Length <= ResponseBodyLogLimit)
@@ -396,6 +518,87 @@ public class WildberriesApiClient : IChannelApiClient
         }
 
         return responseBody.Substring(0, ResponseBodyLogLimit);
+    }
+
+    /// <summary>
+    /// Filters out rows outside the requested window. flag=0 (delta) windows by lastChangeDate;
+    /// flag=1 (backfill) windows by the order date itself, matching what each flag selects on
+    /// the Wildberries side.
+    /// </summary>
+    private static bool IsWithinRequestedWindow(WildberriesOrderDto dto, int flag, DateTimeOffset dateToMsk)
+    {
+        DateTimeOffset? reference = flag == 0
+            ? ParseMoscowTimestamp(dto.LastChangeDate) ?? ParseMoscowTimestamp(dto.Date)
+            : ParseMoscowTimestamp(dto.Date);
+
+        return reference is null || reference.Value <= dateToMsk;
+    }
+
+    /// <summary>
+    /// Wildberries reports timestamps as local (MSK) time without an offset designator; parsing
+    /// them as UTC or local-to-this-process would silently shift them by an arbitrary amount.
+    /// </summary>
+    private static DateTimeOffset? ParseMoscowTimestamp(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (!DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime local))
+        {
+            return null;
+        }
+
+        return new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), MoscowOffset);
+    }
+
+    private ChannelOrderSnapshot MapToOrderSnapshot(WildberriesOrderDto dto)
+    {
+        DateTimeOffset? orderDate = ParseMoscowTimestamp(dto.Date);
+        DateTimeOffset? changedAt = ParseMoscowTimestamp(dto.LastChangeDate);
+
+        // The orders feed has no textual status field; isCancel/cancelDate are the only signals
+        // Wildberries reports, so the snapshot status is reduced to these two values.
+        string externalStatus = dto.IsCancel ? "cancelled" : "active";
+
+        bool? isSellerWarehouse = dto.WarehouseType is null
+            ? null
+            : dto.WarehouseType.Contains("продавца", StringComparison.OrdinalIgnoreCase);
+
+        string lineKey = dto.Srid ?? $"{dto.NmId}:{dto.Date}:{dto.GNumber}";
+
+        ChannelOrderLineSnapshot line = new ChannelOrderLineSnapshot
+        {
+            LineKey = lineKey,
+            ExternalLineId = dto.Srid,
+            ExternalProductId = dto.NmId.ToString(CultureInfo.InvariantCulture),
+            OfferId = dto.SupplierArticle,
+            ExternalSizeId = dto.TechSize,
+            ProductName = dto.Subject,
+            Quantity = 1,
+            UnitPrice = dto.PriceWithDisc,
+            BuyerUnitPrice = dto.FinishedPrice,
+            UnitPriceBeforeDiscount = dto.TotalPrice,
+            Currency = WildberriesCurrency
+        };
+
+        return new ChannelOrderSnapshot
+        {
+            ExternalOrderId = dto.Srid ?? lineKey,
+            ExternalOrderNumber = dto.GNumber,
+            OrderDate = orderDate ?? DateTimeOffset.UtcNow,
+            StatusChangedAt = changedAt,
+            ExternalStatus = externalStatus,
+            ExternalSubstatus = dto.OrderType,
+            CancelReason = dto.IsCancel ? "cancel" : null,
+            Currency = WildberriesCurrency,
+            DeliveryRegion = dto.RegionName,
+            WarehouseName = dto.WarehouseName,
+            IsSellerWarehouse = isSellerWarehouse,
+            ChannelReportedTotal = dto.TotalPrice,
+            Lines = new List<ChannelOrderLineSnapshot> { line }
+        };
     }
 
     private WildberriesCardSnapshot MapToSnapshot(WildberriesCardDto dto)
@@ -468,5 +671,57 @@ public class WildberriesApiClient : IChannelApiClient
 
         [JsonPropertyName("trademark")]
         public string? Trademark { get; init; }
+    }
+
+    /// <summary>One row of the <c>/api/v1/supplier/orders</c> response: one ordered unit.</summary>
+    private sealed class WildberriesOrderDto
+    {
+        [JsonPropertyName("date")]
+        public string? Date { get; init; }
+
+        [JsonPropertyName("lastChangeDate")]
+        public string? LastChangeDate { get; init; }
+
+        [JsonPropertyName("warehouseName")]
+        public string? WarehouseName { get; init; }
+
+        [JsonPropertyName("warehouseType")]
+        public string? WarehouseType { get; init; }
+
+        [JsonPropertyName("regionName")]
+        public string? RegionName { get; init; }
+
+        [JsonPropertyName("supplierArticle")]
+        public string? SupplierArticle { get; init; }
+
+        [JsonPropertyName("nmId")]
+        public long NmId { get; init; }
+
+        [JsonPropertyName("subject")]
+        public string? Subject { get; init; }
+
+        [JsonPropertyName("techSize")]
+        public string? TechSize { get; init; }
+
+        [JsonPropertyName("totalPrice")]
+        public decimal? TotalPrice { get; init; }
+
+        [JsonPropertyName("priceWithDisc")]
+        public decimal? PriceWithDisc { get; init; }
+
+        [JsonPropertyName("finishedPrice")]
+        public decimal? FinishedPrice { get; init; }
+
+        [JsonPropertyName("isCancel")]
+        public bool IsCancel { get; init; }
+
+        [JsonPropertyName("orderType")]
+        public string? OrderType { get; init; }
+
+        [JsonPropertyName("gNumber")]
+        public string? GNumber { get; init; }
+
+        [JsonPropertyName("srid")]
+        public string? Srid { get; init; }
     }
 }

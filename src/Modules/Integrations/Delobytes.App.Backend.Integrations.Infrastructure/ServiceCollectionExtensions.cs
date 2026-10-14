@@ -2,6 +2,7 @@ using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
@@ -126,6 +127,12 @@ public static class ServiceCollectionExtensions
 
         services.AddTransient<IApiKeyValidatorFactory, ApiKeyValidatorFactory>();
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
+
+        // Wildberries is currently the only channel with orders/products capability. Resolved
+        // directly for now; to be replaced by a per-ChannelCode factory once a second channel
+        // implements either capability (mirrors IChannelApiClientFactory).
+        services.AddScoped<IProductsSource>(sp => sp.GetRequiredService<WildberriesApiClient>());
+        services.AddScoped<IOrdersSource>(sp => sp.GetRequiredService<WildberriesApiClient>());
 
         return services;
     }

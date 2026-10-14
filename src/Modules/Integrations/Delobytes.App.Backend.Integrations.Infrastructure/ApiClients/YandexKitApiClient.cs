@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -10,7 +11,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// <summary>
 /// Yandex.Kit API client for orders and stocks synchronisation.
 /// </summary>
-public class YandexKitApiClient : IChannelApiClient
+public class YandexKitApiClient : IChannelApiClient, IProductsSource
 {
     private readonly HttpClient _httpClient;
 
@@ -83,6 +84,15 @@ public class YandexKitApiClient : IChannelApiClient
         Guid connectionId, ProductCardsCursor? cursor, int limit, CancellationToken ct)
     {
         throw new NotImplementedException();
+    }
+
+    /// <inheritdoc/>
+    ///
+    /// <remarks>Yandex.Kit does not support product cards sync yet.</remarks>
+    public Task<ProductCardsPage> GetProductCardsAsync(
+        Guid connectionId, ProductCardsPageRequest request, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("Yandex.Kit does not support product cards sync yet.");
     }
 
     private sealed class YandexKitStoreResponse

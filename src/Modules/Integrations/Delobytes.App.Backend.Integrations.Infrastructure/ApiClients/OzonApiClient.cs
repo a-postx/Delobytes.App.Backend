@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -11,7 +12,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// <summary>
 /// Ozon marketplace API client for orders and stocks synchronisation.
 /// </summary>
-public class OzonApiClient : IChannelApiClient
+public class OzonApiClient : IChannelApiClient, IProductsSource
 {
     private readonly HttpClient _httpClient;
 
@@ -92,6 +93,15 @@ public class OzonApiClient : IChannelApiClient
         Guid connectionId, ProductCardsCursor? cursor, int limit, CancellationToken ct)
     {
         throw new NotImplementedException();
+    }
+
+    /// <inheritdoc/>
+    ///
+    /// <remarks>Ozon does not support product cards sync yet.</remarks>
+    public Task<ProductCardsPage> GetProductCardsAsync(
+        Guid connectionId, ProductCardsPageRequest request, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException("Ozon does not support product cards sync yet.");
     }
 
     private sealed class OzonSellerInfoResponse
