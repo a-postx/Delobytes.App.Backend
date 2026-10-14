@@ -76,6 +76,8 @@ public class Tenant
     /// <summary>Correspondent account (корреспондентский счёт).</summary>
     public string? CorrespondentAccount { get; set; }
 
+    public int MaxBackgroundJobsParallelism { get; set; }
+
     // ── Business settings ──────────────────────────────────────────────────────
 
     /// <summary>Primary business currency (ISO 4217 code).</summary>
