@@ -19,28 +19,31 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ProcessProductsImportConsumer
 {
-    private readonly ISyncJobRepository _syncJobRepository;
+    private readonly IJobRunRepository _jobRunRepository;
+    private readonly IJobCheckpointRepository _jobCheckpointRepository;
     private readonly IRawApiResponseRepository _rawApiResponseRepository;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
-    private readonly SyncJobExecutionContext _syncJobExecutionContext;
+    private readonly JobRunExecutionContext _jobRunExecutionContext;
     private readonly WildberriesImportOptions _options;
     private readonly ILogger<ProcessProductsImportConsumer> _logger;
 
     public ProcessProductsImportConsumer(
-        ISyncJobRepository syncJobRepository,
+        IJobRunRepository jobRunRepository,
+        IJobCheckpointRepository jobCheckpointRepository,
         IRawApiResponseRepository rawApiResponseRepository,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
-        SyncJobExecutionContext syncJobExecutionContext,
+        JobRunExecutionContext jobRunExecutionContext,
         IOptions<WildberriesImportOptions> options,
         ILogger<ProcessProductsImportConsumer> logger)
     {
-        _syncJobRepository = syncJobRepository;
+        _jobRunRepository = jobRunRepository;
+        _jobCheckpointRepository = jobCheckpointRepository;
         _rawApiResponseRepository = rawApiResponseRepository;
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
-        _syncJobExecutionContext = syncJobExecutionContext;
+        _jobRunExecutionContext = jobRunExecutionContext;
         _options = options.Value;
         _logger = logger;
     }
@@ -52,65 +55,69 @@ public class ProcessProductsImportConsumer
             message.JobRunId,
             message.ConnectionId);
 
-        SyncJob? syncJob = await _syncJobRepository.FindByIdWithConnectionAsync(message.JobRunId, cancellationToken);
+        JobRun? jobRun = await _jobRunRepository.GetByIdWithConnectionAsync(message.JobRunId, cancellationToken);
 
-        if (syncJob == null)
+        if (jobRun == null)
         {
-            _logger.LogWarning("SyncJob {SyncJobId} not found, skipping", message.JobRunId);
+            _logger.LogWarning("JobRun {JobRunId} not found, skipping", message.JobRunId);
             return;
         }
 
-        // Idempotent: already running means redelivery — safe to continue from saved cursor.
-        if (syncJob.Status == SyncJobStatus.Cancelled)
+        // Idempotent: already running means redelivery — safe to continue from the saved checkpoint.
+        if (jobRun.Status == JobStatus.Cancelled)
         {
-            _logger.LogInformation("SyncJob {SyncJobId} is Cancelled, skipping", message.JobRunId);
+            _logger.LogInformation("JobRun {JobRunId} is Cancelled, skipping", message.JobRunId);
             return;
         }
 
-        if (syncJob.Status != SyncJobStatus.Pending && syncJob.Status != SyncJobStatus.Running)
+        if (jobRun.Status != JobStatus.Pending && jobRun.Status != JobStatus.Running)
         {
             _logger.LogWarning(
-                "SyncJob {SyncJobId} is in terminal status {Status}, skipping",
+                "JobRun {JobRunId} is in terminal status {Status}, skipping",
                 message.JobRunId,
-                syncJob.Status);
+                jobRun.Status);
             return;
         }
 
-        Connection connection = syncJob.Connection;
+        Connection connection = jobRun.Connection;
 
         if (connection == null || !connection.IsActive)
         {
             string reason = connection == null ? "Connection not found" : "Connection is inactive";
             _logger.LogError(
-                "SyncJob {SyncJobId}: {Reason}. Marking as Failed.",
+                "JobRun {JobRunId}: {Reason}. Marking as Failed.",
                 message.JobRunId,
                 reason);
 
-            await FailJobAsync(syncJob, reason, cancellationToken);
+            await FailJobAsync(jobRun, reason, cancellationToken);
             return;
         }
 
         // Transition Pending → Running (idempotent: Running stays Running).
-        if (syncJob.Status == SyncJobStatus.Pending)
+        if (jobRun.Status == JobStatus.Pending)
         {
-            syncJob.Status = SyncJobStatus.Running;
-            syncJob.StartedAt = DateTimeOffset.UtcNow;
-            _syncJobRepository.Update(syncJob);
-            await _syncJobRepository.SaveChangesAsync(cancellationToken);
+            jobRun.Status = JobStatus.Running;
+            jobRun.StartedAt = DateTimeOffset.UtcNow;
+            await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
 
-        // Correlates every HTTP call made through apiClient below with this SyncJob, so
+        // Correlates every HTTP call made through apiClient below with this JobRun, so
         // RawApiResponseCaptureHandler can attribute captured rows to it. Cleared in the
         // finally block regardless of outcome.
-        _syncJobExecutionContext.SetCurrent(syncJob.Id);
+        _jobRunExecutionContext.SetCurrent(jobRun.Id);
 
         IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
         int batchSize = _options.BatchSize > 0 ? _options.BatchSize : 50;
         int batchNumber = 0;
 
-        // Resume from saved cursor when redelivered mid-import.
-        ProductCardsCursor? cursor = DeserializeCursor(syncJob.NextCursor);
+        // Resume from the saved checkpoint cursor when redelivered mid-import. Unlike the old
+        // SyncJob.NextCursor field, this lives in JobCheckpoint — per-task state that dies with
+        // the JobRun, as opposed to SyncCheckpoint's cross-run business watermark (not used here:
+        // the Wildberries product cards endpoint has no date-range parameter to resume by, only
+        // the opaque cursor already carried in JobCheckpoint).
+        JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
+        ProductCardsCursor? cursor = DeserializeCursor(checkpoint?.Payload);
 
         // Look-ahead buffer: a non-empty page is held back until the next API response proves
         // whether it was terminal. Without this, WB's empty trailing page (returned once the
@@ -135,47 +142,43 @@ public class ProcessProductsImportConsumer
                     string errorMsg = apiResponse.ErrorMessage ?? "Unknown API error";
 
                     _logger.LogError(
-                        "SyncJob {SyncJobId}: WB API call failed (batch {Batch}): {Error}",
-                        syncJob.Id,
+                        "JobRun {JobRunId}: WB API call failed (batch {Batch}): {Error}",
+                        jobRun.Id,
                         batchNumber,
                         errorMsg);
 
-                    // Closes out the row(s) RawApiResponseCaptureHandler just created for this
-                    // failed attempt — business logic has now looked at it and is about to fail
-                    // the job because of it.
-                    await _rawApiResponseRepository.MarkPendingAsProcessedAsync(
-                        syncJob.Id, DateTimeOffset.UtcNow, cancellationToken);
-
-                    await FailJobAsync(syncJob, errorMsg, cancellationToken);
+                    await FailJobAsync(jobRun, errorMsg, cancellationToken);
                     return;
                 }
 
-                // Closes out the row(s) captured for this successful attempt (ordinarily one,
-                // but WildberriesApiClient may have captured more if it retried a malformed
-                // response body internally before this call returned).
-                await _rawApiResponseRepository.MarkPendingAsProcessedAsync(
-                    syncJob.Id, DateTimeOffset.UtcNow, cancellationToken);
-
                 ProductCardsData data = apiResponse.Data!;
-                List<WildberriesCardSnapshot> cards = data.Cards
-                    .ToList();
+                List<WildberriesCardSnapshot> cards = data.Cards.ToList();
 
-                bool isTerminalPage = data.NextCursor == null;
+                bool apiReportsMore = data.NextCursor != null;
+
+                // Cooperative cancellation fix: an operator may have cancelled the job while this
+                // page's HTTP call was in flight. Re-reading status from the DB (instead of trusting
+                // jobRun.Status captured before the loop started) is what makes the stop take effect
+                // after the current page rather than only once the whole cursor is exhausted.
+                bool cancelled = await _jobRunRepository.GetStatusAsync(jobRun.Id, cancellationToken) == JobStatus.Cancelled;
+
+                // Forces the current page to be treated as terminal when cancelled, regardless of
+                // whether WB's cursor still reports more data — the loop must stop after this page.
+                bool isTerminalPage = !apiReportsMore || cancelled;
 
                 // A page carrying no cards but advertising a cursor is meaningless for the
-                // import; advance without publishing anything.
-                if (cards.Count == 0 && !isTerminalPage)
+                // import; advance without publishing anything (unless cancellation forces a stop).
+                if (cards.Count == 0 && apiReportsMore && !cancelled)
                 {
                     _logger.LogInformation(
-                        "SyncJob {SyncJobId}: page {Batch} has no cards but a next cursor, advancing",
-                        syncJob.Id,
+                        "JobRun {JobRunId}: page {Batch} has no cards but a next cursor, advancing",
+                        jobRun.Id,
                         batchNumber);
 
                     // Nothing is published, so the checkpoint may move past this page safely:
                     // the buffered batch keeps its own cursor and stays refetchable.
-                    syncJob.NextCursor = SerializeCursor(data.NextCursor);
-                    _syncJobRepository.Update(syncJob);
-                    await _syncJobRepository.SaveChangesAsync(cancellationToken);
+                    await _jobCheckpointRepository.UpsertAsync(
+                        BuildCheckpoint(jobRun.Id, data.NextCursor), cancellationToken);
 
                     cursor = data.NextCursor;
                     continue;
@@ -183,25 +186,24 @@ public class ProcessProductsImportConsumer
 
                 if (cards.Count == 0)
                 {
-                    // Empty terminal page: a signal, not a batch of its own. The page held in the
-                    // buffer was the real last one and is published as such; if nothing was ever
-                    // buffered the job genuinely has no records, and a single empty terminal batch
-                    // is still published so the aggregator can finalise it. Either way exactly one
-                    // terminal batch reaches the aggregator, and it is never empty while a real
-                    // batch is still downloading photos.
+                    // Empty/forced terminal page: a signal, not a batch of its own. The page held in
+                    // the buffer was the real last one and is published as such; if nothing was ever
+                    // buffered the job genuinely has no (more) records, and a single empty terminal
+                    // batch is still published so the aggregator can finalise it.
                     List<WildberriesCardSnapshot> terminalCards =
                         bufferedBatch != null ? bufferedBatch.Cards : new List<WildberriesCardSnapshot>();
 
                     batchNumber++;
 
                     _logger.LogInformation(
-                        "SyncJob {SyncJobId}: publishing terminal batch {Batch} with {Count} cards",
-                        syncJob.Id,
+                        "JobRun {JobRunId}: publishing terminal batch {Batch} with {Count} cards (cancelled={Cancelled})",
+                        jobRun.Id,
                         batchNumber,
-                        terminalCards.Count);
+                        terminalCards.Count,
+                        cancelled);
 
                     await PublishBatchAsync(
-                        syncJob,
+                        jobRun,
                         connection,
                         terminalCards,
                         isLastBatch: true,
@@ -209,58 +211,19 @@ public class ProcessProductsImportConsumer
                         totalBatches: batchNumber,
                         cancellationToken);
 
-                    syncJob.NextCursor = null;
-                    _syncJobRepository.Update(syncJob);
-                    await _syncJobRepository.SaveChangesAsync(cancellationToken);
-
                     break;
                 }
 
-                if (isTerminalPage)
-                {
-                    // Non-empty page without a cursor: it is itself the last batch. The buffered
-                    // page, if any, is known not to be terminal and goes out first.
-                    if (bufferedBatch != null)
-                    {
-                        batchNumber++;
-
-                        await PublishBatchAsync(
-                            syncJob,
-                            connection,
-                            bufferedBatch.Cards,
-                            isLastBatch: false,
-                            batchNumber,
-                            totalBatches: 0,
-                            cancellationToken);
-                    }
-
-                    batchNumber++;
-
-                    await PublishBatchAsync(
-                        syncJob,
-                        connection,
-                        cards,
-                        isLastBatch: true,
-                        batchNumber,
-                        totalBatches: batchNumber,
-                        cancellationToken);
-
-                    syncJob.NextCursor = null;
-                    _syncJobRepository.Update(syncJob);
-                    await _syncJobRepository.SaveChangesAsync(cancellationToken);
-
-                    break;
-                }
-
-                // Non-terminal non-empty page: the buffered page is now known not to be terminal,
-                // so it can be published as a regular batch, and the current page takes its place
-                // in the buffer until the next response decides its fate.
+                // Non-terminal non-empty page: the buffered page is now known not to be terminal
+                // (or cancellation has forced an early stop), so it can be published as a regular
+                // batch, and the current page takes its place in the buffer — or is published
+                // itself as the terminal batch when this is the stop point.
                 if (bufferedBatch != null)
                 {
                     batchNumber++;
 
                     await PublishBatchAsync(
-                        syncJob,
+                        jobRun,
                         connection,
                         bufferedBatch.Cards,
                         isLastBatch: false,
@@ -272,9 +235,31 @@ public class ProcessProductsImportConsumer
                     // fetched. A redelivery then refetches the page still sitting in the buffer,
                     // which at worst duplicates one batch that batch idempotency absorbs, instead
                     // of skipping it outright.
-                    syncJob.NextCursor = SerializeCursor(bufferedBatch.NextCursor);
-                    _syncJobRepository.Update(syncJob);
-                    await _syncJobRepository.SaveChangesAsync(cancellationToken);
+                    await _jobCheckpointRepository.UpsertAsync(
+                        BuildCheckpoint(jobRun.Id, bufferedBatch.NextCursor), cancellationToken);
+                }
+
+                if (isTerminalPage)
+                {
+                    batchNumber++;
+
+                    _logger.LogInformation(
+                        "JobRun {JobRunId}: publishing terminal batch {Batch} with {Count} cards (cancelled={Cancelled})",
+                        jobRun.Id,
+                        batchNumber,
+                        cards.Count,
+                        cancelled);
+
+                    await PublishBatchAsync(
+                        jobRun,
+                        connection,
+                        cards,
+                        isLastBatch: true,
+                        batchNumber,
+                        totalBatches: batchNumber,
+                        cancellationToken);
+
+                    break;
                 }
 
                 bufferedBatch = new PendingBatch
@@ -287,29 +272,29 @@ public class ProcessProductsImportConsumer
             }
 
             _logger.LogInformation(
-                "SyncJob {SyncJobId}: all {Batches} batches published successfully",
-                syncJob.Id,
+                "JobRun {JobRunId}: all {Batches} batches published successfully",
+                jobRun.Id,
                 batchNumber);
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("SyncJob {SyncJobId}: processing was cancelled", syncJob.Id);
-            // Do not change status — let MassTransit redeliver. Cursor is already persisted.
+            _logger.LogWarning("JobRun {JobRunId}: processing was cancelled", jobRun.Id);
+            // Do not change status — let MassTransit redeliver. Checkpoint is already persisted.
             throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SyncJob {SyncJobId}: unexpected error during import", syncJob.Id);
-            await FailJobAsync(syncJob, ex.Message, cancellationToken);
+            _logger.LogError(ex, "JobRun {JobRunId}: unexpected error during import", jobRun.Id);
+            await FailJobAsync(jobRun, ex.Message, cancellationToken);
         }
         finally
         {
-            _syncJobExecutionContext.Clear();
+            _jobRunExecutionContext.Clear();
         }
     }
 
     private async Task PublishBatchAsync(
-        SyncJob syncJob,
+        JobRun jobRun,
         Connection connection,
         List<WildberriesCardSnapshot> cards,
         bool isLastBatch,
@@ -319,7 +304,7 @@ public class ProcessProductsImportConsumer
     {
         ProductBatchImportRequestedEvent batchEvent = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = syncJob.Id,
+            JobRunId = jobRun.Id,
             ConnectionId = connection.Id,
             ChannelId = connection.ChannelId,
             Cards = cards,
@@ -330,33 +315,32 @@ public class ProcessProductsImportConsumer
         await _eventPublisher.PublishAsync(batchEvent, cancellationToken);
 
         _logger.LogInformation(
-            "SyncJob {SyncJobId}: batch {Batch} published with {Count} cards, IsLastBatch={IsLastBatch}",
-            syncJob.Id,
+            "JobRun {JobRunId}: batch {Batch} published with {Count} cards, IsLastBatch={IsLastBatch}",
+            jobRun.Id,
             batchNumber,
             cards.Count,
             isLastBatch);
     }
 
-    private async Task FailJobAsync(SyncJob syncJob, string errorMessage, CancellationToken cancellationToken)
+    private async Task FailJobAsync(JobRun jobRun, string errorMessage, CancellationToken cancellationToken)
     {
-        syncJob.Status = SyncJobStatus.Failed;
-        syncJob.ErrorMessage = errorMessage;
-        syncJob.CompletedAt = DateTimeOffset.UtcNow;
-        _syncJobRepository.Update(syncJob);
-        await _syncJobRepository.SaveChangesAsync(cancellationToken);
+        jobRun.Status = JobStatus.Failed;
+        jobRun.Error = errorMessage;
+        jobRun.CompletedAt = DateTimeOffset.UtcNow;
+        await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
 
         try
         {
             ProductsImportCompletedEvent completedEvent = new ProductsImportCompletedEvent
             {
-                SyncJobId = syncJob.Id,
+                JobRunId = jobRun.Id,
                 IsSuccess = false,
                 ErrorMessage = errorMessage,
-                TotalRecordsProcessed = syncJob.RecordsProcessed,
-                TotalRecordsCreated = syncJob.RecordsCreated,
-                TotalRecordsUpdated = syncJob.RecordsUpdated,
-                TotalRecordsSkipped = syncJob.RecordsSkipped,
-                TotalRecordsFailed = syncJob.RecordsFailed,
+                TotalRecordsProcessed = jobRun.RecordsCreated + jobRun.RecordsUpdated + jobRun.RecordsSkipped + jobRun.RecordsFailed,
+                TotalRecordsCreated = jobRun.RecordsCreated,
+                TotalRecordsUpdated = jobRun.RecordsUpdated,
+                TotalRecordsSkipped = jobRun.RecordsSkipped,
+                TotalRecordsFailed = jobRun.RecordsFailed,
             };
 
             await _eventPublisher.PublishAsync(completedEvent, cancellationToken);
@@ -365,9 +349,19 @@ public class ProcessProductsImportConsumer
         {
             _logger.LogWarning(
                 ex,
-                "SyncJob {SyncJobId}: failed to publish ProductsImportCompletedEvent after job failure",
-                syncJob.Id);
+                "JobRun {JobRunId}: failed to publish ProductsImportCompletedEvent after job failure",
+                jobRun.Id);
         }
+    }
+
+    private static JobCheckpoint BuildCheckpoint(Guid jobRunId, ProductCardsCursor? cursor)
+    {
+        return new JobCheckpoint
+        {
+            JobRunId = jobRunId,
+            Payload = SerializeCursor(cursor) ?? string.Empty,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
     }
 
     private static ProductCardsCursor? DeserializeCursor(string? json)

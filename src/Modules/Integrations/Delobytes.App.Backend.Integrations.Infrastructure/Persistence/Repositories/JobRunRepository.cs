@@ -98,4 +98,99 @@ public class JobRunRepository : IJobRunRepository
         _context.OrdersImportJobs.Add(job);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    /// <inheritdoc/>
+    public Task<JobRun?> GetByIdWithConnectionAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return _context.JobRuns
+            .Include(j => j.Connection)
+            .ThenInclude(c => c.SystemChannelTemplate)
+            .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<JobStatus> GetStatusAsync(Guid id, CancellationToken cancellationToken)
+    {
+        // AsNoTracking bypasses the change tracker's identity map, so this always reflects
+        // the database rather than an already-loaded (and possibly stale) tracked instance.
+        return _context.JobRuns
+            .AsNoTracking()
+            .Where(j => j.Id == id)
+            .Select(j => j.Status)
+            .FirstAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> BatchResultExistsAsync(Guid messageId, CancellationToken cancellationToken)
+    {
+        return _context.JobRunBatchResults.AnyAsync(r => r.MessageId == messageId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public void AddBatchResult(JobRunBatchResult batchResult)
+    {
+        _context.JobRunBatchResults.Add(batchResult);
+    }
+
+    /// <inheritdoc/>
+    public async Task<JobRunBatchResultTotals> GetBatchResultTotalsAsync(Guid jobRunId, CancellationToken cancellationToken)
+    {
+        List<string?> errors = await _context.JobRunBatchResults
+            .Where(r => r.JobRunId == jobRunId && r.ErrorMessage != null)
+            .Select(r => r.ErrorMessage)
+            .ToListAsync(cancellationToken);
+
+        // Aggregate in a single query to avoid N+1.
+        JobRunBatchResultTotals totals = await _context.JobRunBatchResults
+            .Where(r => r.JobRunId == jobRunId)
+            .GroupBy(r => r.JobRunId)
+            .Select(g => new JobRunBatchResultTotals
+            {
+                TotalProcessed = g.Sum(r => r.RecordsProcessed),
+                TotalCreated = g.Sum(r => r.RecordsCreated),
+                TotalUpdated = g.Sum(r => r.RecordsUpdated),
+                TotalSkipped = g.Sum(r => r.RecordsSkipped),
+                TotalFailed = g.Sum(r => r.RecordsFailed),
+                CombinedErrors = null,
+            })
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? new JobRunBatchResultTotals();
+
+        List<string> nonNullErrors = errors
+            .Where(e => e != null)
+            .Select(e => e!)
+            .ToList();
+
+        // Truncate combined errors to 2000 chars to match DB column constraint.
+        string? combinedErrors = nonNullErrors.Count > 0
+            ? TruncateString(string.Join("; ", nonNullErrors), 2000)
+            : null;
+
+        return new JobRunBatchResultTotals
+        {
+            TotalProcessed = totals.TotalProcessed,
+            TotalCreated = totals.TotalCreated,
+            TotalUpdated = totals.TotalUpdated,
+            TotalSkipped = totals.TotalSkipped,
+            TotalFailed = totals.TotalFailed,
+            CombinedErrors = combinedErrors,
+        };
+    }
+
+    /// <inheritdoc/>
+    public Task<int> CountBatchResultsAsync(Guid jobRunId, CancellationToken cancellationToken)
+    {
+        return _context.JobRunBatchResults.CountAsync(r => r.JobRunId == jobRunId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+    {
+        return _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string TruncateString(string value, int maxLength)
+    {
+        return value.Length <= maxLength ? value : value[..maxLength];
+    }
 }

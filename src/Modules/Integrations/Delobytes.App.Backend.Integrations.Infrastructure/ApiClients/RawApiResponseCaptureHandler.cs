@@ -22,7 +22,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
 {
     private const int MaxEndpointLength = 500;
 
-    private readonly ISyncJobExecutionContext _syncJobExecutionContext;
+    private readonly IJobRunExecutionContext _jobRunExecutionContext;
     private readonly IRawApiResponseRepository _rawApiResponseRepository;
     private readonly ILogger<RawApiResponseCaptureHandler> _logger;
 
@@ -30,11 +30,11 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     /// Initializes a new instance of the <see cref="RawApiResponseCaptureHandler"/> class.
     /// </summary>
     public RawApiResponseCaptureHandler(
-        ISyncJobExecutionContext syncJobExecutionContext,
+        IJobRunExecutionContext jobRunExecutionContext,
         IRawApiResponseRepository rawApiResponseRepository,
         ILogger<RawApiResponseCaptureHandler> logger)
     {
-        _syncJobExecutionContext = syncJobExecutionContext;
+        _jobRunExecutionContext = jobRunExecutionContext;
         _rawApiResponseRepository = rawApiResponseRepository;
         _logger = logger;
     }
@@ -42,12 +42,12 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        // RawApiResponse.SyncJobId is a required FK. Calls made outside SyncJob processing
+        // RawApiResponse.JobRunId is a required FK. Calls made outside JobRun processing
         // (e.g. seller-info lookup during connection setup) have nothing valid to attribute the
         // audit row to, so they pass through uncaptured rather than violating the constraint.
-        Guid? syncJobId = _syncJobExecutionContext.SyncJobId;
+        Guid? jobRunId = _jobRunExecutionContext.JobRunId;
 
-        if (syncJobId is null)
+        if (jobRunId is null)
         {
             return await base.SendAsync(request, cancellationToken);
         }
@@ -68,7 +68,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
             await CaptureAsync(
-                syncJobId.Value,
+                jobRunId.Value,
                 endpoint,
                 requestBody,
                 responseBody,
@@ -88,7 +88,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             // further down the pipeline) never reach the API client as an HttpResponseMessage,
             // so this is the only place able to record that the call was attempted at all.
             await CaptureAsync(
-                syncJobId.Value,
+                jobRunId.Value,
                 endpoint,
                 requestBody,
                 $"{ex.GetType().Name}: {ex.Message}",
@@ -110,7 +110,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     }
 
     private async Task CaptureAsync(
-        Guid syncJobId,
+        Guid jobRunId,
         string endpoint,
         string requestBody,
         string responseBody,
@@ -121,7 +121,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
         RawApiResponse rawResponse = new RawApiResponse
         {
             Id = Guid.NewGuid(),
-            SyncJobId = syncJobId,
+            JobRunId = jobRunId,
             Endpoint = endpoint,
             RequestPayload = requestBody,
             ResponsePayload = responseBody,
@@ -141,7 +141,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
         catch (Exception ex)
         {
             // Audit logging must never break the API call it is observing.
-            _logger.LogError(ex, "Failed to persist raw API response for SyncJob {SyncJobId}", syncJobId);
+            _logger.LogError(ex, "Failed to persist raw API response for JobRun {JobRunId}", jobRunId);
         }
     }
 }

@@ -2,14 +2,14 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
 /// Published by Integrations.ProcessProductsImportConsumer when the entire products import job completes.
-/// Consumed by Integrations to update the SyncJob final status.
+/// Consumed by Integrations to update the JobRun final status.
 /// </summary>
 public record ProductsImportCompletedEvent
 {
     /// <summary>
-    /// Identifier of the SyncJob that tracks this import.
+    /// Identifier of the JobRun that tracks this import.
     /// </summary>
-    public Guid SyncJobId { get; init; }
+    public Guid JobRunId { get; init; }
 
     /// <summary>
     /// True if the import completed successfully.

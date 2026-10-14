@@ -73,6 +73,12 @@ public class Connection : ITenantScoped
     public string? CustomerInn { get; set; }
 
     /// <summary>
+    /// Gets or sets the date and time when any job type last completed for this connection
+    /// (Success, Failed or Cancelled). Null until the first job run finishes.
+    /// </summary>
+    public DateTimeOffset? LastSyncAt { get; set; }
+
+    /// <summary>
     /// Navigation property: the system channel template.
     /// </summary>
     public SystemChannelTemplate SystemChannelTemplate { get; set; } = default!;

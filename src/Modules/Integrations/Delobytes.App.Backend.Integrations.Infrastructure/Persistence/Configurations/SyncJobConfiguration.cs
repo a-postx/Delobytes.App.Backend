@@ -71,15 +71,5 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
             .WithMany(c => c.SyncJobs)
             .HasForeignKey(s => s.ConnectionId)
             .OnDelete(DeleteBehavior.Cascade);
-
-        builder.HasMany(s => s.RawApiResponses)
-            .WithOne(r => r.SyncJob)
-            .HasForeignKey(r => r.SyncJobId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        builder.HasMany(s => s.BatchResults)
-            .WithOne(r => r.SyncJob)
-            .HasForeignKey(r => r.SyncJobId)
-            .OnDelete(DeleteBehavior.Cascade);
     }
 }

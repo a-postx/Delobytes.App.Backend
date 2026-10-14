@@ -5,18 +5,18 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Configurations;
 
 /// <summary>
-/// EF Core entity type configuration for SyncJobBatchResult.
+/// EF Core entity type configuration for JobRunBatchResult.
 /// </summary>
-public class SyncJobBatchResultConfiguration : IEntityTypeConfiguration<SyncJobBatchResult>
+public class JobRunBatchResultConfiguration : IEntityTypeConfiguration<JobRunBatchResult>
 {
     /// <inheritdoc/>
-    public void Configure(EntityTypeBuilder<SyncJobBatchResult> builder)
+    public void Configure(EntityTypeBuilder<JobRunBatchResult> builder)
     {
-        builder.ToTable("SyncJobBatchResults");
+        builder.ToTable("JobRunBatchResults");
 
         builder.HasKey(r => r.Id);
 
-        builder.Property(r => r.SyncJobId)
+        builder.Property(r => r.JobRunId)
             .IsRequired();
 
         // Deduplication key: one row per MassTransit MessageId.
@@ -26,7 +26,7 @@ public class SyncJobBatchResultConfiguration : IEntityTypeConfiguration<SyncJobB
         builder.HasIndex(r => r.MessageId)
             .IsUnique();
 
-        builder.HasIndex(r => r.SyncJobId);
+        builder.HasIndex(r => r.JobRunId);
 
         builder.Property(r => r.RecordsProcessed)
             .IsRequired();
@@ -52,9 +52,9 @@ public class SyncJobBatchResultConfiguration : IEntityTypeConfiguration<SyncJobB
         builder.Property(r => r.ReceivedAt)
             .IsRequired();
 
-        builder.HasOne(r => r.SyncJob)
-            .WithMany(s => s.BatchResults)
-            .HasForeignKey(r => r.SyncJobId)
+        builder.HasOne(r => r.JobRun)
+            .WithMany()
+            .HasForeignKey(r => r.JobRunId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

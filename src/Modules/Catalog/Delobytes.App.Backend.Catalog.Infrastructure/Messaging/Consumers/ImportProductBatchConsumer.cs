@@ -93,8 +93,8 @@ public class ImportProductBatchConsumer
     public async Task ProcessAsync(ProductBatchImportRequestedEvent message, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "ImportProductBatchConsumer started processing batch. SyncJobId={SyncJobId}, ConnectionId={ConnectionId}, ChannelId={ChannelId}, CardsCount={CardsCount}, IsLastBatch={IsLastBatch}",
-            message.SyncJobId,
+            "ImportProductBatchConsumer started processing batch. JobRunId={JobRunId}, ConnectionId={ConnectionId}, ChannelId={ChannelId}, CardsCount={CardsCount}, IsLastBatch={IsLastBatch}",
+            message.JobRunId,
             message.ConnectionId,
             message.ChannelId,
             message.Cards.Count,
@@ -207,11 +207,11 @@ public class ImportProductBatchConsumer
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                _logger.LogError(ex, "Failed to process batch. SyncJobId={SyncJobId}", message.SyncJobId);
+                _logger.LogError(ex, "Failed to process batch. JobRunId={JobRunId}", message.JobRunId);
 
                 ProductBatchImportCompletedEvent rollbackEvent = new ProductBatchImportCompletedEvent
                 {
-                    SyncJobId = message.SyncJobId,
+                    JobRunId = message.JobRunId,
                     RecordsProcessed = 0,
                     RecordsCreated = 0,
                     RecordsUpdated = 0,
@@ -239,7 +239,7 @@ public class ImportProductBatchConsumer
 
         ProductBatchImportCompletedEvent completedEvent = new ProductBatchImportCompletedEvent
         {
-            SyncJobId = message.SyncJobId,
+            JobRunId = message.JobRunId,
             RecordsProcessed = recordsProcessed,
             RecordsCreated = recordsCreated,
             RecordsUpdated = recordsUpdated,
@@ -253,8 +253,8 @@ public class ImportProductBatchConsumer
         await _publishEndpoint.Publish(completedEvent, cancellationToken);
 
         _logger.LogInformation(
-            "ImportProductBatchConsumer completed batch. SyncJobId={SyncJobId}, Processed={Processed}, Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
-            message.SyncJobId,
+            "ImportProductBatchConsumer completed batch. JobRunId={JobRunId}, Processed={Processed}, Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
+            message.JobRunId,
             recordsProcessed,
             recordsCreated,
             recordsUpdated,

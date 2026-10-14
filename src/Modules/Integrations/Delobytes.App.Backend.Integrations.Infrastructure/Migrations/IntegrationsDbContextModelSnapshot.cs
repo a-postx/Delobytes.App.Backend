@@ -59,6 +59,9 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTimeOffset?>("LastSyncAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -81,6 +84,8 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.HasIndex("ChannelId");
 
                     b.HasIndex("IsActive");
+
+                    b.HasIndex("LastSyncAt");
 
                     b.HasIndex("SystemChannelTemplateId");
 
@@ -177,6 +182,58 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("JobRuns", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobRunBatchResult", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsLastBatch")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("JobRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RecordsCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsFailed")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsProcessed")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsSkipped")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsUpdated")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobRunId");
+
+                    b.HasIndex("MessageId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("JobRunBatchResults", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
                 {
                     b.Property<Guid>("JobRunId")
@@ -214,8 +271,8 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<int>("HttpStatusCode")
                         .HasColumnType("integer");
 
-                    b.Property<DateTimeOffset?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<Guid>("JobRunId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("timestamp with time zone");
@@ -228,9 +285,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("SyncJobId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
@@ -238,11 +292,9 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
 
                     b.HasIndex("HttpStatusCode");
 
-                    b.HasIndex("ProcessedAt");
+                    b.HasIndex("JobRunId");
 
                     b.HasIndex("ReceivedAt");
-
-                    b.HasIndex("SyncJobId");
 
                     b.HasIndex("TenantId");
 
@@ -361,58 +413,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("SyncJobs", "integrations");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJobBatchResult", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<bool>("IsLastBatch")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("ReceivedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("RecordsCreated")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RecordsFailed")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RecordsProcessed")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RecordsSkipped")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RecordsUpdated")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("SyncJobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MessageId")
-                        .IsUnique();
-
-                    b.HasIndex("SyncJobId");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("SyncJobBatchResults", "integrations");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SystemChannelEndpoint", b =>
                 {
                     b.Property<Guid>("Id")
@@ -529,6 +529,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Navigation("Connection");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobRunBatchResult", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
+                        .WithMany()
+                        .HasForeignKey("JobRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobRun");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
@@ -553,13 +564,13 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.RawApiResponse", b =>
                 {
-                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJob", "SyncJob")
-                        .WithMany("RawApiResponses")
-                        .HasForeignKey("SyncJobId")
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
+                        .WithMany()
+                        .HasForeignKey("JobRunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("SyncJob");
+                    b.Navigation("JobRun");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncCheckpoint", b =>
@@ -591,17 +602,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Navigation("Connection");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJobBatchResult", b =>
-                {
-                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJob", "SyncJob")
-                        .WithMany("BatchResults")
-                        .HasForeignKey("SyncJobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SyncJob");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SystemChannelEndpoint", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.SystemChannelTemplate", "SystemChannelTemplate")
@@ -616,13 +616,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", b =>
                 {
                     b.Navigation("SyncJobs");
-                });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SyncJob", b =>
-                {
-                    b.Navigation("BatchResults");
-
-                    b.Navigation("RawApiResponses");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.SystemChannelTemplate", b =>

@@ -57,7 +57,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -94,7 +94,7 @@ public class ImportProductBatchConsumerTests
         publishEndpointMock.Verify(
             p => p.Publish(
                 It.Is<ProductBatchImportCompletedEvent>(e =>
-                    e.SyncJobId == _syncJobId &&
+                    e.JobRunId == _syncJobId &&
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 1 &&
                     e.RecordsUpdated == 0 &&
@@ -132,7 +132,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -183,7 +183,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -270,7 +270,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -355,7 +355,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -410,7 +410,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -490,7 +490,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -569,7 +569,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -643,7 +643,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -732,7 +732,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -788,7 +788,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent messageTenant1 = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -797,7 +797,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent messageTenant2 = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -837,7 +837,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -908,7 +908,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -999,7 +999,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -1071,7 +1071,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -1140,7 +1140,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },
@@ -1200,7 +1200,7 @@ public class ImportProductBatchConsumerTests
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
-            SyncJobId = _syncJobId,
+            JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
             Cards = new List<WildberriesCardSnapshot> { card },

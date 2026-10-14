@@ -13,9 +13,9 @@ public class RawApiResponse : ITenantScoped
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the sync job identifier.
+    /// Gets or sets the job run identifier.
     /// </summary>
-    public Guid SyncJobId { get; set; }
+    public Guid JobRunId { get; set; }
 
     /// <summary>
     /// Gets or sets the API endpoint.
@@ -43,12 +43,7 @@ public class RawApiResponse : ITenantScoped
     public DateTimeOffset ReceivedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the date and time when the response was processed.
+    /// Navigation property: the job run.
     /// </summary>
-    public DateTimeOffset? ProcessedAt { get; set; }
-
-    /// <summary>
-    /// Navigation property: the sync job.
-    /// </summary>
-    public SyncJob SyncJob { get; set; } = default!;
+    public JobRun JobRun { get; set; } = default!;
 }

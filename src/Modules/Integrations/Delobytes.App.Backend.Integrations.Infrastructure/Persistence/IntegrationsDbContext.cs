@@ -30,8 +30,8 @@ public class IntegrationsDbContext : DbContext
     public DbSet<Connection> Connections => Set<Connection>();
     public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
     public DbSet<RawApiResponse> RawApiResponses => Set<RawApiResponse>();
-    public DbSet<SyncJobBatchResult> SyncJobBatchResults => Set<SyncJobBatchResult>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
+    public DbSet<JobRunBatchResult> JobRunBatchResults => Set<JobRunBatchResult>();
     public DbSet<ProductsImportJob> ProductsImportJobs => Set<ProductsImportJob>();
     public DbSet<OrdersImportJob> OrdersImportJobs => Set<OrdersImportJob>();
     public DbSet<JobCheckpoint> JobCheckpoints => Set<JobCheckpoint>();

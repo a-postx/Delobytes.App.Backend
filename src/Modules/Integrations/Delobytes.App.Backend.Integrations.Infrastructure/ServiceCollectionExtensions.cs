@@ -63,10 +63,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();
 
-        // AsyncLocal-ambient контекст текущего SyncJob; читается RawApiResponseCaptureHandler,
+        // AsyncLocal-ambient контекст текущего JobRun; читается RawApiResponseCaptureHandler,
         // чтобы привязать перехваченный сырой ответ к задаче синхронизации, которая его вызвала.
-        services.AddScoped<SyncJobExecutionContext>();
-        services.AddScoped<ISyncJobExecutionContext>(sp => sp.GetRequiredService<SyncJobExecutionContext>());
+        services.AddScoped<JobRunExecutionContext>();
+        services.AddScoped<IJobRunExecutionContext>(sp => sp.GetRequiredService<JobRunExecutionContext>());
 
         services.AddTransient<OzonAuthHandler>();
         services.AddTransient<WildberriesAuthHandler>();

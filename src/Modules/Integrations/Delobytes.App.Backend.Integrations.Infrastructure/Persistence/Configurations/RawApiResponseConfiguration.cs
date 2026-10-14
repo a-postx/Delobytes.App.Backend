@@ -16,7 +16,7 @@ public class RawApiResponseConfiguration : IEntityTypeConfiguration<RawApiRespon
 
         builder.HasKey(r => r.Id);
 
-        builder.Property(r => r.SyncJobId)
+        builder.Property(r => r.JobRunId)
             .IsRequired();
 
         builder.Property(r => r.Endpoint)
@@ -37,16 +37,15 @@ public class RawApiResponseConfiguration : IEntityTypeConfiguration<RawApiRespon
         builder.Property(r => r.ReceivedAt)
             .IsRequired();
 
-        builder.Property(r => r.ProcessedAt);
-
-        builder.HasIndex(r => r.SyncJobId);
+        builder.HasIndex(r => r.JobRunId);
         builder.HasIndex(r => r.ReceivedAt);
-        builder.HasIndex(r => r.ProcessedAt);
         builder.HasIndex(r => r.HttpStatusCode);
 
-        builder.HasOne(r => r.SyncJob)
-            .WithMany(s => s.RawApiResponses)
-            .HasForeignKey(r => r.SyncJobId)
+        // Cascade: an audit trail with no JobRun to attribute it to carries no meaning
+        // (decision 54 — the raw capture dies together with the job it was recorded for).
+        builder.HasOne(r => r.JobRun)
+            .WithMany()
+            .HasForeignKey(r => r.JobRunId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -6,11 +6,11 @@ namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 /// Stores the result of a single product import batch for idempotent aggregation.
 /// MessageId (from MassTransit) serves as the deduplication key.
 /// </summary>
-public class SyncJobBatchResult : ITenantScoped
+public class JobRunBatchResult : ITenantScoped
 {
     public Guid Id { get; set; }
 
-    public Guid SyncJobId { get; set; }
+    public Guid JobRunId { get; set; }
 
     /// <summary>
     /// MassTransit MessageId — used as idempotency key to prevent double-counting on redelivery.
@@ -33,5 +33,5 @@ public class SyncJobBatchResult : ITenantScoped
 
     public DateTimeOffset ReceivedAt { get; set; }
 
-    public SyncJob SyncJob { get; set; } = default!;
+    public JobRun JobRun { get; set; } = default!;
 }

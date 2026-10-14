@@ -61,4 +61,44 @@ public interface IJobRunRepository
     /// Creates the type-specific OrdersSync row linked to an existing JobRun and persists it.
     /// </summary>
     Task CreateOrdersImportJobAsync(OrdersImportJob job, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds a job run by primary key with the related Connection (and its SystemChannelTemplate)
+    /// loaded, for consumers that need to call out to the channel's API client.
+    /// </summary>
+    Task<JobRun?> GetByIdWithConnectionAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the current Status directly from the database, bypassing any tracked/cached
+    /// instance of the job run. Used by long-running consumers to detect a cancellation
+    /// requested concurrently while a page/batch is in flight.
+    /// </summary>
+    Task<JobStatus> GetStatusAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns true when a batch result with the given MessageId already exists (idempotency check).
+    /// </summary>
+    Task<bool> BatchResultExistsAsync(Guid messageId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adds a batch result record.
+    /// </summary>
+    void AddBatchResult(JobRunBatchResult batchResult);
+
+    /// <summary>
+    /// Returns aggregated counters across all stored batch results for the given JobRun.
+    /// </summary>
+    Task<JobRunBatchResultTotals> GetBatchResultTotalsAsync(Guid jobRunId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the number of batch result rows recorded so far for the given JobRun.
+    /// Used by the aggregator to decide whether every expected batch (see
+    /// <see cref="ProductsImportJob.TotalImportBatches"/>) has already been reported.
+    /// </summary>
+    Task<int> CountBatchResultsAsync(Guid jobRunId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Persists all pending changes.
+    /// </summary>
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

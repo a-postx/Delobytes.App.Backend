@@ -8,16 +8,18 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
-/// Aggregates batch results and finalises the SyncJob once every expected batch has been
-/// recorded (see <see cref="SyncJob.TotalImportBatches"/>) — not simply when the batch flagged
-/// IsLastBatch happens to arrive, since a small trailing batch can finish before larger sibling
-/// batches still in flight. Idempotent: duplicate deliveries are skipped via MessageId
-/// deduplication, and concurrent finalisation attempts are serialised via the Status
-/// concurrency token on SyncJob.
+/// Aggregates batch results and finalises the JobRun once every expected batch has been
+/// recorded (see <see cref="ProductsImportJob.TotalImportBatches"/>) — not simply when the batch
+/// flagged IsLastBatch happens to arrive, since a small trailing batch can finish before larger
+/// sibling batches still in flight. Idempotent: duplicate deliveries are skipped via MessageId
+/// deduplication, and concurrent finalisation attempts are serialised via JobRun's xmin
+/// concurrency token (see <see cref="Contracts.Interfaces.IRowVersionedEntity"/>).
 /// </summary>
 public class ProcessProductImportBatchCompletedConsumer
 {
-    private readonly ISyncJobRepository _syncJobRepository;
+    private readonly IJobRunRepository _jobRunRepository;
+    private readonly ISyncCheckpointRepository _syncCheckpointRepository;
+    private readonly IConnectionRepository _connectionRepository;
     private readonly IEventPublisher _eventPublisher;
     private readonly ILogger<ProcessProductImportBatchCompletedConsumer> _logger;
 
@@ -25,11 +27,15 @@ public class ProcessProductImportBatchCompletedConsumer
     /// Initializes a new instance of the <see cref="ProcessProductImportBatchCompletedConsumer"/> class.
     /// </summary>
     public ProcessProductImportBatchCompletedConsumer(
-        ISyncJobRepository syncJobRepository,
+        IJobRunRepository jobRunRepository,
+        ISyncCheckpointRepository syncCheckpointRepository,
+        IConnectionRepository connectionRepository,
         IEventPublisher eventPublisher,
         ILogger<ProcessProductImportBatchCompletedConsumer> logger)
     {
-        _syncJobRepository = syncJobRepository;
+        _jobRunRepository = jobRunRepository;
+        _syncCheckpointRepository = syncCheckpointRepository;
+        _connectionRepository = connectionRepository;
         _eventPublisher = eventPublisher;
         _logger = logger;
     }
@@ -46,57 +52,50 @@ public class ProcessProductImportBatchCompletedConsumer
         CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "ProcessProductImportBatchCompletedConsumer: SyncJobId={SyncJobId}, MessageId={MessageId}, IsLastBatch={IsLastBatch}, RecordsProcessed={RecordsProcessed}",
-            message.SyncJobId,
+            "ProcessProductImportBatchCompletedConsumer: JobRunId={JobRunId}, MessageId={MessageId}, IsLastBatch={IsLastBatch}, RecordsProcessed={RecordsProcessed}",
+            message.JobRunId,
             messageId,
             message.IsLastBatch,
             message.RecordsProcessed);
 
-        SyncJob? syncJob = await _syncJobRepository.FindByIdAsync(message.SyncJobId, cancellationToken);
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(message.JobRunId, cancellationToken);
 
-        if (syncJob == null)
+        if (jobRun == null)
         {
             _logger.LogWarning(
-                "SyncJob {SyncJobId} not found for batch result MessageId={MessageId}, skipping",
-                message.SyncJobId,
-                messageId);
-            return;
-        }
-
-        // Cancelled jobs should not accumulate results — drop silently.
-        if (syncJob.Status == SyncJobStatus.Cancelled)
-        {
-            _logger.LogInformation(
-                "SyncJob {SyncJobId} is Cancelled, dropping batch result MessageId={MessageId}",
-                message.SyncJobId,
+                "JobRun {JobRunId} not found for batch result MessageId={MessageId}, skipping",
+                message.JobRunId,
                 messageId);
             return;
         }
 
         // Idempotency: skip if this MessageId was already recorded.
-        bool alreadyProcessed = await _syncJobRepository.BatchResultExistsAsync(messageId, cancellationToken);
+        bool alreadyProcessed = await _jobRunRepository.BatchResultExistsAsync(messageId, cancellationToken);
 
         if (alreadyProcessed)
         {
             _logger.LogInformation(
-                "Batch result MessageId={MessageId} for SyncJob {SyncJobId} already recorded, skipping",
+                "Batch result MessageId={MessageId} for JobRun {JobRunId} already recorded, skipping",
                 messageId,
-                message.SyncJobId);
+                message.JobRunId);
 
             // If this is a redelivered last-batch and the job is already terminal, re-publish
             // ProductsImportCompletedEvent so downstream consumers don't get stuck.
-            if (message.IsLastBatch && IsTerminalStatus(syncJob.Status))
+            if (message.IsLastBatch && IsTerminalStatus(jobRun.Status))
             {
-                await PublishCompletedEventAsync(syncJob, cancellationToken);
+                await PublishCompletedEventAsync(jobRun, cancellationToken);
             }
 
             return;
         }
 
-        SyncJobBatchResult batchResult = new SyncJobBatchResult
+        // Cancelled fix: unlike the old SyncJob model (which dropped incoming results for a
+        // Cancelled job), the batch result is still recorded and its counters still accumulated,
+        // so a cancelled run reports what it actually completed instead of zeroes.
+        JobRunBatchResult batchResult = new JobRunBatchResult
         {
             Id = Guid.NewGuid(),
-            SyncJobId = message.SyncJobId,
+            JobRunId = message.JobRunId,
             MessageId = messageId,
             RecordsProcessed = message.RecordsProcessed,
             RecordsCreated = message.RecordsCreated,
@@ -108,7 +107,17 @@ public class ProcessProductImportBatchCompletedConsumer
             ReceivedAt = DateTimeOffset.UtcNow,
         };
 
-        _syncJobRepository.AddBatchResult(batchResult);
+        _jobRunRepository.AddBatchResult(batchResult);
+
+        ProductsImportJob? importJob = await _jobRunRepository.GetProductsImportJobAsync(jobRun.Id, cancellationToken);
+
+        if (importJob == null)
+        {
+            _logger.LogError(
+                "JobRun {JobRunId}: no ProductsImportJob row found, cannot track TotalImportBatches",
+                jobRun.Id);
+            return;
+        }
 
         // The terminal batch is the only one that knows the final batch count (see
         // ProcessProductsImportConsumer.PublishBatchAsync). Persist it on first sight so that
@@ -117,143 +126,161 @@ public class ProcessProductImportBatchCompletedConsumer
         // batch literally flagged IsLastBatch being allowed to do so.
         if (message.IsLastBatch)
         {
-            syncJob.TotalImportBatches = message.TotalBatches;
-            _syncJobRepository.Update(syncJob);
+            importJob.TotalImportBatches = message.TotalBatches;
         }
 
-        await _syncJobRepository.SaveChangesAsync(cancellationToken);
+        await _jobRunRepository.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Recorded batch result for SyncJob {SyncJobId}, MessageId={MessageId}",
-            message.SyncJobId,
+            "Recorded batch result for JobRun {JobRunId}, MessageId={MessageId}",
+            message.JobRunId,
             messageId);
 
         // Total batch count still unknown: the terminal batch (possibly a small trailing one)
-        // hasn't been reported by anyone yet, so this SyncJob cannot be finalised regardless of
+        // hasn't been reported by anyone yet, so this JobRun cannot be finalised regardless of
         // how many batch results have already been recorded.
-        if (syncJob.TotalImportBatches == null)
+        if (importJob.TotalImportBatches == null)
         {
             return;
         }
 
-        int recordedBatches = await _syncJobRepository.CountBatchResultsAsync(message.SyncJobId, cancellationToken);
+        int recordedBatches = await _jobRunRepository.CountBatchResultsAsync(message.JobRunId, cancellationToken);
 
-        if (recordedBatches < syncJob.TotalImportBatches.Value)
+        if (recordedBatches < importJob.TotalImportBatches.Value)
         {
             // Other batches are still being processed; whichever one brings the count up to
             // TotalImportBatches will finalise the job — not necessarily this one, and not
             // necessarily the one flagged IsLastBatch.
             _logger.LogInformation(
-                "SyncJob {SyncJobId}: {Recorded}/{Total} batch results recorded, waiting for the rest",
-                syncJob.Id,
+                "JobRun {JobRunId}: {Recorded}/{Total} batch results recorded, waiting for the rest",
+                jobRun.Id,
                 recordedBatches,
-                syncJob.TotalImportBatches.Value);
+                importJob.TotalImportBatches.Value);
 
             return;
         }
 
         // All expected batches are recorded — aggregate all stored results and finalise the job.
-        SyncJobBatchResultTotals totals = await _syncJobRepository.GetBatchResultTotalsAsync(
-            message.SyncJobId, cancellationToken);
+        JobRunBatchResultTotals totals = await _jobRunRepository.GetBatchResultTotalsAsync(
+            message.JobRunId, cancellationToken);
 
-        syncJob.RecordsProcessed = totals.TotalProcessed;
-        syncJob.RecordsCreated = totals.TotalCreated;
-        syncJob.RecordsUpdated = totals.TotalUpdated;
-        syncJob.RecordsSkipped = totals.TotalSkipped;
-        syncJob.RecordsFailed = totals.TotalFailed;
-        syncJob.CompletedAt = DateTimeOffset.UtcNow;
+        jobRun.RecordsCreated = totals.TotalCreated;
+        jobRun.RecordsUpdated = totals.TotalUpdated;
+        jobRun.RecordsSkipped = totals.TotalSkipped;
+        jobRun.RecordsFailed = totals.TotalFailed;
+        jobRun.CompletedAt = DateTimeOffset.UtcNow;
 
         bool hasErrors = totals.TotalFailed > 0 || totals.CombinedErrors != null;
-        bool hasSuccesses = totals.TotalCreated > 0 || totals.TotalUpdated > 0 || totals.TotalSkipped > 0;
 
-        if (!hasErrors)
+        if (jobRun.Status == JobStatus.Cancelled)
         {
-            syncJob.Status = SyncJobStatus.Success;
+            // Preserve the cancellation outcome — the counters above already reflect whatever
+            // was actually processed before the cooperative stop took effect.
+            jobRun.Error = totals.CombinedErrors;
         }
-        else if (hasSuccesses)
+        else if (!hasErrors)
         {
-            syncJob.Status = SyncJobStatus.PartiallySucceeded;
-            syncJob.ErrorMessage = totals.CombinedErrors;
+            jobRun.Status = JobStatus.Success;
         }
         else
         {
-            // All records failed or a fatal error occurred.
-            syncJob.Status = SyncJobStatus.Failed;
-            syncJob.ErrorMessage = totals.CombinedErrors;
+            // JobStatus has no "partially succeeded" value (unlike the old SyncJobStatus): any
+            // failed record makes the run Failed even if other records in the same batch succeeded.
+            jobRun.Status = JobStatus.Failed;
+            jobRun.Error = totals.CombinedErrors;
             _logger.LogError("Error importing products batch: {Message}", totals.CombinedErrors);
         }
 
-        _syncJobRepository.Update(syncJob);
-
         try
         {
-            await _syncJobRepository.SaveChangesAsync(cancellationToken);
+            await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Status is configured as a concurrency token (SyncJobConfiguration): the UPDATE
-            // statement above carried "WHERE Status = 'Running'" built from the value loaded at
-            // the start of this call. Zero rows were affected because another batch-completed
-            // event — processed concurrently against the same recordedBatches threshold — already
-            // flipped the status first and published ProductsImportCompletedEvent. Stepping aside
-            // here avoids a double finalisation / duplicate completion event.
+            // JobRun.RowVersion (xmin) is the concurrency token: the UPDATE above carried the
+            // row version loaded at the start of this call. Zero rows were affected because
+            // another batch-completed event — processed concurrently against the same
+            // recordedBatches threshold — already finalised the job first and published
+            // ProductsImportCompletedEvent. Stepping aside here avoids a double finalisation.
             _logger.LogInformation(
-                "SyncJob {SyncJobId} was already finalised by a concurrently processed batch result, skipping",
-                syncJob.Id);
+                "JobRun {JobRunId} was already finalised by a concurrently processed batch result, skipping",
+                jobRun.Id);
 
             return;
         }
 
         _logger.LogInformation(
-            "SyncJob {SyncJobId} finalised with status {Status}. Processed={Processed}, Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
-            syncJob.Id,
-            syncJob.Status,
-            syncJob.RecordsProcessed,
-            syncJob.RecordsCreated,
-            syncJob.RecordsUpdated,
-            syncJob.RecordsSkipped,
-            syncJob.RecordsFailed);
+            "JobRun {JobRunId} finalised with status {Status}. Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
+            jobRun.Id,
+            jobRun.Status,
+            jobRun.RecordsCreated,
+            jobRun.RecordsUpdated,
+            jobRun.RecordsSkipped,
+            jobRun.RecordsFailed);
 
-        await PublishCompletedEventAsync(syncJob, cancellationToken);
+        // The watermark only advances on an actually successful run: a Failed/Cancelled run
+        // must not move SyncCheckpoint forward, or the next run would skip records this one
+        // never confirmed. Connection.LastSyncAt, in contrast, records that *a* run completed
+        // at all (any status), per decision 12 — used for "last sync attempt" display, not resume.
+        if (jobRun.Status == JobStatus.Success)
+        {
+            SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository.GetAsync(
+                jobRun.ConnectionId, jobRun.JobType, cancellationToken);
+
+            if (syncCheckpoint != null)
+            {
+                syncCheckpoint.LastSuccessAt = DateTimeOffset.UtcNow;
+                syncCheckpoint.LastJobRunId = jobRun.Id;
+                await _syncCheckpointRepository.UpsertAsync(syncCheckpoint, cancellationToken);
+            }
+        }
+
+        Connection? connection = await _connectionRepository.FindByIdAsync(jobRun.ConnectionId, cancellationToken);
+
+        if (connection != null)
+        {
+            connection.LastSyncAt = DateTimeOffset.UtcNow;
+            await _connectionRepository.SaveChangesAsync(cancellationToken);
+        }
+
+        await PublishCompletedEventAsync(jobRun, cancellationToken);
     }
 
-    private async Task PublishCompletedEventAsync(SyncJob syncJob, CancellationToken cancellationToken)
+    private async Task PublishCompletedEventAsync(JobRun jobRun, CancellationToken cancellationToken)
     {
         try
         {
             ProductsImportCompletedEvent completedEvent = new ProductsImportCompletedEvent
             {
-                SyncJobId = syncJob.Id,
-                IsSuccess = syncJob.Status == SyncJobStatus.Success
-                    || syncJob.Status == SyncJobStatus.PartiallySucceeded,
-                ErrorMessage = syncJob.ErrorMessage,
-                TotalRecordsProcessed = syncJob.RecordsProcessed,
-                TotalRecordsCreated = syncJob.RecordsCreated,
-                TotalRecordsUpdated = syncJob.RecordsUpdated,
-                TotalRecordsSkipped = syncJob.RecordsSkipped,
-                TotalRecordsFailed = syncJob.RecordsFailed,
+                JobRunId = jobRun.Id,
+                IsSuccess = jobRun.Status == JobStatus.Success,
+                ErrorMessage = jobRun.Error,
+                TotalRecordsProcessed = jobRun.RecordsCreated + jobRun.RecordsUpdated + jobRun.RecordsSkipped + jobRun.RecordsFailed,
+                TotalRecordsCreated = jobRun.RecordsCreated,
+                TotalRecordsUpdated = jobRun.RecordsUpdated,
+                TotalRecordsSkipped = jobRun.RecordsSkipped,
+                TotalRecordsFailed = jobRun.RecordsFailed,
             };
 
             await _eventPublisher.PublishAsync(completedEvent, cancellationToken);
 
             _logger.LogInformation(
-                "Published ProductsImportCompletedEvent for SyncJob {SyncJobId}",
-                syncJob.Id);
+                "Published ProductsImportCompletedEvent for JobRun {JobRunId}",
+                jobRun.Id);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "Failed to publish ProductsImportCompletedEvent for SyncJob {SyncJobId}",
-                syncJob.Id);
+                "Failed to publish ProductsImportCompletedEvent for JobRun {JobRunId}",
+                jobRun.Id);
         }
     }
 
-    private static bool IsTerminalStatus(SyncJobStatus status)
+    private static bool IsTerminalStatus(JobStatus status)
     {
-        return status == SyncJobStatus.Success
-            || status == SyncJobStatus.Failed
-            || status == SyncJobStatus.PartiallySucceeded
-            || status == SyncJobStatus.Cancelled;
+        return status == JobStatus.Success
+            || status == JobStatus.Failed
+            || status == JobStatus.Cancelled;
     }
 }

@@ -7,9 +7,9 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 public record ProductBatchImportCompletedEvent
 {
     /// <summary>
-    /// Identifier of the SyncJob that tracks this import.
+    /// Identifier of the JobRun that tracks this import.
     /// </summary>
-    public Guid SyncJobId { get; init; }
+    public Guid JobRunId { get; init; }
 
     /// <summary>
     /// Number of product cards processed in this batch.
@@ -43,7 +43,7 @@ public record ProductBatchImportCompletedEvent
 
     /// <summary>
     /// True if this is the last batch in the import job.
-    /// When true, it carries <see cref="TotalBatches"/> — the aggregator finalises the SyncJob
+    /// When true, it carries <see cref="TotalBatches"/> — the aggregator finalises the JobRun
     /// once it has recorded that many batch results in total, which may happen on this event
     /// or on a later-arriving one (see ProcessProductImportBatchCompletedConsumer).
     /// </summary>

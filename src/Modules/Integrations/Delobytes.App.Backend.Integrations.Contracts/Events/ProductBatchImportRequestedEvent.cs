@@ -9,9 +9,9 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 public record ProductBatchImportRequestedEvent
 {
     /// <summary>
-    /// Identifier of the SyncJob that tracks this import.
+    /// Identifier of the JobRun that tracks this import.
     /// </summary>
-    public Guid SyncJobId { get; init; }
+    public Guid JobRunId { get; init; }
 
     /// <summary>
     /// Identifier of the Connection from which products are imported.
