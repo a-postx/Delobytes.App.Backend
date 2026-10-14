@@ -52,9 +52,6 @@ public class WildberriesApiClientGetProductCardsTests
     {
         HttpClient typedClient = mockHttp.ToHttpClient();
 
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
-
         Mock<IEndpointResolver> endpointResolver = endpointResolverMock ?? new Mock<IEndpointResolver>();
 
         if (endpointResolverMock == null)
@@ -69,7 +66,6 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
-            factory.Object,
             endpointResolver.Object,
             logger ?? NullLogger<WildberriesApiClient>.Instance);
 
@@ -144,7 +140,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.Should().NotBeNull();
         result.IsSuccess.Should().BeTrue();
@@ -192,7 +188,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         WildberriesCardSnapshot card = result.Data!.Cards.First();
         card.LengthCm.Should().BeNull();
@@ -230,7 +226,7 @@ public class WildberriesApiClientGetProductCardsTests
             ProductId = 987654321
         };
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(cursor, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), cursor, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.Cards.Should().BeEmpty();
@@ -258,7 +254,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.NextCursor.Should().BeNull();
@@ -279,7 +275,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.Cards.Should().BeEmpty();
@@ -295,7 +291,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(401);
@@ -311,7 +307,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(403);
@@ -330,7 +326,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(429);
@@ -346,7 +342,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(500);
@@ -362,7 +358,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Network error");
@@ -378,7 +374,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Request timeout");
@@ -394,7 +390,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Invalid JSON");
@@ -409,7 +405,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Empty response");
@@ -437,7 +433,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.Cards.Should().HaveCount(1);
@@ -451,7 +447,7 @@ public class WildberriesApiClientGetProductCardsTests
         MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        Func<Task> act = async () => await client.GetProductCardsAsync(null, 0, CancellationToken.None);
+        Func<Task> act = async () => await client.GetProductCardsAsync(Guid.NewGuid(), null, 0, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>()
             .WithMessage("*Limit must be between 1 and 100*");
@@ -463,7 +459,7 @@ public class WildberriesApiClientGetProductCardsTests
         MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        Func<Task> act = async () => await client.GetProductCardsAsync(null, 101, CancellationToken.None);
+        Func<Task> act = async () => await client.GetProductCardsAsync(Guid.NewGuid(), null, 101, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>()
             .WithMessage("*Limit must be between 1 and 100*");
@@ -490,7 +486,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp, endpointResolver);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
 
@@ -529,7 +525,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         WildberriesCardSnapshot card = result.Data!.Cards.First();
@@ -569,8 +565,6 @@ public class WildberriesApiClientGetProductCardsTests
             }));
 
         HttpClient typedClient = mockHttp.ToHttpClient();
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
 
         Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
         endpointResolver
@@ -582,14 +576,13 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
-            factory.Object,
             endpointResolver.Object,
             loggerMock.Object);
 
         client.SetTemplate(TestTemplate);
 
         // Act
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -641,8 +634,6 @@ public class WildberriesApiClientGetProductCardsTests
             }));
 
         HttpClient typedClient = mockHttp.ToHttpClient();
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
 
         Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
         endpointResolver
@@ -654,14 +645,13 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
-            factory.Object,
             endpointResolver.Object,
             loggerMock.Object);
 
         client.SetTemplate(TestTemplate);
 
         // Act
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -709,8 +699,6 @@ public class WildberriesApiClientGetProductCardsTests
             }));
 
         HttpClient typedClient = mockHttp.ToHttpClient();
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(mockHttp.ToHttpClient());
 
         Mock<IEndpointResolver> endpointResolver = new Mock<IEndpointResolver>();
         endpointResolver
@@ -722,14 +710,13 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
-            factory.Object,
             endpointResolver.Object,
             loggerMock.Object);
 
         client.SetTemplate(TestTemplate);
 
         // Act
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -788,7 +775,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.ErrorMessage.Should().BeNull();
@@ -847,7 +834,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
 
@@ -907,7 +894,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.Cards.Should().HaveCount(1);
@@ -927,7 +914,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Invalid JSON");
@@ -951,7 +938,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp, logger: loggerMock.Object);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(401);
@@ -974,7 +961,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp, logger: loggerMock.Object);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(403);
@@ -997,7 +984,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         WildberriesApiClient client = BuildClient(mockHttp, logger: loggerMock.Object);
 
-        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(null, 50, CancellationToken.None);
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
 

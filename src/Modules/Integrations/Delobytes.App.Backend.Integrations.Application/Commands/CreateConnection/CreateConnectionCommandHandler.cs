@@ -66,7 +66,11 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
 
         IChannelApiClient apiClient = _channelApiClientFactory.Create(template);
 
+        // No ConnectionId yet: the connection being validated here is not persisted until after
+        // this call succeeds. WildberriesAuthHandler is unaffected either way since this call
+        // sets its own explicit Authorization header from request.ApiKey.
         AccountInfo? accountInfo = await apiClient.GetAccountInfoAsync(
+            null,
             request.ApiKey,
             request.ApiSecret,
             request.Settings,

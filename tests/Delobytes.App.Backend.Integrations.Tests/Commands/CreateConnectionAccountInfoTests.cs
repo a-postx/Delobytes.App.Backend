@@ -83,6 +83,7 @@ public class CreateConnectionAccountInfoTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -120,6 +121,7 @@ public class CreateConnectionAccountInfoTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -153,6 +155,7 @@ public class CreateConnectionAccountInfoTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -191,6 +194,7 @@ public class CreateConnectionAccountInfoTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -223,6 +227,7 @@ public class CreateConnectionAccountInfoTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -246,6 +251,7 @@ public class CreateConnectionAccountInfoTests
         }, CancellationToken.None);
 
         _apiClient.Verify(c => c.GetAccountInfoAsync(
+            null,
             "ozon-key",
             "ozon-secret",
             settings,
@@ -260,6 +266,7 @@ public class CreateConnectionAccountInfoTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),

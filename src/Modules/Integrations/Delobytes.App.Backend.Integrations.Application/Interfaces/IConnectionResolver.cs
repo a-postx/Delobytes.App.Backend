@@ -8,4 +8,12 @@ namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 public interface IConnectionResolver
 {
     public Task<Connection> ResolveAsync(string channelCode, CancellationToken ct);
+
+    /// <summary>
+    /// Resolves an active Connection by its identifier, regardless of channel code.
+    /// Used instead of <see cref="ResolveAsync"/> wherever the specific connection to
+    /// authenticate against is already known (e.g. a JobRun), so that tenants with multiple
+    /// connections for the same channel are not resolved arbitrarily.
+    /// </summary>
+    public Task<Connection> ResolveByIdAsync(Guid connectionId, CancellationToken ct);
 }

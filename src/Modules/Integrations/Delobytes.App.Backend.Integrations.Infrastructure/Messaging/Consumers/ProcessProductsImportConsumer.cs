@@ -133,6 +133,7 @@ public class ProcessProductsImportConsumer
                 cancellationToken.ThrowIfCancellationRequested();
 
                 ApiResponse<ProductCardsData> apiResponse = await apiClient.GetProductCardsAsync(
+                    connection.Id,
                     cursor,
                     batchSize,
                     cancellationToken);

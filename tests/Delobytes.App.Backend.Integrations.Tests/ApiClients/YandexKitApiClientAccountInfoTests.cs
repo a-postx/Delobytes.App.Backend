@@ -43,7 +43,7 @@ public class YandexKitApiClientAccountInfoTests
         YandexKitApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "yk-key", null, null, CancellationToken.None);
+            null, "yk-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("my-yandex-store");
@@ -62,7 +62,7 @@ public class YandexKitApiClientAccountInfoTests
         YandexKitApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "yk-key", null, null, CancellationToken.None);
+            null, "yk-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().BeNull();
@@ -77,7 +77,7 @@ public class YandexKitApiClientAccountInfoTests
         YandexKitApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "bad-key", null, null, CancellationToken.None);
+            null, "bad-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -91,7 +91,7 @@ public class YandexKitApiClientAccountInfoTests
         YandexKitApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "yk-key", null, null, CancellationToken.None);
+            null, "yk-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -105,7 +105,7 @@ public class YandexKitApiClientAccountInfoTests
         YandexKitApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "yk-key", null, null, CancellationToken.None);
+            null, "yk-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -125,7 +125,7 @@ public class YandexKitApiClientAccountInfoTests
         YandexKitApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "secret-yk-key", null, null, CancellationToken.None);
+            null, "secret-yk-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("shop-slug");

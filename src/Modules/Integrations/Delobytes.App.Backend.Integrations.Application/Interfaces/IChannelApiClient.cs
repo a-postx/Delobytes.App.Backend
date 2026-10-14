@@ -18,11 +18,16 @@ public interface IChannelApiClient
     /// Retrieves account/shop information for the supplied credentials.
     /// Returns null when the marketplace does not expose this information or the call fails.
     /// </summary>
+    /// <param name="connectionId">
+    /// Identifier of the Connection to authenticate as, when one already exists. Null while
+    /// validating credentials for a connection still being created.
+    /// </param>
     /// <param name="apiKey">API key.</param>
     /// <param name="apiSecret">Optional API secret.</param>
     /// <param name="settings">Optional extra settings (e.g. sellerId for Ozon).</param>
     /// <param name="ct">Cancellation token.</param>
     public Task<AccountInfo?> GetAccountInfoAsync(
+        Guid? connectionId,
         string apiKey,
         string? apiSecret,
         Dictionary<string, string>? settings,
@@ -31,9 +36,11 @@ public interface IChannelApiClient
     /// <summary>
     /// Retrieves one page of product cards using cursor-based pagination.
     /// </summary>
+    /// <param name="connectionId">Identifier of the Connection to authenticate as.</param>
     /// <param name="cursor">Cursor for pagination. Null for the first page.</param>
     /// <param name="limit">Maximum number of cards to retrieve (1-100).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>API response containing product cards data with pagination cursor.</returns>
-    public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct);
+    public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(
+        Guid connectionId, ProductCardsCursor? cursor, int limit, CancellationToken ct);
 }

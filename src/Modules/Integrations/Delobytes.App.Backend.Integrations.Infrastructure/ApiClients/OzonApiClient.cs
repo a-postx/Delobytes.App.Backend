@@ -34,6 +34,7 @@ public class OzonApiClient : IChannelApiClient
 
     /// <inheritdoc/>
     public async Task<AccountInfo?> GetAccountInfoAsync(
+        Guid? connectionId,
         string apiKey,
         string? apiSecret,
         Dictionary<string, string>? settings,
@@ -87,7 +88,8 @@ public class OzonApiClient : IChannelApiClient
         }
     }
 
-    public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(ProductCardsCursor? cursor, int limit, CancellationToken ct)
+    public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(
+        Guid connectionId, ProductCardsCursor? cursor, int limit, CancellationToken ct)
     {
         throw new NotImplementedException();
     }

@@ -36,7 +36,6 @@ public class WildberriesApiClient : IChannelApiClient
     private const int ResponseBodyLogLimit = 500;
 
     private readonly HttpClient _httpClient;
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IEndpointResolver _endpointResolver;
     private readonly ILogger<WildberriesApiClient> _logger;
 
@@ -49,12 +48,10 @@ public class WildberriesApiClient : IChannelApiClient
     /// </summary>
     public WildberriesApiClient(
         HttpClient httpClient,
-        IHttpClientFactory httpClientFactory,
         IEndpointResolver endpointResolver,
         ILogger<WildberriesApiClient> logger)
     {
         _httpClient = httpClient;
-        _httpClientFactory = httpClientFactory;
         _endpointResolver = endpointResolver;
         _logger = logger;
     }
@@ -88,6 +85,7 @@ public class WildberriesApiClient : IChannelApiClient
 
     /// <inheritdoc/>
     public async Task<AccountInfo?> GetAccountInfoAsync(
+        Guid? connectionId,
         string apiKey,
         string? apiSecret,
         Dictionary<string, string>? settings,
@@ -104,17 +102,23 @@ public class WildberriesApiClient : IChannelApiClient
             ChannelEndpointType.Common,
             ct);
 
-        using HttpClient client = _httpClientFactory.CreateClient();
-
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Get,
             $"{baseUrl}/api/v1/seller-info");
 
+        // Explicit header takes precedence over WildberriesAuthHandler's own Connection
+        // resolution: the key being validated here may not belong to any persisted Connection
+        // yet (new connection setup).
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+
+        if (connectionId.HasValue)
+        {
+            request.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, connectionId.Value);
+        }
 
         try
         {
-            using HttpResponseMessage response = await client.SendAsync(request, ct);
+            using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -146,6 +150,7 @@ public class WildberriesApiClient : IChannelApiClient
 
     /// <inheritdoc/>
     public async Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(
+        Guid connectionId,
         ProductCardsCursor? cursor,
         int limit,
         CancellationToken ct)
@@ -198,6 +203,8 @@ public class WildberriesApiClient : IChannelApiClient
                 {
                     Content = content
                 };
+
+                request.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, connectionId);
 
                 using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
 

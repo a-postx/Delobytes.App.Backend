@@ -34,14 +34,9 @@ public class WildberriesApiClientAccountInfoTests
         MockHttpMessageHandler accountInfoHandler,
         Mock<IEndpointResolver>? endpointResolverMock = null)
     {
-        // typed HttpClient идёт через WildberriesAuthHandler в продакшне;
-        // в тестах GetAccountInfoAsync использует IHttpClientFactory, поэтому typed — заглушка
-        HttpClient typedClient = new HttpClient();
-
-        Mock<IHttpClientFactory> factory = new Mock<IHttpClientFactory>();
-        factory
-            .Setup(f => f.CreateClient(It.IsAny<string>()))
-            .Returns(accountInfoHandler.ToHttpClient());
+        // GetAccountInfoAsync now sends through the typed HttpClient (same pipeline as
+        // GetProductCardsAsync), so the mock handler is the typed client's transport directly.
+        HttpClient typedClient = accountInfoHandler.ToHttpClient();
 
         Mock<IEndpointResolver> endpointResolver = endpointResolverMock ?? new Mock<IEndpointResolver>();
 
@@ -57,7 +52,6 @@ public class WildberriesApiClientAccountInfoTests
 
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
-            factory.Object,
             endpointResolver.Object,
             NullLogger<WildberriesApiClient>.Instance);
 
@@ -85,7 +79,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("Ромашка Маркет");
@@ -105,7 +99,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().BeNull();
@@ -122,7 +116,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "bad-key", null, null, CancellationToken.None);
+            null, "bad-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -136,7 +130,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -150,7 +144,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -164,7 +158,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().BeNull();
@@ -187,7 +181,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "my-wb-key", null, null, CancellationToken.None);
+            null, "my-wb-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("Магазин");
@@ -215,7 +209,7 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp, endpointResolver);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.LegalName.Should().Be("ООО Тест");
@@ -244,9 +238,64 @@ public class WildberriesApiClientAccountInfoTests
         WildberriesApiClient client = BuildClient(mockHttp, endpointResolver);
 
         Func<Task> act = async () => await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Endpoint not found");
+    }
+
+    [Fact]
+    public async Task GetAccountInfoAsync_WithConnectionId_SetsConnectionIdOption()
+    {
+        Guid connectionId = Guid.NewGuid();
+        Guid? capturedOption = null;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, SellerInfoUrl)
+            .Respond(request =>
+            {
+                capturedOption = request.Options.TryGetValue(
+                    WildberriesAuthHandler.ConnectionIdOptionKey, out Guid value)
+                    ? value
+                    : (Guid?)null;
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{}"),
+                });
+            });
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        await client.GetAccountInfoAsync(connectionId, "test-key", null, null, CancellationToken.None);
+
+        capturedOption.Should().Be(connectionId);
+    }
+
+    [Fact]
+    public async Task GetAccountInfoAsync_WithoutConnectionId_DoesNotSetConnectionIdOption()
+    {
+        bool optionWasSet = false;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, SellerInfoUrl)
+            .Respond(request =>
+            {
+                optionWasSet = request.Options.TryGetValue(
+                    WildberriesAuthHandler.ConnectionIdOptionKey, out _);
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{}"),
+                });
+            });
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        await client.GetAccountInfoAsync(null, "test-key", null, null, CancellationToken.None);
+
+        optionWasSet.Should().BeFalse();
     }
 }

@@ -59,7 +59,6 @@ public class ChannelApiClientFactoryTests
 
         services.AddTransient(sp => new WildberriesApiClient(
             httpClient,
-            sp.GetRequiredService<IHttpClientFactory>(),
             sp.GetRequiredService<IEndpointResolver>(),
             NullLogger<WildberriesApiClient>.Instance));
 
@@ -108,7 +107,6 @@ public class ChannelApiClientFactoryTests
         services.AddSingleton(resolver.Object);
         services.AddTransient(sp => new WildberriesApiClient(
             httpClient,
-            sp.GetRequiredService<IHttpClientFactory>(),
             sp.GetRequiredService<IEndpointResolver>(),
             NullLogger<WildberriesApiClient>.Instance));
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
@@ -123,7 +121,7 @@ public class ChannelApiClientFactoryTests
         // Главное утверждение: клиент из фабрики уже привязан к шаблону
         // и обращение к API не падает с требованием предварительной настройки.
         AccountInfo? accountInfo = await client.GetAccountInfoAsync(
-            "test-key", null, null, CancellationToken.None);
+            null, "test-key", null, null, CancellationToken.None);
 
         accountInfo.Should().NotBeNull();
         accountInfo!.CustomerName.Should().Be("Ромашка Маркет");

@@ -166,6 +166,7 @@ public class CreateConnectionCommandHandlerTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -227,6 +228,7 @@ public class CreateConnectionCommandHandlerTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -317,6 +319,7 @@ public class CreateConnectionCommandHandlerTests
 
         _apiClient
             .Setup(c => c.GetAccountInfoAsync(
+                It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<Dictionary<string, string>?>(),
@@ -339,5 +342,64 @@ public class CreateConnectionCommandHandlerTests
         savedConnection!.CustomerName.Should().Be("My Store");
         savedConnection.CustomerLegalName.Should().Be("LLC MyCompany");
         savedConnection.CustomerInn.Should().Be("1234567890");
+    }
+
+    [Fact]
+    public async Task Handle_ValidRequest_PassesNullConnectionIdToAccountInfoLookup()
+    {
+        // Connection does not exist yet at this point, so there is no id to resolve a
+        // Connection by — the auth handler instead relies on the raw ApiKey being validated.
+        SystemChannelTemplate template = BuildTemplate();
+        Guid channelId = Guid.NewGuid();
+
+        _templateRepo
+            .Setup(r => r.GetByCodeAsync("wildberries", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(template);
+
+        _connectionRepo
+            .Setup(r => r.HasActiveConnectionForChannelAsync(channelId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _validatorFactory
+            .Setup(f => f.Create("wildberries"))
+            .Returns(_validator.Object);
+
+        _validator
+            .Setup(v => v.ValidateAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ApiKeyValidationResult.Success());
+
+        _apiClientFactory
+            .Setup(f => f.Create(template))
+            .Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetAccountInfoAsync(
+                It.Is<Guid?>(id => id == null),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AccountInfo?)null);
+
+        _connectionRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ConnectionCreatedEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await CreateHandler().Handle(BuildCommand(channelId: channelId), CancellationToken.None);
+
+        _apiClient.Verify(
+            c => c.GetAccountInfoAsync(
+                It.Is<Guid?>(id => id == null),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<Dictionary<string, string>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

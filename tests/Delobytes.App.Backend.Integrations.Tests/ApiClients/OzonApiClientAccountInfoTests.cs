@@ -56,7 +56,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "ozon-key", null, ValidSettings(), CancellationToken.None);
+            null, "ozon-key", null, ValidSettings(), CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("Ozon Store");
@@ -75,7 +75,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "ozon-key", null, ValidSettings(), CancellationToken.None);
+            null, "ozon-key", null, ValidSettings(), CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("My Shop");
@@ -89,7 +89,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(new MockHttpMessageHandler());
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "ozon-key", null, null, CancellationToken.None);
+            null, "ozon-key", null, null, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -105,7 +105,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(new MockHttpMessageHandler());
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "ozon-key", null, settings, CancellationToken.None);
+            null, "ozon-key", null, settings, CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -119,7 +119,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "bad-key", null, ValidSettings(), CancellationToken.None);
+            null, "bad-key", null, ValidSettings(), CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -133,7 +133,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "ozon-key", null, ValidSettings(), CancellationToken.None);
+            null, "ozon-key", null, ValidSettings(), CancellationToken.None);
 
         result.Should().BeNull();
     }
@@ -154,7 +154,7 @@ public class OzonApiClientAccountInfoTests
         OzonApiClient client = BuildClient(mockHttp);
 
         AccountInfo? result = await client.GetAccountInfoAsync(
-            "my-ozon-key", null, ValidSettings(), CancellationToken.None);
+            null, "my-ozon-key", null, ValidSettings(), CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("Shop");

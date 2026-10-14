@@ -35,4 +35,17 @@ public class ConnectionResolver : IConnectionResolver
 
         return connection;
     }
+
+    public async Task<Connection> ResolveByIdAsync(Guid connectionId, CancellationToken ct)
+    {
+        Connection? connection = await _connectionRepository.FindByIdAsync(connectionId, ct);
+
+        if (connection is null || !connection.IsActive)
+        {
+            throw new InvalidOperationException(
+                $"Active connection '{connectionId}' not found for tenant '{_tenantContext.TenantId}'.");
+        }
+
+        return connection;
+    }
 }

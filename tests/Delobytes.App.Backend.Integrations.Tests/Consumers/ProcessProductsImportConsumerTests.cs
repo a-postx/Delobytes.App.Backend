@@ -271,7 +271,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
@@ -308,7 +308,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
@@ -347,11 +347,11 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -395,11 +395,11 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -442,18 +442,18 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), cursor2));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -510,7 +510,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor>(x => x.ProductId == 999),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -530,7 +530,7 @@ public class ProcessProductsImportConsumerTests
 
         // Called with cursor from the saved checkpoint, not null.
         _apiClient.Verify(
-            c => c.GetProductCardsAsync(
+            c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor>(x => x.ProductId == 999),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
@@ -556,7 +556,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildFailureResponse("Authentication failed: Unauthorized", statusCode: 401));
 
         List<ProductsImportCompletedEvent> completedEvents = new List<ProductsImportCompletedEvent>();
@@ -598,11 +598,11 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -652,18 +652,18 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), cursor2));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -708,7 +708,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
         _eventPublisher
@@ -742,7 +742,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 100), nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
@@ -780,11 +780,11 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 50), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 50),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -827,18 +827,18 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 50), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 50),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(51, 30), cursor2));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 80),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -889,7 +889,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         // ...but an operator cancelled the job while this page's HTTP call was in flight, so the
@@ -913,7 +913,7 @@ public class ProcessProductsImportConsumerTests
         // Only the one page already in flight was fetched; the loop did not continue to
         // whatever page WB's cursor would have pointed to next.
         _apiClient.Verify(
-            c => c.GetProductCardsAsync(It.IsAny<ProductCardsCursor?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            c => c.GetProductCardsAsync(It.IsAny<Guid>(), It.IsAny<ProductCardsCursor?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         published.Should().ContainSingle("the in-flight page's records must not be discarded on cancellation");
@@ -943,7 +943,7 @@ public class ProcessProductsImportConsumerTests
         // captures what the ambient value actually is at that exact moment, standing in for the
         // handler without pulling MassTransit/HttpClientFactory into a unit test.
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Callback(() => observedJobRunId = _jobRunExecutionContext.JobRunId)
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
@@ -970,7 +970,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
@@ -996,7 +996,7 @@ public class ProcessProductsImportConsumerTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
         ProcessProductsImportConsumer consumer = CreateConsumer();

@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
@@ -47,7 +48,8 @@ public class WildberriesAuthHandlerTests
         Mock<IConnectionResolver> resolverMock,
         MockHttpMessageHandler innerHandler)
     {
-        WildberriesAuthHandler authHandler = new WildberriesAuthHandler(resolverMock.Object)
+        WildberriesAuthHandler authHandler = new WildberriesAuthHandler(
+            resolverMock.Object, NullLogger<WildberriesAuthHandler>.Instance)
         {
             InnerHandler = innerHandler,
         };
@@ -157,5 +159,90 @@ public class WildberriesAuthHandlerTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*wildberries*");
+    }
+
+    [Fact]
+    public async Task SendAsync_ConnectionIdOptionSet_ResolvesByIdInsteadOfFirstOrDefault()
+    {
+        Guid connectionId = Guid.NewGuid();
+        Connection connection = BuildConnection("specific-connection-key");
+
+        Mock<IConnectionResolver> resolver = new Mock<IConnectionResolver>();
+        resolver
+            .Setup(r => r.ResolveByIdAsync(connectionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        string? capturedAuthHeader = null;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, "https://example.com/*")
+            .Respond(request =>
+            {
+                capturedAuthHeader = GetAuthorizationHeaderValue(request);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            });
+
+        HttpClient client = BuildHttpClientWithHandler(resolver, mockHttp);
+
+        using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/any");
+        request.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, connectionId);
+
+        await client.SendAsync(request);
+
+        capturedAuthHeader.Should().Be("specific-connection-key");
+        resolver.Verify(r => r.ResolveByIdAsync(connectionId, It.IsAny<CancellationToken>()), Times.Once);
+        resolver.Verify(r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendAsync_NoConnectionIdOption_FallsBackToResolveAsync()
+    {
+        Connection connection = BuildConnection("fallback-key");
+
+        Mock<IConnectionResolver> resolver = new Mock<IConnectionResolver>();
+        resolver
+            .Setup(r => r.ResolveAsync("wildberries", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When("*").Respond(HttpStatusCode.OK);
+
+        HttpClient client = BuildHttpClientWithHandler(resolver, mockHttp);
+        await client.GetAsync("https://example.com/anything");
+
+        resolver.Verify(r => r.ResolveAsync("wildberries", It.IsAny<CancellationToken>()), Times.Once);
+        resolver.Verify(r => r.ResolveByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendAsync_RequestAlreadyHasAuthorizationHeader_SkipsConnectionResolutionEntirely()
+    {
+        // Simulates GetAccountInfoAsync validating a not-yet-persisted connection with a raw
+        // API key: the handler must not overwrite it with an unrelated resolved Connection.
+        Mock<IConnectionResolver> resolver = new Mock<IConnectionResolver>();
+
+        string? capturedAuthHeader = null;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, "https://example.com/*")
+            .Respond(request =>
+            {
+                capturedAuthHeader = GetAuthorizationHeaderValue(request);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            });
+
+        HttpClient client = BuildHttpClientWithHandler(resolver, mockHttp);
+
+        using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/any");
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer pre-set-key");
+        request.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, Guid.NewGuid());
+
+        await client.SendAsync(request);
+
+        capturedAuthHeader.Should().Be("Bearer pre-set-key");
+        resolver.Verify(r => r.ResolveByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        resolver.Verify(r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
