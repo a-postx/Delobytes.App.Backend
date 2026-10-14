@@ -59,9 +59,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<DateTimeOffset?>("LastSyncAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -73,8 +70,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<Guid>("SystemChannelTemplateId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("TenantId")
-                        .IsRequired()
+                    b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
@@ -85,8 +81,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.HasIndex("ChannelId");
 
                     b.HasIndex("IsActive");
-
-                    b.HasIndex("LastSyncAt");
 
                     b.HasIndex("SystemChannelTemplateId");
 
@@ -126,8 +120,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<Guid>("SyncJobId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("TenantId")
-                        .IsRequired()
+                    b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
@@ -160,12 +153,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset>("DateRangeFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("DateRangeTo")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -185,9 +172,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<int>("RecordsFailed")
                         .HasColumnType("integer");
 
-                    b.Property<int>("RecordsImported")
-                        .HasColumnType("integer");
-
                     b.Property<int>("RecordsProcessed")
                         .HasColumnType("integer");
 
@@ -204,13 +188,11 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
-                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<Guid?>("TenantId")
-                        .IsRequired()
+                    b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
                     b.Property<int?>("TotalImportBatches")
@@ -219,8 +201,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ConnectionId");
-
-                    b.HasIndex("DateRangeFrom");
 
                     b.HasIndex("JobType");
 
@@ -270,8 +250,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<Guid>("SyncJobId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("TenantId")
-                        .IsRequired()
+                    b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
