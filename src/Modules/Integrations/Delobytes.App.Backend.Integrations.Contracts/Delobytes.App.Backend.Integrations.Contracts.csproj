@@ -7,4 +7,11 @@
 	<GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- OrdersImportCompletedEvent.Status is typed as the module's JobStatus enum so every
+         consumer (in-module or cross-module) observes the same finite set of terminal states
+         instead of a duplicated/parallel enum. -->
+    <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Domain\Delobytes.App.Backend.Integrations.Domain.csproj" />
+  </ItemGroup>
+
 </Project>
