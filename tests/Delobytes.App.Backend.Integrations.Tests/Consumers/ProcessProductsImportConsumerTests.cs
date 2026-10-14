@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
+using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
@@ -159,12 +160,12 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJobId, ConnectionId = Guid.NewGuid() },
+            new ProductsImportRequestedEvent { JobRunId = syncJobId, ConnectionId = Guid.NewGuid() },
             CancellationToken.None);
 
         _clientFactory.Verify(f => f.Create(It.IsAny<SystemChannelTemplate>()), Times.Never);
         _eventPublisher.Verify(
-            p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()),
@@ -192,7 +193,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         _clientFactory.Verify(f => f.Create(It.IsAny<SystemChannelTemplate>()), Times.Never);
@@ -219,7 +220,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         syncJob.Status.Should().Be(SyncJobStatus.Failed);
@@ -254,16 +255,16 @@ public class ProcessProductsImportConsumerTests
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> publishedBatches = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> publishedBatches = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => publishedBatches.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => publishedBatches.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         publishedBatches.Should().HaveCount(1);
@@ -301,16 +302,16 @@ public class ProcessProductsImportConsumerTests
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(1);
@@ -354,16 +355,16 @@ public class ProcessProductsImportConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(2);
@@ -409,16 +410,16 @@ public class ProcessProductsImportConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(1, "the empty terminal page is a signal, not a batch of its own");
@@ -469,16 +470,16 @@ public class ProcessProductsImportConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(2);
@@ -521,16 +522,16 @@ public class ProcessProductsImportConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(1000) }, nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         // Called with cursor from saved state, not null
@@ -576,7 +577,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         syncJob.Status.Should().Be(SyncJobStatus.Failed);
@@ -624,13 +625,13 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), nextCursor: null));
 
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         // Checkpoint after the run is null (import finished), but the mechanism itself is
@@ -695,13 +696,13 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(9, 2), nextCursor: null));
 
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         // After the first page is buffered (not yet published), the second page's arrival
@@ -737,13 +738,13 @@ public class ProcessProductsImportConsumerTests
             .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
 
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         syncJob.Status.Should().Be(SyncJobStatus.Running);
@@ -776,16 +777,16 @@ public class ProcessProductsImportConsumerTests
             .Setup(c => c.GetProductCardsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 75), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(1);
@@ -828,16 +829,16 @@ public class ProcessProductsImportConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(101, 60), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(2);
@@ -890,16 +891,16 @@ public class ProcessProductsImportConsumerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(101, 17), nextCursor: null));
 
-        List<ProductImportBatchRequestedEvent> published = new List<ProductImportBatchRequestedEvent>();
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductImportBatchRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<ProductImportBatchRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
 
         ProcessProductsImportConsumer consumer = CreateConsumer(batchSize: 50);
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         published.Should().HaveCount(3, "117 карточек при batchSize=50 дают три батча: 50 + 50 + 17");
@@ -962,7 +963,7 @@ public class ProcessProductsImportConsumerTests
         _syncJobExecutionContext.SyncJobId.Should().BeNull("no import is running yet");
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         observedSyncJobId.Should().Be(syncJob.Id, "the API call must be attributable to this SyncJob");
@@ -993,7 +994,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         // Leaking the ambient SyncJobId past this call would let an unrelated later HTTP call
@@ -1026,7 +1027,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         syncJob.Status.Should().Be(SyncJobStatus.Failed);
@@ -1052,7 +1053,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         _syncJobExecutionContext.SyncJobId.Should().BeNull();
@@ -1088,7 +1089,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         _rawApiResponseRepo.Verify(
@@ -1122,7 +1123,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         syncJob.Status.Should().Be(SyncJobStatus.Failed);
@@ -1152,7 +1153,7 @@ public class ProcessProductsImportConsumerTests
         ProcessProductsImportConsumer consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
-            new ProductsImportRequestedEvent { SyncJobId = syncJob.Id, ConnectionId = connection.Id },
+            new ProductsImportRequestedEvent { JobRunId = syncJob.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
         _rawApiResponseRepo.Verify(

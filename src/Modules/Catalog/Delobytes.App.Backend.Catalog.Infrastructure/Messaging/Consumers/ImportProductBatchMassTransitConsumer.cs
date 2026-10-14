@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 /// <summary>
 /// MassTransit consumer adapter for ImportProductBatchConsumer.
 /// </summary>
-public class ImportProductBatchMassTransitConsumer : IConsumer<ProductImportBatchRequestedEvent>
+public class ImportProductBatchMassTransitConsumer : IConsumer<ProductBatchImportRequestedEvent>
 {
     private readonly ImportProductBatchConsumer _consumer;
 
@@ -20,7 +20,7 @@ public class ImportProductBatchMassTransitConsumer : IConsumer<ProductImportBatc
     }
 
     /// <inheritdoc/>
-    public async Task Consume(ConsumeContext<ProductImportBatchRequestedEvent> context)
+    public async Task Consume(ConsumeContext<ProductBatchImportRequestedEvent> context)
     {
         await _consumer.ProcessAsync(context.Message, context.CancellationToken);
     }

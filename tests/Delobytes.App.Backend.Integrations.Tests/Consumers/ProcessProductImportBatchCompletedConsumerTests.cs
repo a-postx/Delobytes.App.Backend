@@ -42,7 +42,7 @@ public class ProcessProductImportBatchCompletedConsumerTests
         };
     }
 
-    private static ProductImportBatchCompletedEvent BuildEvent(
+    private static ProductBatchImportCompletedEvent BuildEvent(
         Guid syncJobId,
         bool isLastBatch = false,
         int processed = 5,
@@ -53,7 +53,7 @@ public class ProcessProductImportBatchCompletedConsumerTests
         string? errorMessage = null,
         int totalBatches = 1)
     {
-        return new ProductImportBatchCompletedEvent
+        return new ProductBatchImportCompletedEvent
         {
             SyncJobId = syncJobId,
             IsLastBatch = isLastBatch,

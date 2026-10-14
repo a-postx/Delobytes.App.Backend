@@ -35,13 +35,13 @@ public class ProcessProductImportBatchCompletedConsumer
     }
 
     /// <summary>
-    /// Processes the ProductImportBatchCompletedEvent message.
+    /// Processes the ProductBatchImportCompletedEvent message.
     /// </summary>
     /// <param name="message">Event message.</param>
     /// <param name="messageId">MassTransit MessageId used as idempotency key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task ProcessAsync(
-        ProductImportBatchCompletedEvent message,
+        ProductBatchImportCompletedEvent message,
         Guid messageId,
         CancellationToken cancellationToken)
     {

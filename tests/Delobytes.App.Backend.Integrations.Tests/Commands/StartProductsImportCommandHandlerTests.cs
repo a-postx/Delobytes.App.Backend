@@ -4,8 +4,8 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands.StartProductsImport;
+using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using FluentAssertions;
@@ -18,7 +18,8 @@ namespace Delobytes.App.Backend.Integrations.Tests.Commands;
 public class StartProductsImportCommandHandlerTests
 {
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
-    private readonly Mock<ISyncJobRepository> _syncJobRepo = new();
+    private readonly Mock<IJobRunRepository> _jobRunRepo = new();
+    private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<IUserContext> _userContext = new();
     private readonly Mock<ILogger<StartProductsImportCommandHandler>> _logger = new();
@@ -27,24 +28,11 @@ public class StartProductsImportCommandHandlerTests
     {
         return new StartProductsImportCommandHandler(
             _connectionRepo.Object,
-            _syncJobRepo.Object,
+            _jobRunRepo.Object,
+            _syncCheckpointRepo.Object,
             _eventPublisher.Object,
             _userContext.Object,
             _logger.Object);
-    }
-
-    private static SystemChannelTemplate BuildWildberriesTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
     }
 
     private static Connection BuildConnection(string templateCode = "wildberries", bool isActive = true)
@@ -71,6 +59,21 @@ public class StartProductsImportCommandHandlerTests
             CreatedAt = DateTimeOffset.UtcNow,
             SystemChannelTemplate = template,
         };
+    }
+
+    private void SetupHappyPathUpToJobCreation(Connection connection)
+    {
+        _connectionRepo
+            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        _jobRunRepo
+            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _jobRunRepo
+            .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobRun j, CancellationToken _) => j);
     }
 
     [Fact]
@@ -138,8 +141,8 @@ public class StartProductsImportCommandHandlerTests
             .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(connection);
 
-        _syncJobRepo
-            .Setup(r => r.HasActivePendingOrRunningJobForConnectionAsync(connection.Id, It.IsAny<CancellationToken>()))
+        _jobRunRepo
+            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         StartProductsImportCommandHandler handler = CreateHandler();
@@ -153,31 +156,28 @@ public class StartProductsImportCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ValidRequest_CreatesSyncJobWithPendingStatus()
+    public async Task Handle_ValidRequest_CreatesJobRunAndProductsImportJobWithPendingStatus()
     {
         Connection connection = BuildConnection();
-        SyncJob? savedJob = null;
         Guid userId = Guid.NewGuid();
+        JobRun? savedJobRun = null;
+        ProductsImportJob? savedProductsImportJob = null;
 
-        _connectionRepo
-            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(connection);
+        SetupHappyPathUpToJobCreation(connection);
 
-        _syncJobRepo
-            .Setup(r => r.HasActivePendingOrRunningJobForConnectionAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        _jobRunRepo
+            .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .Callback<JobRun, CancellationToken>((j, _) => savedJobRun = j)
+            .ReturnsAsync((JobRun j, CancellationToken _) => j);
 
-        _syncJobRepo
-            .Setup(r => r.Add(It.IsAny<SyncJob>()))
-            .Callback<SyncJob>(j => savedJob = j);
-
-        _syncJobRepo
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
-
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<ProductsImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+        _jobRunRepo
+            .Setup(r => r.CreateProductsImportJobAsync(It.IsAny<ProductsImportJob>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductsImportJob, CancellationToken>((j, _) => savedProductsImportJob = j)
             .Returns(Task.CompletedTask);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
 
         _userContext.Setup(u => u.UserId).Returns(userId);
 
@@ -187,12 +187,80 @@ public class StartProductsImportCommandHandlerTests
             CancellationToken.None);
 
         result.Should().NotBeNull();
-        result.SyncJobId.Should().NotBeEmpty();
-        savedJob.Should().NotBeNull();
-        savedJob!.Status.Should().Be(SyncJobStatus.Pending);
-        savedJob.JobType.Should().Be(JobType.ProductsImport);
-        savedJob.ConnectionId.Should().Be(connection.Id);
-        savedJob.RequestedByUserId.Should().Be(userId);
+        result.JobRunId.Should().NotBeEmpty();
+
+        savedJobRun.Should().NotBeNull();
+        savedJobRun!.Status.Should().Be(JobStatus.Pending);
+        savedJobRun.JobType.Should().Be(JobType.ProductsImport);
+        savedJobRun.ConnectionId.Should().Be(connection.Id);
+        savedJobRun.RequestedByUserId.Should().Be(userId);
+
+        savedProductsImportJob.Should().NotBeNull();
+        savedProductsImportJob!.JobRunId.Should().Be(savedJobRun.Id);
+    }
+
+    [Fact]
+    public async Task Handle_NoExistingCheckpoint_CreatesCheckpointWithThirtyDayBackfill()
+    {
+        Connection connection = BuildConnection();
+        SyncCheckpoint? savedCheckpoint = null;
+
+        SetupHappyPathUpToJobCreation(connection);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        _syncCheckpointRepo
+            .Setup(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()))
+            .Callback<SyncCheckpoint, CancellationToken>((c, _) => savedCheckpoint = c)
+            .Returns(Task.CompletedTask);
+
+        _userContext.Setup(u => u.UserId).Returns((Guid?)null);
+
+        StartProductsImportCommandHandler handler = CreateHandler();
+        await handler.Handle(
+            new StartProductsImportCommand { ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        savedCheckpoint.Should().NotBeNull();
+        savedCheckpoint!.ConnectionId.Should().Be(connection.Id);
+        savedCheckpoint.JobType.Should().Be(JobType.ProductsImport);
+        savedCheckpoint.LastChangedAt.Should().BeNull();
+        savedCheckpoint.LastSuccessAt.Should().BeCloseTo(DateTimeOffset.UtcNow.AddDays(-30), TimeSpan.FromMinutes(1));
+        savedCheckpoint.LastJobRunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Handle_ExistingCheckpoint_DoesNotOverwriteWatermark()
+    {
+        Connection connection = BuildConnection();
+        SyncCheckpoint existingCheckpoint = new SyncCheckpoint
+        {
+            Id = Guid.NewGuid(),
+            ConnectionId = connection.Id,
+            JobType = JobType.ProductsImport,
+            LastChangedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            LastSuccessAt = DateTimeOffset.UtcNow.AddHours(-1),
+            LastJobRunId = Guid.NewGuid(),
+        };
+
+        SetupHappyPathUpToJobCreation(connection);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingCheckpoint);
+
+        _userContext.Setup(u => u.UserId).Returns((Guid?)null);
+
+        StartProductsImportCommandHandler handler = CreateHandler();
+        await handler.Handle(
+            new StartProductsImportCommand { ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _syncCheckpointRepo.Verify(
+            r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -201,17 +269,17 @@ public class StartProductsImportCommandHandlerTests
         Connection connection = BuildConnection();
         ProductsImportRequestedEvent? publishedEvent = null;
 
-        _connectionRepo
-            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(connection);
+        SetupHappyPathUpToJobCreation(connection);
 
-        _syncJobRepo
-            .Setup(r => r.HasActivePendingOrRunningJobForConnectionAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        _syncJobRepo
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncCheckpoint
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.ProductsImport,
+                LastSuccessAt = DateTimeOffset.UtcNow,
+            });
 
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductsImportRequestedEvent>(), It.IsAny<CancellationToken>()))
@@ -227,7 +295,7 @@ public class StartProductsImportCommandHandlerTests
 
         publishedEvent.Should().NotBeNull();
         publishedEvent!.ConnectionId.Should().Be(connection.Id);
-        publishedEvent.SyncJobId.Should().Be(result.SyncJobId);
+        publishedEvent.JobRunId.Should().Be(result.JobRunId);
     }
 
     [Fact]
@@ -235,17 +303,17 @@ public class StartProductsImportCommandHandlerTests
     {
         Connection connection = BuildConnection();
 
-        _connectionRepo
-            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(connection);
+        SetupHappyPathUpToJobCreation(connection);
 
-        _syncJobRepo
-            .Setup(r => r.HasActivePendingOrRunningJobForConnectionAsync(connection.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        _syncJobRepo
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncCheckpoint
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.ProductsImport,
+                LastSuccessAt = DateTimeOffset.UtcNow,
+            });
 
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductsImportRequestedEvent>(), It.IsAny<CancellationToken>()))
@@ -255,7 +323,7 @@ public class StartProductsImportCommandHandlerTests
 
         StartProductsImportCommandHandler handler = CreateHandler();
 
-        // Публикация упала, но SyncJob уже сохранён — exception не должен пробрасываться наружу.
+        // Публикация упала, но JobRun уже сохранён — exception не должен пробрасываться наружу.
         Func<Task> act = () => handler.Handle(
             new StartProductsImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);

@@ -55,7 +55,7 @@ public class ImportProductBatchConsumerTests
             Description = "Test Description"
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -93,7 +93,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.SyncJobId == _syncJobId &&
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 1 &&
@@ -130,7 +130,7 @@ public class ImportProductBatchConsumerTests
             WeightKg = 0.5m
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -181,7 +181,7 @@ public class ImportProductBatchConsumerTests
             Description = "Test Description"
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -268,7 +268,7 @@ public class ImportProductBatchConsumerTests
             WeightKg = 1.2m
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -297,7 +297,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 0 &&
                     e.RecordsUpdated == 1),
@@ -353,7 +353,7 @@ public class ImportProductBatchConsumerTests
             Description = "Updated Description"
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -378,7 +378,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 0 &&
                     e.RecordsUpdated == 1),
@@ -408,7 +408,7 @@ public class ImportProductBatchConsumerTests
             Description = "Test Description"
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -435,7 +435,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 1 &&
                     e.RecordsUpdated == 0),
@@ -444,7 +444,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 0 &&
                     e.RecordsSkipped == 1),
@@ -488,7 +488,7 @@ public class ImportProductBatchConsumerTests
             Barcodes = new List<string> { "1234567890123" }
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -513,7 +513,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 0 &&
                     e.RecordsFailed == 1 &&
@@ -567,7 +567,7 @@ public class ImportProductBatchConsumerTests
             Barcodes = new List<string> { "9876543210987", "1111111111111" }
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -641,7 +641,7 @@ public class ImportProductBatchConsumerTests
             Barcodes = new List<string>()
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -664,7 +664,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 0 &&
                     e.RecordsFailed == 1 &&
@@ -730,7 +730,7 @@ public class ImportProductBatchConsumerTests
             Barcodes = new List<string> { "1111111111111", "2222222222222" }
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -786,7 +786,7 @@ public class ImportProductBatchConsumerTests
             Barcodes = new List<string> { "1234567890123" }
         };
 
-        ProductImportBatchRequestedEvent messageTenant1 = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent messageTenant1 = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -795,7 +795,7 @@ public class ImportProductBatchConsumerTests
             IsLastBatch = false
         };
 
-        ProductImportBatchRequestedEvent messageTenant2 = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent messageTenant2 = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -835,7 +835,7 @@ public class ImportProductBatchConsumerTests
             Barcodes = new List<string>()
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -850,7 +850,7 @@ public class ImportProductBatchConsumerTests
         // Assert
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsFailed == 1 &&
                     e.ErrorMessage != null),
                 It.IsAny<CancellationToken>()),
@@ -906,7 +906,7 @@ public class ImportProductBatchConsumerTests
             Description = "Updated Description"
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -936,7 +936,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 0 &&
                     e.RecordsUpdated == 1),
@@ -997,7 +997,7 @@ public class ImportProductBatchConsumerTests
             },
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -1023,7 +1023,7 @@ public class ImportProductBatchConsumerTests
         // Counters reflect the database work only: photo import must not change them.
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 1 &&
                     e.RecordsFailed == 0 &&
@@ -1069,7 +1069,7 @@ public class ImportProductBatchConsumerTests
             },
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -1090,7 +1090,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 1 &&
                     e.RecordsFailed == 0),
@@ -1138,7 +1138,7 @@ public class ImportProductBatchConsumerTests
 
         WildberriesCardSnapshot card = BuildCardWithPhotos();
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,
@@ -1163,7 +1163,7 @@ public class ImportProductBatchConsumerTests
 
         publishEndpointMock.Verify(
             p => p.Publish(
-                It.Is<ProductImportBatchCompletedEvent>(e =>
+                It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
                     e.RecordsCreated == 1 &&
                     e.RecordsUpdated == 0 &&
@@ -1198,7 +1198,7 @@ public class ImportProductBatchConsumerTests
             Description = "Test Description"
         };
 
-        ProductImportBatchRequestedEvent message = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             SyncJobId = _syncJobId,
             ConnectionId = _connectionId,

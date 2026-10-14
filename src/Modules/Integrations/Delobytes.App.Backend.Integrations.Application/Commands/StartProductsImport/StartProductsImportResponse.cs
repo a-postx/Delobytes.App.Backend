@@ -2,5 +2,5 @@ namespace Delobytes.App.Backend.Integrations.Application.Commands.StartProductsI
 
 public class StartProductsImportResponse
 {
-    public Guid SyncJobId { get; set; }
+    public Guid JobRunId { get; set; }
 }

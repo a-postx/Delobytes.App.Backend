@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
+using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
@@ -47,22 +48,22 @@ public class ProcessProductsImportConsumer
     public async Task ProcessAsync(ProductsImportRequestedEvent message, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "ProcessProductsImportConsumer: SyncJobId={SyncJobId}, ConnectionId={ConnectionId}",
-            message.SyncJobId,
+            "ProcessProductsImportConsumer: JobRunId={JobRunId}, ConnectionId={ConnectionId}",
+            message.JobRunId,
             message.ConnectionId);
 
-        SyncJob? syncJob = await _syncJobRepository.FindByIdWithConnectionAsync(message.SyncJobId, cancellationToken);
+        SyncJob? syncJob = await _syncJobRepository.FindByIdWithConnectionAsync(message.JobRunId, cancellationToken);
 
         if (syncJob == null)
         {
-            _logger.LogWarning("SyncJob {SyncJobId} not found, skipping", message.SyncJobId);
+            _logger.LogWarning("SyncJob {SyncJobId} not found, skipping", message.JobRunId);
             return;
         }
 
         // Idempotent: already running means redelivery — safe to continue from saved cursor.
         if (syncJob.Status == SyncJobStatus.Cancelled)
         {
-            _logger.LogInformation("SyncJob {SyncJobId} is Cancelled, skipping", message.SyncJobId);
+            _logger.LogInformation("SyncJob {SyncJobId} is Cancelled, skipping", message.JobRunId);
             return;
         }
 
@@ -70,7 +71,7 @@ public class ProcessProductsImportConsumer
         {
             _logger.LogWarning(
                 "SyncJob {SyncJobId} is in terminal status {Status}, skipping",
-                message.SyncJobId,
+                message.JobRunId,
                 syncJob.Status);
             return;
         }
@@ -82,7 +83,7 @@ public class ProcessProductsImportConsumer
             string reason = connection == null ? "Connection not found" : "Connection is inactive";
             _logger.LogError(
                 "SyncJob {SyncJobId}: {Reason}. Marking as Failed.",
-                message.SyncJobId,
+                message.JobRunId,
                 reason);
 
             await FailJobAsync(syncJob, reason, cancellationToken);
@@ -316,7 +317,7 @@ public class ProcessProductsImportConsumer
         int totalBatches,
         CancellationToken cancellationToken)
     {
-        ProductImportBatchRequestedEvent batchEvent = new ProductImportBatchRequestedEvent
+        ProductBatchImportRequestedEvent batchEvent = new ProductBatchImportRequestedEvent
         {
             SyncJobId = syncJob.Id,
             ConnectionId = connection.Id,

@@ -86,11 +86,11 @@ public class ImportProductBatchConsumer
     }
 
     /// <summary>
-    /// Processes the ProductImportBatchRequestedEvent message.
+    /// Processes the ProductBatchImportRequestedEvent message.
     /// </summary>
     /// <param name="message">Event message.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task ProcessAsync(ProductImportBatchRequestedEvent message, CancellationToken cancellationToken)
+    public async Task ProcessAsync(ProductBatchImportRequestedEvent message, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
             "ImportProductBatchConsumer started processing batch. SyncJobId={SyncJobId}, ConnectionId={ConnectionId}, ChannelId={ChannelId}, CardsCount={CardsCount}, IsLastBatch={IsLastBatch}",
@@ -109,7 +109,7 @@ public class ImportProductBatchConsumer
 
         // Photos are downloaded only after the database transaction has committed: holding a
         // transaction open across marketplace HTTP calls kept this batch busy for seconds, so
-        // its ProductImportBatchCompletedEvent reached the aggregator long after the terminal
+        // its ProductBatchImportCompletedEvent reached the aggregator long after the terminal
         // batch had already finalised the job.
         List<PendingPhotoImport> pendingPhotoImports = new List<PendingPhotoImport>();
 
@@ -209,7 +209,7 @@ public class ImportProductBatchConsumer
                 await transaction.RollbackAsync(cancellationToken);
                 _logger.LogError(ex, "Failed to process batch. SyncJobId={SyncJobId}", message.SyncJobId);
 
-                ProductImportBatchCompletedEvent rollbackEvent = new ProductImportBatchCompletedEvent
+                ProductBatchImportCompletedEvent rollbackEvent = new ProductBatchImportCompletedEvent
                 {
                     SyncJobId = message.SyncJobId,
                     RecordsProcessed = 0,
@@ -237,7 +237,7 @@ public class ImportProductBatchConsumer
 
         string? errorMessage = errors.Count > 0 ? string.Join("; ", errors) : null;
 
-        ProductImportBatchCompletedEvent completedEvent = new ProductImportBatchCompletedEvent
+        ProductBatchImportCompletedEvent completedEvent = new ProductBatchImportCompletedEvent
         {
             SyncJobId = message.SyncJobId,
             RecordsProcessed = recordsProcessed,

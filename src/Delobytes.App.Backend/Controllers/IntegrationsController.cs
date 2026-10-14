@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Commands.CancelSyncJob;
+using Delobytes.App.Backend.Integrations.Application.Commands.CancelProductsImport;
 using Delobytes.App.Backend.Integrations.Application.Commands.CreateConnection;
 using Delobytes.App.Backend.Integrations.Application.Commands.DeleteConnection;
 using Delobytes.App.Backend.Integrations.Application.Commands.StartProductsImport;
@@ -86,7 +86,7 @@ public class IntegrationsController : ControllerBase
             },
             cancellationToken);
 
-        return AcceptedAtAction(nameof(GetProductImport), new { id = response.SyncJobId }, response);
+        return AcceptedAtAction(nameof(GetProductImport), new { id = response.JobRunId }, response);
     }
 
     [HttpGet("product-imports")]
@@ -114,7 +114,7 @@ public class IntegrationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CancelProductImport(Guid id, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new CancelSyncJobCommand { SyncJobId = id }, cancellationToken);
+        await _mediator.Send(new CancelProductsImportCommand { JobRunId = id }, cancellationToken);
         return NoContent();
     }
 }

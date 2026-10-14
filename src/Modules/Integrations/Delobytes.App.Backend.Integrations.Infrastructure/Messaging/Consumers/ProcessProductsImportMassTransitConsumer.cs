@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Contracts.Events;
+using Delobytes.App.Backend.Integrations.Application.Events;
 using MassTransit;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;

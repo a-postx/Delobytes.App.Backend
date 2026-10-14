@@ -1,6 +1,6 @@
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
@@ -11,20 +11,23 @@ namespace Delobytes.App.Backend.Integrations.Application.Commands.StartProductsI
 public class StartProductsImportCommandHandler : IRequestHandler<StartProductsImportCommand, StartProductsImportResponse>
 {
     private readonly IConnectionRepository _connectionRepository;
-    private readonly ISyncJobRepository _syncJobRepository;
+    private readonly IJobRunRepository _jobRunRepository;
+    private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IEventPublisher _eventPublisher;
     private readonly IUserContext _userContext;
     private readonly ILogger<StartProductsImportCommandHandler> _logger;
 
     public StartProductsImportCommandHandler(
         IConnectionRepository connectionRepository,
-        ISyncJobRepository syncJobRepository,
+        IJobRunRepository jobRunRepository,
+        ISyncCheckpointRepository syncCheckpointRepository,
         IEventPublisher eventPublisher,
         IUserContext userContext,
         ILogger<StartProductsImportCommandHandler> logger)
     {
         _connectionRepository = connectionRepository;
-        _syncJobRepository = syncJobRepository;
+        _jobRunRepository = jobRunRepository;
+        _syncCheckpointRepository = syncCheckpointRepository;
         _eventPublisher = eventPublisher;
         _userContext = userContext;
         _logger = logger;
@@ -57,41 +60,60 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
                 $"Импорт карточек товаров не поддерживается для канала '{connection.SystemChannelTemplate?.Code}'.");
         }
 
-        bool hasDuplicate = await _syncJobRepository
-            .HasActivePendingOrRunningJobForConnectionAsync(request.ConnectionId, cancellationToken);
+        bool hasActiveJob = await _jobRunRepository
+            .HasActiveJobAsync(request.ConnectionId, JobType.ProductsImport, cancellationToken);
 
-        if (hasDuplicate)
+        if (hasActiveJob)
         {
             throw new ConflictException(
                 "Для этого подключения уже есть активная задача импорта (Pending или Running).");
         }
 
-        SyncJob syncJob = new SyncJob
+        JobRun jobRun = new JobRun
         {
             Id = Guid.NewGuid(),
             ConnectionId = request.ConnectionId,
             JobType = JobType.ProductsImport,
-            Status = SyncJobStatus.Pending,
-            RecordsProcessed = 0,
-            RecordsCreated = 0,
-            RecordsUpdated = 0,
-            RecordsSkipped = 0,
-            RecordsFailed = 0,
+            Status = JobStatus.Pending,
             RequestedByUserId = _userContext.UserId,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        _syncJobRepository.Add(syncJob);
-        await _syncJobRepository.SaveChangesAsync(cancellationToken);
+        await _jobRunRepository.CreateAsync(jobRun, cancellationToken);
+
+        await _jobRunRepository.CreateProductsImportJobAsync(
+            new ProductsImportJob { JobRunId = jobRun.Id },
+            cancellationToken);
+
+        // Bootstraps the watermark only on the very first run for this (ConnectionId, JobType):
+        // an existing checkpoint already carries the real watermark from a previous run and
+        // must not be reset back to the 30-day backfill window.
+        SyncCheckpoint? checkpoint = await _syncCheckpointRepository
+            .GetAsync(request.ConnectionId, JobType.ProductsImport, cancellationToken);
+
+        if (checkpoint == null)
+        {
+            await _syncCheckpointRepository.UpsertAsync(
+                new SyncCheckpoint
+                {
+                    Id = Guid.NewGuid(),
+                    ConnectionId = request.ConnectionId,
+                    JobType = JobType.ProductsImport,
+                    LastChangedAt = null,
+                    LastSuccessAt = DateTimeOffset.UtcNow.AddDays(-30),
+                    LastJobRunId = null,
+                },
+                cancellationToken);
+        }
 
         _logger.LogInformation(
-            "Создана задача импорта {SyncJobId} для подключения {ConnectionId}",
-            syncJob.Id,
+            "Создана задача импорта {JobRunId} для подключения {ConnectionId}",
+            jobRun.Id,
             request.ConnectionId);
 
         ProductsImportRequestedEvent importEvent = new ProductsImportRequestedEvent
         {
-            SyncJobId = syncJob.Id,
+            JobRunId = jobRun.Id,
             ConnectionId = request.ConnectionId,
         };
 
@@ -101,18 +123,18 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         }
         catch (Exception ex)
         {
-            // SyncJob уже сохранён, но событие не опубликовано — задача зависнет в Pending.
+            // JobRun уже сохранён, но событие не опубликовано — задача зависнет в Pending.
             // Это известный риск (outbox не реализован). Логируем предупреждение.
             _logger.LogWarning(
                 ex,
-                "Не удалось опубликовать ProductsImportRequestedEvent для SyncJob {SyncJobId}. " +
+                "Не удалось опубликовать ProductsImportRequestedEvent для JobRun {JobRunId}. " +
                 "Задача останется в статусе Pending до ручного вмешательства.",
-                syncJob.Id);
+                jobRun.Id);
         }
 
         return new StartProductsImportResponse
         {
-            SyncJobId = syncJob.Id,
+            JobRunId = jobRun.Id,
         };
     }
 }

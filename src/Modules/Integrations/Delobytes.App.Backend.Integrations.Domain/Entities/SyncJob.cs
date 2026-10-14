@@ -86,7 +86,7 @@ public class SyncJob : ITenantScoped
 
     /// <summary>
     /// Gets or sets the total number of batches expected for this import, known only once the
-    /// terminal batch (ProductImportBatchRequestedEvent.IsLastBatch) has been published by
+    /// terminal batch (ProductBatchImportRequestedEvent.IsLastBatch) has been published by
     /// ProcessProductsImportConsumer. Null until then. Used by the aggregator to decide whether
     /// all batch results have been recorded, instead of finalising as soon as any batch happens
     /// to arrive with IsLastBatch=true — a small trailing batch can otherwise finish (and its
