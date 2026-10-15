@@ -14,6 +14,6 @@ public class ProcessOrdersBatchImportCompletedMassTransitConsumer : IConsumer<Or
 
     public async Task Consume(ConsumeContext<OrdersBatchImportCompletedEvent> context)
     {
-        await _consumer.ProcessAsync(context.Message, context.MessageId ?? Guid.NewGuid(), context.CancellationToken);
+        await _consumer.ProcessAsync(context.Message, context.Message.BatchId, context.CancellationToken);
     }
 }
