@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Messaging.Consumers;
+using Delobytes.App.Backend.Sales.Infrastructure;
 using Delobytes.App.Backend.Services;
 using MassTransit;
 
@@ -30,6 +31,7 @@ internal static class MassTransitExtensions
             bus.AddConsumer<AppStartedEventConsumer>();
             bus.AddIntegrationsConsumers();
             bus.AddCatalogConsumers();
+            bus.AddSalesConsumers();
 
             if (!string.IsNullOrWhiteSpace(messageBusConnectionString))
             {

@@ -178,6 +178,8 @@ public class ProcessOrdersImportConsumer
                 OrdersBatchImportRequestedEvent batchEvent = new OrdersBatchImportRequestedEvent
                 {
                     JobRunId = jobRun.Id,
+                    ConnectionId = connection.Id,
+                    ChannelId = connection.ChannelId,
                     BatchId = CreateBatchId(jobRun.Id, i),
                     Orders = batches[i],
                     IsTerminal = i == batches.Count - 1,

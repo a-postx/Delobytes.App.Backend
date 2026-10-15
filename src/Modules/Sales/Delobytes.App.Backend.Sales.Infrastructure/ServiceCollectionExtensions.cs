@@ -1,4 +1,7 @@
+using System.Reflection;
+using Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +30,17 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__SalesMigrationsHistory", "sales")));
 
+        services.AddScoped<OrdersBatchImportRequestedConsumer>();
+
         return services;
+    }
+
+    /// <summary>
+    /// Registers Sales module MassTransit consumers.
+    /// </summary>
+    /// <param name="configurator">MassTransit bus registration configurator.</param>
+    public static void AddSalesConsumers(this IBusRegistrationConfigurator configurator)
+    {
+        configurator.AddConsumers(Assembly.GetExecutingAssembly());
     }
 }
