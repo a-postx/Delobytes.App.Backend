@@ -60,6 +60,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<ProcessProductsImportConsumer>();
         services.AddScoped<ProcessProductImportBatchCompletedConsumer>();
+        services.AddScoped<ProcessOrdersImportConsumer>();
+        services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
 
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();
