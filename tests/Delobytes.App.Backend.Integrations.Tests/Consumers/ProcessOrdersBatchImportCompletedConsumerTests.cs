@@ -18,6 +18,7 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 public class ProcessOrdersBatchImportCompletedConsumerTests
 {
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
+    private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
     private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
@@ -27,6 +28,7 @@ public class ProcessOrdersBatchImportCompletedConsumerTests
     {
         return new ProcessOrdersBatchImportCompletedConsumer(
             _jobRunRepo.Object,
+            _jobCheckpointRepo.Object,
             _syncCheckpointRepo.Object,
             _connectionRepo.Object,
             _eventPublisher.Object,

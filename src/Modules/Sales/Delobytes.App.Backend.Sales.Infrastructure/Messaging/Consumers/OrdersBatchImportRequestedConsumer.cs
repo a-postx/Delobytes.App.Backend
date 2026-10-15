@@ -19,6 +19,25 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class OrdersBatchImportRequestedConsumer
 {
+    /// <summary>
+    /// Bookkeeping properties excluded from change detection. They describe the import itself
+    /// rather than the imported facts, so a re-import carrying identical channel data must still
+    /// count as Skipped instead of being reported as an update.
+    /// </summary>
+    private static readonly HashSet<string> BookkeepingProperties = new HashSet<string>(StringComparer.Ordinal)
+    {
+        nameof(Order.CreatedAt),
+        nameof(Order.UpdatedAt),
+        nameof(Order.FirstImportedAt),
+        nameof(Order.LastImportedAt),
+    };
+
+    private static readonly HashSet<string> LineBookkeepingProperties = new HashSet<string>(StringComparer.Ordinal)
+    {
+        nameof(OrderLine.CreatedAt),
+        nameof(OrderLine.UpdatedAt),
+    };
+
     private readonly SalesDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ITenantContext _tenantContext;
@@ -196,36 +215,90 @@ public class OrdersBatchImportRequestedConsumer
             _context.Orders.Add(order);
         }
 
-        EntityEntry<Order> orderEntry = _context.Entry(order);
-
         ApplyOrderSnapshot(order, snapshot, connectionId);
 
-        // Properties are compared by value, so re-assigning identical data leaves the entry
-        // Unchanged: IsModified below reflects only a genuine difference, not every upsert attempt.
-        bool orderChanged = isNew || (orderEntry.State == EntityState.Modified
-            && orderEntry.Properties.Any(p => p.IsModified));
-
-        bool anyLineChanged = false;
-
+        // Lines are appended before change detection runs: EF only discovers a new child added to
+        // a tracked collection's navigation during DetectChanges, not at the moment it is appended.
         foreach (ChannelOrderLineSnapshot lineSnapshot in snapshot.Lines)
         {
-            bool lineChanged = UpsertOrderLine(order, lineSnapshot, channelProductIdsByExternalProductId, now);
-            anyLineChanged = anyLineChanged || lineChanged;
+            UpsertOrderLine(order, lineSnapshot, channelProductIdsByExternalProductId, now);
         }
 
-        order.LastImportedAt = now;
+        // Without this call every property assignment above is invisible to the change tracker,
+        // so State stays Unchanged and both the counters and the resulting UPDATE would be wrong.
+        _context.ChangeTracker.DetectChanges();
 
-        if (!isNew && (orderChanged || anyLineChanged))
-        {
-            order.UpdatedAt = now;
-        }
+        bool orderChanged = isNew || HasMeaningfulOrderChanges(_context.Entry(order), BookkeepingProperties);
+
+        bool anyLineChanged = HasMeaningfulLineChanges(order);
 
         if (isNew)
         {
+            order.LastImportedAt = now;
             return OrderUpsertStatus.Created;
         }
 
-        return orderChanged || anyLineChanged ? OrderUpsertStatus.Updated : OrderUpsertStatus.Skipped;
+        if (orderChanged || anyLineChanged)
+        {
+            order.LastImportedAt = now;
+            order.UpdatedAt = now;
+            return OrderUpsertStatus.Updated;
+        }
+
+        // Everything matched: no UPDATE is issued, so LastImportedAt deliberately stays put.
+        return OrderUpsertStatus.Skipped;
+    }
+
+    private static bool HasMeaningfulOrderChanges(EntityEntry<Order> entry, HashSet<string> excludedProperties)
+    {
+        if (entry.State != EntityState.Modified)
+        {
+            return false;
+        }
+
+        foreach (PropertyEntry property in entry.Properties)
+        {
+            if (property.IsModified && !excludedProperties.Contains(property.Metadata.Name))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A line counts as changed when it is newly added, or when an existing one has any modified
+    /// property other than its own bookkeeping timestamps. Detecting modified lines matters:
+    /// without it an order whose only difference is a line-level fact (a changed price, a changed
+    /// channel product link) would be reported as Skipped while its lines were still written.
+    /// </summary>
+    private bool HasMeaningfulLineChanges(Order order)
+    {
+        foreach (OrderLine line in order.Lines)
+        {
+            EntityEntry<OrderLine> lineEntry = _context.Entry(line);
+
+            if (lineEntry.State == EntityState.Added)
+            {
+                return true;
+            }
+
+            if (lineEntry.State != EntityState.Modified)
+            {
+                continue;
+            }
+
+            foreach (PropertyEntry property in lineEntry.Properties)
+            {
+                if (property.IsModified && !LineBookkeepingProperties.Contains(property.Metadata.Name))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void ApplyOrderSnapshot(Order order, ChannelOrderSnapshot snapshot, Guid connectionId)
@@ -250,33 +323,48 @@ public class OrdersBatchImportRequestedConsumer
     }
 
     /// <summary>
-    /// Upserts a single order line. Returns true if the line was created or any field changed.
-    /// Line-level outcomes are not reported separately: the job-level counters track orders,
-    /// per the "Processed N records" (orders, not lines) progress convention.
+    /// Upserts a single order line. Line-level outcomes are not reported separately: the job-level
+    /// counters track orders, per the "Processed N records" (orders, not lines) progress convention.
     /// </summary>
-    private bool UpsertOrderLine(
+    private void UpsertOrderLine(
         Order order,
         ChannelOrderLineSnapshot snapshot,
         Dictionary<string, Guid> channelProductIdsByExternalProductId,
         DateTimeOffset now)
     {
         OrderLine? existingLine = order.Lines.FirstOrDefault(l => l.LineKey == snapshot.LineKey);
-        bool isNew = existingLine == null;
 
-        OrderLine line = existingLine ?? new OrderLine
-        {
-            Id = Guid.NewGuid(),
-            OrderId = order.Id,
-            LineKey = snapshot.LineKey,
-            CreatedAt = now,
-        };
+        OrderLine line;
 
-        if (isNew)
+        if (existingLine == null)
         {
-            order.Lines.Add(line);
+            line = new OrderLine
+            {
+                Id = Guid.NewGuid(),
+                OrderId = order.Id,
+                LineKey = snapshot.LineKey,
+                CreatedAt = now,
+            };
+
+            // Explicit DbSet.Add is required instead of only appending to order.Lines: when the
+            // owning Order is already tracked (not newly Added), EF's local change detection
+            // classifies a line appended only via the navigation collection as Modified rather
+            // than Added, because a non-default PK gives it no Added semantics on its own.
+            // Added-only entries are what SetTenantId()/ValidateCrossTenantWrite() rely on to tell
+            // a fresh row from an existing one; without this the shadow TenantId is never
+            // populated and the save fails with a cross-tenant guard exception.
+            //
+            // order.Lines.Add(line) must NOT also be called here: EF's relationship fixup already
+            // adds the tracked line to the owning Order's Lines collection as soon as line.OrderId
+            // resolves to a tracked Order (true for both a brand-new Order and one loaded via
+            // Include) - adding it a second time via the navigation duplicates the same reference
+            // in the in-memory list, which both inflates Lines.Count and corrupts anyLineChanged.
+            _context.OrderLines.Add(line);
         }
-
-        EntityEntry<OrderLine> lineEntry = _context.Entry(line);
+        else
+        {
+            line = existingLine;
+        }
 
         Guid? channelProductId = channelProductIdsByExternalProductId.TryGetValue(snapshot.ExternalProductId, out Guid resolvedId)
             ? resolvedId
@@ -294,16 +382,6 @@ public class OrdersBatchImportRequestedConsumer
         line.UnitPriceBeforeDiscount = snapshot.UnitPriceBeforeDiscount;
         line.Currency = snapshot.Currency;
         line.ChannelProductId = channelProductId;
-
-        bool changed = isNew || (lineEntry.State == EntityState.Modified
-            && lineEntry.Properties.Any(p => p.IsModified));
-
-        if (!isNew && changed)
-        {
-            line.UpdatedAt = now;
-        }
-
-        return changed;
     }
 
     /// <summary>
