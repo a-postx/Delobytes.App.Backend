@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Persistence.Conventions;
+using Delobytes.App.Backend.Persistence.Converters;
 using Microsoft.EntityFrameworkCore;
 
 namespace Delobytes.App.Backend.Persistence;
@@ -21,6 +22,13 @@ public static class ModelConfigurationBuilderExtensions
         configurationBuilder.Conventions.Add(_ => new TenantIdShadowPropertyConvention());
         configurationBuilder.Conventions.Add(_ => new AuditableEntityConvention());
         configurationBuilder.Conventions.Add(_ => new RowVersionedEntityConvention());
+
+        // Both CLR types must be registered. ConfigureProperty (the path that applies pre-convention
+        // property configuration) resolves by exact CLR type plus its base types and interfaces;
+        // DateTimeOffset? inherits from ValueType, not from DateTimeOffset, so the non-nullable
+        // registration alone would leave every nullable property without a converter.
+        configurationBuilder.Properties<DateTimeOffset>().HaveConversion<DateTimeOffsetToUtcConverter>();
+        configurationBuilder.Properties<DateTimeOffset?>().HaveConversion<NullableDateTimeOffsetToUtcConverter>();
 
         return configurationBuilder;
     }

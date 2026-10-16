@@ -28,9 +28,9 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private const int DeserializationMaxAttempts = 3;
 
     /// <summary>
-    /// Base delay between deserialization attempts; grows linearly per attempt.
+    /// Wildberries settles in rubles; the orders endpoint reports no currency field of its own.
     /// </summary>
-    private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
+    private const string WildberriesCurrency = "RUB";
 
     /// <summary>
     /// Maximum number of response body characters written to logs.
@@ -38,15 +38,15 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private const int ResponseBodyLogLimit = 500;
 
     /// <summary>
+    /// Base delay between deserialization attempts; grows linearly per attempt.
+    /// </summary>
+    private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
     /// Wildberries has operated on a fixed UTC+3 offset (no DST) since 2014; the orders API
     /// takes dates in this local time and does not accept a time zone designator.
     /// </summary>
     private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
-
-    /// <summary>
-    /// Wildberries settles in rubles; the orders endpoint reports no currency field of its own.
-    /// </summary>
-    private const string WildberriesCurrency = "RUB";
 
     private readonly HttpClient _httpClient;
     private readonly IEndpointResolver _endpointResolver;
@@ -550,7 +550,8 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             return null;
         }
 
-        return new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), MoscowOffset);
+        return new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), MoscowOffset)
+            .ToUniversalTime();
     }
 
     private ChannelOrderSnapshot MapToOrderSnapshot(WildberriesOrderDto dto)
@@ -562,9 +563,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         // Wildberries reports, so the snapshot status is reduced to these two values.
         string externalStatus = dto.IsCancel ? "cancelled" : "active";
 
-        bool? isSellerWarehouse = dto.WarehouseType is null
-            ? null
-            : dto.WarehouseType.Contains("продавца", StringComparison.OrdinalIgnoreCase);
+        bool? isSellerWarehouse = dto.WarehouseType?.Contains("продавца", StringComparison.OrdinalIgnoreCase);
 
         string lineKey = dto.Srid ?? $"{dto.NmId}:{dto.Date}:{dto.GNumber}";
 
