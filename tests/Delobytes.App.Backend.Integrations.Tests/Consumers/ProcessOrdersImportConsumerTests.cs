@@ -682,11 +682,24 @@ public class ProcessOrdersImportConsumerTests
             new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // One request for the whole window plus one per half; without the floor this recursion
-        // would keep halving the window instead of terminating.
+        List<OrdersRequest> issuedRequests = new List<OrdersRequest>();
+
+        _ordersSource
+            .Invocations
+            .ToList()
+            .ForEach(i => issuedRequests.Add((OrdersRequest)i.Arguments[1]));
+
+        // The window is the 10 minutes since LastChangedAt plus the 30-minute safety overlap,
+        // i.e. 40 minutes: one request for the whole window, then one for its first half, which
+        // is already only 20 minutes wide and therefore at the floor. The floor stops the
+        // recursion there instead of halving it again into two 10-minute windows.
         _ordersSource.Verify(
             s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
+
+        issuedRequests.Should().HaveCount(2);
+        (issuedRequests[0].DateTo - issuedRequests[0].DateFrom).Should().BeGreaterThan(TimeSpan.FromMinutes(30));
+        (issuedRequests[1].DateTo - issuedRequests[1].DateFrom).Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(30));
 
         jobRun.Status.Should().Be(JobStatus.Failed);
 
@@ -695,6 +708,52 @@ public class ProcessOrdersImportConsumerTests
             Times.Never);
 
         _jobRunExecutionContext.JobRunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_BackfillOrdersExceedOldHardcodedPageLimit_PublishesEveryOrder()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        // 150 exceeds the old hardcoded PageLimit (100) that BUG-1 silently truncated results to.
+        // A single response under the configured cap, HasMore = false, is enough to prove nothing
+        // client-side truncates it anymore.
+        List<ChannelOrderSnapshot> orders = BuildOrders(150);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        OrdersRequest? issuedRequest = null;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, OrdersRequest, CancellationToken>((_, request, _) => issuedRequest = request)
+            .ReturnsAsync(new OrdersPage { Orders = orders, HasMore = false });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        List<string> publishedOrderIds = new List<string>();
+
+        foreach (OrdersBatchImportRequestedEvent published in CapturedBatches())
+        {
+            publishedOrderIds.AddRange(published.Orders.Select(o => o.ExternalOrderId));
+        }
+
+        publishedOrderIds.Should().HaveCount(150);
+        publishedOrderIds.Distinct().Should().HaveCount(150, "every order must be published exactly once");
+
+        // The old PageLimit field is gone; nothing on this path may ask the source to cap itself.
+        issuedRequest.Should().NotBeNull();
+        issuedRequest!.Limit.Should().Be(0);
     }
 
     private List<OrdersBatchImportRequestedEvent> CapturedBatches()
