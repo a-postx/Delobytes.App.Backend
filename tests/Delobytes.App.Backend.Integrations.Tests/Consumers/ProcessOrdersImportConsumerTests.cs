@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Events;
@@ -12,6 +14,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using FluentAssertions;
@@ -415,6 +418,150 @@ public class ProcessOrdersImportConsumerTests
     }
 
     [Fact]
+    public async Task ProcessAsync_LastChangeDateBeyondWindowTo_ClampsWatermarkToWindowTo()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+        OrdersImportCheckpointPayload? persistedPayload = null;
+
+        SetupDefaults(jobRun);
+        CapturePersistedPayload(payload => persistedPayload = payload);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncCheckpoint
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.OrdersImport,
+                LastChangedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            });
+
+        DateTimeOffset bogusLastChangeDate = DateTimeOffset.UtcNow.AddDays(3650);
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage
+            {
+                Orders = new List<ChannelOrderSnapshot>
+                {
+                    BuildOrder("ORDER-1") with { StatusChangedAt = bogusLastChangeDate },
+                },
+                HasMore = false,
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        persistedPayload.Should().NotBeNull();
+        persistedPayload!.WindowTo.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+
+        // The only defensible watermark is the end of the window the endpoint actually served.
+        persistedPayload.MaxChangedAt.Should().Be(persistedPayload.WindowTo);
+        persistedPayload.MaxChangedAt.Should().BeBefore(bogusLastChangeDate);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NoLastChangeDate_DoesNotDeriveWatermarkFromOrderDate()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+        OrdersImportCheckpointPayload? persistedPayload = null;
+
+        SetupDefaults(jobRun);
+        CapturePersistedPayload(payload => persistedPayload = payload);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncCheckpoint
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.OrdersImport,
+                LastChangedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            });
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage
+            {
+                Orders = new List<ChannelOrderSnapshot>
+                {
+                    BuildOrder("ORDER-1") with
+                    {
+                        StatusChangedAt = null,
+                        OrderDate = DateTimeOffset.UtcNow.AddDays(30),
+                    },
+                },
+                HasMore = false,
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        persistedPayload.Should().NotBeNull();
+
+        // null keeps the aggregator's "do not advance the watermark" meaning intact; OrderDate
+        // sits on a different time axis than the one the delta endpoint selects on.
+        persistedPayload!.MaxChangedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_LastChangeDateInsideWindow_WatermarkEqualsObservedValue()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+        OrdersImportCheckpointPayload? persistedPayload = null;
+
+        SetupDefaults(jobRun);
+        CapturePersistedPayload(payload => persistedPayload = payload);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncCheckpoint
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.OrdersImport,
+                LastChangedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            });
+
+        DateTimeOffset observedLastChangeDate = DateTimeOffset.UtcNow.AddMinutes(-30);
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage
+            {
+                Orders = new List<ChannelOrderSnapshot>
+                {
+                    BuildOrder("ORDER-1") with { StatusChangedAt = observedLastChangeDate },
+                    BuildOrder("ORDER-2") with { StatusChangedAt = observedLastChangeDate.AddMinutes(-10) },
+                },
+                HasMore = false,
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        persistedPayload.Should().NotBeNull();
+        persistedPayload!.MaxChangedAt.Should().Be(observedLastChangeDate.ToUniversalTime());
+
+        WarningMessages().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CreateBatchId_IsDeterministic()
     {
         Guid jobRunId = Guid.NewGuid();
@@ -754,6 +901,55 @@ public class ProcessOrdersImportConsumerTests
         // The old PageLimit field is gone; nothing on this path may ask the source to cap itself.
         issuedRequest.Should().NotBeNull();
         issuedRequest!.Limit.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Captures the payload the orchestrator persists, so assertions can read back the exact
+    /// watermark the aggregator would later apply to SyncCheckpoint.
+    /// </summary>
+    private void CapturePersistedPayload(Action<OrdersImportCheckpointPayload> onCaptured)
+    {
+        _jobCheckpointRepo
+            .Setup(r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()))
+            .Callback<JobCheckpoint, CancellationToken>((checkpoint, _) =>
+            {
+                OrdersImportCheckpointPayload? payload =
+                    JsonSerializer.Deserialize<OrdersImportCheckpointPayload>(checkpoint.Payload);
+
+                if (payload != null)
+                {
+                    onCaptured(payload);
+                }
+            })
+            .Returns(Task.CompletedTask);
+    }
+
+    /// <summary>
+    /// Renders the Warning entries Moq recorded. The formatter stored in the log-state argument is
+    /// the one Microsoft.Extensions.Logging would apply, so the message carries substituted
+    /// placeholders rather than raw argument values.
+    /// </summary>
+    private List<string> WarningMessages()
+    {
+        List<string> messages = new List<string>();
+
+        foreach (IInvocation invocation in _logger.Invocations)
+        {
+            if (invocation.Method.Name != nameof(ILogger.Log))
+            {
+                continue;
+            }
+
+            if (invocation.Arguments.Count > 2
+                && invocation.Arguments[0] is LogLevel level
+                && level == LogLevel.Warning
+                && invocation.Arguments[2] is Func<string, Exception?, string> formatter)
+            {
+                messages.Add(formatter(invocation.Arguments[1].ToString() ?? string.Empty, null));
+            }
+        }
+
+        return messages;
     }
 
     private List<OrdersBatchImportRequestedEvent> CapturedBatches()

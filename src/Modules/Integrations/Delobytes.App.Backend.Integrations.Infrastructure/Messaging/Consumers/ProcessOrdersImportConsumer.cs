@@ -186,7 +186,7 @@ public class ProcessOrdersImportConsumer
             OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
             {
                 TotalBatches = batches.Count,
-                MaxChangedAt = GetMaxChangedAt(allOrders),
+                MaxChangedAt = GetMaxChangedAt(allOrders, windowTo),
                 WindowTo = windowTo,
                 PagesFetched = fetchResult.RequestsIssued,
             };
@@ -356,18 +356,43 @@ public class ProcessOrdersImportConsumer
         await FetchWindowAsync(ordersSource, connectionId, secondHalf, jobRunId, ordersByExternalId, cancellationToken);
     }
 
-    private static DateTimeOffset? GetMaxChangedAt(List<ChannelOrderSnapshot> orders)
+    /// <summary>
+    /// Derives the next delta watermark from what the endpoint actually selected on:
+    /// <c>lastChangeDate</c> for a flag=0 run. A row that reports no <c>lastChangeDate</c>
+    /// (unparseable or absent) contributes nothing, and <c>OrderDate</c> is never substituted —
+    /// it lives on a different time axis than the one the endpoint filters by, so folding it in
+    /// would push the watermark past the served instant and drop the row from every later delta
+    /// run. The result is clamped to the run's own window end, since nothing the run fetched can
+    /// justify a later watermark; the checkpointed <paramref name="windowTo"/> makes that clamp
+    /// stable across redelivery.
+    /// </summary>
+    private DateTimeOffset? GetMaxChangedAt(List<ChannelOrderSnapshot> orders, DateTimeOffset windowTo)
     {
         DateTimeOffset? max = null;
 
         foreach (ChannelOrderSnapshot order in orders)
         {
-            DateTimeOffset value = order.StatusChangedAt ?? order.OrderDate;
+            if (order.StatusChangedAt == null)
+            {
+                continue;
+            }
+
+            DateTimeOffset value = order.StatusChangedAt.Value;
 
             if (max == null || value > max.Value)
             {
                 max = value;
             }
+        }
+
+        if (max.HasValue && max.Value > windowTo)
+        {
+            _logger.LogWarning(
+                "Orders import: observed lastChangeDate {Observed} is later than the run window end {WindowTo}, clamping the watermark",
+                max.Value,
+                windowTo);
+
+            return windowTo;
         }
 
         return max?.ToUniversalTime();
