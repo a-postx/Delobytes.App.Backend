@@ -903,6 +903,121 @@ public class ProcessOrdersImportConsumerTests
         issuedRequest!.Limit.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ProcessAsync_RowWithoutIdentity_FailsTheRunAndPublishesNothing()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        // The source dropped a row it could not identify and reports how many. The remaining rows
+        // are well-formed, but importing them would advance past the window that held the loss.
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage
+            {
+                Orders = BuildOrders(2),
+                HasMore = false,
+                RowsWithoutIdentity = 1,
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Failed);
+        jobRun.Error.Should().Contain("without a usable identity");
+
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        // No checkpoint payload: the aggregator must never be told how many batches to expect for a
+        // window that was not fully imported, otherwise the run could finalise as a success.
+        _jobCheckpointRepo.Verify(
+            r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SameOrderReportedByBothHalves_KeepsTheLaterReport()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                // The order sits on the instant the two halves share, so both report it. The first
+                // half carries the newer report and the second half the older one, which is the
+                // order that distinguishes a merge from an overwrite: keeping whichever snapshot
+                // arrived last would publish the stale status. The halves are fetched in a fixed
+                // order, so this ordering is what the traversal actually produces.
+                if (call == 1)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildOrder("ORDER-1") with { StatusChangedAt = later },
+                        },
+                        HasMore = true,
+                    };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildOrder("ORDER-1") with { StatusChangedAt = earlier },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                return new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), HasMore = false };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        List<ChannelOrderSnapshot> published = CapturedBatches()
+            .SelectMany(b => b.Orders)
+            .ToList();
+
+        published.Should().ContainSingle();
+        published.Single().ExternalOrderId.Should().Be("ORDER-1");
+        published.Single().StatusChangedAt.Should().Be(later);
+    }
+
     /// <summary>
     /// Captures the payload the orchestrator persists, so assertions can read back the exact
     /// watermark the aggregator would later apply to SyncCheckpoint.

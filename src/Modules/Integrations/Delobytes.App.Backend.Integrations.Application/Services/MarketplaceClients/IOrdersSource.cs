@@ -15,6 +15,12 @@ public interface IOrdersSource
     /// <param name="connectionId">Identifier of the Connection to authenticate as.</param>
     /// <param name="request">Window, selection mode and limit.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// The returned page never substitutes a fabricated identity for a row the source cannot
+    /// identify. Such rows are dropped and counted in
+    /// <see cref="Models.OrdersPage.RowsWithoutIdentity"/> instead, and the caller is expected to
+    /// treat a non-zero count as an incomplete fetch rather than a success.
+    /// </remarks>
     public Task<OrdersPage> GetOrdersAsync(
         Guid connectionId, OrdersRequest request, CancellationToken cancellationToken);
 }

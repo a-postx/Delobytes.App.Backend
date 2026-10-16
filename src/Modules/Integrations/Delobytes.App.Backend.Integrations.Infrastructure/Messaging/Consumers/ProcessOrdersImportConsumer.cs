@@ -49,6 +49,13 @@ public class ProcessOrdersImportConsumer
 
     private int _requestsIssued;
 
+    /// <summary>
+    /// Rows the source reported as unmappable across every page of the current fetch. Reset per
+    /// fetch; non-zero always ends the run in failure, so it exists to make the count visible in
+    /// logs and checkpoints rather than to influence the outcome.
+    /// </summary>
+    private int _rowsWithoutIdentity;
+
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
         IJobCheckpointRepository jobCheckpointRepository,
@@ -218,11 +225,12 @@ public class ProcessOrdersImportConsumer
             }
 
             _logger.LogInformation(
-                "JobRun {JobRunId}: fetched {Orders} orders in {Requests} requests, published {Batches} batches",
+                "JobRun {JobRunId}: fetched {Orders} orders in {Requests} requests, published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}",
                 jobRun.Id,
                 allOrders.Count,
                 fetchResult.RequestsIssued,
-                batches.Count);
+                batches.Count,
+                fetchResult.RowsWithoutIdentity);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -262,6 +270,7 @@ public class ProcessOrdersImportConsumer
         Dictionary<string, ChannelOrderSnapshot> ordersByExternalId = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
         _requestsIssued = 0;
+        _rowsWithoutIdentity = 0;
 
         await FetchWindowAsync(ordersSource, connectionId, request, jobRunId, ordersByExternalId, cancellationToken);
 
@@ -269,6 +278,7 @@ public class ProcessOrdersImportConsumer
         {
             Orders = ordersByExternalId.Values.ToList(),
             RequestsIssued = _requestsIssued,
+            RowsWithoutIdentity = _rowsWithoutIdentity,
         };
     }
 
@@ -278,7 +288,9 @@ public class ProcessOrdersImportConsumer
     /// endpoint exposes no ordering guarantee: the rows it returned cannot be assumed to be the
     /// earliest ones, so advancing <c>dateFrom</c> past them would silently drop the rest of the
     /// window. Rows seen twice (both halves of a split share their boundary instant) are collapsed
-    /// by the dedup dictionary.
+    /// by the dedup dictionary. Rows the source could not identify fail the window outright: the
+    /// dictionary only merges rows that agree on identity, and an unidentified row has none to
+    /// agree on.
     /// </summary>
     private async Task FetchWindowAsync(
         IOrdersSource ordersSource,
@@ -298,9 +310,43 @@ public class ProcessOrdersImportConsumer
 
         OrdersPage ordersPage = await ordersSource.GetOrdersAsync(connectionId, request, cancellationToken);
 
+        if (ordersPage.RowsWithoutIdentity > 0)
+        {
+            // A page that dropped rows cannot be imported partially: the missing orders would be
+            // indistinguishable from orders that never existed, and advancing the watermark past
+            // this window would hide them from every later delta run as well. Failing here reuses
+            // the same fail-fast stance as the unresolvable partial response below, and lets the
+            // next scheduled run retry the window once the source data is complete.
+            _rowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
+
+            _logger.LogError(
+                "JobRun {JobRunId}: window {From} - {To} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
+                jobRunId,
+                request.DateFrom,
+                request.DateTo,
+                ordersPage.RowsWithoutIdentity);
+
+            throw new InvalidOperationException(
+                $"Orders import received {ordersPage.RowsWithoutIdentity} row(s) without a usable identity " +
+                $"(no srid and no sticker) in window {request.DateFrom:O} - {request.DateTo:O}; " +
+                "the window cannot be imported without inventing an identity that may split or merge real orders.");
+        }
+
         foreach (ChannelOrderSnapshot order in ordersPage.Orders)
         {
-            ordersByExternalId[order.ExternalOrderId] = order;
+            // Sibling windows of one bisection share their boundary instant, so an order placed on
+            // that instant is legitimately reported by both halves. That is one order observed
+            // twice, not two orders colliding, so the reports are merged — never re-keyed.
+            if (!ordersByExternalId.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
+            {
+                ordersByExternalId.Add(order.ExternalOrderId, order);
+                continue;
+            }
+
+            if (IsLaterReport(order, existing))
+            {
+                ordersByExternalId[order.ExternalOrderId] = order;
+            }
         }
 
         if (!ordersPage.HasMore)
@@ -414,6 +460,22 @@ public class ProcessOrdersImportConsumer
         }
 
         return batches;
+    }
+
+    /// <summary>
+    /// Orders whether <paramref name="candidate"/> is a later report of the same order than
+    /// <paramref name="current"/>. <c>StatusChangedAt</c> is the channel's own "as of" instant and
+    /// decides; <c>OrderDate</c> breaks the tie where a channel reports no change time, and an
+    /// exact tie keeps the current report so the merge does not depend on arrival order. Note that
+    /// the snapshots are records whose <c>Lines</c> is a list, so value equality would be
+    /// reference-based anyway — comparing the instants is both correct and order-independent.
+    /// </summary>
+    private static bool IsLaterReport(ChannelOrderSnapshot candidate, ChannelOrderSnapshot current)
+    {
+        DateTimeOffset candidateInstant = candidate.StatusChangedAt ?? candidate.OrderDate;
+        DateTimeOffset currentInstant = current.StatusChangedAt ?? current.OrderDate;
+
+        return candidateInstant > currentInstant;
     }
 
     private static OrdersImportCheckpointPayload? DeserializePayload(string? payload)

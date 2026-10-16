@@ -317,4 +317,186 @@ public class WildberriesApiClientGetOrdersTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    [Fact]
+    public async Task GetOrdersAsync_RowWithoutSrid_UsesPrefixedStickerAsIdentity()
+    {
+        string json = """
+        [
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 123456,
+                "techSize": "0",
+                "gNumber": "G-1",
+                "sticker": "STK-A"
+            }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        page.Orders.Should().HaveCount(1);
+        page.RowsWithoutIdentity.Should().Be(0);
+
+        ChannelOrderSnapshot order = page.Orders.Single();
+        order.ExternalOrderId.Should().Be("wb-stk:STK-A");
+
+        // An order and its single line are the same unit, so they must not diverge on identity.
+        order.Lines.Single().LineKey.Should().Be(order.ExternalOrderId);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_SridPresent_TakesPrecedenceOverSticker()
+    {
+        string json = """
+        [
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 123456,
+                "srid": "SRID-1",
+                "sticker": "STK-A"
+            }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        // srid is the documented order id and is never rewritten into a derived form.
+        page.Orders.Single().ExternalOrderId.Should().Be("SRID-1");
+        page.RowsWithoutIdentity.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_TwoUnitsOfSameCart_DifferOnlyBySticker_AreBothKept()
+    {
+        // The regression this change fixes: gNumber groups a whole cart, so two units of the same
+        // article and size share nmId, techSize, gNumber and (at second precision) date. Keying on
+        // any of those collapsed the two orders into one, losing an order during the fetch.
+        string json = """
+        [
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 123456,
+                "techSize": "0",
+                "gNumber": "G-1",
+                "sticker": "STK-A"
+            },
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 123456,
+                "techSize": "0",
+                "gNumber": "G-1",
+                "sticker": "STK-B"
+            }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        page.Orders.Should().HaveCount(2);
+        page.Orders.Select(o => o.ExternalOrderId)
+            .Should().BeEquivalentTo(new[] { "wb-stk:STK-A", "wb-stk:STK-B" });
+        page.RowsWithoutIdentity.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_RowWithoutSridAndSticker_IsSkippedAndCounted()
+    {
+        string json = """
+        [
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 123456,
+                "techSize": "0",
+                "gNumber": "G-1",
+                "srid": "SRID-1"
+            },
+            {
+                "date": "2024-01-10T08:05:00",
+                "lastChangeDate": "2024-01-10T09:35:00",
+                "nmId": 654321,
+                "techSize": "1",
+                "gNumber": "G-2"
+            }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        page.Orders.Should().HaveCount(1);
+        page.Orders.Single().ExternalOrderId.Should().Be("SRID-1");
+
+        // No composite of nmId/techSize/gNumber/date is proven unique per order, so the row is
+        // dropped and reported rather than given a key that could merge it with another order.
+        page.RowsWithoutIdentity.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_SameSridTwiceInOneResponse_Throws()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "nmId": 1, "gNumber": "G-1", "srid": "SRID-1" },
+            { "date": "2024-01-10T08:00:00", "nmId": 2, "gNumber": "G-1", "srid": "SRID-1" }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        Func<Task> act = async () =>
+            await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        // One response cannot legitimately name one order twice, so keeping either row silently
+        // would decide which of two reported orders the import discards.
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private static OrdersRequest BuildWindowRequest()
+    {
+        return new OrdersRequest
+        {
+            DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
+            Flag = 0,
+            Limit = 100
+        };
+    }
 }

@@ -40,6 +40,13 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private const int ResponseBodyLogLimit = 500;
 
     /// <summary>
+    /// Namespace prefix for order identities derived from the sticker. Wildberries reports
+    /// <c>srid</c> as an opaque token, so a prefixed sticker cannot be mistaken for one and,
+    /// unlike a bare sticker, cannot be confused with any identifier a future payload adds.
+    /// </summary>
+    private const string StickerIdentityPrefix = "wb-stk:";
+
+    /// <summary>
     /// Base delay between deserialization attempts; grows linearly per attempt.
     /// </summary>
     private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
@@ -496,14 +503,54 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         orders ??= new List<WildberriesOrderDto>();
 
-        List<ChannelOrderSnapshot> snapshots = orders
-            .Where(order => IsWithinRequestedWindow(order, request.Flag, dateToMsk))
-            .Select(MapToOrderSnapshot)
-            .ToList();
+        List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>();
+        Dictionary<string, WildberriesOrderDto> rowsByExternalOrderId = new Dictionary<string, WildberriesOrderDto>(StringComparer.Ordinal);
 
-        // The cap is compared against the raw row count, not the filtered one: for flag=1 the
-        // endpoint selects by whole day and can return more rows than the requested window holds,
-        // so a partial response would otherwise be reported as complete.
+        int rowsWithoutIdentity = 0;
+
+        foreach (WildberriesOrderDto order in orders)
+        {
+            if (!IsWithinRequestedWindow(order, request.Flag, dateToMsk))
+            {
+                continue;
+            }
+
+            string? externalOrderId = GetExternalOrderId(order);
+
+            if (externalOrderId == null)
+            {
+                // Never fabricate a key here: any composite over nmId, techSize, gNumber and date
+                // is not proven unique per order (one cart may hold two units of the same article
+                // and size, and Wildberries reports date to the second), so resolving the
+                // collision would merge two real orders into one and report the loss as a
+                // successful import. The row is dropped and counted instead.
+                rowsWithoutIdentity++;
+
+                _logger.LogError(
+                    "Wildberries order row without usable identity skipped: NmId={NmId}, GNumber={GNumber}, Date={Date}, Sticker={Sticker}.",
+                    order.NmId,
+                    order.GNumber,
+                    order.Date,
+                    order.Sticker);
+
+                continue;
+            }
+
+            if (rowsByExternalOrderId.ContainsKey(externalOrderId))
+            {
+                // One response naming the same order twice is a data-quality failure, not a
+                // duplicate to resolve: within a single response there is no window overlap that
+                // could explain a legitimate repeat, and picking either row would silently decide
+                // which of two reported orders the import keeps.
+                throw new InvalidOperationException(
+                    $"Wildberries returned external order id '{externalOrderId}' more than once in one response " +
+                    "(NmId and gNumber lines do not identify a single order, so the response cannot be deduplicated).");
+            }
+
+            rowsByExternalOrderId.Add(externalOrderId, order);
+            snapshots.Add(MapToOrderSnapshot(order, externalOrderId));
+        }
+
         int maxRows = _options.MaxOrdersPerResponse > 0
             ? _options.MaxOrdersPerResponse
             : WildberriesImportOptions.DefaultMaxOrdersPerResponse;
@@ -511,17 +558,51 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         bool hasMore = orders.Count >= maxRows;
 
         _logger.LogInformation(
-            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}).",
+            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}, rowsWithoutIdentity={RowsWithoutIdentity}).",
             snapshots.Count,
             request.Flag,
             dateFromMsk,
-            hasMore);
+            hasMore,
+            rowsWithoutIdentity);
 
         return new OrdersPage
         {
             Orders = snapshots,
-            HasMore = hasMore
+            HasMore = hasMore,
+            RowsWithoutIdentity = rowsWithoutIdentity
         };
+    }
+
+    /// <summary>
+    /// Resolves the identity of one order row. <c>srid</c> is the documented per-order id and is
+    /// returned unmodified; <c>sticker</c> is the only other field the payload guarantees one of
+    /// per ordered unit, and is returned with a prefix so it stays recognisable as a derived
+    /// identity. Everything else is mutable — <c>lastChangeDate</c>, <c>isCancel</c>,
+    /// <c>cancelDate</c> and the price fields all change after the fact — and keying on any of
+    /// them would re-key existing rows on the next import. The connection is deliberately not
+    /// part of the identity either: reconnecting a cabinet would then duplicate its whole history.
+    /// </summary>
+    /// <remarks>
+    /// UNRESOLVED: <c>Order</c> is unique on (TenantId, ChannelId, ExternalOrderId), so this chain
+    /// is only a per-order identity while a tenant binds at most one cabinet to a given ChannelId.
+    /// Nothing enforces that today — Connection carries no such constraint — and two cabinets on
+    /// one channel whose <c>srid</c> values happen to coincide would upsert onto each other's rows.
+    /// Deciding between enforcing the invariant and moving the uniqueness scope onto the connection
+    /// is a product call, not a mapping one; until it is made, the mapping cannot defend itself.
+    /// </remarks>
+    private static string? GetExternalOrderId(WildberriesOrderDto dto)
+    {
+        if (!string.IsNullOrWhiteSpace(dto.Srid))
+        {
+            return dto.Srid;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.Sticker))
+        {
+            return StickerIdentityPrefix + dto.Sticker;
+        }
+
+        return null;
     }
 
     private static string TruncateForLog(string responseBody)
@@ -568,7 +649,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             .ToUniversalTime();
     }
 
-    private ChannelOrderSnapshot MapToOrderSnapshot(WildberriesOrderDto dto)
+    /// <summary>
+    /// Maps one row to a snapshot. <paramref name="externalOrderId"/> is resolved by the caller
+    /// through <see cref="GetExternalOrderId"/> and used verbatim so the order and its single line
+    /// never diverge on identity.
+    /// </summary>
+    private ChannelOrderSnapshot MapToOrderSnapshot(WildberriesOrderDto dto, string externalOrderId)
     {
         DateTimeOffset? orderDate = ParseMoscowTimestamp(dto.Date);
         DateTimeOffset? changedAt = ParseMoscowTimestamp(dto.LastChangeDate);
@@ -579,11 +665,9 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         bool? isSellerWarehouse = dto.WarehouseType?.Contains("продавца", StringComparison.OrdinalIgnoreCase);
 
-        string lineKey = dto.Srid ?? $"{dto.NmId}:{dto.Date}:{dto.GNumber}";
-
         ChannelOrderLineSnapshot line = new ChannelOrderLineSnapshot
         {
-            LineKey = lineKey,
+            LineKey = externalOrderId,
             ExternalLineId = dto.Srid,
             ExternalProductId = dto.NmId.ToString(CultureInfo.InvariantCulture),
             OfferId = dto.SupplierArticle,
@@ -598,7 +682,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         return new ChannelOrderSnapshot
         {
-            ExternalOrderId = dto.Srid ?? lineKey,
+            ExternalOrderId = externalOrderId,
             ExternalOrderNumber = dto.GNumber,
             OrderDate = orderDate ?? DateTimeOffset.UtcNow,
             StatusChangedAt = changedAt,
@@ -736,5 +820,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         [JsonPropertyName("srid")]
         public string? Srid { get; init; }
+
+        /// <summary>
+        /// Gets the identifier of the item sticker: one per ordered unit, which makes it the only
+        /// field besides <see cref="Srid"/> that Wildberries guarantees unique per order.
+        /// </summary>
+        [JsonPropertyName("sticker")]
+        public string? Sticker { get; init; }
     }
 }
