@@ -89,4 +89,17 @@ public class TenantSettingsProvider : ITenantSettingsProvider
             ValidFrom = profile.ValidFrom,
         };
     }
+
+    /// <inheritdoc/>
+    public async Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken);
+
+        if (tenant == null)
+        {
+            throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
+        }
+
+        return tenant.MaxBackgroundJobsParallelism;
+    }
 }

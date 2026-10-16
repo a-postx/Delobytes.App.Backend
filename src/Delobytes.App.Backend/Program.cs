@@ -4,6 +4,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Reflection;
 using System.Text.Json;
 using Delobytes.App.Backend.Application.Behaviours;
+using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
@@ -196,7 +197,14 @@ public partial class Program
             // falls back to in-memory transport in Development without credentials.
             builder.Services.AddMessaging(secrets?.MessageBusConnectionString);
 
-            // ── CORS ────────────────────────────────────────────────────────────────
+            // ── Background jobs scheduler/worker (Integrations, Stage 11) ──────────────────
+            // Separate IHostedServices: the scheduler only creates Pending JobRun rows per cron
+            // schedule, the worker is the sole place that enforces per-tenant parallelism and
+            // publishes the event that actually triggers the orchestration consumer.
+            builder.Services.AddHostedService<SchedulerHostedService>();
+            builder.Services.AddHostedService<WorkerHostedService>();
+
+            // ── CORS ─────────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();
 
             WebApplication app = builder.Build();

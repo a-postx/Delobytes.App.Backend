@@ -10,4 +10,11 @@ public class MultitenancyOptions
     /// Default is 5.
     /// </summary>
     public int MaxTenantsPerUser { get; set; } = 2;
+
+    /// <summary>
+    /// Gets or sets the default value assigned to Tenant.MaxBackgroundJobsParallelism when a
+    /// new tenant is created. Not editable by the tenant itself (decision: parallelism is an
+    /// operational setting, not a user-facing one).
+    /// </summary>
+    public int DefaultMaxBackgroundJobsParallelism { get; set; } = 1;
 }

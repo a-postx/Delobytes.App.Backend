@@ -82,6 +82,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
             Name = request.TenantName,
             CreatedAt = DateTimeOffset.UtcNow,
             IsActive = true,
+            MaxBackgroundJobsParallelism = _options.DefaultMaxBackgroundJobsParallelism,
         };
 
         _tenantRepository.Add(tenant);

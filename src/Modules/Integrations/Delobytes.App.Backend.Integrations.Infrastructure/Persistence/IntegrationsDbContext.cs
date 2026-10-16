@@ -36,6 +36,7 @@ public class IntegrationsDbContext : DbContext
     public DbSet<OrdersImportJob> OrdersImportJobs => Set<OrdersImportJob>();
     public DbSet<JobCheckpoint> JobCheckpoints => Set<JobCheckpoint>();
     public DbSet<SyncCheckpoint> SyncCheckpoints => Set<SyncCheckpoint>();
+    public DbSet<JobSchedule> JobSchedules => Set<JobSchedule>();
 
     /// <inheritdoc/>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -55,19 +56,42 @@ public class IntegrationsDbContext : DbContext
         {
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex("TenantId");
+                // Most ITenantScoped entities rely on a shadow Guid? TenantId property added
+                // here. JobSchedule declares a real, non-nullable Guid TenantId instead (the
+                // scheduler reads it directly to set up a per-tenant execution scope before
+                // resolving any tenant-scoped repository) — reusing the already-declared
+                // property instead of adding a conflicting shadow one with the same name.
+                IMutableProperty tenantIdProperty = entityType.FindProperty("TenantId")
+                    ?? modelBuilder.Entity(entityType.ClrType)
+                        .Property<Guid?>("TenantId")
+                        .IsRequired()
+                        .Metadata;
+
+                bool hasSingleColumnTenantIndex = entityType.GetIndexes()
+                    .Any(i => i.Properties.Count == 1 && i.Properties[0].Name == "TenantId");
+
+                if (!hasSingleColumnTenantIndex)
+                {
+                    modelBuilder.Entity(entityType.ClrType).HasIndex("TenantId");
+                }
 
                 ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
 
                 MethodInfo efPropertyMethod = typeof(EF)
                     .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
-                    .MakeGenericMethod(typeof(Guid?));
+                    .MakeGenericMethod(tenantIdProperty.ClrType);
 
                 MethodCallExpression tenantIdAccess = Expression.Call(
                     efPropertyMethod,
                     parameter,
                     Expression.Constant("TenantId"));
+
+                // Unify to Guid? before comparing: a real, non-nullable Guid property (e.g.
+                // JobSchedule.TenantId) must be widened so Expression.Equal can compare it
+                // against ITenantContext.TenantId (Guid?) without a CLR type mismatch.
+                Expression tenantIdAsNullable = tenantIdProperty.ClrType == typeof(Guid?)
+                    ? tenantIdAccess
+                    : Expression.Convert(tenantIdAccess, typeof(Guid?));
 
                 // Expression.Constant(this) captures the DbContext instance reference.
                 // EF Core recognises DbContext-typed constants in query filter trees and
@@ -78,11 +102,11 @@ public class IntegrationsDbContext : DbContext
                 FieldInfo tenantContextField = typeof(IntegrationsDbContext)
                     .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
                 MemberExpression tenantContextAccess = Expression.Field(contextRef, tenantContextField);
-                MemberExpression tenantIdProperty = Expression.Property(
+                MemberExpression tenantIdProperty2 = Expression.Property(
                     tenantContextAccess,
                     nameof(ITenantContext.TenantId));
 
-                BinaryExpression comparison = Expression.Equal(tenantIdAccess, tenantIdProperty);
+                BinaryExpression comparison = Expression.Equal(tenantIdAsNullable, tenantIdProperty2);
                 LambdaExpression lambda = Expression.Lambda(comparison, parameter);
 
                 modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);

@@ -1,7 +1,10 @@
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using NCrontab;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 
@@ -224,6 +227,92 @@ public static class DataSeeder
         if (endpointsSaved > 0)
         {
             logger.LogInformation("Seeded {Count} SystemChannelEndpoint(s).", endpointsSaved);
+        }
+    }
+
+    /// <summary>
+    /// Seeds a JobSchedule for OrdersImport (hourly by default) for every active Connection
+    /// that does not already have one (Stage 11, decision "Seed initial schedules"). Bypasses
+    /// the tenant query filter via IgnoreQueryFilters because this runs at startup with no
+    /// ambient tenant; writes switch the ambient TenantId per connection so IntegrationsDbContext's
+    /// SetTenantId guard can stamp the new row instead of throwing.
+    /// </summary>
+    /// <param name="context">Integrations DbContext.</param>
+    /// <param name="tenantContext">Message-based tenant context, set per connection before each save.</param>
+    /// <param name="options">Background jobs options (default cron expression).</param>
+    /// <param name="logger">Logger instance.</param>
+    public static async Task SeedJobSchedulesAsync(
+        IntegrationsDbContext context,
+        MessageTenantContext tenantContext,
+        BackgroundJobsOptions options,
+        ILogger logger)
+    {
+        List<Connection> activeConnections = await context.Connections
+            .IgnoreQueryFilters()
+            .Where(c => c.IsActive)
+            .ToListAsync();
+
+        HashSet<Guid> connectionsWithOrdersSchedule = (await context.JobSchedules
+            .IgnoreQueryFilters()
+            .Where(s => s.JobType == JobType.OrdersImport)
+            .Select(s => s.ConnectionId)
+            .ToListAsync())
+            .ToHashSet();
+
+        int seededCount = 0;
+
+        foreach (Connection connection in activeConnections)
+        {
+            if (connectionsWithOrdersSchedule.Contains(connection.Id))
+            {
+                continue;
+            }
+
+            Guid tenantId = (Guid)context.Entry(connection).Property("TenantId").CurrentValue!;
+
+            // Approximate: computed directly against UTC instead of the tenant's time zone.
+            // SchedulerHostedService recomputes NextRunAt in the tenant's time zone the first
+            // time this schedule actually fires, so the error only affects the very first run.
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            CrontabSchedule parsedSchedule = CrontabSchedule.Parse(options.DefaultOrdersImportCronExpression);
+            DateTimeOffset nextRunAt = new DateTimeOffset(
+                DateTime.SpecifyKind(parsedSchedule.GetNextOccurrence(now.UtcDateTime), DateTimeKind.Utc),
+                TimeSpan.Zero);
+
+            JobSchedule schedule = new JobSchedule
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.OrdersImport,
+                CronExpression = options.DefaultOrdersImportCronExpression,
+                IsEnabled = true,
+                LastRunAt = null,
+                NextRunAt = nextRunAt,
+            };
+
+            tenantContext.SetTenantId(tenantId);
+
+            try
+            {
+                context.JobSchedules.Add(schedule);
+                await context.SaveChangesAsync();
+                seededCount++;
+
+                logger.LogInformation(
+                    "Seeded JobSchedule for Connection {ConnectionId} (tenant {TenantId}), NextRunAt={NextRunAt}.",
+                    connection.Id,
+                    tenantId,
+                    nextRunAt);
+            }
+            finally
+            {
+                tenantContext.Clear();
+            }
+        }
+
+        if (seededCount > 0)
+        {
+            logger.LogInformation("Seeded {Count} JobSchedule(s).", seededCount);
         }
     }
 }

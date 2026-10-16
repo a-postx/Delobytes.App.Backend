@@ -37,6 +37,13 @@ public interface IJobRunRepository
     Task<List<JobRun>> GetPendingJobsAsync(Guid tenantId, int limit, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns the number of Running job runs for the given tenant, used by the worker to
+    /// compute how many additional Pending job runs fit within the tenant's configured
+    /// parallelism limit.
+    /// </summary>
+    Task<int> CountRunningJobsAsync(Guid tenantId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns every Running job run (across all tenants) started before
     /// <paramref name="threshold"/>, for the watchdog to reconcile stuck jobs.
     /// </summary>

@@ -64,6 +64,14 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
+    public Task<int> CountRunningJobsAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        return _context.JobRuns
+            .Where(j => EF.Property<Guid>(j, "TenantId") == tenantId && j.Status == JobStatus.Running)
+            .CountAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public Task<List<JobRun>> GetRunningJobsOlderThanAsync(DateTimeOffset threshold, CancellationToken cancellationToken)
     {
         // Watchdog must see every tenant's stuck jobs, not just the caller's current tenant.

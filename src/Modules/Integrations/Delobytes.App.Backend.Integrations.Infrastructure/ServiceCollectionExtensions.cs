@@ -43,6 +43,9 @@ public static class ServiceCollectionExtensions
         services.Configure<WildberriesImportOptions>(
             configuration?.GetSection("WildberriesImport") ?? new ConfigurationBuilder().Build().GetSection("WildberriesImport"));
 
+        services.Configure<BackgroundJobsOptions>(
+            configuration?.GetSection("BackgroundJobs") ?? new ConfigurationBuilder().Build().GetSection("BackgroundJobs"));
+
         services.AddDbContext<IntegrationsDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
@@ -54,6 +57,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobRunRepository, JobRunRepository>();
         services.AddScoped<IJobCheckpointRepository, JobCheckpointRepository>();
         services.AddScoped<ISyncCheckpointRepository, SyncCheckpointRepository>();
+        services.AddScoped<IJobScheduleRepository, JobScheduleRepository>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();

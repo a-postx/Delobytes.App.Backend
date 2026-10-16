@@ -42,6 +42,10 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.Bik);
         builder.Property(t => t.CorrespondentAccount);
 
+        builder.Property(t => t.MaxBackgroundJobsParallelism)
+            .IsRequired()
+            .HasDefaultValue(1);
+
         builder.Property(t => t.Currency)
             .IsRequired()
             .HasMaxLength(3);

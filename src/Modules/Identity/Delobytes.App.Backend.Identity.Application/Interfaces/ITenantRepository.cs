@@ -26,4 +26,11 @@ public interface ITenantRepository
     /// Persists all pending changes.
     /// </summary>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the identifiers of every active tenant. Used by background services (e.g.
+    /// WorkerHostedService) that fan out work across every tenant instead of a single
+    /// ambient one.
+    /// </summary>
+    public Task<List<Guid>> GetAllActiveTenantIdsAsync(CancellationToken cancellationToken);
 }

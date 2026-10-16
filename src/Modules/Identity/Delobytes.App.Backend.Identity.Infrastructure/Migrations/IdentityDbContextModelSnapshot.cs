@@ -129,6 +129,11 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Migrations
                     b.Property<string>("LegalNameShort")
                         .HasColumnType("text");
 
+                    b.Property<int>("MaxBackgroundJobsParallelism")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)

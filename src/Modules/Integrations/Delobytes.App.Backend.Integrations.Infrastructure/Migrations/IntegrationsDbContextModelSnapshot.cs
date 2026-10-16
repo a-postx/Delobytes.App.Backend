@@ -234,6 +234,49 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("JobRunBatchResults", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CronExpression")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("JobType")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LastRunAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("NextRunAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("ConnectionId", "JobType")
+                        .IsUnique()
+                        .HasDatabaseName("IX_JobSchedules_ConnectionId_JobType");
+
+                    b.HasIndex("IsEnabled", "NextRunAt")
+                        .HasDatabaseName("IX_JobSchedules_IsEnabled_NextRunAt");
+
+                    b.ToTable("JobSchedules", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
                 {
                     b.Property<Guid>("JobRunId")
@@ -538,6 +581,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("JobRun");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobSchedule", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>

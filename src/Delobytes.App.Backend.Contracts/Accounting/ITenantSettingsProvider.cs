@@ -24,4 +24,16 @@ public interface ITenantSettingsProvider
     /// если на эту дату ни одного профиля нет.
     /// </returns>
     Task<TenantTaxProfileSnapshot?> GetTaxProfileAtAsync(Guid tenantId, DateTimeOffset moment, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Возвращает лимит одновременно выполняемых фоновых задач (JobRun) для тенанта.
+    /// Используется планировщиком/воркером фоновых заданий Integrations (Stage 11) и не
+    /// относится к налоговому/валютному профилю, но размещён здесь, а не в отдельном
+    /// интерфейсе, т.к. ITenantSettingsProvider уже служит единой точкой чтения настроек
+    /// тенанта модулями, не имеющими прямой зависимости на Identity.
+    /// </summary>
+    /// <param name="tenantId">Идентификатор тенанта.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Максимальное число одновременно выполняемых JobRun для тенанта.</returns>
+    Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken);
 }
