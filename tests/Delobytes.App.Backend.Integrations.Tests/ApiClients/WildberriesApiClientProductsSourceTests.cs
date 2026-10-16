@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -14,6 +15,7 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
@@ -50,6 +52,7 @@ public class WildberriesApiClientProductsSourceTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance);
 
         client.SetTemplate(TestTemplate);

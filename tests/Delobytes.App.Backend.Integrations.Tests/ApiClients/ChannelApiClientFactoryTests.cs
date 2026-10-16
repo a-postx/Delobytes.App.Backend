@@ -4,12 +4,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
@@ -60,6 +62,7 @@ public class ChannelApiClientFactoryTests
         services.AddTransient(sp => new WildberriesApiClient(
             httpClient,
             sp.GetRequiredService<IEndpointResolver>(),
+            Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance));
 
         services.AddTransient(sp => new OzonApiClient(
@@ -108,6 +111,7 @@ public class ChannelApiClientFactoryTests
         services.AddTransient(sp => new WildberriesApiClient(
             httpClient,
             sp.GetRequiredService<IEndpointResolver>(),
+            Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance));
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 

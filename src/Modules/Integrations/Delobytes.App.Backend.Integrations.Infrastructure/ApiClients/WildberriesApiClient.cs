@@ -8,11 +8,13 @@ using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
@@ -51,6 +53,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private readonly HttpClient _httpClient;
     private readonly IEndpointResolver _endpointResolver;
     private readonly ILogger<WildberriesApiClient> _logger;
+    private readonly WildberriesImportOptions _options;
 
     private Guid? _templateId;
 
@@ -62,10 +65,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     public WildberriesApiClient(
         HttpClient httpClient,
         IEndpointResolver endpointResolver,
+        IOptions<WildberriesImportOptions> options,
         ILogger<WildberriesApiClient> logger)
     {
         _httpClient = httpClient;
         _endpointResolver = endpointResolver;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -434,10 +439,14 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     ///
     /// <remarks>
     /// The underlying endpoint (<c>/api/v1/supplier/orders</c>) accepts only <c>dateFrom</c> and
-    /// <c>flag</c> and returns the full matching window in a single response - there is no
-    /// server-side <c>dateTo</c> or page size. <see cref="OrdersRequest.DateTo"/> and
-    /// <see cref="OrdersRequest.Limit"/> are therefore applied client-side after the fetch, and
-    /// <see cref="OrdersPage.HasMore"/> is always false because nothing was left unread.
+    /// <c>flag</c>: there is no server-side <c>dateTo</c> and no page size, so
+    /// <see cref="OrdersRequest.DateTo"/> is applied client-side after the fetch.
+    /// <see cref="OrdersRequest.Limit"/> is advisory only and is deliberately not applied here -
+    /// the endpoint cannot honour it, and truncating locally would drop orders the caller asked
+    /// for, which is exactly the data loss this path must not reintroduce.
+    /// The endpoint does cap a single response by <see cref="WildberriesImportOptions.MaxOrdersPerResponse"/>
+    /// rows, so <see cref="OrdersPage.HasMore"/> reports whether the response was a partial subset
+    /// of the requested window and the caller has to narrow it and fetch again.
     /// </remarks>
     public async Task<OrdersPage> GetOrdersAsync(
         Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
@@ -492,21 +501,26 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             .Select(MapToOrderSnapshot)
             .ToList();
 
-        if (request.Limit > 0 && snapshots.Count > request.Limit)
-        {
-            snapshots = snapshots.Take(request.Limit).ToList();
-        }
+        // The cap is compared against the raw row count, not the filtered one: for flag=1 the
+        // endpoint selects by whole day and can return more rows than the requested window holds,
+        // so a partial response would otherwise be reported as complete.
+        int maxRows = _options.MaxOrdersPerResponse > 0
+            ? _options.MaxOrdersPerResponse
+            : WildberriesImportOptions.DefaultMaxOrdersPerResponse;
+
+        bool hasMore = orders.Count >= maxRows;
 
         _logger.LogInformation(
-            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}).",
+            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}).",
             snapshots.Count,
             request.Flag,
-            dateFromMsk);
+            dateFromMsk,
+            hasMore);
 
         return new OrdersPage
         {
             Orders = snapshots,
-            HasMore = false
+            HasMore = hasMore
         };
     }
 

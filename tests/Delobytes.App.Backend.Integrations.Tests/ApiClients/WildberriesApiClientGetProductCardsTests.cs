@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -16,6 +17,7 @@ using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
@@ -67,6 +69,7 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(new WildberriesImportOptions()),
             logger ?? NullLogger<WildberriesApiClient>.Instance);
 
         client.DeserializationRetryDelay = retryDelay ?? NoRetryDelay;
@@ -577,6 +580,7 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(new WildberriesImportOptions()),
             loggerMock.Object);
 
         client.SetTemplate(TestTemplate);
@@ -646,6 +650,7 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(new WildberriesImportOptions()),
             loggerMock.Object);
 
         client.SetTemplate(TestTemplate);
@@ -711,6 +716,7 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(new WildberriesImportOptions()),
             loggerMock.Object);
 
         client.SetTemplate(TestTemplate);

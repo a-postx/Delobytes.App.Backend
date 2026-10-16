@@ -3,25 +3,34 @@ using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
 /// Orchestrates an orders import run: computes the delta/backfill window from SyncCheckpoint,
-/// fetches every page, persists the expected batch count in JobCheckpoint and publishes
-/// OrdersBatchImportRequestedEvent per batch. Not user-cancellable (scheduled job).
+/// fetches the whole window (narrowing it while the endpoint reports a partial response), persists
+/// the expected batch count in JobCheckpoint and publishes OrdersBatchImportRequestedEvent per
+/// batch. Not user-cancellable (scheduled job).
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
     public const int BatchSize = 10;
-    public const int PageLimit = 100;
-    public const int MaxPages = 1000;
+
+    /// <summary>
+    /// Hard bound on the number of HTTP requests one run may issue. Bisection of a window does
+    /// not loop, but the bound protects against a pathological configuration (a floor far below
+    /// the requested window) turning one run into an unbounded request storm.
+    /// </summary>
+    public const int MaxRequestsPerRun = 1000;
 
     public static readonly TimeSpan SafetyOverlap = TimeSpan.FromMinutes(30);
     public static readonly TimeSpan BackfillWindow = TimeSpan.FromDays(30);
@@ -33,7 +42,12 @@ public class ProcessOrdersImportConsumer
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
+    private readonly JobRunExecutionContext _jobRunExecutionContext;
+    private readonly WildberriesImportOptions _options;
     private readonly ILogger<ProcessOrdersImportConsumer> _logger;
+    private readonly TimeSpan _minWindow;
+
+    private int _requestsIssued;
 
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
@@ -41,6 +55,8 @@ public class ProcessOrdersImportConsumer
         ISyncCheckpointRepository syncCheckpointRepository,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
+        JobRunExecutionContext jobRunExecutionContext,
+        IOptions<WildberriesImportOptions> options,
         ILogger<ProcessOrdersImportConsumer> logger)
     {
         _jobRunRepository = jobRunRepository;
@@ -48,6 +64,13 @@ public class ProcessOrdersImportConsumer
         _syncCheckpointRepository = syncCheckpointRepository;
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
+        _jobRunExecutionContext = jobRunExecutionContext;
+        _options = options.Value;
+
+        _minWindow = _options.MinOrdersWindow > TimeSpan.Zero
+            ? _options.MinOrdersWindow
+            : TimeSpan.FromHours(1);
+
         _logger = logger;
     }
 
@@ -99,6 +122,11 @@ public class ProcessOrdersImportConsumer
             await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
 
+        // Correlates every HTTP call made through apiClient below with this JobRun, so
+        // RawApiResponseCaptureHandler can attribute captured rows to it. The finally below covers
+        // every exit path of the try, including the early returns inside it.
+        _jobRunExecutionContext.SetCurrent(jobRun.Id);
+
         try
         {
             IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
@@ -146,12 +174,13 @@ public class ProcessOrdersImportConsumer
                 DateFrom = windowFrom.ToOffset(MoscowOffset),
                 DateTo = windowTo.ToOffset(MoscowOffset),
                 Flag = flag,
-                Limit = PageLimit,
+                Limit = 0,
             };
 
-            List<ChannelOrderSnapshot> allOrders = await FetchAllPagesAsync(
+            OrdersFetchResult fetchResult = await FetchAllPagesAsync(
                 ordersSource, connection.Id, request, jobRun.Id, cancellationToken);
 
+            List<ChannelOrderSnapshot> allOrders = fetchResult.Orders;
             List<List<ChannelOrderSnapshot>> batches = SplitIntoBatches(allOrders);
 
             OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
@@ -159,7 +188,7 @@ public class ProcessOrdersImportConsumer
                 TotalBatches = batches.Count,
                 MaxChangedAt = GetMaxChangedAt(allOrders),
                 WindowTo = windowTo,
-                PagesFetched = (allOrders.Count / PageLimit) + 1,
+                PagesFetched = fetchResult.RequestsIssued,
             };
 
             // Must be persisted before the first publish: the aggregator can only finalise once it
@@ -189,9 +218,10 @@ public class ProcessOrdersImportConsumer
             }
 
             _logger.LogInformation(
-                "JobRun {JobRunId}: fetched {Orders} orders, published {Batches} batches",
+                "JobRun {JobRunId}: fetched {Orders} orders in {Requests} requests, published {Batches} batches",
                 jobRun.Id,
                 allOrders.Count,
+                fetchResult.RequestsIssued,
                 batches.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -202,6 +232,10 @@ public class ProcessOrdersImportConsumer
         {
             _logger.LogError(ex, "JobRun {JobRunId}: orders import failed", jobRun.Id);
             await FailJobAsync(jobRun, ex.Message);
+        }
+        finally
+        {
+            _jobRunExecutionContext.Clear();
         }
     }
 
@@ -218,73 +252,108 @@ public class ProcessOrdersImportConsumer
         return new Guid(hash);
     }
 
-    private async Task<List<ChannelOrderSnapshot>> FetchAllPagesAsync(
+    private async Task<OrdersFetchResult> FetchAllPagesAsync(
         IOrdersSource ordersSource,
         Guid connectionId,
         OrdersRequest request,
         Guid jobRunId,
         CancellationToken cancellationToken)
     {
-        List<ChannelOrderSnapshot> allOrders = new List<ChannelOrderSnapshot>();
-        HashSet<string> seenOrderIds = new HashSet<string>(StringComparer.Ordinal);
-        OrdersRequest currentRequest = request;
+        Dictionary<string, ChannelOrderSnapshot> ordersByExternalId = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
-        for (int page = 0; page < MaxPages; page++)
+        _requestsIssued = 0;
+
+        await FetchWindowAsync(ordersSource, connectionId, request, jobRunId, ordersByExternalId, cancellationToken);
+
+        return new OrdersFetchResult
         {
-            OrdersPage ordersPage = await ordersSource.GetOrdersAsync(connectionId, currentRequest, cancellationToken);
-
-            foreach (ChannelOrderSnapshot order in ordersPage.Orders)
-            {
-                if (seenOrderIds.Add(order.ExternalOrderId))
-                {
-                    allOrders.Add(order);
-                }
-            }
-
-            if (!ordersPage.HasMore || ordersPage.Orders.Count == 0)
-            {
-                return allOrders;
-            }
-
-            DateTimeOffset? nextFrom = GetPageCursor(ordersPage.Orders, currentRequest.Flag);
-
-            // Without forward progress the same page would be requested forever.
-            if (nextFrom == null || nextFrom.Value <= currentRequest.DateFrom)
-            {
-                _logger.LogWarning(
-                    "JobRun {JobRunId}: source reported more orders but the window cannot advance past {From}, stopping",
-                    jobRunId,
-                    currentRequest.DateFrom);
-                return allOrders;
-            }
-
-            currentRequest = new OrdersRequest
-            {
-                DateFrom = nextFrom.Value,
-                DateTo = currentRequest.DateTo,
-                Flag = currentRequest.Flag,
-                Limit = currentRequest.Limit,
-            };
-        }
-
-        throw new InvalidOperationException($"Orders import exceeded {MaxPages} pages.");
+            Orders = ordersByExternalId.Values.ToList(),
+            RequestsIssued = _requestsIssued,
+        };
     }
 
-    private static DateTimeOffset? GetPageCursor(List<ChannelOrderSnapshot> orders, int flag)
+    /// <summary>
+    /// Fetches one window. If the endpoint reports the response was a partial subset of the window,
+    /// the window is split at its midpoint and both halves are fetched the same way, because the
+    /// endpoint exposes no ordering guarantee: the rows it returned cannot be assumed to be the
+    /// earliest ones, so advancing <c>dateFrom</c> past them would silently drop the rest of the
+    /// window. Rows seen twice (both halves of a split share their boundary instant) are collapsed
+    /// by the dedup dictionary.
+    /// </summary>
+    private async Task FetchWindowAsync(
+        IOrdersSource ordersSource,
+        Guid connectionId,
+        OrdersRequest request,
+        Guid jobRunId,
+        Dictionary<string, ChannelOrderSnapshot> ordersByExternalId,
+        CancellationToken cancellationToken)
     {
-        DateTimeOffset? max = null;
-
-        foreach (ChannelOrderSnapshot order in orders)
+        if (_requestsIssued >= MaxRequestsPerRun)
         {
-            DateTimeOffset value = flag == 0 ? order.StatusChangedAt ?? order.OrderDate : order.OrderDate;
-
-            if (max == null || value > max.Value)
-            {
-                max = value;
-            }
+            throw new InvalidOperationException(
+                $"Orders import exceeded {MaxRequestsPerRun} requests for JobRun {jobRunId}.");
         }
 
-        return max;
+        _requestsIssued++;
+
+        OrdersPage ordersPage = await ordersSource.GetOrdersAsync(connectionId, request, cancellationToken);
+
+        foreach (ChannelOrderSnapshot order in ordersPage.Orders)
+        {
+            ordersByExternalId[order.ExternalOrderId] = order;
+        }
+
+        if (!ordersPage.HasMore)
+        {
+            return;
+        }
+
+        TimeSpan windowSpan = request.DateTo - request.DateFrom;
+
+        if (windowSpan <= _minWindow)
+        {
+            // Accepting the truncated response would silently drop orders, which is the defect this
+            // path exists to fix; the run fails instead so the operator sees a window granularity
+            // that the endpoint cannot serve rather than a partial import reported as success.
+            _logger.LogWarning(
+                "JobRun {JobRunId}: window {From} - {To} still returns a partial response at the minimum granularity of {MinWindow}, failing the run",
+                jobRunId,
+                request.DateFrom,
+                request.DateTo,
+                _minWindow);
+
+            throw new InvalidOperationException(
+                $"Orders import cannot narrow window {request.DateFrom:O} - {request.DateTo:O} below {_minWindow} " +
+                "while the endpoint keeps reporting a partial response.");
+        }
+
+        DateTimeOffset midpoint = request.DateFrom + TimeSpan.FromTicks(windowSpan.Ticks / 2);
+
+        OrdersRequest firstHalf = new OrdersRequest
+        {
+            DateFrom = request.DateFrom,
+            DateTo = midpoint,
+            Flag = request.Flag,
+            Limit = request.Limit,
+        };
+
+        OrdersRequest secondHalf = new OrdersRequest
+        {
+            DateFrom = midpoint,
+            DateTo = request.DateTo,
+            Flag = request.Flag,
+            Limit = request.Limit,
+        };
+
+        _logger.LogInformation(
+            "JobRun {JobRunId}: window {From} - {To} exceeded the response cap, splitting at {Midpoint}",
+            jobRunId,
+            request.DateFrom,
+            request.DateTo,
+            midpoint);
+
+        await FetchWindowAsync(ordersSource, connectionId, firstHalf, jobRunId, ordersByExternalId, cancellationToken);
+        await FetchWindowAsync(ordersSource, connectionId, secondHalf, jobRunId, ordersByExternalId, cancellationToken);
     }
 
     private static DateTimeOffset? GetMaxChangedAt(List<ChannelOrderSnapshot> orders)

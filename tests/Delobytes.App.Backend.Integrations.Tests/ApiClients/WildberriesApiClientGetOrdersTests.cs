@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -14,6 +15,7 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
@@ -34,7 +36,7 @@ public class WildberriesApiClientGetOrdersTests
         CreatedAt = DateTimeOffset.UtcNow,
     };
 
-    private static WildberriesApiClient BuildClient(MockHttpMessageHandler mockHttp)
+    private static WildberriesApiClient BuildClient(MockHttpMessageHandler mockHttp, int? maxOrdersPerResponse = null)
     {
         HttpClient typedClient = mockHttp.ToHttpClient();
 
@@ -46,9 +48,17 @@ public class WildberriesApiClientGetOrdersTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(StatisticsBaseUrl);
 
+        WildberriesImportOptions options = new WildberriesImportOptions();
+
+        if (maxOrdersPerResponse.HasValue)
+        {
+            options.MaxOrdersPerResponse = maxOrdersPerResponse.Value;
+        }
+
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(options),
             NullLogger<WildberriesApiClient>.Instance);
 
         client.SetTemplate(TestTemplate);
@@ -206,7 +216,7 @@ public class WildberriesApiClientGetOrdersTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_RequestLimitLowerThanResultCount_TruncatesResults()
+    public async Task GetOrdersAsync_RequestLimitLowerThanResultCount_ReturnsEveryRow()
     {
         string json = """
         [
@@ -232,7 +242,9 @@ public class WildberriesApiClientGetOrdersTests
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
 
-        page.Orders.Should().HaveCount(1);
+        page.Orders.Should().HaveCount(2);
+        page.Orders.Select(o => o.ExternalOrderId).Should().BeEquivalentTo(new[] { "A", "B" });
+        page.HasMore.Should().BeFalse();
     }
 
     [Fact]
@@ -293,6 +305,7 @@ public class WildberriesApiClientGetOrdersTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance);
 
         IOrdersSource ordersSource = client;

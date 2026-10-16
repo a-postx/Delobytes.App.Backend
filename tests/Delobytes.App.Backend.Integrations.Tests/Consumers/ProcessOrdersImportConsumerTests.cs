@@ -1,18 +1,22 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -29,14 +33,29 @@ public class ProcessOrdersImportConsumerTests
     private readonly Mock<IOrdersChannelClient> _ordersSource = new();
     public interface IOrdersChannelClient : IChannelApiClient, IOrdersSource { }
 
-    private ProcessOrdersImportConsumer CreateConsumer()
+    // Real instance rather than a mock: JobRunExecutionContext has no interface/virtual
+    // members for Moq to override, and it is cheap enough (AsyncLocal-backed) to exercise for
+    // real, the same way ProcessProductsImportConsumerTests exercises it.
+    private readonly JobRunExecutionContext _jobRunExecutionContext = new();
+
+    private ProcessOrdersImportConsumer CreateConsumer(int maxOrdersPerResponse = 80000, TimeSpan? minOrdersWindow = null)
     {
+        WildberriesImportOptions options = new WildberriesImportOptions
+        {
+            MaxOrdersPerResponse = maxOrdersPerResponse,
+            MinOrdersWindow = minOrdersWindow ?? TimeSpan.FromHours(1),
+        };
+
+        IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+
         return new ProcessOrdersImportConsumer(
             _jobRunRepo.Object,
             _jobCheckpointRepo.Object,
             _syncCheckpointRepo.Object,
             _clientFactory.Object,
             _eventPublisher.Object,
+            _jobRunExecutionContext,
+            wrappedOptions,
             _logger.Object);
     }
 
@@ -415,5 +434,279 @@ public class ProcessOrdersImportConsumerTests
         Guid batchId1 = ProcessOrdersImportConsumer.CreateBatchId(jobRunId, 1);
 
         batchId0.Should().NotBe(batchId1);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SuccessPath_ClearsJobRunContext()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage { Orders = BuildOrders(3), HasMore = false });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _jobRunExecutionContext.JobRunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SourceThrows_ClearsJobRunContext()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("wildberries unavailable"));
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Failed);
+
+        _jobRunExecutionContext.JobRunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ChannelDoesNotSupportOrders_ClearsJobRunContext()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        Mock<IChannelApiClient> mockApiClient = new Mock<IChannelApiClient>();
+        _clientFactory
+            .Setup(f => f.Create(It.IsAny<SystemChannelTemplate>()))
+            .Returns(mockApiClient.Object);
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _jobRunExecutionContext.JobRunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_JobRunContextSetBeforeSourceIsQueried()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        Guid? observedJobRunId = null;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .Callback(() => observedJobRunId = _jobRunExecutionContext.JobRunId)
+            .ReturnsAsync(new OrdersPage { Orders = BuildOrders(1), HasMore = false });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        observedJobRunId.Should().Be(jobRun.Id);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FirstResponseIsPartial_BisectsWindowAndMergesBothHalves()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(3, 1), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage { Orders = BuildOrders(2, 1), HasMore = false };
+                }
+
+                return new OrdersPage { Orders = BuildOrders(2, 3), HasMore = false };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 3);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        _ordersSource.Verify(
+            s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
+
+        _eventPublisher.Verify(
+            p => p.PublishAsync(
+                It.Is<OrdersBatchImportRequestedEvent>(e => e.IsTerminal),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        List<string> publishedOrderIds = new List<string>();
+
+        foreach (OrdersBatchImportRequestedEvent published in CapturedBatches())
+        {
+            publishedOrderIds.AddRange(published.Orders.Select(o => o.ExternalOrderId));
+        }
+
+        publishedOrderIds.Should().BeEquivalentTo(new[] { "ORDER-1", "ORDER-2", "ORDER-3", "ORDER-4" });
+    }
+
+    [Fact]
+    public async Task ProcessAsync_OrderPresentInBothHalves_IsPublishedOnce()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(3, 1), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage { Orders = BuildOrders(2, 1), HasMore = false };
+                }
+
+                return new OrdersPage { Orders = BuildOrders(2, 2), HasMore = false };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 3);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        List<string> publishedOrderIds = new List<string>();
+
+        foreach (OrdersBatchImportRequestedEvent published in CapturedBatches())
+        {
+            publishedOrderIds.AddRange(published.Orders.Select(o => o.ExternalOrderId));
+        }
+
+        publishedOrderIds.Should().BeEquivalentTo(new[] { "ORDER-1", "ORDER-2", "ORDER-3" });
+        publishedOrderIds.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_PartialResponseAtMinimumWindow_FailsTheRun()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncCheckpoint
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = connection.Id,
+                JobType = JobType.OrdersImport,
+                LastChangedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            });
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage { Orders = BuildOrders(3), HasMore = true });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 3, minOrdersWindow: TimeSpan.FromMinutes(30));
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // One request for the whole window plus one per half; without the floor this recursion
+        // would keep halving the window instead of terminating.
+        _ordersSource.Verify(
+            s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        jobRun.Status.Should().Be(JobStatus.Failed);
+
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _jobRunExecutionContext.JobRunId.Should().BeNull();
+    }
+
+    private List<OrdersBatchImportRequestedEvent> CapturedBatches()
+    {
+        List<OrdersBatchImportRequestedEvent> captured = new List<OrdersBatchImportRequestedEvent>();
+
+        _eventPublisher
+            .Invocations
+            .Where(i => i.Arguments.Count > 0 && i.Arguments[0] is OrdersBatchImportRequestedEvent)
+            .ToList()
+            .ForEach(i => captured.Add((OrdersBatchImportRequestedEvent)i.Arguments[0]));
+
+        return captured;
     }
 }
