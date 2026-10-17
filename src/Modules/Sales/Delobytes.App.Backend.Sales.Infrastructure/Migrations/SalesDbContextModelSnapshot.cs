@@ -230,6 +230,11 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<bool>("IsCancelled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("LineKey")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -248,6 +253,9 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("StatusChangedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");

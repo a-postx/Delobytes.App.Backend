@@ -81,6 +81,18 @@ public class OrderLine : ITenantScoped
     public string Currency { get; set; } = default!;
 
     /// <summary>
+    /// Gets or sets a value indicating whether the channel cancelled this unit. Imported fact, so
+    /// it participates in change detection and is what the order's own status is derived from once
+    /// the cart holds more than one line.
+    /// </summary>
+    public bool IsCancelled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the unit's own last-change instant as reported by the channel.
+    /// </summary>
+    public DateTimeOffset? StatusChangedAt { get; set; }
+
+    /// <summary>
     /// Gets or sets the resolved link to the catalogue channel product. Nullable by design:
     /// orders can arrive before the catalogue import created the matching entry.
     /// </summary>

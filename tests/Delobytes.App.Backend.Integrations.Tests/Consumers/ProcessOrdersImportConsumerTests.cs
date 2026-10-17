@@ -118,7 +118,10 @@ public class ProcessOrdersImportConsumerTests
         };
     }
 
-    private static ChannelOrderLineSnapshot BuildLine(string lineKey)
+    private static ChannelOrderLineSnapshot BuildLine(
+        string lineKey,
+        bool isCancelled = false,
+        DateTimeOffset? statusChangedAt = null)
     {
         return new ChannelOrderLineSnapshot
         {
@@ -132,6 +135,9 @@ public class ProcessOrdersImportConsumerTests
             BuyerUnitPrice = 950m,
             UnitPriceBeforeDiscount = 1200m,
             Currency = "RUB",
+            IsCancelled = isCancelled,
+            StatusChangedAt = statusChangedAt,
+            ChannelReportedTotal = 1200m,
         };
     }
 
@@ -145,7 +151,7 @@ public class ProcessOrdersImportConsumerTests
 
         foreach (string lineKey in lineKeys)
         {
-            lines.Add(BuildLine(lineKey));
+            lines.Add(BuildLine(lineKey, statusChangedAt: DateTimeOffset.UtcNow));
         }
 
         return new ChannelOrderSnapshot
@@ -830,7 +836,14 @@ public class ProcessOrdersImportConsumerTests
                     {
                         Orders = new List<ChannelOrderSnapshot>
                         {
-                            BuildCart("ORDER-1", "SRID-1") with { StatusChangedAt = earlier },
+                            BuildCart("ORDER-1", "SRID-1") with
+                            {
+                                StatusChangedAt = earlier,
+                                Lines = new List<ChannelOrderLineSnapshot>
+                                {
+                                    BuildLine("SRID-1", statusChangedAt: earlier),
+                                },
+                            },
                         },
                         HasMore = false,
                     };
@@ -840,7 +853,14 @@ public class ProcessOrdersImportConsumerTests
                 {
                     Orders = new List<ChannelOrderSnapshot>
                     {
-                        BuildCart("ORDER-1", "SRID-2") with { StatusChangedAt = later },
+                        BuildCart("ORDER-1", "SRID-2") with
+                        {
+                            StatusChangedAt = later,
+                            Lines = new List<ChannelOrderLineSnapshot>
+                            {
+                                BuildLine("SRID-2", statusChangedAt: later),
+                            },
+                        },
                     },
                     HasMore = false,
                 };
@@ -858,8 +878,473 @@ public class ProcessOrdersImportConsumerTests
         cart.Should().ContainSingle();
         cart.Single().Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
 
-        // The header still comes from the later report.
+        // The header instant is the newest per-unit instant in the merged line set.
         cart.Single().StatusChangedAt.Should().Be(later);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_LiveUnitOnEarlierReportAndCancelledUnitOnLaterReport_StaysActive()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(1, 10), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    // The earlier report holds the only live unit and describes its own cart as active.
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with
+                            {
+                                StatusChangedAt = earlier,
+                                Lines = new List<ChannelOrderLineSnapshot>
+                                {
+                                    BuildLine("SRID-1", isCancelled: false, statusChangedAt: earlier),
+                                },
+                            },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                // The later report holds the only cancelled unit. Taking its header, as the previous
+                // merge did, marked the whole cart cancelled while a live unit sat in it.
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-2") with
+                        {
+                            StatusChangedAt = later,
+                            ExternalStatus = "cancelled",
+                            CancelReason = "cancel",
+                            Lines = new List<ChannelOrderLineSnapshot>
+                            {
+                                BuildLine("SRID-2", isCancelled: true, statusChangedAt: later),
+                            },
+                        },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        ChannelOrderSnapshot cart = PublishedOrders().Single(o => o.ExternalOrderId == "ORDER-1");
+
+        cart.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        cart.ExternalStatus.Should().Be("active");
+        cart.CancelReason.Should().BeNull();
+        cart.StatusChangedAt.Should().Be(later);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CancelledUnitOnEarlierReportAndLiveUnitOnLaterReport_StaysActive()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(1, 10), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with
+                            {
+                                StatusChangedAt = earlier,
+                                ExternalStatus = "cancelled",
+                                CancelReason = "cancel",
+                                Lines = new List<ChannelOrderLineSnapshot>
+                                {
+                                    BuildLine("SRID-1", isCancelled: true, statusChangedAt: earlier),
+                                },
+                            },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                // The live unit arrives last. The cart still holds a cancelled unit, so it is not
+                // cancelled; the status follows the line set, not whichever report won.
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-2") with
+                        {
+                            StatusChangedAt = later,
+                            Lines = new List<ChannelOrderLineSnapshot>
+                            {
+                                BuildLine("SRID-2", isCancelled: false, statusChangedAt: later),
+                            },
+                        },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        ChannelOrderSnapshot cart = PublishedOrders().Single(o => o.ExternalOrderId == "ORDER-1");
+
+        cart.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        cart.ExternalStatus.Should().Be("active");
+        cart.CancelReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_EveryUnitCancelledAcrossBothHalves_IsCancelled()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(1, 10), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with
+                            {
+                                StatusChangedAt = earlier,
+                                Lines = new List<ChannelOrderLineSnapshot>
+                                {
+                                    BuildLine("SRID-1", isCancelled: true, statusChangedAt: earlier),
+                                },
+                            },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-2") with
+                        {
+                            StatusChangedAt = later,
+                            Lines = new List<ChannelOrderLineSnapshot>
+                            {
+                                BuildLine("SRID-2", isCancelled: true, statusChangedAt: later),
+                            },
+                        },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        ChannelOrderSnapshot cart = PublishedOrders().Single(o => o.ExternalOrderId == "ORDER-1");
+
+        cart.ExternalStatus.Should().Be("cancelled");
+        cart.CancelReason.Should().Be("cancel");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CartSplitAcrossBothHalves_ReportsNoChannelTotal()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(1, 10), HasMore = true };
+                }
+
+                // Each half sees one unit, so each is entitled to report that unit's amount as its
+                // own cart total. The merged cart holds two units and has no cart-level total, so
+                // keeping either half's value would report one unit's price as the price of both.
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with
+                            {
+                                StatusChangedAt = earlier,
+                                ChannelReportedTotal = 1200m,
+                            },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-2") with
+                        {
+                            StatusChangedAt = later,
+                            ChannelReportedTotal = 1200m,
+                        },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        ChannelOrderSnapshot cart = PublishedOrders().Single(o => o.ExternalOrderId == "ORDER-1");
+
+        cart.Lines.Should().HaveCount(2);
+        cart.ChannelReportedTotal.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CartSplitAcrossBothHalves_KeepsTheEarliestOrderDate()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset earliest = DateTimeOffset.UtcNow.AddDays(-2);
+        DateTimeOffset laterPlacement = DateTimeOffset.UtcNow.AddDays(-1);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(1, 10), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with { OrderDate = earliest, StatusChangedAt = later },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                // The later report's own placement instant is newer than the cart's earliest unit, so
+                // taking it wholesale would move the whole cart forward in time.
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-2") with { OrderDate = laterPlacement, StatusChangedAt = later },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        PublishedOrders().Single(o => o.ExternalOrderId == "ORDER-1").OrderDate.Should().Be(earliest);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CollidingLine_KeepsTheVersionWithTheLaterLineInstant()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        DateTimeOffset oldLine = DateTimeOffset.UtcNow.AddHours(-4);
+        DateTimeOffset newLine = DateTimeOffset.UtcNow.AddHours(-1);
+
+        // The order-level comparison points the opposite way from the line-level one: the later
+        // report carries the older version of the colliding line. A single flag derived from the
+        // report would install the stale line version.
+        DateTimeOffset earlierReport = DateTimeOffset.UtcNow.AddMinutes(-40);
+        DateTimeOffset laterReport = DateTimeOffset.UtcNow.AddMinutes(-2);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(1, 10), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with
+                            {
+                                StatusChangedAt = earlierReport,
+                                Lines = new List<ChannelOrderLineSnapshot>
+                                {
+                                    BuildLine("SRID-1", isCancelled: true, statusChangedAt: newLine),
+                                },
+                            },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-1") with
+                        {
+                            StatusChangedAt = laterReport,
+                            Lines = new List<ChannelOrderLineSnapshot>
+                            {
+                                BuildLine("SRID-1", isCancelled: false, statusChangedAt: oldLine),
+                            },
+                        },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        ChannelOrderSnapshot cart = PublishedOrders().Single(o => o.ExternalOrderId == "ORDER-1");
+
+        cart.Lines.Should().ContainSingle();
+        cart.Lines.Single().StatusChangedAt.Should().Be(newLine);
+        cart.Lines.Single().IsCancelled.Should().BeTrue();
+        cart.ExternalStatus.Should().Be("cancelled");
     }
 
     [Fact]
@@ -1098,7 +1583,7 @@ public class ProcessOrdersImportConsumerTests
             CancellationToken.None);
 
         jobRun.Status.Should().Be(JobStatus.Failed);
-        jobRun.Error.Should().Contain("without a usable identity");
+        jobRun.Error.Should().Contain("without a usable order identity");
 
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
@@ -1108,6 +1593,60 @@ public class ProcessOrdersImportConsumerTests
         // window that was not fully imported, otherwise the run could finalise as a success.
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CartReportedWithThenWithoutGNumber_FailsInsteadOfDuplicating()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("G-1") }, HasMore = true };
+                }
+
+                // The same physical cart, now reported without the only field that identifies it. The
+                // source cannot key it and says so; importing the first page anyway would leave the
+                // cart under G-1 and the second observation either dropped or filed under a second
+                // key on a later run.
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>(),
+                    HasMore = false,
+                    RowsWithoutIdentity = 1,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Failed);
+        jobRun.Error.Should().Contain("without a usable order identity");
+
+        // Nothing is published: a partially imported window cannot be told apart from one that was
+        // fully imported, and the watermark would move past the cart.
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -1146,7 +1685,11 @@ public class ProcessOrdersImportConsumerTests
                     {
                         Orders = new List<ChannelOrderSnapshot>
                         {
-                            BuildOrder("ORDER-1") with { StatusChangedAt = later },
+                            BuildOrder("ORDER-1") with
+                            {
+                                StatusChangedAt = later,
+                                Lines = new List<ChannelOrderLineSnapshot> { BuildLine("ORDER-1", statusChangedAt: later) },
+                            },
                         },
                         HasMore = true,
                     };
@@ -1158,7 +1701,11 @@ public class ProcessOrdersImportConsumerTests
                     {
                         Orders = new List<ChannelOrderSnapshot>
                         {
-                            BuildOrder("ORDER-1") with { StatusChangedAt = earlier },
+                            BuildOrder("ORDER-1") with
+                            {
+                                StatusChangedAt = earlier,
+                                Lines = new List<ChannelOrderLineSnapshot> { BuildLine("ORDER-1", statusChangedAt: earlier) },
+                            },
                         },
                         HasMore = false,
                     };

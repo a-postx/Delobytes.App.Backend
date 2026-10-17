@@ -215,6 +215,11 @@ public class OrdersBatchImportRequestedConsumer
             _context.Orders.Add(order);
         }
 
+        // Captured before the snapshot is applied: the reduced placement instant is the minimum over
+        // every report that ever described this cart, so the instant already persisted has to stay in
+        // the candidate set or a delta run covering one unit would move the cart's date forward.
+        DateTimeOffset previouslyImportedOrderDate = order.OrderDate;
+
         ApplyOrderSnapshot(order, snapshot, connectionId);
 
         // Lines are appended before change detection runs: EF only discovers a new child added to
@@ -223,6 +228,10 @@ public class OrdersBatchImportRequestedConsumer
         {
             UpsertOrderLine(order, lineSnapshot, channelProductIdsByExternalProductId, now);
         }
+
+        // After the lines are upserted, because the status must cover every persisted line of the
+        // order, including the ones an earlier run contributed and this snapshot does not mention.
+        ApplyReducedOrderHeader(order, snapshot, isNew, previouslyImportedOrderDate);
 
         // Without this call every property assignment above is invisible to the change tracker,
         // so State stays Unchanged and both the counters and the resulting UPDATE would be wrong.
@@ -301,16 +310,17 @@ public class OrdersBatchImportRequestedConsumer
         return false;
     }
 
+    /// <summary>
+    /// Copies the fields the snapshot reports directly. Everything the cart's own line set decides
+    /// (status, cancel reason, placement instant, change instant, reported total) is applied
+    /// afterwards by <see cref="ApplyReducedOrderHeader"/>: copying those from the snapshot would let
+    /// a report that saw one unit of a multi-line cart overwrite the header of the whole cart.
+    /// </summary>
     private static void ApplyOrderSnapshot(Order order, ChannelOrderSnapshot snapshot, Guid connectionId)
     {
         order.ConnectionId = connectionId;
         order.ExternalOrderNumber = snapshot.ExternalOrderNumber;
-        order.OrderDate = snapshot.OrderDate;
-        order.StatusChangedAt = snapshot.StatusChangedAt;
-        order.Status = MapStatus(snapshot.ExternalStatus);
-        order.ExternalStatus = snapshot.ExternalStatus;
         order.ExternalSubstatus = snapshot.ExternalSubstatus;
-        order.CancelReason = snapshot.CancelReason;
         order.Currency = snapshot.Currency;
         order.DeliveryCity = snapshot.DeliveryCity;
         order.DeliveryRegion = snapshot.DeliveryRegion;
@@ -318,8 +328,74 @@ public class OrdersBatchImportRequestedConsumer
         order.IsSellerWarehouse = snapshot.IsSellerWarehouse;
         order.IsB2b = snapshot.IsB2b;
         order.IsTestOrder = snapshot.IsTestOrder;
-        order.ChannelReportedTotal = snapshot.ChannelReportedTotal;
         order.ChannelReportedDeliveryFee = snapshot.ChannelReportedDeliveryFee;
+    }
+
+    /// <summary>
+    /// Derives the cart-level fields from every line persisted for the order, which is the only line
+    /// set that describes the whole cart. A delta run that observes a single unit therefore leaves
+    /// the status of a multi-line order consistent with all of its lines instead of publishing the
+    /// status of the one unit it happened to see.
+    /// </summary>
+    private static void ApplyReducedOrderHeader(
+        Order order,
+        ChannelOrderSnapshot snapshot,
+        bool isNew,
+        DateTimeOffset previouslyImportedOrderDate)
+    {
+        List<ChannelOrderLineSnapshot> persistedLines = new List<ChannelOrderLineSnapshot>(order.Lines.Count);
+
+        foreach (OrderLine line in order.Lines)
+        {
+            // Only the facts the reduction reads are projected. The reported total is taken from the
+            // incoming snapshot where this run carries that line, because it is not persisted on the
+            // line; a persisted line the snapshot omits keeps a null total, which the reduction then
+            // discards anyway unless the cart holds exactly one line.
+            decimal? channelReportedTotal = null;
+
+            foreach (ChannelOrderLineSnapshot snapshotLine in snapshot.Lines)
+            {
+                if (string.Equals(snapshotLine.LineKey, line.LineKey, StringComparison.Ordinal))
+                {
+                    channelReportedTotal = snapshotLine.ChannelReportedTotal;
+                    break;
+                }
+            }
+
+            persistedLines.Add(new ChannelOrderLineSnapshot
+            {
+                LineKey = line.LineKey,
+                IsCancelled = line.IsCancelled,
+                StatusChangedAt = line.StatusChangedAt,
+                ChannelReportedTotal = channelReportedTotal
+            });
+        }
+
+        // An order persisted without any line carries nothing to reduce; the snapshot is the whole
+        // description of the cart in that case, and its own line set goes through the same reduction
+        // as the mapper applied.
+        if (persistedLines.Count == 0)
+        {
+            if (snapshot.Lines.Count == 0)
+            {
+                return;
+            }
+
+            persistedLines = snapshot.Lines;
+        }
+
+        List<DateTimeOffset> rowOrderDates = isNew
+            ? new List<DateTimeOffset> { snapshot.OrderDate }
+            : new List<DateTimeOffset> { previouslyImportedOrderDate, snapshot.OrderDate };
+
+        ChannelOrderHeaderFacts header = ChannelOrderHeaderFacts.Reduce(persistedLines, rowOrderDates);
+
+        order.ExternalStatus = header.ExternalStatus;
+        order.Status = MapStatus(header.ExternalStatus);
+        order.CancelReason = header.CancelReason;
+        order.OrderDate = header.OrderDate;
+        order.StatusChangedAt = header.StatusChangedAt;
+        order.ChannelReportedTotal = header.ChannelReportedTotal;
     }
 
     /// <summary>
@@ -381,6 +457,8 @@ public class OrdersBatchImportRequestedConsumer
         line.BuyerUnitPrice = snapshot.BuyerUnitPrice;
         line.UnitPriceBeforeDiscount = snapshot.UnitPriceBeforeDiscount;
         line.Currency = snapshot.Currency;
+        line.IsCancelled = snapshot.IsCancelled;
+        line.StatusChangedAt = snapshot.StatusChangedAt;
         line.ChannelProductId = channelProductId;
     }
 

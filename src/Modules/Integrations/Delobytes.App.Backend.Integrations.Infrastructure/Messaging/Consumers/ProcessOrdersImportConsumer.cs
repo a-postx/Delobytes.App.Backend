@@ -328,8 +328,8 @@ public class ProcessOrdersImportConsumer
                 ordersPage.RowsWithoutIdentity);
 
             throw new InvalidOperationException(
-                $"Orders import received {ordersPage.RowsWithoutIdentity} row(s) without a usable identity " +
-                $"(no srid and no sticker) in window {request.DateFrom:O} - {request.DateTo:O}; " +
+                $"Orders import received {ordersPage.RowsWithoutIdentity} row(s) without a usable order identity " +
+                $"(no gNumber, or no srid and no sticker) in window {request.DateFrom:O} - {request.DateTo:O}; " +
                 "the window cannot be imported without inventing an identity that may split or merge real orders.");
         }
 
@@ -345,17 +345,35 @@ public class ProcessOrdersImportConsumer
             }
 
             // "Which report is newer" and "which lines we have" are two independent questions.
-            // IsLaterReport below answers only the first, and it decides the header fields alone:
-            // the line union happens regardless of its result, because the newer report frequently
+            // IsLaterReport below answers only the first, and it decides the fields that are neither
+            // derived from lines nor re-derivable after the merge (warehouse, region, substatus).
+            // The line union happens regardless of its result, because the newer report frequently
             // carries a subset of the cart. A bisection splits carts, so half A can hold unit 1 and
             // half B unit 2 of one gNumber; letting the winner's Lines replace the accumulated set
             // would silently drop whichever unit the older half contributed.
             bool isIncomingLater = IsLaterReport(order, existing);
 
-            List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines, isIncomingLater);
+            List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines);
             ChannelOrderSnapshot headerSource = isIncomingLater ? order : existing;
 
-            ordersByOrderKey[order.ExternalOrderId] = headerSource with { Lines = mergedLines };
+            // The header is reduced from the merged line set, never taken from the winning report:
+            // either half may hold the only cancelled unit of a cart, or the only live one, and the
+            // winning report's own header describes the units it happened to carry. The placement
+            // instant goes through the same reduction, so the merged cart keeps the earliest instant
+            // any half reported.
+            ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts.Reduce(
+                mergedLines,
+                new[] { existing.OrderDate, order.OrderDate });
+
+            ordersByOrderKey[order.ExternalOrderId] = headerSource with
+            {
+                Lines = mergedLines,
+                ExternalStatus = mergedHeader.ExternalStatus,
+                CancelReason = mergedHeader.CancelReason,
+                OrderDate = mergedHeader.OrderDate,
+                StatusChangedAt = mergedHeader.StatusChangedAt,
+                ChannelReportedTotal = mergedHeader.ChannelReportedTotal
+            };
         }
 
         if (!ordersPage.HasMore)
@@ -414,18 +432,17 @@ public class ProcessOrdersImportConsumer
     /// <summary>
     /// Unions the lines of two reports of one order, keyed by
     /// <see cref="ChannelOrderLineSnapshot.LineKey"/>. An unseen key is appended, keeping the lines
-    /// already known; a key present on both sides keeps the line from whichever report is the later
-    /// one, and keeps the accumulated line otherwise, so an exact tie does not depend on arrival
-    /// order. Lines carry no instant of their own — Wildberries reports <c>lastChangeDate</c> per
-    /// row, and the mapper reduces it onto the order, so both reports of one cart can only be told
-    /// apart by <paramref name="useIncomingLine"/>, which the caller derives from the order-level
-    /// comparison. Returning a fresh list rather than mutating either argument is what lets
+    /// already known; a key present on both sides keeps the version whose own
+    /// <see cref="ChannelOrderLineSnapshot.StatusChangedAt"/> is later, and keeps the accumulated
+    /// version on an exact tie, so the result does not depend on arrival order. The comparison is per
+    /// line rather than per report: the order-level instant says nothing about which version of one
+    /// unit is fresher, and two reports that split a cart usually do not carry the same unit at all.
+    /// Returning a fresh list rather than mutating either argument is what lets
     /// <see cref="ChannelOrderSnapshot"/> stay an immutable record without making Lines settable.
     /// </summary>
     private static List<ChannelOrderLineSnapshot> UnionLines(
         List<ChannelOrderLineSnapshot> existing,
-        List<ChannelOrderLineSnapshot> incoming,
-        bool useIncomingLine)
+        List<ChannelOrderLineSnapshot> incoming)
     {
         List<ChannelOrderLineSnapshot> merged = new List<ChannelOrderLineSnapshot>(existing);
 
@@ -440,13 +457,37 @@ public class ProcessOrdersImportConsumer
                 continue;
             }
 
-            if (useIncomingLine)
+            if (IsLaterLine(line, merged[index]))
             {
                 merged[index] = line;
             }
         }
 
         return merged;
+    }
+
+    /// <summary>
+    /// Orders whether <paramref name="candidate"/> is a later version of one line than
+    /// <paramref name="current"/>. A version reporting no instant never displaces one that reports
+    /// an instant, and equal instants resolve in favour of the accumulated version, so replaying a
+    /// report cannot flip the stored facts back and forth.
+    /// </summary>
+    private static bool IsLaterLine(ChannelOrderLineSnapshot candidate, ChannelOrderLineSnapshot current)
+    {
+        DateTimeOffset? candidateInstant = candidate.StatusChangedAt;
+        DateTimeOffset? currentInstant = current.StatusChangedAt;
+
+        if (candidateInstant == null)
+        {
+            return false;
+        }
+
+        if (currentInstant == null)
+        {
+            return true;
+        }
+
+        return candidateInstant.Value > currentInstant.Value;
     }
 
     /// <summary>

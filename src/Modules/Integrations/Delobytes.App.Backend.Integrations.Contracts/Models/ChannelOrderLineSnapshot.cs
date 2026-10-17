@@ -70,6 +70,27 @@ public record ChannelOrderLineSnapshot
     public string Currency { get; init; } = default!;
 
     /// <summary>
+    /// Gets a value indicating whether the channel cancelled this unit. Reported per unit, and the
+    /// only input from which the cart's own status can be reduced once the cart is assembled from
+    /// more than one report.
+    /// </summary>
+    public bool IsCancelled { get; init; }
+
+    /// <summary>
+    /// Gets the unit's own last-change instant as the channel reported it (Wildberries:
+    /// <c>lastChangeDate</c>). Lets one version of a line be selected against another without
+    /// borrowing the order-level instant.
+    /// </summary>
+    public DateTimeOffset? StatusChangedAt { get; init; }
+
+    /// <summary>
+    /// Gets the amount the channel reported for this unit (Wildberries: <c>totalPrice</c>). Named
+    /// for the unit it describes rather than as an order total: for a single-line cart it is that
+    /// cart's reported total, and a multi-line cart has none.
+    /// </summary>
+    public decimal? ChannelReportedTotal { get; init; }
+
+    /// <summary>
     /// Gets the commission the order API itself reported. Set only where the payload carries a
     /// settlement fact (Ozon financial_data), null everywhere else. Never computed here.
     /// </summary>

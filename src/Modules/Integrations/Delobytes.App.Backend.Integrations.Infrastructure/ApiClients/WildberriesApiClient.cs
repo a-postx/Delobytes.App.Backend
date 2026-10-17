@@ -549,7 +549,24 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
             EnsureIdentityLength(lineKey, nameof(lineKey));
 
-            string orderKey = GetOrderKey(order, lineKey);
+            string? orderKey = GetOrderKey(order);
+
+            if (orderKey == null)
+            {
+                // Distinct from the missing line identity above: this row does have a line identity,
+                // it lacks the order identity that would place it in a cart. Conflating the two is
+                // what let a cart be split into one order per unit.
+                rowsWithoutIdentity++;
+
+                _logger.LogError(
+                    "Wildberries order row without a gNumber skipped: NmId={NmId}, Srid={Srid}, Date={Date}, Sticker={Sticker}.",
+                    order.NmId,
+                    order.Srid,
+                    order.Date,
+                    order.Sticker);
+
+                continue;
+            }
 
             EnsureIdentityLength(orderKey, nameof(orderKey));
 
@@ -628,21 +645,28 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     }
 
     /// <summary>
-    /// Resolves the identity of one cart from its rows. <c>gNumber</c> is the buyer-facing order
-    /// number and is the only field that groups the units of one cart, so it wins whenever it is
-    /// reported; a row without it is its own cart, keyed by the line identity. <c>gNumber</c> is
-    /// immutable, which is what makes it safe to key the persisted order on.
+    /// Resolves the identity of one cart. <c>gNumber</c> is the only field that groups the units of
+    /// one cart and the only one that is immutable, so it is the sole source of the order key; a row
+    /// that does not report one has no placeable order identity and yields null.
     /// </summary>
     /// <remarks>
+    /// There is deliberately no fallback to the line identity. A cart reported with <c>gNumber</c> in
+    /// one run and without it in another would then be persisted twice, under two different keys,
+    /// and both rows would satisfy every constraint — the duplicate would be invisible to the
+    /// database and findable only by eye. A duplicate is worse than a visible failure, so the row is
+    /// counted and the page fails instead. The line identity may still be derived from a sticker: a
+    /// line is addressed inside an order, and that order is stable.
+    /// <para>
     /// <c>Order</c> is unique on (TenantId, ChannelId, ExternalOrderId); that is sufficient because
     /// a tenant may bind at most one active connection per channel, enforced by
     /// <c>CreateConnectionCommandHandler</c> through <c>HasActiveConnectionForChannelAsync</c>.
     /// Two cabinets on one channel cannot coexist, so two <c>gNumber</c> sequences cannot meet on
     /// this index.
+    /// </para>
     /// </remarks>
-    private static string GetOrderKey(WildberriesOrderDto dto, string lineKey)
+    private static string? GetOrderKey(WildberriesOrderDto dto)
     {
-        return !string.IsNullOrWhiteSpace(dto.GNumber) ? dto.GNumber : lineKey;
+        return string.IsNullOrWhiteSpace(dto.GNumber) ? null : dto.GNumber;
     }
 
     /// <summary>
@@ -731,13 +755,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         WildberriesOrderDto first = rows[0];
 
         List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>(rows.Count);
-
-        DateTimeOffset? orderDate = null;
-        DateTimeOffset? statusChangedAt = null;
-
-        // A cart is cancelled only when every unit is: a cancelled unit next to a live one would
-        // otherwise project the whole cart onto OrderStatus.Cancelled in Sales, hiding a live order.
-        bool allRowsCancelled = true;
+        List<DateTimeOffset> rowOrderDates = new List<DateTimeOffset>(rows.Count);
 
         foreach (WildberriesOrderDto row in rows)
         {
@@ -749,47 +767,45 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
             DateTimeOffset? rowOrderDate = ParseMoscowTimestamp(row.Date);
 
-            if (rowOrderDate != null && (orderDate == null || rowOrderDate.Value < orderDate.Value))
+            if (rowOrderDate != null)
             {
-                orderDate = rowOrderDate;
+                rowOrderDates.Add(rowOrderDate.Value);
             }
-
-            DateTimeOffset? rowChangedAt = ParseMoscowTimestamp(row.LastChangeDate);
-
-            if (rowChangedAt != null && (statusChangedAt == null || rowChangedAt.Value > statusChangedAt.Value))
-            {
-                statusChangedAt = rowChangedAt;
-            }
-
-            allRowsCancelled = allRowsCancelled && row.IsCancel;
         }
 
-        // The orders feed has no textual status field; isCancel/cancelDate are the only signals
-        // Wildberries reports, so the snapshot status is reduced to these two values.
-        string externalStatus = allRowsCancelled ? "cancelled" : "active";
+        if (rowOrderDates.Count == 0)
+        {
+            // Substituting the wall clock here would make every refetch of an unchanged cart differ,
+            // and the difference would surface upstream as an update on every run.
+            throw new InvalidOperationException(
+                $"Wildberries order '{orderKey}' reports no row with a parseable date; " +
+                "the cart carries no placement instant and one cannot be invented.");
+        }
+
+        // Every cart-level field below is reduced from the lines and from the rows' dates by this
+        // one helper; nothing else in the codebase may compute them.
+        ChannelOrderHeaderFacts header = ChannelOrderHeaderFacts.Reduce(lines, rowOrderDates);
 
         bool? isSellerWarehouse = first.WarehouseType?.Contains("продавца", StringComparison.OrdinalIgnoreCase);
 
         return new ChannelOrderSnapshot
         {
             ExternalOrderId = orderKey,
-            ExternalOrderNumber = string.IsNullOrWhiteSpace(first.GNumber) ? null : orderKey,
-            OrderDate = orderDate ?? DateTimeOffset.UtcNow,
-            StatusChangedAt = statusChangedAt,
-            ExternalStatus = externalStatus,
+            // gNumber is the buyer-facing order number, so it is both the identity and the number;
+            // reporting it twice is what the contract asks for.
+            ExternalOrderNumber = orderKey,
+            OrderDate = header.OrderDate,
+            StatusChangedAt = header.StatusChangedAt,
+            ExternalStatus = header.ExternalStatus,
             // Reported per unit with no cart-level counterpart, so the first row stands in for the
             // cart instead of a merge rule the payload does not define.
             ExternalSubstatus = first.OrderType,
-            CancelReason = allRowsCancelled ? "cancel" : null,
+            CancelReason = header.CancelReason,
             Currency = WildberriesCurrency,
             DeliveryRegion = first.RegionName,
             WarehouseName = first.WarehouseName,
             IsSellerWarehouse = isSellerWarehouse,
-            // Only a single-line cart reports a total: Wildberries reports totalPrice per unit and
-            // the payload carries no cart-level total, so summing would smuggle a derived value
-            // into a reported-facts field. Null already means "the channel did not report this"
-            // elsewhere in this contract.
-            ChannelReportedTotal = lines.Count == 1 ? first.TotalPrice : null,
+            ChannelReportedTotal = header.ChannelReportedTotal,
             Lines = lines
         };
     }
@@ -812,7 +828,10 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             UnitPrice = dto.PriceWithDisc,
             BuyerUnitPrice = dto.FinishedPrice,
             UnitPriceBeforeDiscount = dto.TotalPrice,
-            Currency = WildberriesCurrency
+            Currency = WildberriesCurrency,
+            IsCancelled = dto.IsCancel,
+            StatusChangedAt = ParseMoscowTimestamp(dto.LastChangeDate),
+            ChannelReportedTotal = dto.TotalPrice
         };
     }
 

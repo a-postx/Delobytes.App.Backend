@@ -196,7 +196,15 @@ public class OrdersBatchImportRequestedConsumerTests
         OrdersBatchImportRequestedConsumer secondConsumer = BuildConsumer(secondContext, secondPublishMock.Object, _tenantId);
 
         ChannelOrderSnapshot changed = BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1", price: 999m);
-        changed = changed with { ExternalStatus = "cancelled" };
+        changed = changed with
+        {
+            ExternalStatus = "cancelled",
+            CancelReason = "cancel",
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                changed.Lines.Single() with { IsCancelled = true },
+            },
+        };
 
         await secondConsumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { changed }), CancellationToken.None);
 
@@ -222,6 +230,163 @@ public class OrdersBatchImportRequestedConsumerTests
                     e.Updated == 1 &&
                     e.Skipped == 0 &&
                     e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DeltaRunReportingOnlyTheCancelledUnit_CancelsTheOrderAndKeepsBothLines()
+    {
+        // Arrange: a two-unit cart, both units live.
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer firstConsumer = BuildConsumer(firstContext, firstPublishMock.Object, _tenantId);
+        await firstConsumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCartSnapshot("G-1", "SRID-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Act: a later delta run sees only unit 2, and sees it cancelled.
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer secondConsumer = BuildConsumer(secondContext, secondPublishMock.Object, _tenantId);
+
+        ChannelOrderSnapshot delta = BuildCartSnapshot("G-1", "SRID-2") with
+        {
+            ExternalStatus = "cancelled",
+            CancelReason = "cancel",
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                BuildCartSnapshot("G-1", "SRID-2").Lines.Single() with { IsCancelled = true },
+            },
+        };
+
+        await secondConsumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { delta }), CancellationToken.None);
+
+        // Assert: unit 1 was live and stays live, so the cart is not cancelled even though the only
+        // unit this run saw was.
+        Order? order = await secondContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.ExternalStatus.Should().Be("active");
+        order.Status.Should().Be(OrderStatus.Processing);
+        order.CancelReason.Should().BeNull();
+        order.Lines.Single(l => l.LineKey == "SRID-2").IsCancelled.Should().BeTrue();
+        order.Lines.Single(l => l.LineKey == "SRID-1").IsCancelled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_BothPersistedLinesCancelled_IsCancelled()
+    {
+        // Arrange: a two-unit cart, both live.
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer firstConsumer = BuildConsumer(firstContext, firstPublishMock.Object, _tenantId);
+        await firstConsumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCartSnapshot("G-1", "SRID-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Act: unit 1 is cancelled first, then unit 2.
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImportRequestedConsumer secondConsumer = BuildConsumer(secondContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await secondConsumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCancelledUnitSnapshot("G-1", "SRID-1") }),
+            CancellationToken.None);
+
+        SalesDbContext thirdContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImportRequestedConsumer thirdConsumer = BuildConsumer(thirdContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await thirdConsumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCancelledUnitSnapshot("G-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Assert: after the second cancellation every persisted line is cancelled, which is the only
+        // state in which the cart itself is cancelled.
+        SalesDbContext readContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? order = await readContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.ExternalStatus.Should().Be("cancelled");
+        order.Status.Should().Be(OrderStatus.Cancelled);
+        order.CancelReason.Should().Be("cancel");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CancelledUnitLaterReportedLive_ReturnsToActive()
+    {
+        // Arrange: unit 1 is cancelled on the first import.
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImportRequestedConsumer firstConsumer = BuildConsumer(firstContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await firstConsumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCancelledUnitSnapshot("G-1", "SRID-1") }),
+            CancellationToken.None);
+
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? cancelled = await secondContext.Orders
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        cancelled!.Status.Should().Be(OrderStatus.Cancelled);
+
+        // Act: the channel reports unit 2, and it is live.
+        SalesDbContext thirdContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImportRequestedConsumer thirdConsumer = BuildConsumer(thirdContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await thirdConsumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCartSnapshot("G-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Assert: a live unit replaces the cancelled-only state; the cancelled line is not dropped
+        // and not duplicated.
+        SalesDbContext readContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? order = await readContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Status.Should().Be(OrderStatus.Processing);
+        order.ExternalStatus.Should().Be("active");
+        order.CancelReason.Should().BeNull();
+        order.Lines.Should().HaveCount(2);
+        order.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        order.Lines.Single(l => l.LineKey == "SRID-1").IsCancelled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_IdenticalDataWithLineCancelFlag_StillCountsAsSkipped()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        ChannelOrderSnapshot snapshot = BuildCartSnapshot("G-1", "SRID-1", "SRID-2");
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImportRequestedConsumer firstConsumer = BuildConsumer(firstContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await firstConsumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Act: byte-identical re-import
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer secondConsumer = BuildConsumer(secondContext, secondPublishMock.Object, _tenantId);
+        await secondConsumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Assert: IsCancelled and the line's StatusChangedAt are imported facts, so they take part in
+        // change detection; writing the same values must therefore still produce no update.
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 && e.Updated == 0 && e.Skipped == 1 && e.Failed == 0),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -616,7 +781,30 @@ public class OrdersBatchImportRequestedConsumerTests
                     BuyerUnitPrice = price,
                     UnitPriceBeforeDiscount = price + 200m,
                     Currency = "RUB",
+                    IsCancelled = false,
+                    StatusChangedAt = FixedStatusChangedAt,
+                    ChannelReportedTotal = 1700m,
                 },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds a snapshot of one cart as a delta run sees it: a single line, and that line cancelled.
+    /// The header still claims "cancelled", which is what makes the test meaningful - Sales must not
+    /// adopt it while another persisted line of the same cart is live.
+    /// </summary>
+    private static ChannelOrderSnapshot BuildCancelledUnitSnapshot(string externalOrderId, string lineKey)
+    {
+        ChannelOrderSnapshot cart = BuildCartSnapshot(externalOrderId, lineKey);
+
+        return cart with
+        {
+            ExternalStatus = "cancelled",
+            CancelReason = "cancel",
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                cart.Lines.Single() with { IsCancelled = true },
             },
         };
     }
@@ -645,6 +833,9 @@ public class OrdersBatchImportRequestedConsumerTests
                 BuyerUnitPrice = 1500m,
                 UnitPriceBeforeDiscount = 1700m,
                 Currency = "RUB",
+                IsCancelled = false,
+                StatusChangedAt = FixedStatusChangedAt,
+                ChannelReportedTotal = 1700m,
             });
         }
 

@@ -154,6 +154,7 @@ public class WildberriesApiClientGetOrdersTests
                 "lastChangeDate": "2024-01-10T09:30:00",
                 "nmId": 1,
                 "isCancel": true,
+                "gNumber": "G-1",
                 "srid": "SRID-2"
             }
         ]
@@ -188,6 +189,11 @@ public class WildberriesApiClientGetOrdersTests
         order.ExternalStatus.Should().Be("active");
         order.CancelReason.Should().BeNull();
         order.Lines.Should().HaveCount(2);
+
+        // The per-unit flags the cart status is reduced from: without them the header could not be
+        // recomputed once the cart is assembled from more than one report.
+        order.Lines.Single(l => l.LineKey == "SRID-1").IsCancelled.Should().BeTrue();
+        order.Lines.Single(l => l.LineKey == "SRID-2").IsCancelled.Should().BeFalse();
     }
 
     [Fact]
@@ -207,6 +213,32 @@ public class WildberriesApiClientGetOrdersTests
         ChannelOrderSnapshot order = page.Orders.Single();
         order.ExternalStatus.Should().Be("cancelled");
         order.CancelReason.Should().Be("cancel");
+        order.Lines.Should().OnlyContain(l => l.IsCancelled);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_EachLine_CarriesItsOwnStatusChangedAt()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "isCancel": false, "gNumber": "G-1", "srid": "SRID-1" },
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T14:15:00", "nmId": 2, "isCancel": true, "gNumber": "G-1", "srid": "SRID-2" }
+        ]
+        """;
+
+        WildberriesApiClient client = BuildClientRespondingWith(json);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        // Each unit's lastChangeDate is a reported fact of that unit. The cart-level instant is a
+        // reduction over these, so the line has to keep its own or the reduction cannot be redone
+        // after the cart is merged.
+        ChannelOrderSnapshot order = page.Orders.Single();
+        order.Lines.Single(l => l.LineKey == "SRID-1").StatusChangedAt
+            .Should().Be(new DateTimeOffset(2024, 1, 10, 6, 30, 0, TimeSpan.Zero));
+        order.Lines.Single(l => l.LineKey == "SRID-2").StatusChangedAt
+            .Should().Be(new DateTimeOffset(2024, 1, 10, 11, 15, 0, TimeSpan.Zero));
+        order.StatusChangedAt.Should().Be(new DateTimeOffset(2024, 1, 10, 11, 15, 0, TimeSpan.Zero));
     }
 
     [Fact]
@@ -380,8 +412,11 @@ public class WildberriesApiClientGetOrdersTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_MissingGNumber_KeysOrderBySridAndReportsNoOrderNumber()
+    public async Task GetOrdersAsync_MissingGNumber_CountsTheRowAndProducesNoOrder()
     {
+        // The row carries a usable line identity and no order identity. Falling back to the line
+        // identity would key the cart on a value that changes the moment gNumber starts being
+        // reported, and the second key would satisfy every constraint just as the first did.
         string json = """
         [
             {
@@ -397,10 +432,56 @@ public class WildberriesApiClientGetOrdersTests
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
 
-        ChannelOrderSnapshot order = page.Orders.Single();
-        order.ExternalOrderId.Should().Be("SRID-1");
-        order.ExternalOrderNumber.Should().BeNull();
-        order.Lines.Single().LineKey.Should().Be("SRID-1");
+        page.Orders.Should().BeEmpty();
+        page.RowsWithoutIdentity.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_CartWithNoParseableDate_FailsInsteadOfSubstitutingUtcNow()
+    {
+        string json = """
+        [
+            { "date": "not-a-date", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "isCancel": false, "gNumber": "G-1", "srid": "SRID-1" },
+            { "date": "", "lastChangeDate": "2024-01-10T09:35:00", "nmId": 2, "isCancel": false, "gNumber": "G-1", "srid": "SRID-2" }
+        ]
+        """;
+
+        WildberriesApiClient client = BuildClientRespondingWith(json);
+
+        Func<Task> act = async () =>
+            await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        // The wall clock would make every refetch of unchanged data differ, which the consumer sees
+        // as an update, so the run would never take the Skipped path.
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*parseable date*");
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_RefetchingUnchangedData_ReportsTheSameHeaderInstants()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "isCancel": false, "gNumber": "G-1", "srid": "SRID-1" }
+        ]
+        """;
+
+        WildberriesApiClient client = BuildClientRespondingWith(json);
+
+        OrdersRequest request = BuildWindowRequest();
+
+        OrdersPage first = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
+        OrdersPage second = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
+
+        // Idempotency at the mapper level: nothing about an unchanged cart may differ between runs.
+        ChannelOrderSnapshot firstOrder = first.Orders.Single();
+        ChannelOrderSnapshot secondOrder = second.Orders.Single();
+
+        secondOrder.OrderDate.Should().Be(firstOrder.OrderDate);
+        secondOrder.StatusChangedAt.Should().Be(firstOrder.StatusChangedAt);
+        secondOrder.ExternalStatus.Should().Be(firstOrder.ExternalStatus);
+        secondOrder.ChannelReportedTotal.Should().Be(firstOrder.ChannelReportedTotal);
+        secondOrder.OrderDate.Should().Be(new DateTimeOffset(2024, 1, 10, 5, 0, 0, TimeSpan.Zero));
     }
 
     [Fact]
@@ -413,6 +494,7 @@ public class WildberriesApiClientGetOrdersTests
                 "lastChangeDate": "2024-01-10T09:30:00",
                 "nmId": 1,
                 "isCancel": false,
+                "gNumber": "G-IN-WINDOW",
                 "srid": "IN-WINDOW"
             },
             {
@@ -420,6 +502,7 @@ public class WildberriesApiClientGetOrdersTests
                 "lastChangeDate": "2024-02-15T09:30:00",
                 "nmId": 2,
                 "isCancel": false,
+                "gNumber": "G-OUT-OF-WINDOW",
                 "srid": "OUT-OF-WINDOW"
             }
         ]
@@ -429,7 +512,7 @@ public class WildberriesApiClientGetOrdersTests
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
 
-        page.Orders.Should().ContainSingle(o => o.ExternalOrderId == "IN-WINDOW");
+        page.Orders.Should().ContainSingle(o => o.ExternalOrderId == "G-IN-WINDOW");
     }
 
     [Fact]
@@ -437,8 +520,8 @@ public class WildberriesApiClientGetOrdersTests
     {
         string json = """
         [
-            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "isCancel": false, "srid": "A" },
-            { "date": "2024-01-11T08:00:00", "lastChangeDate": "2024-01-11T09:30:00", "nmId": 2, "isCancel": false, "srid": "B" }
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "isCancel": false, "gNumber": "G-1", "srid": "A" },
+            { "date": "2024-01-11T08:00:00", "lastChangeDate": "2024-01-11T09:30:00", "nmId": 2, "isCancel": false, "gNumber": "G-2", "srid": "B" }
         ]
         """;
 
@@ -455,7 +538,7 @@ public class WildberriesApiClientGetOrdersTests
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
 
         page.Orders.Should().HaveCount(2);
-        page.Orders.Select(o => o.ExternalOrderId).Should().BeEquivalentTo(new[] { "A", "B" });
+        page.Orders.Select(o => o.ExternalOrderId).Should().BeEquivalentTo(new[] { "G-1", "G-2" });
         page.HasMore.Should().BeFalse();
     }
 
@@ -531,7 +614,7 @@ public class WildberriesApiClientGetOrdersTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_StickerWithoutGNumber_KeysOrderByPrefixedSticker()
+    public async Task GetOrdersAsync_StickerWithoutGNumber_CountsTheRowAndProducesNoOrder()
     {
         string json = """
         [
@@ -549,17 +632,10 @@ public class WildberriesApiClientGetOrdersTests
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
 
-        page.Orders.Should().HaveCount(1);
-        page.RowsWithoutIdentity.Should().Be(0);
-
-        ChannelOrderSnapshot order = page.Orders.Single();
-
-        // With no gNumber the row is its own cart, so the order key falls back to the derived line
-        // identity and the two coincide; there is no order number to report.
-        order.ExternalOrderId.Should().Be("wb-stk:STK-A");
-        order.ExternalOrderNumber.Should().BeNull();
-        order.Lines.Single().LineKey.Should().Be("wb-stk:STK-A");
-        order.Lines.Single().ExternalLineId.Should().BeNull();
+        // A sticker addresses a unit inside a cart, so it stays a legitimate line identity, but it
+        // cannot stand in for the cart: the cart would be keyed by whichever unit arrived first.
+        page.Orders.Should().BeEmpty();
+        page.RowsWithoutIdentity.Should().Be(1);
     }
 
     [Fact]
@@ -616,12 +692,12 @@ public class WildberriesApiClientGetOrdersTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_TwoStickerOnlyRowsWithoutGNumber_StayTwoOrders()
+    public async Task GetOrdersAsync_TwoStickerOnlyRowsWithoutGNumber_AreBothCountedAndProduceNoOrders()
     {
-        // The regression this change fixes: gNumber groups a whole cart, so two units of the same
-        // article and size share nmId, techSize, gNumber and (at second precision) date. Keying on
-        // any of those collapsed the two orders into one, losing an order during the fetch. Without
-        // a gNumber there is nothing to group by, so the sticker fallback keeps them apart.
+        // Two units of one cart share nmId, techSize and (at second precision) date, and differ only
+        // by sticker. Giving each its own order keyed on the sticker is what split a multi-unit cart
+        // into N single-line orders; without a gNumber neither row has an order identity at all, so
+        // the page reports both as unmappable instead of inventing two carts.
         string json = """
         [
             {
@@ -645,10 +721,8 @@ public class WildberriesApiClientGetOrdersTests
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
 
-        page.Orders.Should().HaveCount(2);
-        page.Orders.Select(o => o.ExternalOrderId)
-            .Should().BeEquivalentTo(new[] { "wb-stk:STK-A", "wb-stk:STK-B" });
-        page.RowsWithoutIdentity.Should().Be(0);
+        page.Orders.Should().BeEmpty();
+        page.RowsWithoutIdentity.Should().Be(2);
     }
 
     [Fact]
@@ -848,8 +922,8 @@ public class WildberriesApiClientGetOrdersTests
     {
         string json = """
         [
-            { "date": "2024-01-10T08:00:00", "nmId": 1, "srid": "A" },
-            { "date": "2024-01-10T08:00:00", "nmId": 2, "srid": "B" }
+            { "date": "2024-01-10T08:00:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
+            { "date": "2024-01-10T08:00:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
         ]
         """;
 

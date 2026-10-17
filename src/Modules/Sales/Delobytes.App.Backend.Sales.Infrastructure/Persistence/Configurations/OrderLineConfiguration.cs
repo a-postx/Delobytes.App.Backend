@@ -60,6 +60,12 @@ public class OrderLineConfiguration : IEntityTypeConfiguration<OrderLine>
 
         builder.Property(l => l.ChannelProductId);
 
+        builder.Property(l => l.IsCancelled)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(l => l.StatusChangedAt);
+
         builder.Property(l => l.CreatedAt)
             .IsRequired();
 
