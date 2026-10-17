@@ -272,6 +272,71 @@ public class OrdersBatchImportRequestedConsumerTests
     }
 
     [Fact]
+    public async Task ProcessAsync_MultiLineCart_PersistsOneOrderWithOneLinePerUnit()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot cart = BuildCartSnapshot("G-1", "SRID-1", "SRID-2");
+
+        // Act
+        await consumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { cart }), CancellationToken.None);
+
+        // Assert
+        Order? order = await consumerContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        order.Lines.Should().OnlyContain(l => l.LineKey != order.ExternalOrderId);
+        order.Lines.Should().OnlyContain(l => l.Quantity == 1);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Created == 1 && e.Updated == 0 && e.Skipped == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MultiLineCartReimported_CountsAsSkippedWithoutDuplicatingLines()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        ChannelOrderSnapshot cart = BuildCartSnapshot("G-1", "SRID-1", "SRID-2");
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer firstConsumer = BuildConsumer(firstContext, firstPublishMock.Object, _tenantId);
+        await firstConsumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { cart }), CancellationToken.None);
+
+        // Act: the same channel data arrives again
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer secondConsumer = BuildConsumer(secondContext, secondPublishMock.Object, _tenantId);
+        await secondConsumer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { cart }), CancellationToken.None);
+
+        // Assert
+        List<Order> orders = await secondContext.Orders.IgnoreQueryFilters().Include(o => o.Lines).ToListAsync();
+        orders.Should().HaveCount(1);
+        orders[0].Lines.Should().HaveCount(2);
+
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 && e.Updated == 0 && e.Skipped == 1 && e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ProcessAsync_MultipleOrders_ReportsIndependentCounters()
     {
         // Arrange
@@ -556,8 +621,41 @@ public class OrdersBatchImportRequestedConsumerTests
         };
     }
 
-    private ChannelProductRef BuildChannelProductRef(Guid channelProductId, string externalProductId)
+    /// <summary>
+    /// Builds a cart snapshot: one order identity carrying one line per ordered unit. A cart has no
+    /// cart-level total in the channel payload, so ChannelReportedTotal stays null here.
+    /// </summary>
+    private static ChannelOrderSnapshot BuildCartSnapshot(string externalOrderId, params string[] lineKeys)
     {
+        ChannelOrderSnapshot cart = BuildOrderSnapshot(externalOrderId, "nm-100", lineKeys[0]);
+
+        List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>();
+
+        for (int i = 0; i < lineKeys.Length; i++)
+        {
+            lines.Add(new ChannelOrderLineSnapshot
+            {
+                LineKey = lineKeys[i],
+                ExternalLineId = lineKeys[i],
+                ExternalProductId = $"nm-{100 + i}",
+                OfferId = $"SKU-nm-{100 + i}",
+                ProductName = "Test Product",
+                Quantity = 1,
+                UnitPrice = 1500m,
+                BuyerUnitPrice = 1500m,
+                UnitPriceBeforeDiscount = 1700m,
+                Currency = "RUB",
+            });
+        }
+
+        return cart with
+        {
+            Lines = lines,
+            ChannelReportedTotal = lineKeys.Length == 1 ? 1700m : null,
+        };
+    }
+
+    private ChannelProductRef BuildChannelProductRef(Guid channelProductId, string externalProductId)    {
         return new ChannelProductRef
         {
             ChannelProductId = channelProductId,

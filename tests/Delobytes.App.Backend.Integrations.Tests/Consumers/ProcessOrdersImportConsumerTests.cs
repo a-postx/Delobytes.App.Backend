@@ -114,7 +114,50 @@ public class ProcessOrdersImportConsumerTests
             StatusChangedAt = DateTimeOffset.UtcNow,
             ExternalStatus = "new",
             Currency = "RUB",
-            Lines = new List<ChannelOrderLineSnapshot>()
+            Lines = new List<ChannelOrderLineSnapshot> { BuildLine(externalOrderId) }
+        };
+    }
+
+    private static ChannelOrderLineSnapshot BuildLine(string lineKey)
+    {
+        return new ChannelOrderLineSnapshot
+        {
+            LineKey = lineKey,
+            ExternalLineId = lineKey,
+            ExternalProductId = $"nm-{lineKey}",
+            OfferId = $"SKU-{lineKey}",
+            ProductName = "Test Product",
+            Quantity = 1,
+            UnitPrice = 1000m,
+            BuyerUnitPrice = 950m,
+            UnitPriceBeforeDiscount = 1200m,
+            Currency = "RUB",
+        };
+    }
+
+    /// <summary>
+    /// Builds a cart snapshot: one order identity carrying one line per ordered unit. A cart has no
+    /// cart-level total in the channel payload, so ChannelReportedTotal stays null on it.
+    /// </summary>
+    private static ChannelOrderSnapshot BuildCart(string externalOrderId, params string[] lineKeys)
+    {
+        List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>();
+
+        foreach (string lineKey in lineKeys)
+        {
+            lines.Add(BuildLine(lineKey));
+        }
+
+        return new ChannelOrderSnapshot
+        {
+            ExternalOrderId = externalOrderId,
+            ExternalOrderNumber = externalOrderId,
+            OrderDate = DateTimeOffset.UtcNow.AddDays(-1),
+            StatusChangedAt = DateTimeOffset.UtcNow,
+            ExternalStatus = "new",
+            Currency = "RUB",
+            ChannelReportedTotal = lines.Count == 1 ? 1200m : null,
+            Lines = lines,
         };
     }
 
@@ -750,6 +793,127 @@ public class ProcessOrdersImportConsumerTests
     }
 
     [Fact]
+    public async Task ProcessAsync_CartSplitAcrossBothHalves_PublishesOneOrderWithEveryLine()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        // Both halves report the same cart but a different unit of it, which is what a bisection
+        // through a cart produces. The first half carries the older header, so a merge that let the
+        // newer report's Lines replace the accumulated set would publish one line instead of two.
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                call++;
+
+                if (call == 1)
+                {
+                    return new OrdersPage { Orders = BuildOrders(3, 10), HasMore = true };
+                }
+
+                if (call == 2)
+                {
+                    return new OrdersPage
+                    {
+                        Orders = new List<ChannelOrderSnapshot>
+                        {
+                            BuildCart("ORDER-1", "SRID-1") with { StatusChangedAt = earlier },
+                        },
+                        HasMore = false,
+                    };
+                }
+
+                return new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot>
+                    {
+                        BuildCart("ORDER-1", "SRID-2") with { StatusChangedAt = later },
+                    },
+                    HasMore = false,
+                };
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse: 1);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        List<ChannelOrderSnapshot> cart = PublishedOrders().Where(o => o.ExternalOrderId == "ORDER-1").ToList();
+
+        // One order, not two: both halves named the same cart.
+        cart.Should().ContainSingle();
+        cart.Single().Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+
+        // The header still comes from the later report.
+        cart.Single().StatusChangedAt.Should().Be(later);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SameCartRefetched_PublishesTheSameLinesWithoutDuplicating()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun firstJobRun = BuildJobRun(connection, JobStatus.Pending);
+        JobRun secondJobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(firstJobRun);
+        SetupDefaults(secondJobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersPage
+            {
+                Orders = new List<ChannelOrderSnapshot> { BuildCart("ORDER-1", "SRID-1", "SRID-2") },
+                HasMore = false,
+            });
+
+        await CreateConsumer().ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = firstJobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        List<string> firstRunLineKeys = PublishedOrders()
+            .Single(o => o.ExternalOrderId == "ORDER-1")
+            .Lines
+            .Select(l => l.LineKey)
+            .ToList();
+
+        _eventPublisher.Invocations.Clear();
+
+        // The same window again, which is what a delta run inside the safety overlap produces.
+        await CreateConsumer().ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = secondJobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        List<string> secondRunLineKeys = PublishedOrders()
+            .Single(o => o.ExternalOrderId == "ORDER-1")
+            .Lines
+            .Select(l => l.LineKey)
+            .ToList();
+
+        // The merge is by line key, so re-reading the cart cannot grow the line set.
+        secondRunLineKeys.Should().BeEquivalentTo(firstRunLineKeys);
+        secondRunLineKeys.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task ProcessAsync_OrderPresentInBothHalves_IsPublishedOnce()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
@@ -1078,5 +1242,10 @@ public class ProcessOrdersImportConsumerTests
             .ForEach(i => captured.Add((OrdersBatchImportRequestedEvent)i.Arguments[0]));
 
         return captured;
+    }
+
+    private List<ChannelOrderSnapshot> PublishedOrders()
+    {
+        return CapturedBatches().SelectMany(b => b.Orders).ToList();
     }
 }

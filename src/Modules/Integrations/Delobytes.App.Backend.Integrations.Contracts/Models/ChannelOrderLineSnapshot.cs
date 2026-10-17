@@ -7,8 +7,10 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Models;
 public record ChannelOrderLineSnapshot
 {
     /// <summary>
-    /// Gets the deterministic line identity derived by the channel mapper. Stable across
-    /// refetches of the same order, which is what makes line upsert possible.
+    /// Gets the identity of the ordered unit derived by the channel mapper (Wildberries:
+    /// <c>srid</c>). Stable across refetches of the same order, which is what makes line upsert
+    /// possible. Unique within the owning order only: two carts may legitimately carry a line with
+    /// the same key, and two units of one cart never may.
     /// </summary>
     public string LineKey { get; init; } = default!;
 

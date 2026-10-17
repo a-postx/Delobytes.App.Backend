@@ -35,6 +35,14 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private const string WildberriesCurrency = "RUB";
 
     /// <summary>
+    /// Longest <c>gNumber</c> or <c>srid</c>/sticker identity this mapper accepts. Matches the
+    /// <c>HasMaxLength(100)</c> on both <c>Order.ExternalOrderId</c> and <c>OrderLine.LineKey</c>;
+    /// checked here because the failure would otherwise surface as a truncation at the database
+    /// layer, after the run has already reported the rows as imported.
+    /// </summary>
+    private const int MaxIdentityLength = 100;
+
+    /// <summary>
     /// Maximum number of response body characters written to logs.
     /// </summary>
     private const int ResponseBodyLogLimit = 500;
@@ -504,7 +512,10 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         orders ??= new List<WildberriesOrderDto>();
 
         List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>();
-        Dictionary<string, WildberriesOrderDto> rowsByExternalOrderId = new Dictionary<string, WildberriesOrderDto>(StringComparer.Ordinal);
+        Dictionary<string, List<WildberriesOrderDto>> rowsByOrderKey = new Dictionary<string, List<WildberriesOrderDto>>(StringComparer.Ordinal);
+        // Keeps the emitted snapshot order tied to the first row of each cart rather than to
+        // Dictionary enumeration, so the batch a cart lands in does not move between runs.
+        List<string> orderKeysInArrivalOrder = new List<string>();
 
         int rowsWithoutIdentity = 0;
 
@@ -515,9 +526,9 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 continue;
             }
 
-            string? externalOrderId = GetExternalOrderId(order);
+            string? lineKey = GetLineKey(order);
 
-            if (externalOrderId == null)
+            if (lineKey == null)
             {
                 // Never fabricate a key here: any composite over nmId, techSize, gNumber and date
                 // is not proven unique per order (one cart may hold two units of the same article
@@ -536,19 +547,34 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 continue;
             }
 
-            if (rowsByExternalOrderId.ContainsKey(externalOrderId))
+            EnsureIdentityLength(lineKey, nameof(lineKey));
+
+            string orderKey = GetOrderKey(order, lineKey);
+
+            EnsureIdentityLength(orderKey, nameof(orderKey));
+
+            if (!rowsByOrderKey.TryGetValue(orderKey, out List<WildberriesOrderDto>? rows))
             {
-                // One response naming the same order twice is a data-quality failure, not a
-                // duplicate to resolve: within a single response there is no window overlap that
-                // could explain a legitimate repeat, and picking either row would silently decide
-                // which of two reported orders the import keeps.
+                rows = new List<WildberriesOrderDto>();
+                rowsByOrderKey.Add(orderKey, rows);
+                orderKeysInArrivalOrder.Add(orderKey);
+            }
+            else if (ContainsLineKey(rows, lineKey))
+            {
+                // Unlike a repeated order key, a repeated line key inside one order cannot describe
+                // the response: one srid is one ordered unit, so two rows claiming it are two
+                // versions of that unit rather than two units. Keeping either would silently decide
+                // which reported row the import believes.
                 throw new InvalidOperationException(
-                    $"Wildberries returned external order id '{externalOrderId}' more than once in one response " +
-                    "(NmId and gNumber lines do not identify a single order, so the response cannot be deduplicated).");
+                    $"Wildberries returned line key '{lineKey}' more than once within order '{orderKey}' in one response.");
             }
 
-            rowsByExternalOrderId.Add(externalOrderId, order);
-            snapshots.Add(MapToOrderSnapshot(order, externalOrderId));
+            rows.Add(order);
+        }
+
+        foreach (string orderKey in orderKeysInArrivalOrder)
+        {
+            snapshots.Add(MapToOrderSnapshot(orderKey, rowsByOrderKey[orderKey]));
         }
 
         int maxRows = _options.MaxOrdersPerResponse > 0
@@ -574,7 +600,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     }
 
     /// <summary>
-    /// Resolves the identity of one order row. <c>srid</c> is the documented per-order id and is
+    /// Resolves the identity of one ordered unit. <c>srid</c> is the documented per-order id and is
     /// returned unmodified; <c>sticker</c> is the only other field the payload guarantees one of
     /// per ordered unit, and is returned with a prefix so it stays recognisable as a derived
     /// identity. Everything else is mutable — <c>lastChangeDate</c>, <c>isCancel</c>,
@@ -583,14 +609,10 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// part of the identity either: reconnecting a cabinet would then duplicate its whole history.
     /// </summary>
     /// <remarks>
-    /// UNRESOLVED: <c>Order</c> is unique on (TenantId, ChannelId, ExternalOrderId), so this chain
-    /// is only a per-order identity while a tenant binds at most one cabinet to a given ChannelId.
-    /// Nothing enforces that today — Connection carries no such constraint — and two cabinets on
-    /// one channel whose <c>srid</c> values happen to coincide would upsert onto each other's rows.
-    /// Deciding between enforcing the invariant and moving the uniqueness scope onto the connection
-    /// is a product call, not a mapping one; until it is made, the mapping cannot defend itself.
+    /// The result is a line identity, not an order identity: it is unique within the owning order,
+    /// and two carts may carry the same <c>srid</c>.
     /// </remarks>
-    private static string? GetExternalOrderId(WildberriesOrderDto dto)
+    private static string? GetLineKey(WildberriesOrderDto dto)
     {
         if (!string.IsNullOrWhiteSpace(dto.Srid))
         {
@@ -603,6 +625,51 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves the identity of one cart from its rows. <c>gNumber</c> is the buyer-facing order
+    /// number and is the only field that groups the units of one cart, so it wins whenever it is
+    /// reported; a row without it is its own cart, keyed by the line identity. <c>gNumber</c> is
+    /// immutable, which is what makes it safe to key the persisted order on.
+    /// </summary>
+    /// <remarks>
+    /// <c>Order</c> is unique on (TenantId, ChannelId, ExternalOrderId); that is sufficient because
+    /// a tenant may bind at most one active connection per channel, enforced by
+    /// <c>CreateConnectionCommandHandler</c> through <c>HasActiveConnectionForChannelAsync</c>.
+    /// Two cabinets on one channel cannot coexist, so two <c>gNumber</c> sequences cannot meet on
+    /// this index.
+    /// </remarks>
+    private static string GetOrderKey(WildberriesOrderDto dto, string lineKey)
+    {
+        return !string.IsNullOrWhiteSpace(dto.GNumber) ? dto.GNumber : lineKey;
+    }
+
+    /// <summary>
+    /// Fails the page when an identity cannot be persisted. Truncating would be worse than failing:
+    /// the truncated key is a different order to the database, so the next import would create a
+    /// second row for the same cart and the truncated one would never be updated again.
+    /// </summary>
+    private static void EnsureIdentityLength(string identity, string name)
+    {
+        if (identity.Length > MaxIdentityLength)
+        {
+            throw new InvalidOperationException(
+                $"Wildberries computed {name} '{identity}' exceeds the maximum persistable length of {MaxIdentityLength} characters.");
+        }
+    }
+
+    private static bool ContainsLineKey(List<WildberriesOrderDto> rows, string lineKey)
+    {
+        foreach (WildberriesOrderDto row in rows)
+        {
+            if (string.Equals(GetLineKey(row), lineKey, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string TruncateForLog(string responseBody)
@@ -650,24 +717,92 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     }
 
     /// <summary>
-    /// Maps one row to a snapshot. <paramref name="externalOrderId"/> is resolved by the caller
-    /// through <see cref="GetExternalOrderId"/> and used verbatim so the order and its single line
-    /// never diverge on identity.
+    /// Maps the rows of one cart to a snapshot. <paramref name="orderKey"/> is resolved by the
+    /// caller through <see cref="GetOrderKey"/>; the rows are the units of that one cart and each
+    /// becomes a line.
     /// </summary>
-    private ChannelOrderSnapshot MapToOrderSnapshot(WildberriesOrderDto dto, string externalOrderId)
+    /// <remarks>
+    /// The header fields are reduced from the rows because the snapshot describes the cart, and the
+    /// cart has no header of its own in the payload. Fields Wildberries reports per unit and that
+    /// have no cart-level meaning take the first row's value rather than an invented merge rule.
+    /// </remarks>
+    private ChannelOrderSnapshot MapToOrderSnapshot(string orderKey, List<WildberriesOrderDto> rows)
     {
-        DateTimeOffset? orderDate = ParseMoscowTimestamp(dto.Date);
-        DateTimeOffset? changedAt = ParseMoscowTimestamp(dto.LastChangeDate);
+        WildberriesOrderDto first = rows[0];
+
+        List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>(rows.Count);
+
+        DateTimeOffset? orderDate = null;
+        DateTimeOffset? statusChangedAt = null;
+
+        // A cart is cancelled only when every unit is: a cancelled unit next to a live one would
+        // otherwise project the whole cart onto OrderStatus.Cancelled in Sales, hiding a live order.
+        bool allRowsCancelled = true;
+
+        foreach (WildberriesOrderDto row in rows)
+        {
+            string lineKey = GetLineKey(row)
+                ?? throw new InvalidOperationException(
+                    $"Wildberries order '{orderKey}' contains a row without a usable line identity.");
+
+            lines.Add(MapToOrderLine(row, lineKey));
+
+            DateTimeOffset? rowOrderDate = ParseMoscowTimestamp(row.Date);
+
+            if (rowOrderDate != null && (orderDate == null || rowOrderDate.Value < orderDate.Value))
+            {
+                orderDate = rowOrderDate;
+            }
+
+            DateTimeOffset? rowChangedAt = ParseMoscowTimestamp(row.LastChangeDate);
+
+            if (rowChangedAt != null && (statusChangedAt == null || rowChangedAt.Value > statusChangedAt.Value))
+            {
+                statusChangedAt = rowChangedAt;
+            }
+
+            allRowsCancelled = allRowsCancelled && row.IsCancel;
+        }
 
         // The orders feed has no textual status field; isCancel/cancelDate are the only signals
         // Wildberries reports, so the snapshot status is reduced to these two values.
-        string externalStatus = dto.IsCancel ? "cancelled" : "active";
+        string externalStatus = allRowsCancelled ? "cancelled" : "active";
 
-        bool? isSellerWarehouse = dto.WarehouseType?.Contains("продавца", StringComparison.OrdinalIgnoreCase);
+        bool? isSellerWarehouse = first.WarehouseType?.Contains("продавца", StringComparison.OrdinalIgnoreCase);
 
-        ChannelOrderLineSnapshot line = new ChannelOrderLineSnapshot
+        return new ChannelOrderSnapshot
         {
-            LineKey = externalOrderId,
+            ExternalOrderId = orderKey,
+            ExternalOrderNumber = string.IsNullOrWhiteSpace(first.GNumber) ? null : orderKey,
+            OrderDate = orderDate ?? DateTimeOffset.UtcNow,
+            StatusChangedAt = statusChangedAt,
+            ExternalStatus = externalStatus,
+            // Reported per unit with no cart-level counterpart, so the first row stands in for the
+            // cart instead of a merge rule the payload does not define.
+            ExternalSubstatus = first.OrderType,
+            CancelReason = allRowsCancelled ? "cancel" : null,
+            Currency = WildberriesCurrency,
+            DeliveryRegion = first.RegionName,
+            WarehouseName = first.WarehouseName,
+            IsSellerWarehouse = isSellerWarehouse,
+            // Only a single-line cart reports a total: Wildberries reports totalPrice per unit and
+            // the payload carries no cart-level total, so summing would smuggle a derived value
+            // into a reported-facts field. Null already means "the channel did not report this"
+            // elsewhere in this contract.
+            ChannelReportedTotal = lines.Count == 1 ? first.TotalPrice : null,
+            Lines = lines
+        };
+    }
+
+    /// <summary>
+    /// Maps one row to one line. <paramref name="lineKey"/> is resolved by the caller through
+    /// <see cref="GetLineKey"/> and used verbatim so the line keeps the identity it was grouped by.
+    /// </summary>
+    private static ChannelOrderLineSnapshot MapToOrderLine(WildberriesOrderDto dto, string lineKey)
+    {
+        return new ChannelOrderLineSnapshot
+        {
+            LineKey = lineKey,
             ExternalLineId = dto.Srid,
             ExternalProductId = dto.NmId.ToString(CultureInfo.InvariantCulture),
             OfferId = dto.SupplierArticle,
@@ -678,23 +813,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             BuyerUnitPrice = dto.FinishedPrice,
             UnitPriceBeforeDiscount = dto.TotalPrice,
             Currency = WildberriesCurrency
-        };
-
-        return new ChannelOrderSnapshot
-        {
-            ExternalOrderId = externalOrderId,
-            ExternalOrderNumber = dto.GNumber,
-            OrderDate = orderDate ?? DateTimeOffset.UtcNow,
-            StatusChangedAt = changedAt,
-            ExternalStatus = externalStatus,
-            ExternalSubstatus = dto.OrderType,
-            CancelReason = dto.IsCancel ? "cancel" : null,
-            Currency = WildberriesCurrency,
-            DeliveryRegion = dto.RegionName,
-            WarehouseName = dto.WarehouseName,
-            IsSellerWarehouse = isSellerWarehouse,
-            ChannelReportedTotal = dto.TotalPrice,
-            Lines = new List<ChannelOrderLineSnapshot> { line }
         };
     }
 

@@ -8,7 +8,9 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Models;
 public record ChannelOrderSnapshot
 {
     /// <summary>
-    /// Gets the channel's order identity.
+    /// Gets the channel's order identity. Identifies the cart/order the channel grouped its lines
+    /// under, never a single ordered unit: Wildberries reports the buyer-facing <c>gNumber</c> here
+    /// while several <c>srid</c> values share it. Unique per (tenant, channel) once persisted.
     /// </summary>
     public string ExternalOrderId { get; init; } = default!;
 

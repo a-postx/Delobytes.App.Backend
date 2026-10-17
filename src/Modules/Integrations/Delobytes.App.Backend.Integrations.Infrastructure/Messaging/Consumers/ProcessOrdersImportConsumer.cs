@@ -267,16 +267,16 @@ public class ProcessOrdersImportConsumer
         Guid jobRunId,
         CancellationToken cancellationToken)
     {
-        Dictionary<string, ChannelOrderSnapshot> ordersByExternalId = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
+        Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
         _requestsIssued = 0;
         _rowsWithoutIdentity = 0;
 
-        await FetchWindowAsync(ordersSource, connectionId, request, jobRunId, ordersByExternalId, cancellationToken);
+        await FetchWindowAsync(ordersSource, connectionId, request, jobRunId, ordersByOrderKey, cancellationToken);
 
         return new OrdersFetchResult
         {
-            Orders = ordersByExternalId.Values.ToList(),
+            Orders = ordersByOrderKey.Values.ToList(),
             RequestsIssued = _requestsIssued,
             RowsWithoutIdentity = _rowsWithoutIdentity,
         };
@@ -287,17 +287,18 @@ public class ProcessOrdersImportConsumer
     /// the window is split at its midpoint and both halves are fetched the same way, because the
     /// endpoint exposes no ordering guarantee: the rows it returned cannot be assumed to be the
     /// earliest ones, so advancing <c>dateFrom</c> past them would silently drop the rest of the
-    /// window. Rows seen twice (both halves of a split share their boundary instant) are collapsed
-    /// by the dedup dictionary. Rows the source could not identify fail the window outright: the
-    /// dictionary only merges rows that agree on identity, and an unidentified row has none to
-    /// agree on.
+    /// window. A cart reported by both halves (sibling windows share their boundary instant, and a
+    /// bisection cuts through carts as readily as through anything else) is collapsed by the dedup
+    /// dictionary, which unions the lines of both reports into one order. Rows the source could not
+    /// identify fail the window outright: the dictionary only merges rows that agree on identity,
+    /// and an unidentified row has none to agree on.
     /// </summary>
     private async Task FetchWindowAsync(
         IOrdersSource ordersSource,
         Guid connectionId,
         OrdersRequest request,
         Guid jobRunId,
-        Dictionary<string, ChannelOrderSnapshot> ordersByExternalId,
+        Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey,
         CancellationToken cancellationToken)
     {
         if (_requestsIssued >= MaxRequestsPerRun)
@@ -337,16 +338,24 @@ public class ProcessOrdersImportConsumer
             // Sibling windows of one bisection share their boundary instant, so an order placed on
             // that instant is legitimately reported by both halves. That is one order observed
             // twice, not two orders colliding, so the reports are merged — never re-keyed.
-            if (!ordersByExternalId.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
+            if (!ordersByOrderKey.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
             {
-                ordersByExternalId.Add(order.ExternalOrderId, order);
+                ordersByOrderKey.Add(order.ExternalOrderId, order);
                 continue;
             }
 
-            if (IsLaterReport(order, existing))
-            {
-                ordersByExternalId[order.ExternalOrderId] = order;
-            }
+            // "Which report is newer" and "which lines we have" are two independent questions.
+            // IsLaterReport below answers only the first, and it decides the header fields alone:
+            // the line union happens regardless of its result, because the newer report frequently
+            // carries a subset of the cart. A bisection splits carts, so half A can hold unit 1 and
+            // half B unit 2 of one gNumber; letting the winner's Lines replace the accumulated set
+            // would silently drop whichever unit the older half contributed.
+            bool isIncomingLater = IsLaterReport(order, existing);
+
+            List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines, isIncomingLater);
+            ChannelOrderSnapshot headerSource = isIncomingLater ? order : existing;
+
+            ordersByOrderKey[order.ExternalOrderId] = headerSource with { Lines = mergedLines };
         }
 
         if (!ordersPage.HasMore)
@@ -398,8 +407,46 @@ public class ProcessOrdersImportConsumer
             request.DateTo,
             midpoint);
 
-        await FetchWindowAsync(ordersSource, connectionId, firstHalf, jobRunId, ordersByExternalId, cancellationToken);
-        await FetchWindowAsync(ordersSource, connectionId, secondHalf, jobRunId, ordersByExternalId, cancellationToken);
+        await FetchWindowAsync(ordersSource, connectionId, firstHalf, jobRunId, ordersByOrderKey, cancellationToken);
+        await FetchWindowAsync(ordersSource, connectionId, secondHalf, jobRunId, ordersByOrderKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// Unions the lines of two reports of one order, keyed by
+    /// <see cref="ChannelOrderLineSnapshot.LineKey"/>. An unseen key is appended, keeping the lines
+    /// already known; a key present on both sides keeps the line from whichever report is the later
+    /// one, and keeps the accumulated line otherwise, so an exact tie does not depend on arrival
+    /// order. Lines carry no instant of their own — Wildberries reports <c>lastChangeDate</c> per
+    /// row, and the mapper reduces it onto the order, so both reports of one cart can only be told
+    /// apart by <paramref name="useIncomingLine"/>, which the caller derives from the order-level
+    /// comparison. Returning a fresh list rather than mutating either argument is what lets
+    /// <see cref="ChannelOrderSnapshot"/> stay an immutable record without making Lines settable.
+    /// </summary>
+    private static List<ChannelOrderLineSnapshot> UnionLines(
+        List<ChannelOrderLineSnapshot> existing,
+        List<ChannelOrderLineSnapshot> incoming,
+        bool useIncomingLine)
+    {
+        List<ChannelOrderLineSnapshot> merged = new List<ChannelOrderLineSnapshot>(existing);
+
+        foreach (ChannelOrderLineSnapshot line in incoming)
+        {
+            int index = merged.FindIndex(
+                existingLine => string.Equals(existingLine.LineKey, line.LineKey, StringComparison.Ordinal));
+
+            if (index < 0)
+            {
+                merged.Add(line);
+                continue;
+            }
+
+            if (useIncomingLine)
+            {
+                merged[index] = line;
+            }
+        }
+
+        return merged;
     }
 
     /// <summary>
