@@ -28,26 +28,6 @@ public static class HealthCheckBuilderExtensions
         return builder;
     }
 
-    public static IHealthChecksBuilder AddNetworkHealthCheck(
-        this IHealthChecksBuilder builder,
-        string name,
-        HealthStatus? failureStatus = null,
-        IEnumerable<string>? tags = null,
-        int? latencyInMseconds = null)
-    {
-        builder.AddCheck<NetworkHealthCheck>(name, failureStatus ?? HealthStatus.Degraded, tags ?? new List<string>());
-
-        if (latencyInMseconds.HasValue)
-        {
-            builder.Services.Configure<NetworkCheckOptions>(name, options =>
-            {
-                options.MaxLatencyThreshold = latencyInMseconds.Value;
-            });
-        }
-
-        return builder;
-    }
-
     public static IHealthChecksBuilder AddGenericHealthCheck<T>(
         this IHealthChecksBuilder builder,
         string name,
