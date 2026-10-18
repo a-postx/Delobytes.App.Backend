@@ -283,15 +283,17 @@ public class ProcessOrdersImportConsumer
     }
 
     /// <summary>
-    /// Fetches one window. If the endpoint reports the response was a partial subset of the window,
-    /// the window is split at its midpoint and both halves are fetched the same way, because the
-    /// endpoint exposes no ordering guarantee: the rows it returned cannot be assumed to be the
-    /// earliest ones, so advancing <c>dateFrom</c> past them would silently drop the rest of the
-    /// window. A cart reported by both halves (sibling windows share their boundary instant, and a
-    /// bisection cuts through carts as readily as through anything else) is collapsed by the dedup
-    /// dictionary, which unions the lines of both reports into one order. Rows the source could not
-    /// identify fail the window outright: the dictionary only merges rows that agree on identity,
-    /// and an unidentified row has none to agree on.
+    /// Fetches one window. The endpoint serves rows in ascending order of the selection instant and
+    /// caps a response at a fixed row count, so a capped response proves that everything up to its
+    /// last returned instant was served and leaves only the region above that instant unknown. The
+    /// recursion therefore splits that unknown region at its midpoint and resumes the left half from
+    /// the covered boundary, not from the requested <c>dateFrom</c>: the endpoint has no
+    /// <c>dateTo</c>, so re-requesting the parent's own <c>dateFrom</c> would return the identical
+    /// block, report the cap again, and never advance. Rows falling exactly on a boundary are
+    /// reported by both siblings; the dedup dictionary collapses them into one order and unions
+    /// their lines, so the bisection can cut through a cart without losing or duplicating a unit.
+    /// Rows the source could not identify fail the window outright: the dictionary only merges rows
+    /// that agree on identity, and an unidentified row has none to agree on.
     /// </summary>
     private async Task FetchWindowAsync(
         IOrdersSource ordersSource,
@@ -376,35 +378,56 @@ public class ProcessOrdersImportConsumer
             };
         }
 
-        if (!ordersPage.HasMore)
+        // The endpoint filters by dateFrom alone and serves rows in ascending order of the selection
+        // instant, capped at MaxOrdersPerResponse rows. A capped response therefore proves that
+        // everything up to its last returned instant was served, and says nothing about what lies
+        // beyond it. Bisecting the requested window instead re-issues the parent's own request: the
+        // left half keeps the parent's dateFrom, the endpoint has no dateTo, so it returns the same
+        // block, reports the cap again, and recurses down to the window floor without having read a
+        // single new row - failing the run on volume alone. The bisection has to start where the
+        // unknown region starts, which is the covered boundary.
+        // A null CoveredUntil on a capped response means the source could not prove how far it
+        // reached; falling back to the requested DateFrom keeps the run honest, since it narrows
+        // and retries rather than assuming the window was served.
+        DateTimeOffset nextFrom = request.DateFrom;
+
+        if (ordersPage.CoveredUntil != null && ordersPage.CoveredUntil.Value > nextFrom)
+        {
+            nextFrom = ordersPage.CoveredUntil.Value;
+        }
+
+        // Nothing is left unknown: either the response came back whole, or it reached the window end
+        // before hitting the cap, in which case the rows past the window are what filled it.
+        if (!ordersPage.HasMore || nextFrom >= request.DateTo)
         {
             return;
         }
 
-        TimeSpan windowSpan = request.DateTo - request.DateFrom;
+        TimeSpan unknownSpan = request.DateTo - nextFrom;
 
-        if (windowSpan <= _minWindow)
+        if (unknownSpan <= _minWindow)
         {
             // Accepting the truncated response would silently drop orders, which is the defect this
             // path exists to fix; the run fails instead so the operator sees a window granularity
             // that the endpoint cannot serve rather than a partial import reported as success.
             _logger.LogWarning(
-                "JobRun {JobRunId}: window {From} - {To} still returns a partial response at the minimum granularity of {MinWindow}, failing the run",
+                "JobRun {JobRunId}: window {From} - {To} still returns a partial response with {Remaining} left to read at the minimum granularity of {MinWindow}, failing the run",
                 jobRunId,
-                request.DateFrom,
+                nextFrom,
                 request.DateTo,
+                unknownSpan,
                 _minWindow);
 
             throw new InvalidOperationException(
-                $"Orders import cannot narrow window {request.DateFrom:O} - {request.DateTo:O} below {_minWindow} " +
+                $"Orders import cannot narrow window {nextFrom:O} - {request.DateTo:O} below {_minWindow} " +
                 "while the endpoint keeps reporting a partial response.");
         }
 
-        DateTimeOffset midpoint = request.DateFrom + TimeSpan.FromTicks(windowSpan.Ticks / 2);
+        DateTimeOffset midpoint = nextFrom + TimeSpan.FromTicks(unknownSpan.Ticks / 2);
 
         OrdersRequest firstHalf = new OrdersRequest
         {
-            DateFrom = request.DateFrom,
+            DateFrom = nextFrom,
             DateTo = midpoint,
             Flag = request.Flag,
             Limit = request.Limit,
@@ -419,10 +442,11 @@ public class ProcessOrdersImportConsumer
         };
 
         _logger.LogInformation(
-            "JobRun {JobRunId}: window {From} - {To} exceeded the response cap, splitting at {Midpoint}",
+            "JobRun {JobRunId}: window {From} - {To} exceeded the response cap, covered until {CoveredUntil}, splitting at {Midpoint}",
             jobRunId,
             request.DateFrom,
             request.DateTo,
+            nextFrom,
             midpoint);
 
         await FetchWindowAsync(ordersSource, connectionId, firstHalf, jobRunId, ordersByOrderKey, cancellationToken);

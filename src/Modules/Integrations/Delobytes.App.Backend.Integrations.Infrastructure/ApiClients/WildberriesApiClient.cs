@@ -36,9 +36,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
     /// <summary>
     /// Longest <c>gNumber</c> or <c>srid</c>/sticker identity this mapper accepts. Matches the
-    /// <c>HasMaxLength(100)</c> on both <c>Order.ExternalOrderId</c> and <c>OrderLine.LineKey</c>;
-    /// checked here because the failure would otherwise surface as a truncation at the database
-    /// layer, after the run has already reported the rows as imported.
+    /// <c>HasMaxLength(100)</c> on both <c>Order.ExternalOrderId</c> and <c>OrderLine.LineKey</c>
     /// </summary>
     private const int MaxIdentityLength = 100;
 
@@ -97,9 +95,14 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     internal TimeSpan DeserializationRetryDelay { get; set; } = DefaultDeserializationRetryDelay;
 
     /// <inheritdoc/>
-    public string ChannelCode =>
-        _channelCode ?? throw new InvalidOperationException(
+    public string ChannelCode
+    {
+        get
+        {
+            return _channelCode ?? throw new InvalidOperationException(
             "Template must be bound before reading ChannelCode. Obtain the client from IChannelApiClientFactory.");
+        }
+    }
 
     /// <summary>
     /// Binds this client instance to a system channel template.
@@ -513,14 +516,45 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>();
         Dictionary<string, List<WildberriesOrderDto>> rowsByOrderKey = new Dictionary<string, List<WildberriesOrderDto>>(StringComparer.Ordinal);
+
         // Keeps the emitted snapshot order tied to the first row of each cart rather than to
         // Dictionary enumeration, so the batch a cart lands in does not move between runs.
         List<string> orderKeysInArrivalOrder = new List<string>();
 
         int rowsWithoutIdentity = 0;
 
+        // Bounds how far into the window the returned rows reach. Recorded before the window filter
+        // below, because a row past dateTo is exactly what consumed the response cap, and so is what
+        // limits what this response can claim to have covered.
+        DateTimeOffset? coveredUntil = null;
+        DateTimeOffset? previousSelectionInstant = null;
+
+        // A capped response is a prefix of the rows, so the largest returned instant bounds what was
+        // served only while the rows arrive in ascending order of the instant they were selected by.
+        // The endpoint orders by lastChangeDate while flag=1 selects by order date, so the two axes
+        // coincide for a delta run and may diverge for a backfill; taking the maximum there would
+        // claim coverage of a region whose rows were cut off, and the caller would resume past them.
+        bool coversContiguousPrefix = true;
+
         foreach (WildberriesOrderDto order in orders)
         {
+            DateTimeOffset? selectionInstant = GetSelectionInstant(order, request.Flag);
+
+            if (selectionInstant != null)
+            {
+                if (previousSelectionInstant != null && selectionInstant.Value < previousSelectionInstant.Value)
+                {
+                    coversContiguousPrefix = false;
+                }
+
+                previousSelectionInstant = selectionInstant;
+
+                if (coveredUntil == null || selectionInstant.Value > coveredUntil.Value)
+                {
+                    coveredUntil = selectionInstant.Value;
+                }
+            }
+
             if (!IsWithinRequestedWindow(order, request.Flag, dateToMsk))
             {
                 continue;
@@ -598,20 +632,28 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             ? _options.MaxOrdersPerResponse
             : WildberriesImportOptions.DefaultMaxOrdersPerResponse;
 
-        bool hasMore = orders.Count >= maxRows;
+        bool hasMore = orders.Count > maxRows;
 
         _logger.LogInformation(
-            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}, rowsWithoutIdentity={RowsWithoutIdentity}).",
+            "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}, coveredUntil={CoveredUntil}, rowsWithoutIdentity={RowsWithoutIdentity}).",
             snapshots.Count,
             request.Flag,
             dateFromMsk,
             hasMore,
+            coveredUntil,
             rowsWithoutIdentity);
 
         return new OrdersPage
         {
             Orders = snapshots,
             HasMore = hasMore,
+
+            // A response under the cap came back whole, so it covers the window end that was asked
+            // for. A capped one covers only as far as its last returned selection instant, and only
+            // when its rows arrived ordered by that instant.
+            CoveredUntil = !hasMore
+                ? request.DateTo
+                : coversContiguousPrefix ? coveredUntil : null,
             RowsWithoutIdentity = rowsWithoutIdentity
         };
     }
@@ -669,11 +711,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         return string.IsNullOrWhiteSpace(dto.GNumber) ? null : dto.GNumber;
     }
 
-    /// <summary>
-    /// Fails the page when an identity cannot be persisted. Truncating would be worse than failing:
-    /// the truncated key is a different order to the database, so the next import would create a
-    /// second row for the same cart and the truncated one would never be updated again.
-    /// </summary>
     private static void EnsureIdentityLength(string identity, string name)
     {
         if (identity.Length > MaxIdentityLength)
@@ -707,15 +744,26 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     }
 
     /// <summary>
+    /// Resolves the instant the endpoint selects on: flag=0 (delta) selects by lastChangeDate,
+    /// flag=1 (backfill) by the order date. This is the axis a capped response is bounded by, so it
+    /// is the only correct source for how far the response reached. Null when the row carries no
+    /// parseable instant on that axis.
+    /// </summary>
+    private static DateTimeOffset? GetSelectionInstant(WildberriesOrderDto dto, int flag)
+    {
+        return flag == 0
+            ? ParseMoscowTimestamp(dto.LastChangeDate) ?? ParseMoscowTimestamp(dto.Date)
+            : ParseMoscowTimestamp(dto.Date);
+    }
+
+    /// <summary>
     /// Filters out rows outside the requested window. flag=0 (delta) windows by lastChangeDate;
     /// flag=1 (backfill) windows by the order date itself, matching what each flag selects on
     /// the Wildberries side.
     /// </summary>
     private static bool IsWithinRequestedWindow(WildberriesOrderDto dto, int flag, DateTimeOffset dateToMsk)
     {
-        DateTimeOffset? reference = flag == 0
-            ? ParseMoscowTimestamp(dto.LastChangeDate) ?? ParseMoscowTimestamp(dto.Date)
-            : ParseMoscowTimestamp(dto.Date);
+        DateTimeOffset? reference = GetSelectionInstant(dto, flag);
 
         return reference is null || reference.Value <= dateToMsk;
     }
