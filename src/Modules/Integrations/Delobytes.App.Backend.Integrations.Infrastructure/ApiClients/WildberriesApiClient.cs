@@ -839,12 +839,14 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         return new ChannelOrderSnapshot
         {
             ExternalOrderId = orderKey,
+
             // gNumber is the buyer-facing order number, so it is both the identity and the number;
             // reporting it twice is what the contract asks for.
             ExternalOrderNumber = orderKey,
             OrderDate = header.OrderDate,
             StatusChangedAt = header.StatusChangedAt,
             ExternalStatus = header.ExternalStatus,
+
             // Reported per unit with no cart-level counterpart, so the first row stands in for the
             // cart instead of a merge rule the payload does not define.
             ExternalSubstatus = first.OrderType,

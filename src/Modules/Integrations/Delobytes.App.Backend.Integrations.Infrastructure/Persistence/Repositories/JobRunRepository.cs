@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +39,56 @@ public class JobRunRepository : IJobRunRepository
     {
         _context.JobRuns.Update(jobRun);
         return _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(int TotalCount, List<JobRun> Items)> GetPagedAsync(
+        JobType? jobType,
+        Guid? connectionId,
+        JobStatus[]? statuses,
+        int? skip,
+        int? take,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<JobRun> query = _context.JobRuns.AsNoTracking();
+
+        if (jobType.HasValue)
+        {
+            query = query.Where(j => j.JobType == jobType.Value);
+        }
+
+        if (connectionId.HasValue)
+        {
+            query = query.Where(j => j.ConnectionId == connectionId.Value);
+        }
+
+        if (statuses is { Length: > 0 })
+        {
+            // Materialised to a List because an array captured in the expression tree is not
+            // translated reliably against the int-mapped enum column.
+            List<JobStatus> statusList = statuses.ToList();
+            query = query.Where(j => statusList.Contains(j.Status));
+        }
+
+        int totalCount = await query.CountAsync(cancellationToken);
+
+        query = query
+            .OrderByDescending(j => j.CreatedAt)
+            .ThenByDescending(j => j.Id);
+
+        if (skip.HasValue)
+        {
+            query = query.Skip(skip.Value);
+        }
+
+        if (take.HasValue)
+        {
+            query = query.Take(take.Value);
+        }
+
+        List<JobRun> items = await query.ToListAsync(cancellationToken);
+
+        return (totalCount, items);
     }
 
     /// <inheritdoc/>

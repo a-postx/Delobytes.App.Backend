@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
@@ -291,6 +291,216 @@ public class JobRunRepositoryTests
             reloaded.Should().NotBeNull();
             reloaded!.Status.Should().Be(JobStatus.Running);
             reloaded.StartedAt.Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_NoFilters_ReturnsEveryJobOfCurrentTenant_NewestFirst()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        Mock<ITenantContext> otherTenantMock = TenantMock(Guid.NewGuid());
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connection);
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddHours(-3)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Failed, now.AddHours(-1)));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, otherTenantMock.Object))
+        {
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            (int totalCount, List<JobRun> items) = await repository.GetPagedAsync(
+                null, null, null, null, null, CancellationToken.None);
+
+            totalCount.Should().Be(2, "the global tenant filter must exclude other tenants' rows");
+            items.Should().HaveCount(2);
+            items[0].CreatedAt.Should().BeAfter(items[1].CreatedAt, "newest jobs come first");
+        }
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_TypeFilter_ExcludesOtherJobTypes()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connection);
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Success, now.AddMinutes(-5)));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            (int totalCount, List<JobRun> items) = await repository.GetPagedAsync(
+                JobType.OrdersImport, null, null, null, null, CancellationToken.None);
+
+            totalCount.Should().Be(1);
+            items.Should().ContainSingle().Which.JobType.Should().Be(JobType.OrdersImport);
+        }
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_ConnectionFilter_ExcludesOtherConnections()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        SystemChannelTemplate template = BuildTemplate();
+        Connection first = BuildConnection(template.Id);
+        Connection second = BuildConnection(template.Id);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.AddRange(first, second);
+            ctx.JobRuns.Add(BuildJobRun(first.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(BuildJobRun(second.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-5)));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            (int totalCount, List<JobRun> items) = await repository.GetPagedAsync(
+                null, second.Id, null, null, null, CancellationToken.None);
+
+            totalCount.Should().Be(1);
+            items.Should().ContainSingle().Which.ConnectionId.Should().Be(second.Id);
+        }
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_StatusFilter_KeepsOnlyRequestedStatuses()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connection);
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-30)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Running, now.AddMinutes(-20)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            (int totalCount, List<JobRun> items) = await repository.GetPagedAsync(
+                null,
+                null,
+                new[] { JobStatus.Pending, JobStatus.Running },
+                null,
+                null,
+                CancellationToken.None);
+
+            totalCount.Should().Be(2);
+            items.Should().OnlyContain(j => j.Status == JobStatus.Pending || j.Status == JobStatus.Running);
+        }
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_EmptyStatusArray_IsTreatedAsNoFilter()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connection);
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Failed, now.AddMinutes(-5)));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            (int totalCount, List<JobRun> items) = await repository.GetPagedAsync(
+                null, null, Array.Empty<JobStatus>(), null, null, CancellationToken.None);
+
+            totalCount.Should().Be(2);
+            items.Should().HaveCount(2);
+        }
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SkipAndTake_CountsBeforePaging()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connection);
+
+            for (int i = 0; i < 5; i++)
+            {
+                ctx.JobRuns.Add(BuildJobRun(
+                    connection.Id,
+                    JobType.ProductsImport,
+                    JobStatus.Success,
+                    now.AddMinutes(-10 * (5 - i))));
+            }
+
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            (int totalCount, List<JobRun> page) = await repository.GetPagedAsync(
+                null, null, null, 2, 2, CancellationToken.None);
+
+            totalCount.Should().Be(5, "TotalCount ignores paging");
+            page.Should().HaveCount(2);
+
+            (int _, List<JobRun> firstPage) = await repository.GetPagedAsync(
+                null, null, null, 0, 2, CancellationToken.None);
+
+            page.Select(j => j.Id).Should().NotIntersectWith(firstPage.Select(j => j.Id));
+            page[0].CreatedAt.Should().BeBefore(firstPage[0].CreatedAt);
         }
     }
 }

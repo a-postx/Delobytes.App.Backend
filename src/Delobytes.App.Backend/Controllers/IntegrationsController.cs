@@ -1,14 +1,16 @@
-using Delobytes.App.Backend.Integrations.Application.Commands.CancelProductsImport;
+using Delobytes.App.Backend.Integrations.Application.Commands.CancelJob;
 using Delobytes.App.Backend.Integrations.Application.Commands.CreateConnection;
 using Delobytes.App.Backend.Integrations.Application.Commands.DeleteConnection;
-using Delobytes.App.Backend.Integrations.Application.Commands.StartProductsImport;
+using Delobytes.App.Backend.Integrations.Application.Commands.StartJob;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
-using Delobytes.App.Backend.Integrations.Application.DTOs.SyncJobs;
+using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels;
 using Delobytes.App.Backend.Integrations.Application.Queries.GetConnections;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetSyncJob;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetSyncJobs;
+using Delobytes.App.Backend.Integrations.Application.Queries.GetJob;
+using Delobytes.App.Backend.Integrations.Application.Queries.GetJobs;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -71,50 +73,95 @@ public class IntegrationsController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("product-imports")]
-    [ProducesResponseType(typeof(StartProductsImportResponse), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<StartProductsImportResponse>> StartProductsImport(
-        [FromBody] StartProductsImportRequest request,
+    /// <summary>
+    /// Returns job runs of any type for the current tenant.
+    /// </summary>
+    [HttpGet("jobs")]
+    [ProducesResponseType(typeof(GetJobsResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<GetJobsResponse>> GetJobs(
+        [FromQuery] string? type,
+        [FromQuery] Guid? connectionId,
+        [FromQuery] JobStatus[]? status,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
         CancellationToken cancellationToken)
     {
-        StartProductsImportResponse response = await _mediator.Send(
-            new StartProductsImportCommand
+        GetJobsResponse response = await _mediator.Send(
+            new GetJobsQuery
             {
+                Type = type,
+                ConnectionId = connectionId,
+                Status = status,
+                Page = page,
+                PageSize = pageSize,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Returns a single job run of any type.
+    /// </summary>
+    [HttpGet("jobs/{id:guid}")]
+    [ProducesResponseType(typeof(JobDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<JobDto>> GetJob(Guid id, CancellationToken cancellationToken)
+    {
+        JobDto response = await _mediator.Send(new GetJobQuery { JobRunId = id }, cancellationToken);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Starts a job run of the given type. Only products import is manually startable; orders
+    /// import is driven by the scheduler.
+    /// </summary>
+    /// <remarks>
+    /// The Administrator restriction is enforced by the IRequireRole MediatR behaviour on
+    /// <see cref="StartJobCommand"/> rather than by an [Authorize(Roles = ...)] attribute: the
+    /// JWT pipeline clears the inbound claim map and issues the role as a raw "role" claim, so
+    /// the framework's RoleClaimType (ClaimTypes.Role) never matches and the attribute would
+    /// reject every caller, administrators included.
+    /// </remarks>
+    [HttpPost("jobs/{type}")]
+    [ProducesResponseType(typeof(StartJobResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<StartJobResponse>> StartJob(
+        string type,
+        [FromBody] StartJobRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!JobTypeExtensions.TryFromString(type, out JobType jobType))
+        {
+            return BadRequest(new
+            {
+                error = $"Неизвестный тип задачи '{type}'.",
+            });
+        }
+
+        StartJobResponse response = await _mediator.Send(
+            new StartJobCommand
+            {
+                JobType = jobType,
                 ConnectionId = request.ConnectionId,
             },
             cancellationToken);
 
-        return AcceptedAtAction(nameof(GetProductImport), new { id = response.JobRunId }, response);
+        return AcceptedAtAction(nameof(GetJob), new { id = response.JobRunId }, response);
     }
 
-    [HttpGet("product-imports")]
-    [ProducesResponseType(typeof(GetSyncJobsResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<GetSyncJobsResponse>> GetProductImports(CancellationToken cancellationToken)
-    {
-        GetSyncJobsResponse response = await _mediator.Send(new GetSyncJobsQuery(), cancellationToken);
-        return Ok(response);
-    }
-
-    [HttpGet("product-imports/{id:guid}")]
-    [ProducesResponseType(typeof(GetSyncJobResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<GetSyncJobResponse>> GetProductImport(Guid id, CancellationToken cancellationToken)
-    {
-        GetSyncJobResponse response = await _mediator.Send(
-            new GetSyncJobQuery { SyncJobId = id }, cancellationToken);
-
-        return Ok(response);
-    }
-
-    [HttpPost("product-imports/{id:guid}/cancel")]
+    /// <summary>
+    /// Requests cancellation of a job run. Job types started by the scheduler are not cancellable.
+    /// </summary>
+    [HttpDelete("jobs/{id:guid}/cancel")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> CancelProductImport(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> CancelJob(Guid id, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new CancelProductsImportCommand { JobRunId = id }, cancellationToken);
+        await _mediator.Send(new CancelJobCommand { JobRunId = id }, cancellationToken);
         return NoContent();
     }
 }

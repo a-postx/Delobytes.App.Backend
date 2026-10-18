@@ -33,7 +33,7 @@ public class ProcessOrdersImportConsumer
     public const int MaxRequestsPerRun = 1000;
 
     public static readonly TimeSpan SafetyOverlap = TimeSpan.FromMinutes(30);
-    public static readonly TimeSpan BackfillWindow = TimeSpan.FromDays(30);
+    public static readonly TimeSpan BackfillWindow = TimeSpan.FromDays(90);
 
     private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
 
@@ -146,11 +146,12 @@ public class ProcessOrdersImportConsumer
                 return;
             }
 
-            JobCheckpoint? existingJobCheckpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
+            JobCheckpoint? existingJobCheckpoint = await _jobCheckpointRepository
+                .GetByJobRunIdAsync(jobRun.Id, cancellationToken);
             OrdersImportCheckpointPayload? previousPayload = DeserializePayload(existingJobCheckpoint?.Payload);
 
-            SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository.GetAsync(
-                connection.Id, JobType.OrdersImport, cancellationToken);
+            SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
+                .GetAsync(connection.Id, JobType.OrdersImport, cancellationToken);
 
             // A redelivered run must re-read the same window, otherwise the batch count persisted
             // for the aggregator would no longer match what is being republished.

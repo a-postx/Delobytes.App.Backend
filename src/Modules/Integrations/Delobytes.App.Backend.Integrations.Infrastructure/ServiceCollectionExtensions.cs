@@ -56,7 +56,6 @@ public static class ServiceCollectionExtensions
         services.AddMemoryCache();
 
         services.AddScoped<IConnectionRepository, ConnectionRepository>();
-        services.AddScoped<ISyncJobRepository, SyncJobRepository>();
         services.AddScoped<IJobRunRepository, JobRunRepository>();
         services.AddScoped<IJobCheckpointRepository, JobCheckpointRepository>();
         services.AddScoped<ISyncCheckpointRepository, SyncCheckpointRepository>();

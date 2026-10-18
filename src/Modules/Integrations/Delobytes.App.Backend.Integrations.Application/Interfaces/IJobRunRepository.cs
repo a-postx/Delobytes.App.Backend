@@ -25,6 +25,24 @@ public interface IJobRunRepository
     public Task UpdateAsync(JobRun jobRun, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns a filtered, optionally paged set of job runs for the current tenant plus the
+    /// total number of matching rows (counted before paging).
+    /// </summary>
+    /// <param name="jobType">Optional job type filter; null means "all types".</param>
+    /// <param name="connectionId">Optional connection filter; null means "all connections".</param>
+    /// <param name="statuses">Optional status filter; null or empty means "all statuses".</param>
+    /// <param name="skip">Rows to skip, or null for no paging.</param>
+    /// <param name="take">Page size, or null for no paging.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task<(int TotalCount, List<JobRun> Items)> GetPagedAsync(
+        JobType? jobType,
+        Guid? connectionId,
+        JobStatus[]? statuses,
+        int? skip,
+        int? take,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns true when a Pending or Running job run already exists for the given
     /// connection and job type (used to enforce one active job per connection/type).
     /// </summary>
