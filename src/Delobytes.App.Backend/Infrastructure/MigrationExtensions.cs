@@ -125,6 +125,7 @@ public static class MigrationExtensions
             }
 
             await DataSeeder.SeedSystemChannelTemplatesAsync(context, logger);
+            await DataSeeder.SeedJobTypeConfigurationsAsync(context, logger);
 
             MessageTenantContext tenantContext = scope.ServiceProvider.GetRequiredService<MessageTenantContext>();
             BackgroundJobsOptions backgroundJobsOptions = scope.ServiceProvider.GetRequiredService<IOptions<BackgroundJobsOptions>>().Value;

@@ -315,4 +315,54 @@ public static class DataSeeder
             logger.LogInformation("Seeded {Count} JobSchedule(s).", seededCount);
         }
     }
+
+    /// <summary>
+    /// Seeds JobTypeConfiguration data (per-type watchdog timeout and batch size) if it does
+    /// not already exist. Idempotent: checks by JobType and skips existing records.
+    /// </summary>
+    /// <param name="context">Integrations DbContext.</param>
+    /// <param name="logger">Logger instance.</param>
+    public static async Task SeedJobTypeConfigurationsAsync(IntegrationsDbContext context, ILogger logger)
+    {
+        JobTypeConfiguration[] configurations = new[]
+        {
+            new JobTypeConfiguration
+            {
+                JobType = JobType.ProductsImport,
+                TimeoutMinutes = 60,
+                BatchSize = 50,
+            },
+            new JobTypeConfiguration
+            {
+                JobType = JobType.OrdersImport,
+                TimeoutMinutes = 30,
+                BatchSize = 100,
+            },
+        };
+
+        int seededCount = 0;
+
+        foreach (JobTypeConfiguration configuration in configurations)
+        {
+            bool exists = await context.JobTypeConfigurations
+                .AnyAsync(c => c.JobType == configuration.JobType);
+
+            if (!exists)
+            {
+                context.JobTypeConfigurations.Add(configuration);
+                seededCount++;
+                logger.LogInformation("Seeding JobTypeConfiguration: {JobType}", configuration.JobType);
+            }
+            else
+            {
+                logger.LogDebug("JobTypeConfiguration {JobType} already exists, skipping.", configuration.JobType);
+            }
+        }
+
+        if (seededCount > 0)
+        {
+            await context.SaveChangesAsync();
+            logger.LogInformation("Seeded {Count} JobTypeConfiguration(s).", seededCount);
+        }
+    }
 }

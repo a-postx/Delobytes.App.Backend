@@ -204,6 +204,11 @@ public partial class Program
             builder.Services.AddHostedService<SchedulerHostedService>();
             builder.Services.AddHostedService<WorkerHostedService>();
 
+            // ── Watchdog (Integrations, Stage 12) ──────────────────────────────────────────
+            // Fails Running JobRuns stuck past their per-type timeout (JobTypeConfiguration);
+            // terminal transition, no automatic retry.
+            builder.Services.AddHostedService<WatchdogHostedService>();
+
             // ── CORS ─────────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();
 

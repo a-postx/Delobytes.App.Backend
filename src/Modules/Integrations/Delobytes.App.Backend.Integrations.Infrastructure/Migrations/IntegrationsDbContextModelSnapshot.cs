@@ -277,6 +277,22 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("JobSchedules", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobTypeConfiguration", b =>
+                {
+                    b.Property<int>("JobType")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("BatchSize")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TimeoutMinutes")
+                        .HasColumnType("integer");
+
+                    b.HasKey("JobType");
+
+                    b.ToTable("JobTypeConfigurations", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
                 {
                     b.Property<Guid>("JobRunId")

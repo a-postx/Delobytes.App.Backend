@@ -37,6 +37,7 @@ public class IntegrationsDbContext : DbContext
     public DbSet<JobCheckpoint> JobCheckpoints => Set<JobCheckpoint>();
     public DbSet<SyncCheckpoint> SyncCheckpoints => Set<SyncCheckpoint>();
     public DbSet<JobSchedule> JobSchedules => Set<JobSchedule>();
+    public DbSet<JobTypeConfiguration> JobTypeConfigurations => Set<JobTypeConfiguration>();
 
     /// <inheritdoc/>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

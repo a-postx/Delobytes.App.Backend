@@ -46,6 +46,9 @@ public static class ServiceCollectionExtensions
         services.Configure<BackgroundJobsOptions>(
             configuration?.GetSection("BackgroundJobs") ?? new ConfigurationBuilder().Build().GetSection("BackgroundJobs"));
 
+        services.Configure<WatchdogOptions>(
+            configuration?.GetSection("Watchdog") ?? new ConfigurationBuilder().Build().GetSection("Watchdog"));
+
         services.AddDbContext<IntegrationsDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
@@ -58,6 +61,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobCheckpointRepository, JobCheckpointRepository>();
         services.AddScoped<ISyncCheckpointRepository, SyncCheckpointRepository>();
         services.AddScoped<IJobScheduleRepository, JobScheduleRepository>();
+        services.AddScoped<IJobTypeConfigurationRepository, JobTypeConfigurationRepository>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();

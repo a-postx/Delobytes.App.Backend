@@ -15,5 +15,5 @@ public interface IEndpointResolver
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Base URL for the specified endpoint type.</returns>
     /// <exception cref="InvalidOperationException">When endpoint is not found or inactive.</exception>
-    Task<string> GetEndpointUrlAsync(Guid templateId, ChannelEndpointType endpointType, CancellationToken ct);
+    public Task<string> GetEndpointUrlAsync(Guid templateId, ChannelEndpointType endpointType, CancellationToken ct);
 }
