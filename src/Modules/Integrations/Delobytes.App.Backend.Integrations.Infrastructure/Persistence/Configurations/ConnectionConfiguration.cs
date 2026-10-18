@@ -61,10 +61,5 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
             .WithMany(s => s.Connections)
             .HasForeignKey(c => c.SystemChannelTemplateId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasMany(c => c.SyncJobs)
-            .WithOne(s => s.Connection)
-            .HasForeignKey(s => s.ConnectionId)
-            .OnDelete(DeleteBehavior.Cascade);
     }
 }

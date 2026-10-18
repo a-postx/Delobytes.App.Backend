@@ -82,9 +82,4 @@ public class Connection : ITenantScoped
     /// Navigation property: the system channel template.
     /// </summary>
     public SystemChannelTemplate SystemChannelTemplate { get; set; } = default!;
-
-    /// <summary>
-    /// Navigation property: sync jobs for this connection.
-    /// </summary>
-    public ICollection<SyncJob> SyncJobs { get; set; } = new List<SyncJob>();
 }
