@@ -1795,4 +1795,204 @@ public class ProcessOrdersImportConsumerTests
     {
         return CapturedBatches().SelectMany(b => b.Orders).ToList();
     }
+
+    /// <summary>
+    /// Drives one run against a source that answers from a script and records the requests it was
+    /// asked. The regression this guards is a bisection that restarts the left half from the
+    /// parent's own dateFrom, which the endpoint cannot distinguish from the parent request.
+    /// </summary>
+    private async Task<(JobRun JobRun, List<OrdersRequest> IssuedRequests)> RunWithScriptedSourceAsync(
+        Func<int, OrdersRequest, OrdersPage> respond,
+        int maxOrdersPerResponse,
+        TimeSpan? minOrdersWindow = null,
+        DateTimeOffset? lastChangedAt = null)
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        SetupDefaults(jobRun);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(lastChangedAt == null
+                ? (SyncCheckpoint?)null
+                : new SyncCheckpoint
+                {
+                    Id = Guid.NewGuid(),
+                    ConnectionId = connection.Id,
+                    JobType = JobType.OrdersImport,
+                    LastChangedAt = lastChangedAt,
+                });
+
+        List<OrdersRequest> issuedRequests = new List<OrdersRequest>();
+        int call = 0;
+
+        _ordersSource
+            .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, OrdersRequest, CancellationToken>((_, request, _) => issuedRequests.Add(request))
+            .ReturnsAsync((Guid _, OrdersRequest request, CancellationToken _) =>
+            {
+                call++;
+
+                return respond(call, request);
+            });
+
+        ProcessOrdersImportConsumer consumer = CreateConsumer(maxOrdersPerResponse, minOrdersWindow);
+
+        await consumer.ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        return (jobRun, issuedRequests);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CappedResponse_ResumesFromCoveredBoundaryInsteadOfWindowStart()
+    {
+        DateTimeOffset windowFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        DateTimeOffset coveredUntil = windowFrom.AddDays(10);
+
+        (JobRun jobRun, List<OrdersRequest> issuedRequests) = await RunWithScriptedSourceAsync(
+            (call, request) => call switch
+            {
+                // The first response hit the cap having served the first ten days only.
+                1 => new OrdersPage
+                {
+                    Orders = BuildOrders(2, 1),
+                    HasMore = true,
+                    CoveredUntil = coveredUntil,
+                },
+                // Whatever is asked next returns cleanly; its own coverage decision is not the point.
+                _ => new OrdersPage
+                {
+                    Orders = BuildOrders(1, 20 + call),
+                    HasMore = false,
+                    CoveredUntil = request.DateTo,
+                },
+            },
+            maxOrdersPerResponse: 2,
+            lastChangedAt: windowFrom);
+
+        // The run completed its traversal: no failure, and exactly one terminal batch published.
+        jobRun.Status.Should().NotBe(JobStatus.Failed);
+        _eventPublisher.Verify(
+            p => p.PublishAsync(
+                It.Is<OrdersBatchImportRequestedEvent>(e => e.IsTerminal),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Each followed window must start where the unknown region starts. A split at the window
+        // midpoint reuses the parent's dateFrom and the endpoint replays the identical block.
+        issuedRequests[1].DateFrom.Should().Be(coveredUntil);
+        issuedRequests[1].DateFrom.Should().BeAfter(issuedRequests[0].DateFrom);
+
+        // Left half, then right half: the recursion still covers the parent's whole window rather
+        // than stopping at the coverage point.
+        issuedRequests.Should().HaveCount(3);
+        issuedRequests[issuedRequests.Count - 1].DateTo.Should().Be(issuedRequests[0].DateTo);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CappedResponseCoveringWholeWindow_StopsWithoutNarrowing()
+    {
+        (JobRun jobRun, List<OrdersRequest> issuedRequests) = await RunWithScriptedSourceAsync(
+            // The cap was hit, but every row it kept is past the window end, so the window itself is
+            // fully served and there is nothing left to read above it.
+            (call, request) => new OrdersPage
+            {
+                Orders = BuildOrders(2, 1),
+                HasMore = true,
+                CoveredUntil = request.DateTo,
+            },
+            maxOrdersPerResponse: 2,
+            lastChangedAt: new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+        issuedRequests.Should().ContainSingle();
+        jobRun.Status.Should().NotBe(JobStatus.Failed);
+
+        PublishedOrders().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CappedResponseWithoutCoverage_StillNarrowsAndRetries()
+    {
+        (JobRun jobRun, List<OrdersRequest> issuedRequests) = await RunWithScriptedSourceAsync(
+            (call, request) => call == 1
+                // The source could not prove how far it reached. Falling back to the requested
+                // window start narrows and retries rather than assuming the window was served.
+                ? new OrdersPage { Orders = BuildOrders(2, 1), HasMore = true, CoveredUntil = null }
+                : new OrdersPage { Orders = BuildOrders(1, 10), HasMore = false, CoveredUntil = request.DateTo },
+            maxOrdersPerResponse: 2,
+            minOrdersWindow: TimeSpan.FromDays(20),
+            lastChangedAt: new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+        issuedRequests.Should().HaveCount(3);
+
+        // Without a proven boundary the split is the plain one, which is the pre-fix behaviour.
+        issuedRequests[1].DateFrom.Should().Be(issuedRequests[0].DateFrom);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_RemainingRegionAtMinimumWindow_FailsTheRun()
+    {
+        (JobRun jobRun, List<OrdersRequest> issuedRequests) = await RunWithScriptedSourceAsync(
+            // Coverage stops ten minutes short of the window end, which is below the narrowest
+            // window the endpoint can be asked for, so the remainder cannot be bisected at all.
+            (call, request) => new OrdersPage
+            {
+                Orders = BuildOrders(2, 1),
+                HasMore = true,
+                CoveredUntil = request.DateTo.AddMinutes(-10),
+            },
+            maxOrdersPerResponse: 2,
+            minOrdersWindow: TimeSpan.FromMinutes(30),
+            lastChangedAt: DateTimeOffset.UtcNow.AddMinutes(-30));
+
+        issuedRequests.Should().ContainSingle();
+
+        DateTimeOffset unreachableFrom = issuedRequests[0].DateTo.AddMinutes(-10);
+
+        jobRun.Status.Should().Be(JobStatus.Failed);
+        jobRun.Error.Should().Contain("cannot narrow window");
+        jobRun.Error.Should().Contain(unreachableFrom.ToString("O", CultureInfo.InvariantCulture));
+
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CartSplitByResumeBoundary_PublishesOneOrderWithEveryLine()
+    {
+        DateTimeOffset coveredUntil = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero);
+
+        (JobRun jobRun, List<OrdersRequest> issuedRequests) = await RunWithScriptedSourceAsync(
+            (call, request) => call switch
+            {
+                // One cart, its units served either side of the boundary the resume starts from.
+                1 => new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot> { BuildCart("ORDER-1", "SRID-1") },
+                    HasMore = true,
+                    CoveredUntil = coveredUntil,
+                },
+                _ => new OrdersPage
+                {
+                    Orders = new List<ChannelOrderSnapshot> { BuildCart("ORDER-1", "SRID-2") },
+                    HasMore = false,
+                    CoveredUntil = request.DateTo,
+                },
+            },
+            maxOrdersPerResponse: 1,
+            lastChangedAt: new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+        jobRun.Status.Should().NotBe(JobStatus.Failed);
+
+        List<ChannelOrderSnapshot> cart = PublishedOrders().Where(o => o.ExternalOrderId == "ORDER-1").ToList();
+
+        // Resuming from the boundary re-reads the cart once; it must stay one order with both units.
+        cart.Should().ContainSingle();
+        cart.Single().Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+    }
 }

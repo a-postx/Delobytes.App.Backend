@@ -962,6 +962,139 @@ public class WildberriesApiClientGetOrdersTests
         page.HasMore.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task GetOrdersAsync_CappedResponse_ReportsCoverageAtLatestSelectionInstant()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
+            { "date": "2024-01-12T08:00:00", "lastChangeDate": "2024-01-20T09:30:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp, maxOrdersPerResponse: 2);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        page.HasMore.Should().BeTrue();
+
+        // WC time is UTC+3, so 2024-01-20T09:30 local is 06:30Z. The delta axis is lastChangeDate,
+        // never the order date: a cart's position in the delta window is where its last change sits.
+        page.CoveredUntil.Should().Be(new DateTimeOffset(2024, 1, 20, 6, 30, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_CappedResponseWithRowsOutOfOrder_ReportsNoCoverage()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-20T09:30:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
+            { "date": "2024-01-12T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp, maxOrdersPerResponse: 2);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        page.HasMore.Should().BeTrue();
+
+        // The rows do not ascend by the delta axis, so the largest instant does not bound a served
+        // prefix: unseen rows may sit below it. Claiming coverage there would let the caller resume
+        // past them, so the page reports that coverage is undeterminable.
+        page.CoveredUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_ResponseBelowCap_ReportsCoverageOfWholeWindow()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "gNumber": "G-1", "srid": "A" }
+        ]
+        """;
+
+        WildberriesApiClient client = BuildClientRespondingWith(json);
+        OrdersRequest request = BuildWindowRequest();
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
+
+        page.HasMore.Should().BeFalse();
+
+        // Nothing was cut off, so the page covers exactly what was asked for.
+        page.CoveredUntil.Should().Be(request.DateTo);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_CappedResponse_RowPastWindowEndStillBoundsCoverage()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-10T09:30:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
+            { "date": "2024-02-15T08:00:00", "lastChangeDate": "2024-02-15T09:30:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp, maxOrdersPerResponse: 2);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        // The row past the window end is filtered out of the page, but it is what consumed the cap,
+        // so it still bounds how far the response reached.
+        page.Orders.Should().ContainSingle(o => o.ExternalOrderId == "G-1");
+        page.HasMore.Should().BeTrue();
+        page.CoveredUntil.Should().Be(new DateTimeOffset(2024, 2, 15, 6, 30, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_CappedBackfillResponse_ReportsCoverageOnOrderDateAxis()
+    {
+        string json = """
+        [
+            { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-25T09:30:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
+            { "date": "2024-01-20T08:00:00", "lastChangeDate": "2024-01-11T09:30:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp, maxOrdersPerResponse: 2);
+
+        OrdersRequest request = new OrdersRequest
+        {
+            DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
+            Flag = 1,
+            Limit = 100
+        };
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
+
+        page.HasMore.Should().BeTrue();
+
+        // flag=1 selects by order date, so that axis bounds the served prefix even though
+        // lastChangeDate runs the other way.
+        page.CoveredUntil.Should().Be(new DateTimeOffset(2024, 1, 20, 5, 0, 0, TimeSpan.Zero));
+    }
+
     private static OrdersRequest BuildWindowRequest()
     {
         return new OrdersRequest
