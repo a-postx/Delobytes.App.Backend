@@ -632,7 +632,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             ? _options.MaxOrdersPerResponse
             : WildberriesImportOptions.DefaultMaxOrdersPerResponse;
 
-        bool hasMore = orders.Count > maxRows;
+        bool hasMore = orders.Count >= maxRows;
 
         _logger.LogInformation(
             "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}, coveredUntil={CoveredUntil}, rowsWithoutIdentity={RowsWithoutIdentity}).",

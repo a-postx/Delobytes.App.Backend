@@ -918,30 +918,7 @@ public class WildberriesApiClientGetOrdersTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_RowsAboveResponseCap_ReportsHasMore()
-    {
-        string json = """
-        [
-            { "date": "2024-01-10T08:00:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
-            { "date": "2024-01-10T08:00:00", "nmId": 2, "gNumber": "G-2", "srid": "B" },
-            { "date": "2024-01-10T08:00:00", "nmId": 3, "gNumber": "G-3", "srid": "C" }
-        ]
-        """;
-
-        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
-        mockHttp
-            .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders")
-            .Respond("application/json", json);
-
-        WildberriesApiClient client = BuildClient(mockHttp, maxOrdersPerResponse: 2);
-
-        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
-
-        page.HasMore.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task GetOrdersAsync_RowsReachingResponseCap_ReportsNoHasMore()
+    public async Task GetOrdersAsync_RowsReachingResponseCap_ReportsHasMore()
     {
         string json = """
         [
@@ -959,7 +936,7 @@ public class WildberriesApiClientGetOrdersTests
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
 
-        page.HasMore.Should().BeFalse();
+        page.HasMore.Should().BeTrue();
     }
 
     [Fact]
