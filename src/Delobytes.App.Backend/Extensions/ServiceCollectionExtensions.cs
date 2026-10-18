@@ -86,7 +86,8 @@ internal static class ServiceCollectionExtensions
         IHealthChecksBuilder builder = services.AddHealthChecks();
 
         builder.AddGenericHealthCheck<UptimeHealthCheck>("uptime")
-                .AddMemoryHealthCheck(HealthCheckNames.Memory);
+                .AddMemoryHealthCheck(HealthCheckNames.Memory)
+                .AddNetworkHealthCheck(HealthCheckNames.Network);
 
         if (secrets?.ConnectionString != null)
         {
