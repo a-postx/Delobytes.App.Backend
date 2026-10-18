@@ -209,6 +209,11 @@ public partial class Program
             // terminal transition, no automatic retry.
             builder.Services.AddHostedService<WatchdogHostedService>();
 
+            // ── RawApiResponse cleanup (Integrations, Stage 14) ────────────────────────────────
+            // Periodically deletes RawApiResponses past the configured retention window: the
+            // table has no other bound on its growth.
+            builder.Services.AddHostedService<RawApiResponseCleanupHostedService>();
+
             // ── CORS ─────────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();
 

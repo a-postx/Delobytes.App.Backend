@@ -49,6 +49,9 @@ public static class ServiceCollectionExtensions
         services.Configure<WatchdogOptions>(
             configuration?.GetSection("Watchdog") ?? new ConfigurationBuilder().Build().GetSection("Watchdog"));
 
+        services.Configure<RawApiResponseCleanupOptions>(
+            configuration?.GetSection("RawApiResponseCleanup") ?? new ConfigurationBuilder().Build().GetSection("RawApiResponseCleanup"));
+
         services.AddDbContext<IntegrationsDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));

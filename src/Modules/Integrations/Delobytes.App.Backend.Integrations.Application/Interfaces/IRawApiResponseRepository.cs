@@ -19,4 +19,13 @@ public interface IRawApiResponseRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of state entries written to the database.</returns>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes every raw API response received before <paramref name="threshold"/>, across all
+    /// tenants.
+    /// </summary>
+    /// <param name="threshold">Exclusive upper bound on ReceivedAt.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of deleted rows.</returns>
+    Task<int> DeleteOlderThanAsync(DateTimeOffset threshold, CancellationToken cancellationToken);
 }
