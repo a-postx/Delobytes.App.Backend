@@ -222,30 +222,32 @@ public class ProcessOrdersBatchImportCompletedConsumer
 
         if (jobRun.Status == JobStatus.Success)
         {
+            DateTimeOffset? watermark = ResolveWatermark(payload);
+
             SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository.GetAsync(
                 jobRun.ConnectionId, JobType.OrdersImport, cancellationToken);
 
             if (syncCheckpoint == null)
             {
+                // A null watermark on a brand-new checkpoint is correct for a mid-walk backfill run:
+                // the handover writes nothing until the walk finishes, and the delta branch already
+                // treats an absent watermark as "walk not handed over yet" rather than as "start
+                // syncing from here".
                 syncCheckpoint = new SyncCheckpoint
                 {
                     Id = Guid.NewGuid(),
                     ConnectionId = jobRun.ConnectionId,
                     JobType = JobType.OrdersImport,
-                    LastChangedAt = payload.MaxChangedAt,
+                    LastChangedAt = watermark,
                     LastSuccessAt = DateTimeOffset.UtcNow,
                     LastJobRunId = jobRun.Id
                 };
             }
             else
             {
-                // The watermark is the newest source change date the orchestrator actually
-                // observed, not the wall clock: "now" would claim changes arriving between the
-                // fetch and this finalisation as already imported, and the next delta run would
-                // skip them. A run that fetched nothing leaves the previous watermark intact.
-                if (payload.MaxChangedAt != null)
+                if (watermark != null)
                 {
-                    syncCheckpoint.LastChangedAt = payload.MaxChangedAt;
+                    syncCheckpoint.LastChangedAt = watermark;
                 }
 
                 syncCheckpoint.LastSuccessAt = DateTimeOffset.UtcNow;
@@ -263,13 +265,50 @@ public class ProcessOrdersBatchImportCompletedConsumer
             }
 
             _logger.LogInformation(
-                "Updated SyncCheckpoint for ConnectionId={ConnectionId}, JobType={JobType}, LastChangedAt={LastChangedAt}",
+                "Updated SyncCheckpoint for ConnectionId={ConnectionId}, JobType={JobType}, IsBackfill={IsBackfill}, LastChangedAt={LastChangedAt}, WatermarkWritten={WatermarkWritten}",
                 jobRun.ConnectionId,
                 JobType.OrdersImport,
-                payload.MaxChangedAt);
+                payload.IsBackfill,
+                watermark,
+                watermark != null);
         }
 
         await PublishCompletedEventAsync(jobRun, cancellationToken);
+    }
+
+    /// <summary>
+    /// Decides what, if anything, this run writes to <c>SyncCheckpoint.LastChangedAt</c>.
+    /// A delta run writes the watermark the orchestrator observed. A backfill run writes nothing
+    /// until the walk finishes, because the walk runs backwards from today: the newest day is
+    /// fetched first, so its instant as a watermark would mark every older day still to come as
+    /// already imported and strand them. The run that finishes the walk writes the running maximum
+    /// <c>lastChangeDate</c> the walk accumulated, which is the only instant it justified.
+    /// </summary>
+    /// <param name="payload">Checkpoint payload written by the orchestrator.</param>
+    /// <returns>The watermark to persist, or null to leave the existing one untouched.</returns>
+    private DateTimeOffset? ResolveWatermark(OrdersImportCheckpointPayload payload)
+    {
+        if (!payload.IsBackfill)
+        {
+            // The watermark is the newest source change date the orchestrator actually observed,
+            // not the wall clock: "now" would claim changes arriving between the fetch and this
+            // finalisation as already imported, and the next delta run would skip them. A run that
+            // fetched nothing leaves the previous watermark intact.
+            return payload.MaxChangedAt;
+        }
+
+        if (!payload.IsBackfillCompleted)
+        {
+            _logger.LogInformation(
+                "Backfill run has not finished the walk, leaving the delta watermark untouched");
+
+            return null;
+        }
+
+        // A walk that finished without ever seeing a row still has to release the delta branch from
+        // its pre-handover fallback, and there is no observed instant to do it with. "Now" is the
+        // honest ceiling there: the walk is over, so nothing older can still be discovered by it.
+        return payload.MaxObservedLastChangeDate ?? DateTimeOffset.UtcNow;
     }
 
     private async Task PublishCompletedEventAsync(JobRun jobRun, CancellationToken cancellationToken)

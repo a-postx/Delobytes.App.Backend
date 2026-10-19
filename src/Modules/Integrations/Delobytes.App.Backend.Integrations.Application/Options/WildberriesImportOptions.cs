@@ -12,6 +12,11 @@ public class WildberriesImportOptions
     public const int DefaultMaxOrdersPerResponse = 80000;
 
     /// <summary>
+    /// Default for <see cref="BackfillRunBudgetSeconds"/>.
+    /// </summary>
+    public const int DefaultBackfillRunBudgetSeconds = 1200;
+
+    /// <summary>
     /// Number of product cards to retrieve per API call. Must be between 1 and 100.
     /// </summary>
     public int BatchSize { get; set; } = 50;
@@ -29,4 +34,11 @@ public class WildberriesImportOptions
     /// for less data, so a still-partial response at this width is a hard failure.
     /// </summary>
     public TimeSpan MinOrdersWindow { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Wall-clock budget for one backfill run. Must stay comfortably below
+    /// <c>JobTypeConfiguration.TimeoutMinutes</c> for OrdersImport (30 by default), because
+    /// <c>WatchdogHostedService</c> fails any run still executing when that timeout expires.
+    /// </summary>
+    public int BackfillRunBudgetSeconds { get; set; } = DefaultBackfillRunBudgetSeconds;
 }

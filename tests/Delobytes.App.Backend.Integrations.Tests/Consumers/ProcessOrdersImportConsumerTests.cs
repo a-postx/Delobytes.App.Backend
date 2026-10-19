@@ -30,6 +30,7 @@ public class ProcessOrdersImportConsumerTests
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
     private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
+    private readonly Mock<IOrdersBackfillStateRepository> _backfillStateRepo = new();
     private readonly Mock<IChannelApiClientFactory> _clientFactory = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<ILogger<ProcessOrdersImportConsumer>> _logger = new();
@@ -55,6 +56,7 @@ public class ProcessOrdersImportConsumerTests
             _jobRunRepo.Object,
             _jobCheckpointRepo.Object,
             _syncCheckpointRepo.Object,
+            _backfillStateRepo.Object,
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
@@ -200,6 +202,23 @@ public class ProcessOrdersImportConsumerTests
         _jobCheckpointRepo
             .Setup(r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+
+        // A finished cursor keeps every case below on the delta branch, which is the branch these
+        // tests were written against. OldestDayInScope reproduces the window the first run used to
+        // derive on its own (now - 90 days), so a case that leaves SyncCheckpoint unstubbed still
+        // reads the same window it always did.
+        _backfillStateRepo
+            .Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrdersBackfillState
+            {
+                Id = Guid.NewGuid(),
+                ConnectionId = Guid.Empty,
+                NextDayToFetch = DateTimeOffset.UtcNow.AddDays(-90),
+                OldestDayInScope = DateTimeOffset.UtcNow.AddDays(-90),
+                IsCompleted = true,
+                CompletedAt = DateTimeOffset.UtcNow,
+                MaxObservedLastChangeDate = null,
+            });
 
         _clientFactory
             .Setup(f => f.Create(It.IsAny<SystemChannelTemplate>()))

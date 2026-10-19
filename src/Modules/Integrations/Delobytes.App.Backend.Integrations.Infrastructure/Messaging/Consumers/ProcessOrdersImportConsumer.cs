@@ -46,6 +46,12 @@ public class ProcessOrdersImportConsumer
     private readonly WildberriesImportOptions _options;
     private readonly ILogger<ProcessOrdersImportConsumer> _logger;
     private readonly TimeSpan _minWindow;
+    private readonly TimeSpan _backfillRunBudget;
+
+    /// <summary>
+    /// Repository for the per-connection backfill cursor.
+    /// </summary>
+    private readonly IOrdersBackfillStateRepository _ordersBackfillStateRepository;
 
     private int _requestsIssued;
 
@@ -60,6 +66,7 @@ public class ProcessOrdersImportConsumer
         IJobRunRepository jobRunRepository,
         IJobCheckpointRepository jobCheckpointRepository,
         ISyncCheckpointRepository syncCheckpointRepository,
+        IOrdersBackfillStateRepository ordersBackfillStateRepository,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
         JobRunExecutionContext jobRunExecutionContext,
@@ -69,6 +76,7 @@ public class ProcessOrdersImportConsumer
         _jobRunRepository = jobRunRepository;
         _jobCheckpointRepository = jobCheckpointRepository;
         _syncCheckpointRepository = syncCheckpointRepository;
+        _ordersBackfillStateRepository = ordersBackfillStateRepository;
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
         _jobRunExecutionContext = jobRunExecutionContext;
@@ -77,6 +85,11 @@ public class ProcessOrdersImportConsumer
         _minWindow = _options.MinOrdersWindow > TimeSpan.Zero
             ? _options.MinOrdersWindow
             : TimeSpan.FromHours(1);
+
+        _backfillRunBudget = TimeSpan.FromSeconds(
+            _options.BackfillRunBudgetSeconds > 0
+                ? _options.BackfillRunBudgetSeconds
+                : WildberriesImportOptions.DefaultBackfillRunBudgetSeconds);
 
         _logger = logger;
     }
@@ -150,53 +163,114 @@ public class ProcessOrdersImportConsumer
                 .GetByJobRunIdAsync(jobRun.Id, cancellationToken);
             OrdersImportCheckpointPayload? previousPayload = DeserializePayload(existingJobCheckpoint?.Payload);
 
-            SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
-                .GetAsync(connection.Id, JobType.OrdersImport, cancellationToken);
-
-            // A redelivered run must re-read the same window, otherwise the batch count persisted
-            // for the aggregator would no longer match what is being republished.
+            // A redelivered delta run must re-read the same window, otherwise the batch count
+            // persisted for the aggregator would no longer match what is being republished.
             DateTimeOffset windowTo = previousPayload?.WindowTo ?? DateTimeOffset.UtcNow;
-            DateTimeOffset windowFrom;
-            int flag;
 
-            if (syncCheckpoint?.LastChangedAt != null)
+            OrdersBackfillState backfillState = await GetOrCreateBackfillStateAsync(connection.Id, cancellationToken);
+
+            // The walk decides the branch, not the watermark. A connection that was syncing under
+            // the old single-request backfill has an incomplete history precisely because that
+            // request imported one calendar day out of ninety, so it earns the walk too. Re-reading
+            // stored days is idempotent on the (ChannelId, ExternalOrderId) upsert; leaving the hole
+            // in place is not recoverable.
+            bool isBackfill = !backfillState.IsCompleted;
+
+            List<ChannelOrderSnapshot> allOrders;
+            int requestsIssued;
+            int rowsWithoutIdentity;
+            DateTimeOffset? maxChangedAt;
+            BackfillOutcome? backfillOutcome = null;
+
+            if (isBackfill)
             {
-                windowFrom = syncCheckpoint.LastChangedAt.Value - SafetyOverlap;
-                flag = 0;
+                backfillOutcome = await FetchBackfillDaysAsync(
+                    ordersSource, connection.Id, backfillState, jobRun.Id, cancellationToken);
+
+                allOrders = backfillOutcome.Orders;
+                requestsIssued = backfillOutcome.DaysFetched;
+                rowsWithoutIdentity = backfillOutcome.RowsWithoutIdentity;
+
+                // A backwards walk earns no watermark. The newest day is fetched first, so
+                // publishing its instant as the delta watermark would mark every older day still
+                // to come as already imported. The aggregator seeds the watermark from the running
+                // maximum instead, and only on the run that finishes the walk.
+                maxChangedAt = null;
+
+                _logger.LogInformation(
+                    "JobRun {JobRunId}: branch=backfill, days fetched={DaysFetched}, first day={FirstDay}, last day={LastDay}, rows={Rows}, stoppedByThrottle={StoppedByThrottle}, stoppedByBudget={StoppedByBudget}, nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
+                    jobRun.Id,
+                    backfillOutcome.DaysFetched,
+                    backfillOutcome.FirstDay,
+                    backfillOutcome.LastDay,
+                    allOrders.Count,
+                    backfillOutcome.StoppedByThrottle,
+                    backfillOutcome.StoppedByBudget,
+                    backfillState.NextDayToFetch,
+                    backfillState.IsCompleted);
             }
             else
             {
-                windowFrom = windowTo - BackfillWindow;
-                flag = 1;
+                SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
+                    .GetAsync(connection.Id, JobType.OrdersImport, cancellationToken);
+
+                DateTimeOffset windowFrom;
+
+                if (syncCheckpoint?.LastChangedAt != null)
+                {
+                    windowFrom = syncCheckpoint.LastChangedAt.Value - SafetyOverlap;
+                }
+                else
+                {
+                    // The walk is complete but the aggregator has not seeded the watermark yet: it
+                    // writes it when the last batch result of the completing run arrives, which can
+                    // lag this run by one schedule tick. A multi-day flag=1 request must not be used
+                    // here - it selects one calendar day out of the whole span and would import
+                    // almost nothing - so the delta selection is applied over the backfilled scope
+                    // instead. flag=0 is unbounded above, which re-reads the scope in full and is
+                    // idempotent on the (ChannelId, ExternalOrderId) upsert.
+                    windowFrom = backfillState.MaxObservedLastChangeDate ?? backfillState.OldestDayInScope;
+
+                    _logger.LogWarning(
+                        "JobRun {JobRunId}: backfill is complete but SyncCheckpoint.LastChangedAt is still empty, falling back to the backfilled scope start {WindowFrom}",
+                        jobRun.Id,
+                        windowFrom);
+                }
+
+                OrdersRequest request = new OrdersRequest
+                {
+                    DateFrom = windowFrom.ToOffset(MoscowOffset),
+                    DateTo = windowTo.ToOffset(MoscowOffset),
+                    Flag = 0,
+                    Limit = 0,
+                };
+
+                _logger.LogInformation(
+                    "JobRun {JobRunId}: branch=delta, fetching orders from {From} to {To}",
+                    jobRun.Id,
+                    request.DateFrom,
+                    request.DateTo);
+
+                OrdersFetchResult fetchResult = await FetchAllPagesAsync(
+                    ordersSource, connection.Id, request, jobRun.Id, cancellationToken);
+
+                allOrders = fetchResult.Orders;
+                requestsIssued = fetchResult.RequestsIssued;
+                rowsWithoutIdentity = fetchResult.RowsWithoutIdentity;
+                maxChangedAt = GetMaxChangedAt(allOrders, windowTo);
             }
 
-            _logger.LogInformation(
-                "JobRun {JobRunId}: fetching orders from {From} to {To} (flag={Flag})",
-                jobRun.Id,
-                windowFrom,
-                windowTo,
-                flag);
-
-            OrdersRequest request = new OrdersRequest
-            {
-                DateFrom = windowFrom.ToOffset(MoscowOffset),
-                DateTo = windowTo.ToOffset(MoscowOffset),
-                Flag = flag,
-                Limit = 0,
-            };
-
-            OrdersFetchResult fetchResult = await FetchAllPagesAsync(
-                ordersSource, connection.Id, request, jobRun.Id, cancellationToken);
-
-            List<ChannelOrderSnapshot> allOrders = fetchResult.Orders;
             List<List<ChannelOrderSnapshot>> batches = SplitIntoBatches(allOrders);
 
             OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
             {
                 TotalBatches = batches.Count,
-                MaxChangedAt = GetMaxChangedAt(allOrders, windowTo),
+                MaxChangedAt = maxChangedAt,
                 WindowTo = windowTo,
-                PagesFetched = fetchResult.RequestsIssued,
+                PagesFetched = requestsIssued,
+                IsBackfill = isBackfill,
+                IsBackfillCompleted = isBackfill && backfillState.IsCompleted,
+                MaxObservedLastChangeDate = isBackfill ? backfillState.MaxObservedLastChangeDate : null,
             };
 
             // Must be persisted before the first publish: the aggregator can only finalise once it
@@ -225,13 +299,24 @@ public class ProcessOrdersImportConsumer
                 await _eventPublisher.PublishAsync(batchEvent, cancellationToken);
             }
 
+            if (backfillOutcome != null && backfillOutcome.IsStateChanged)
+            {
+                // The cursor moves only now, after every batch of this run is published. A crash
+                // before this point re-fetches these days on the next run rather than losing them;
+                // order persistence upserts by (ChannelId, ExternalOrderId), so the repeat is
+                // idempotent. Spending scarce request slots on a re-fetch is recoverable, a cursor
+                // that ran ahead of the published batches is a silent hole in the history.
+                await _ordersBackfillStateRepository.UpsertAsync(backfillState, cancellationToken);
+            }
+
             _logger.LogInformation(
-                "JobRun {JobRunId}: fetched {Orders} orders in {Requests} requests, published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}",
+                "JobRun {JobRunId}: branch={Branch}, fetched {Orders} orders in {Requests} requests, published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}",
                 jobRun.Id,
+                isBackfill ? "backfill" : "delta",
                 allOrders.Count,
-                fetchResult.RequestsIssued,
+                requestsIssued,
                 batches.Count,
-                fetchResult.RowsWithoutIdentity);
+                rowsWithoutIdentity);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -259,6 +344,236 @@ public class ProcessOrdersImportConsumer
         BitConverter.GetBytes(batchIndex).CopyTo(input, 16);
         byte[] hash = MD5.HashData(input);
         return new Guid(hash);
+    }
+
+    /// <summary>
+    /// Loads the per-connection backfill cursor, creating it on first contact. A fresh cursor starts
+    /// at today 00:00 MSK and walks backwards to today - <see cref="BackfillWindow"/>, which is the
+    /// scope the single-request backfill used to cover. Starting today rather than 90 days ago is
+    /// what puts recent orders in the UI after the first run.
+    /// </summary>
+    private async Task<OrdersBackfillState> GetOrCreateBackfillStateAsync(
+        Guid connectionId,
+        CancellationToken cancellationToken)
+    {
+        OrdersBackfillState? state = await _ordersBackfillStateRepository.GetAsync(connectionId, cancellationToken);
+
+        if (state != null)
+        {
+            return state;
+        }
+
+        DateTimeOffset todayStart = GetMoscowDayStart(DateTimeOffset.UtcNow);
+
+        return new OrdersBackfillState
+        {
+            Id = Guid.NewGuid(),
+            ConnectionId = connectionId,
+            NextDayToFetch = todayStart,
+            OldestDayInScope = todayStart - BackfillWindow,
+            IsCompleted = false,
+        };
+    }
+
+    /// <summary>
+    /// Fetches the backfill days that fit in this run's time budget, newest first, one
+    /// <c>flag=1</c> request per calendar day. The loop ends on the budget, on the scope boundary,
+    /// or on a throttled response; a throttle is never waited out in-process, because the wait it
+    /// implies is far longer than the job timeout and the next scheduled run is the correct retry.
+    /// The cursor on <paramref name="state"/> is advanced in memory only: the caller persists it
+    /// after the batches of this run are published.
+    /// </summary>
+    private async Task<BackfillOutcome> FetchBackfillDaysAsync(
+        IOrdersSource ordersSource,
+        Guid connectionId,
+        OrdersBackfillState state,
+        Guid jobRunId,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + _backfillRunBudget;
+        DateTimeOffset dayCursor = GetMoscowDayStart(state.NextDayToFetch);
+        DateTimeOffset oldestDay = GetMoscowDayStart(state.OldestDayInScope);
+
+        // Keyed by order identity, ordered afterwards so the batch composition of one run does not
+        // depend on hash order.
+        Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
+
+        int daysFetched = 0;
+        int rowsWithoutIdentity = 0;
+        bool stoppedByThrottle = false;
+        bool stoppedByBudget = false;
+        DateTimeOffset? firstDay = null;
+        DateTimeOffset? lastDay = null;
+        DateTimeOffset? maxObservedLastChangeDate = state.MaxObservedLastChangeDate;
+
+        while (dayCursor >= oldestDay)
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                stoppedByBudget = true;
+
+                _logger.LogInformation(
+                    "JobRun {JobRunId}: backfill budget of {BudgetSeconds}s exhausted after {DaysFetched} day(s), stopping before {NextDay}, the next run resumes there",
+                    jobRunId,
+                    _backfillRunBudget.TotalSeconds,
+                    daysFetched,
+                    dayCursor);
+
+                break;
+            }
+
+            // flag=1 selects orders whose order date falls on one calendar day, so the window must
+            // not span a midnight: 00:00:00 to 23:59:59 MSK of the same date keeps both bounds on
+            // that date, and the client rejects any flag=1 request whose bounds straddle two.
+            OrdersRequest request = new OrdersRequest
+            {
+                DateFrom = dayCursor,
+                DateTo = dayCursor.AddDays(1).AddSeconds(-1),
+                Flag = 1,
+                Limit = 0,
+            };
+
+            OrdersPage ordersPage = await ordersSource.GetOrdersAsync(connectionId, request, cancellationToken);
+
+            if (ordersPage.Throttled)
+            {
+                // Nothing was fetched for this day, so the cursor must not move past it: the run
+                // ends here and the next scheduled run retries the same day.
+                stoppedByThrottle = true;
+
+                break;
+            }
+
+            if (ordersPage.RowsWithoutIdentity > 0)
+            {
+                rowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
+
+                _logger.LogError(
+                    "JobRun {JobRunId}: backfill day {Day} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
+                    jobRunId,
+                    dayCursor,
+                    ordersPage.RowsWithoutIdentity);
+
+                throw new InvalidOperationException(
+                    $"Orders backfill received {ordersPage.RowsWithoutIdentity} row(s) without a usable order identity " +
+                    $"(no gNumber, or no srid and no sticker) for day {dayCursor:yyyy-MM-dd} MSK; " +
+                    "the day cannot be imported without inventing an identity that may split or merge real orders.");
+            }
+
+            if (ordersPage.HasMore)
+            {
+                // A day is the smallest window this endpoint can be asked for: flag=1 has no
+                // sub-day granularity and the endpoint has no dateTo, so a partial day cannot be
+                // narrowed and re-requested. Importing what came back would silently drop orders,
+                // which is the defect this work removes.
+                _logger.LogError(
+                    "JobRun {JobRunId}: backfill day {Day} came back truncated at the response cap",
+                    jobRunId,
+                    dayCursor);
+
+                throw new InvalidOperationException(
+                    $"Orders backfill received a partial response for day {dayCursor:yyyy-MM-dd} MSK: " +
+                    $"the day holds more rows than the {_options.MaxOrdersPerResponse}-row response cap " +
+                    "and flag=1 cannot be split below one day. The day cannot be imported completely.");
+            }
+
+            daysFetched++;
+            firstDay ??= dayCursor;
+            lastDay = dayCursor;
+
+            foreach (ChannelOrderSnapshot order in ordersPage.Orders)
+            {
+                if (ordersByOrderKey.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
+                {
+                    // One calendar day is disjoint from every other in this run, so a repeat
+                    // identity inside one day is the source reporting the same order twice rather
+                    // than two halves of a split cart. Keeping the later report matches the delta
+                    // path's merge rule; the lines of the earlier report are preserved when the
+                    // later one does not carry them.
+                    List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines);
+                    ChannelOrderSnapshot headerSource = IsLaterReport(order, existing) ? order : existing;
+
+                    ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts.Reduce(
+                        mergedLines,
+                        new[] { existing.OrderDate, order.OrderDate });
+
+                    ordersByOrderKey[order.ExternalOrderId] = headerSource with
+                    {
+                        Lines = mergedLines,
+                        ExternalStatus = mergedHeader.ExternalStatus,
+                        CancelReason = mergedHeader.CancelReason,
+                        OrderDate = mergedHeader.OrderDate,
+                        StatusChangedAt = mergedHeader.StatusChangedAt,
+                        ChannelReportedTotal = mergedHeader.ChannelReportedTotal,
+                    };
+                }
+                else
+                {
+                    ordersByOrderKey.Add(order.ExternalOrderId, order);
+                }
+
+                if (order.StatusChangedAt != null)
+                {
+                    DateTimeOffset observed = order.StatusChangedAt.Value;
+
+                    if (maxObservedLastChangeDate == null || observed > maxObservedLastChangeDate.Value)
+                    {
+                        maxObservedLastChangeDate = observed;
+                    }
+                }
+            }
+
+            dayCursor = dayCursor.AddDays(-1);
+        }
+
+        // The cursor is advanced here, in memory, only for the days actually fetched: dayCursor now
+        // holds the first day this run did not fetch, which is exactly where the next run resumes.
+        // A throttled or budget-stopped run therefore leaves that day unfetched rather than skipped.
+        state.NextDayToFetch = dayCursor;
+        state.MaxObservedLastChangeDate = maxObservedLastChangeDate;
+
+        bool reachedScopeBoundary = dayCursor < oldestDay;
+
+        if (reachedScopeBoundary)
+        {
+            state.IsCompleted = true;
+            state.CompletedAt ??= DateTimeOffset.UtcNow;
+
+            _logger.LogInformation(
+                "JobRun {JobRunId}: backfill reached the scope boundary {OldestDay}, marking the walk complete",
+                jobRunId,
+                oldestDay);
+        }
+
+        List<ChannelOrderSnapshot> orders = ordersByOrderKey.Values
+            .OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal)
+            .ToList();
+
+        return new BackfillOutcome
+        {
+            Orders = orders,
+            DaysFetched = daysFetched,
+            RowsWithoutIdentity = rowsWithoutIdentity,
+            StoppedByThrottle = stoppedByThrottle,
+            StoppedByBudget = stoppedByBudget,
+            FirstDay = firstDay,
+            LastDay = lastDay,
+            IsStateChanged = daysFetched > 0 || reachedScopeBoundary,
+        };
+    }
+
+    private static DateTimeOffset GetMoscowDayStart(DateTimeOffset instant)
+    {
+        DateTimeOffset moscow = instant.ToOffset(MoscowOffset);
+
+        return new DateTimeOffset(
+            moscow.Year,
+            moscow.Month,
+            moscow.Day,
+            0,
+            0,
+            0,
+            MoscowOffset);
     }
 
     private async Task<OrdersFetchResult> FetchAllPagesAsync(
