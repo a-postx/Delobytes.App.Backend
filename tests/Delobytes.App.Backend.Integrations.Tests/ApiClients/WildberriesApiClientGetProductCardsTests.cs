@@ -69,6 +69,8 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             logger ?? NullLogger<WildberriesApiClient>.Instance);
 
@@ -580,6 +582,8 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             loggerMock.Object);
 
@@ -650,6 +654,8 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             loggerMock.Object);
 
@@ -716,6 +722,8 @@ public class WildberriesApiClientGetProductCardsTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             loggerMock.Object);
 

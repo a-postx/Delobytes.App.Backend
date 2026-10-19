@@ -65,6 +65,8 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
     private readonly HttpClient _httpClient;
     private readonly IEndpointResolver _endpointResolver;
+    private readonly IConnectionResolver _connectionResolver;
+    private readonly IWildberriesRateLimiter _rateLimiter;
     private readonly ILogger<WildberriesApiClient> _logger;
     private readonly WildberriesImportOptions _options;
 
@@ -78,11 +80,15 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     public WildberriesApiClient(
         HttpClient httpClient,
         IEndpointResolver endpointResolver,
+        IConnectionResolver connectionResolver,
+        IWildberriesRateLimiter rateLimiter,
         IOptions<WildberriesImportOptions> options,
         ILogger<WildberriesApiClient> logger)
     {
         _httpClient = httpClient;
         _endpointResolver = endpointResolver;
+        _connectionResolver = connectionResolver;
+        _rateLimiter = rateLimiter;
         _options = options.Value;
         _logger = logger;
     }
@@ -465,6 +471,20 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// The endpoint does cap a single response by <see cref="WildberriesImportOptions.MaxOrdersPerResponse"/>
     /// rows, so <see cref="OrdersPage.HasMore"/> reports whether the response was a partial subset
     /// of the requested window and the caller has to narrow it and fetch again.
+    /// <para>
+    /// Coverage: <c>!hasMore</c> is reported as <see cref="OrdersPage.CoveredUntil"/> equal to
+    /// <see cref="OrdersRequest.DateTo"/> <b>only</b> because a <c>flag=1</c> request spans at most
+    /// one calendar day here. <c>flag=1</c> is a single-day selector, not a range filter: a request
+    /// whose window spans several days returns the orders of exactly one of them and would still
+    /// look complete, so a full response over a multi-day window would claim coverage it never
+    /// fetched. Such a request is rejected with <see cref="ArgumentException"/> below rather than
+    /// answered with a misleading page.
+    /// </para>
+    /// <para>
+    /// Pacing: every call passes the adaptive limiter first. A refused slot or a <c>429</c> both
+    /// surface as <see cref="OrdersPage.Throttled"/> and never as an exception, because a throttle
+    /// is a scheduling fact the caller acts on, not a failure of the run.
+    /// </para>
     /// </remarks>
     public async Task<OrdersPage> GetOrdersAsync(
         Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
@@ -477,13 +497,42 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
         }
 
+        DateTimeOffset dateFromMsk = request.DateFrom.ToOffset(MoscowOffset);
+        DateTimeOffset dateToMsk = request.DateTo.ToOffset(MoscowOffset);
+
+        // Rejected before the pacing slot is taken: a rejected request must not consume one of the
+        // scarce calls, and a silently partial day is the defect this guard exists to prevent.
+        if (request.Flag == 1 && dateFromMsk.Date != dateToMsk.Date)
+        {
+            throw new ArgumentException(
+                $"flag=1 selects orders of a single calendar day, but the requested window spans " +
+                $"{dateFromMsk:yyyy-MM-dd} to {dateToMsk:yyyy-MM-dd} MSK. Request one day at a time.",
+                nameof(request));
+        }
+
         string baseUrl = await _endpointResolver.GetEndpointUrlAsync(
             _templateId.Value,
             ChannelEndpointType.Statistics,
             cancellationToken);
 
-        DateTimeOffset dateFromMsk = request.DateFrom.ToOffset(MoscowOffset);
-        DateTimeOffset dateToMsk = request.DateTo.ToOffset(MoscowOffset);
+        Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
+
+        bool slotAcquired = await _rateLimiter.TryAcquireAsync(
+            connection.ApiKey,
+            WildberriesApiMethod.SupplierOrders,
+            cancellationToken);
+
+        if (!slotAcquired)
+        {
+            // Not a failure and not an empty day: the caller keeps its cursor and returns later.
+            _logger.LogInformation(
+                "Wildberries orders request for connection {ConnectionId} was not issued: the rate " +
+                "limiter has not released the next slot for method {Method} yet.",
+                connectionId,
+                WildberriesApiMethod.SupplierOrders);
+
+            return CreateThrottledPage();
+        }
 
         string dateFromParameter = Uri.EscapeDataString(
             dateFromMsk.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture));
@@ -495,12 +544,21 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         using HttpResponseMessage response = await _httpClient.SendAsync(httpRequest, cancellationToken);
 
+        RateLimitSignal rateLimitSignal = WildberriesRateLimitHeaders.Parse(response);
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            return await HandleThrottledResponseAsync(
+                connection.ApiKey, connectionId, response, rateLimitSignal, cancellationToken);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogWarning(
-                "Wildberries orders API returned {StatusCode}. Response: {Response}",
+                "Wildberries orders API returned {StatusCode} (x-request-id {RequestId}). Response: {Response}",
                 (int)response.StatusCode,
+                rateLimitSignal.RequestId,
                 TruncateForLog(responseBody));
 
             throw new HttpRequestException(
@@ -508,6 +566,15 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 null,
                 response.StatusCode);
         }
+
+        // Reported before the body is read: the counters describe this response, and a body that
+        // fails to deserialize must not cost the limiter its only feedback on the real allowance.
+        // A 200 carries no reset/retry, which the limiter expects (see IWildberriesRateLimiter).
+        await _rateLimiter.ReportSuccessAsync(
+            connection.ApiKey,
+            WildberriesApiMethod.SupplierOrders,
+            rateLimitSignal,
+            cancellationToken);
 
         List<WildberriesOrderDto>? orders =
             await response.Content.ReadFromJsonAsync<List<WildberriesOrderDto>>(cancellationToken);
@@ -656,6 +723,66 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 : coversContiguousPrefix ? coveredUntil : null,
             RowsWithoutIdentity = rowsWithoutIdentity
         };
+    }
+
+    /// <summary>
+    /// Builds the page returned when no request was issued or the API refused it. It carries no
+    /// orders and no coverage claim, and <see cref="OrdersPage.Throttled"/> is the only signal the
+    /// caller may branch on.
+    /// </summary>
+    private static OrdersPage CreateThrottledPage()
+    {
+        return new OrdersPage
+        {
+            Orders = new List<ChannelOrderSnapshot>(),
+            HasMore = false,
+            CoveredUntil = null,
+            Throttled = true,
+            RowsWithoutIdentity = 0
+        };
+    }
+
+    /// <summary>
+    /// Records a <c>429</c> with the rate limiter and returns the throttled page.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not an exception: <c>RetryPolicies.GetRetryPolicy</c> only handles exceptions, so
+    /// raising here would feed a 429 into a millisecond-scale retry pipeline that cannot outlast a
+    /// rate-limit window, and would fail a run whose progress is intact. The API signals throttling
+    /// through its own headers and never through <c>Retry-After</c>, hence the parsed signal.
+    /// </remarks>
+    private async Task<OrdersPage> HandleThrottledResponseAsync(
+        string apiKey,
+        Guid connectionId,
+        HttpResponseMessage response,
+        RateLimitSignal signal,
+        CancellationToken cancellationToken)
+    {
+        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        await _rateLimiter.ReportRateLimitedAsync(
+            apiKey,
+            WildberriesApiMethod.SupplierOrders,
+            signal,
+            cancellationToken);
+
+        _logger.LogWarning(
+            "Wildberries orders API throttled the request (429): connection {ConnectionId}, method " +
+            "{Method}, key fingerprint {KeyFingerprint}, x-request-id {RequestId}, " +
+            "x-ratelimit-limit {Limit}, x-ratelimit-remaining {Remaining}, " +
+            "x-ratelimit-retry {RetrySeconds}s, x-ratelimit-reset {ResetSeconds}s. " +
+            "Retry is taken from x-ratelimit-retry, not from x-ratelimit-reset. Response: {Response}",
+            connectionId,
+            WildberriesApiMethod.SupplierOrders,
+            WildberriesKeyFingerprint.Compute(apiKey),
+            signal.RequestId,
+            signal.Limit,
+            signal.Remaining,
+            signal.RetrySeconds,
+            signal.ResetSeconds,
+            TruncateForLog(responseBody));
+
+        return CreateThrottledPage();
     }
 
     /// <summary>

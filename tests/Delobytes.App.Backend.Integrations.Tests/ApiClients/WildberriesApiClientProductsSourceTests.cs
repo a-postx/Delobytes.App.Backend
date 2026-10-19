@@ -52,6 +52,8 @@ public class WildberriesApiClientProductsSourceTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance);
 

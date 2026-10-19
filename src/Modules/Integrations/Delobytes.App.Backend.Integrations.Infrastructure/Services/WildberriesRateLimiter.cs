@@ -1,10 +1,9 @@
-using System.Security.Cryptography;
-using System.Text;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -41,7 +40,7 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
         WildberriesApiMethod method,
         CancellationToken cancellationToken)
     {
-        string fingerprint = ComputeFingerprint(apiKey);
+        string fingerprint = WildberriesKeyFingerprint.Compute(apiKey);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         bool acquired = await _repository.MutateAsync(
@@ -79,7 +78,7 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {
-        string fingerprint = ComputeFingerprint(apiKey);
+        string fingerprint = WildberriesKeyFingerprint.Compute(apiKey);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         DateTimeOffset nextAttempt = await _repository.MutateAsync(
@@ -134,7 +133,7 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {
-        string fingerprint = ComputeFingerprint(apiKey);
+        string fingerprint = WildberriesKeyFingerprint.Compute(apiKey);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         return _repository.MutateAsync(
@@ -195,15 +194,5 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
             SuccessStreak = 0,
             LastRequestAt = now
         };
-    }
-
-    /// <summary>
-    /// Computes the SHA-256 fingerprint of the raw API key. The raw key is never logged or
-    /// stored; only this fingerprint is.
-    /// </summary>
-    private static string ComputeFingerprint(string apiKey)
-    {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey));
-        return Convert.ToHexString(hash);
     }
 }

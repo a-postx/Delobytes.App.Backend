@@ -35,4 +35,15 @@ public class OrdersPage
     /// clean success, because an order it never saw cannot be recovered from the snapshot list.
     /// </summary>
     public int RowsWithoutIdentity { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether no request was issued because the adaptive rate
+    /// limiter had not released the next slot, or the request was issued and the API answered
+    /// with <c>429</c>. In both cases <see cref="Orders"/> is empty, <see cref="HasMore"/> is
+    /// <c>false</c> and <see cref="CoveredUntil"/> is <c>null</c>: nothing was fetched, so nothing
+    /// can be claimed covered. Distinct from a day that was fetched and legitimately had zero
+    /// orders, which is reported with <c>Throttled = false</c> instead. The caller must keep its
+    /// cursor and retry later rather than treat this as a completed empty day.
+    /// </summary>
+    public bool Throttled { get; set; }
 }

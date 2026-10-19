@@ -58,6 +58,8 @@ public class WildberriesApiClientGetOrdersTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(options),
             NullLogger<WildberriesApiClient>.Instance);
 
@@ -548,16 +550,23 @@ public class WildberriesApiClientGetOrdersTests
         MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
         mockHttp
             .When(HttpMethod.Get, $"{StatisticsBaseUrl}/api/v1/supplier/orders*")
-            .With(req => req.RequestUri!.Query.Contains("flag=1") &&
-                         req.RequestUri!.Query.Contains("dateFrom="))
+            .With(req =>
+            {
+                string query = Uri.UnescapeDataString(req.RequestUri!.Query);
+
+                // One calendar day MSK, sent from its 00:00:00: flag=1 is a day-granularity
+                // selector, so this is the only window shape the client accepts for it.
+                return query.Contains("flag=1") &&
+                       query.Contains("dateFrom=2024-01-01T00:00:00");
+            })
             .Respond("application/json", "[]");
 
         WildberriesApiClient client = BuildClient(mockHttp);
 
         OrdersRequest request = new OrdersRequest
         {
-            DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
+            DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.FromHours(3)),
+            DateTo = new DateTimeOffset(2024, 1, 1, 23, 59, 59, TimeSpan.FromHours(3)),
             Flag = 1,
             Limit = 100
         };
@@ -600,6 +609,8 @@ public class WildberriesApiClientGetOrdersTests
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance);
 
@@ -1044,7 +1055,7 @@ public class WildberriesApiClientGetOrdersTests
         string json = """
         [
             { "date": "2024-01-10T08:00:00", "lastChangeDate": "2024-01-25T09:30:00", "nmId": 1, "gNumber": "G-1", "srid": "A" },
-            { "date": "2024-01-20T08:00:00", "lastChangeDate": "2024-01-11T09:30:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
+            { "date": "2024-01-10T20:00:00", "lastChangeDate": "2024-01-11T09:30:00", "nmId": 2, "gNumber": "G-2", "srid": "B" }
         ]
         """;
 
@@ -1055,21 +1066,23 @@ public class WildberriesApiClientGetOrdersTests
 
         WildberriesApiClient client = BuildClient(mockHttp, maxOrdersPerResponse: 2);
 
+        // One calendar day MSK, the only window flag=1 accepts.
         OrdersRequest request = new OrdersRequest
         {
-            DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
+            DateFrom = new DateTimeOffset(2024, 1, 10, 0, 0, 0, TimeSpan.FromHours(3)),
+            DateTo = new DateTimeOffset(2024, 1, 10, 23, 59, 59, TimeSpan.FromHours(3)),
             Flag = 1,
             Limit = 100
         };
 
         OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
 
+        page.Orders.Should().HaveCount(2);
         page.HasMore.Should().BeTrue();
 
         // flag=1 selects by order date, so that axis bounds the served prefix even though
-        // lastChangeDate runs the other way.
-        page.CoveredUntil.Should().Be(new DateTimeOffset(2024, 1, 20, 5, 0, 0, TimeSpan.Zero));
+        // lastChangeDate runs the other way: its maximum is 2024-01-25, well past the answer below.
+        page.CoveredUntil.Should().Be(new DateTimeOffset(2024, 1, 10, 17, 0, 0, TimeSpan.Zero));
     }
 
     private static OrdersRequest BuildWindowRequest()

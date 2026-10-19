@@ -62,6 +62,8 @@ public class ChannelApiClientFactoryTests
         services.AddTransient(sp => new WildberriesApiClient(
             httpClient,
             sp.GetRequiredService<IEndpointResolver>(),
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance));
 
@@ -111,6 +113,8 @@ public class ChannelApiClientFactoryTests
         services.AddTransient(sp => new WildberriesApiClient(
             httpClient,
             sp.GetRequiredService<IEndpointResolver>(),
+            new FixedConnectionResolver(),
+            new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance));
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
