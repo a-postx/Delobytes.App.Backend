@@ -64,6 +64,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISyncCheckpointRepository, SyncCheckpointRepository>();
         services.AddScoped<IJobScheduleRepository, JobScheduleRepository>();
         services.AddScoped<IJobTypeConfigurationRepository, JobTypeConfigurationRepository>();
+        services.AddScoped<IOrdersBackfillStateRepository, OrdersBackfillStateRepository>();
+        services.AddScoped<IWildberriesMethodThrottleRepository, WildberriesMethodThrottleRepository>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();

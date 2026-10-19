@@ -37,6 +37,8 @@ public class IntegrationsDbContext : DbContext
     public DbSet<SyncCheckpoint> SyncCheckpoints => Set<SyncCheckpoint>();
     public DbSet<JobSchedule> JobSchedules => Set<JobSchedule>();
     public DbSet<JobTypeConfiguration> JobTypeConfigurations => Set<JobTypeConfiguration>();
+    public DbSet<OrdersBackfillState> OrdersBackfillStates => Set<OrdersBackfillState>();
+    public DbSet<WildberriesMethodThrottle> WildberriesMethodThrottles => Set<WildberriesMethodThrottle>();
 
     /// <inheritdoc/>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
