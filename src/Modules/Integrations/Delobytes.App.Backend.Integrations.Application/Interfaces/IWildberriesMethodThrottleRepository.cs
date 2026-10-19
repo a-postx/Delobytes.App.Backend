@@ -13,7 +13,7 @@ public interface IWildberriesMethodThrottleRepository
     /// <summary>
     /// Finds the pacing state for the given key fingerprint and method.
     /// </summary>
-    Task<WildberriesMethodThrottle?> GetAsync(
+    public Task<WildberriesMethodThrottle?> GetAsync(
         string keyFingerprint,
         WildberriesApiMethod method,
         CancellationToken cancellationToken);
@@ -22,5 +22,19 @@ public interface IWildberriesMethodThrottleRepository
     /// Inserts the pacing state if none exists for its (KeyFingerprint, Method), otherwise
     /// updates the existing one.
     /// </summary>
-    Task UpsertAsync(WildberriesMethodThrottle throttle, CancellationToken cancellationToken);
+    public Task UpsertAsync(WildberriesMethodThrottle throttle, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Atomically loads the pacing row for (<paramref name="keyFingerprint"/>, <paramref name="method"/>),
+    /// creating it via <paramref name="createDefault"/> when none exists yet, applies
+    /// <paramref name="mutate"/> to it, and persists the result — all serialized so that two
+    /// concurrent callers for the same (key, method) pair can never interleave their
+    /// read-modify-write, including the race to create the very first row.
+    /// </summary>
+    public Task<TResult> MutateAsync<TResult>(
+        string keyFingerprint,
+        WildberriesApiMethod method,
+        Func<WildberriesMethodThrottle> createDefault,
+        Func<WildberriesMethodThrottle, TResult> mutate,
+        CancellationToken cancellationToken);
 }

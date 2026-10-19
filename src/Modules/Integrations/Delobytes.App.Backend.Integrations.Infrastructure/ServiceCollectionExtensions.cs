@@ -43,6 +43,9 @@ public static class ServiceCollectionExtensions
         services.Configure<WildberriesImportOptions>(
             configuration?.GetSection("WildberriesImport") ?? new ConfigurationBuilder().Build().GetSection("WildberriesImport"));
 
+        services.Configure<WildberriesRateLimitOptions>(
+            configuration?.GetSection("WildberriesRateLimit") ?? new ConfigurationBuilder().Build().GetSection("WildberriesRateLimit"));
+
         services.Configure<BackgroundJobsOptions>(
             configuration?.GetSection("BackgroundJobs") ?? new ConfigurationBuilder().Build().GetSection("BackgroundJobs"));
 
@@ -66,6 +69,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobTypeConfigurationRepository, JobTypeConfigurationRepository>();
         services.AddScoped<IOrdersBackfillStateRepository, OrdersBackfillStateRepository>();
         services.AddScoped<IWildberriesMethodThrottleRepository, WildberriesMethodThrottleRepository>();
+        services.AddScoped<IWildberriesRateLimiter, WildberriesRateLimiter>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();

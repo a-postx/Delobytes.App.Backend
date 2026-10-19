@@ -12,5 +12,5 @@ public interface IJobRunExecutionContext
     /// Gets the identifier of the JobRun being processed in the current logical call chain,
     /// or null outside of JobRun processing (e.g. connection validation calls).
     /// </summary>
-    Guid? JobRunId { get; }
+    public Guid? JobRunId { get; }
 }

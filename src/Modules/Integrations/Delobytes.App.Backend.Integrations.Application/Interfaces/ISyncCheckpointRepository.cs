@@ -11,11 +11,11 @@ public interface ISyncCheckpointRepository
     /// <summary>
     /// Finds the checkpoint for the given connection and job type.
     /// </summary>
-    Task<SyncCheckpoint?> GetAsync(Guid connectionId, JobType jobType, CancellationToken cancellationToken);
+    public Task<SyncCheckpoint?> GetAsync(Guid connectionId, JobType jobType, CancellationToken cancellationToken);
 
     /// <summary>
     /// Inserts the checkpoint if none exists for its (ConnectionId, JobType), otherwise updates
     /// the existing one.
     /// </summary>
-    Task UpsertAsync(SyncCheckpoint checkpoint, CancellationToken cancellationToken);
+    public Task UpsertAsync(SyncCheckpoint checkpoint, CancellationToken cancellationToken);
 }

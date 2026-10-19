@@ -1,7 +1,10 @@
+using System.Security.Cryptography;
+using System.Text;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 
@@ -63,5 +66,58 @@ public class WildberriesMethodThrottleRepository : IWildberriesMethodThrottleRep
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<TResult> MutateAsync<TResult>(
+        string keyFingerprint,
+        WildberriesApiMethod method,
+        Func<WildberriesMethodThrottle> createDefault,
+        Func<WildberriesMethodThrottle, TResult> mutate,
+        CancellationToken cancellationToken)
+    {
+        await using IDbContextTransaction transaction =
+            await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // Session-level advisory lock scoped to this (key, method) pair, released automatically
+        // at commit/rollback. A plain row lock (SELECT ... FOR UPDATE) cannot protect a row that
+        // does not exist yet, which is exactly the case on the very first call for a fresh key;
+        // the advisory lock is keyed on the business pair itself, so it serializes concurrent
+        // callers even before any row is inserted.
+        long lockKey = ComputeAdvisoryLockKey(keyFingerprint, method);
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})", cancellationToken);
+
+        WildberriesMethodThrottle? throttle = await _context.WildberriesMethodThrottles
+            .FirstOrDefaultAsync(
+                t => t.KeyFingerprint == keyFingerprint && t.Method == method,
+                cancellationToken);
+
+        if (throttle is null)
+        {
+            throttle = createDefault();
+            throttle.KeyFingerprint = keyFingerprint;
+            throttle.Method = method;
+
+            if (throttle.Id == Guid.Empty)
+            {
+                throttle.Id = Guid.NewGuid();
+            }
+
+            _context.WildberriesMethodThrottles.Add(throttle);
+        }
+
+        TResult result = mutate(throttle);
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return result;
+    }
+
+    private static long ComputeAdvisoryLockKey(string keyFingerprint, WildberriesApiMethod method)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{keyFingerprint}:{(int)method}"));
+        return BitConverter.ToInt64(hash, 0);
     }
 }

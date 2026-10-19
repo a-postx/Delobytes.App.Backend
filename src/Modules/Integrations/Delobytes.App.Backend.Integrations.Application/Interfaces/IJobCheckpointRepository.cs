@@ -10,10 +10,10 @@ public interface IJobCheckpointRepository
     /// <summary>
     /// Finds the checkpoint for the given job run.
     /// </summary>
-    Task<JobCheckpoint?> GetByJobRunIdAsync(Guid jobRunId, CancellationToken cancellationToken);
+    public Task<JobCheckpoint?> GetByJobRunIdAsync(Guid jobRunId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Inserts the checkpoint if none exists for its JobRunId, otherwise updates the existing one.
     /// </summary>
-    Task UpsertAsync(JobCheckpoint checkpoint, CancellationToken cancellationToken);
+    public Task UpsertAsync(JobCheckpoint checkpoint, CancellationToken cancellationToken);
 }
