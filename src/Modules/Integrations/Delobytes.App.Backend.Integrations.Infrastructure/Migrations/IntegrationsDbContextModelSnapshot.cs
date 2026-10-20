@@ -134,6 +134,9 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<int>("JobType")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("NotBefore")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("RecordsCreated")
                         .HasColumnType("integer");
 
