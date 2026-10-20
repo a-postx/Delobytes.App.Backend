@@ -81,8 +81,7 @@ internal static class WildberriesRateLimitHeaders
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    private static bool TryGetFirstValue(
-        HttpHeaders headers, string headerName, out string? value)
+    private static bool TryGetFirstValue(HttpHeaders headers, string headerName, out string? value)
     {
         value = null;
 

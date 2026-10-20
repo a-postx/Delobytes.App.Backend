@@ -569,7 +569,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         // Reported before the body is read: the counters describe this response, and a body that
         // fails to deserialize must not cost the limiter its only feedback on the real allowance.
-        // A 200 carries no reset/retry, which the limiter expects (see IWildberriesRateLimiter).
         await _rateLimiter.ReportSuccessAsync(
             connection.ApiKey,
             WildberriesApiMethod.SupplierOrders,
@@ -726,9 +725,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     }
 
     /// <summary>
-    /// Builds the page returned when no request was issued or the API refused it. It carries no
-    /// orders and no coverage claim, and <see cref="OrdersPage.Throttled"/> is the only signal the
-    /// caller may branch on.
+    /// Builds the page returned when no request was issued or the API refused it.
     /// </summary>
     private static OrdersPage CreateThrottledPage()
     {
@@ -745,12 +742,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// <summary>
     /// Records a <c>429</c> with the rate limiter and returns the throttled page.
     /// </summary>
-    /// <remarks>
-    /// Deliberately not an exception: <c>RetryPolicies.GetRetryPolicy</c> only handles exceptions, so
-    /// raising here would feed a 429 into a millisecond-scale retry pipeline that cannot outlast a
-    /// rate-limit window, and would fail a run whose progress is intact. The API signals throttling
-    /// through its own headers and never through <c>Retry-After</c>, hence the parsed signal.
-    /// </remarks>
     private async Task<OrdersPage> HandleThrottledResponseAsync(
         string apiKey,
         Guid connectionId,
@@ -791,8 +782,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// per ordered unit, and is returned with a prefix so it stays recognisable as a derived
     /// identity. Everything else is mutable — <c>lastChangeDate</c>, <c>isCancel</c>,
     /// <c>cancelDate</c> and the price fields all change after the fact — and keying on any of
-    /// them would re-key existing rows on the next import. The connection is deliberately not
-    /// part of the identity either: reconnecting a cabinet would then duplicate its whole history.
+    /// them would re-key existing rows on the next import.
     /// </summary>
     /// <remarks>
     /// The result is a line identity, not an order identity: it is unique within the owning order,

@@ -93,9 +93,8 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
                 int wait = signal.RetrySeconds ?? signal.ResetSeconds ?? throttle.CurrentIntervalSeconds;
 
                 throttle.NextRequestAllowedAt = now.AddSeconds(wait + _options.BackoffPadSeconds);
-                throttle.CurrentIntervalSeconds = Math.Min(
-                    Math.Max(throttle.CurrentIntervalSeconds, wait),
-                    _options.FallbackIntervalSeconds);
+                throttle.CurrentIntervalSeconds = Math
+                    .Min(Math.Max(throttle.CurrentIntervalSeconds, wait), _options.FallbackIntervalSeconds);
                 throttle.SuccessStreak = 0;
                 throttle.LastLimit = signal.Limit;
                 throttle.LastRemaining = signal.Remaining;
