@@ -149,7 +149,9 @@ public class WildberriesApiClientOrdersThrottlingTests
         OrdersPage second = await client.GetOrdersAsync(Guid.NewGuid(), request, CancellationToken.None);
 
         first.Throttled.Should().BeFalse();
+        first.RetryAt.Should().BeNull();
         second.Throttled.Should().BeTrue();
+        second.RetryAt.Should().NotBeNull("a refused slot must carry the newly reserved next slot");
         second.Orders.Should().BeEmpty();
         second.HasMore.Should().BeFalse();
 
@@ -205,7 +207,10 @@ public class WildberriesApiClientOrdersThrottlingTests
 
         row.Should().NotBeNull();
 
-        TimeSpan waitFromNow = row!.NextRequestAllowedAt - before;
+        page.RetryAt.Should().NotBeNull();
+        page.RetryAt.Should().Be(row!.NextRequestAllowedAt, "the 429 path's RetryAt is exactly what ReportRateLimitedAsync computed");
+
+        TimeSpan waitFromNow = row.NextRequestAllowedAt - before;
         waitFromNow.TotalSeconds.Should().BeApproximately(45, 2, "retry=39s + 5s pad, not reset=579s");
 
         loggedMessages.Should().Contain(message => message.Contains("fcdda24eaf40d3b4a1273b3065b71c5c"));

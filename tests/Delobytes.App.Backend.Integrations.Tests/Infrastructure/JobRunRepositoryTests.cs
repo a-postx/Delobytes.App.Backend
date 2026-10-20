@@ -186,13 +186,13 @@ public class JobRunRepositoryTests
         {
             JobRunRepository repository = new JobRunRepository(ctx);
 
-            List<JobRun> pending = await repository.GetPendingJobsAsync(tenantAId, limit: 10, CancellationToken.None);
+            List<JobRun> pending = await repository.GetPendingJobsAsync(tenantAId, limit: 10, now, CancellationToken.None);
 
             pending.Should().HaveCount(2);
             pending[0].ConnectionId.Should().Be(connectionA.Id, "oldest Pending job must come first");
             pending[1].ConnectionId.Should().Be(connectionA2.Id);
 
-            List<JobRun> limited = await repository.GetPendingJobsAsync(tenantAId, limit: 1, CancellationToken.None);
+            List<JobRun> limited = await repository.GetPendingJobsAsync(tenantAId, limit: 1, now, CancellationToken.None);
             limited.Should().HaveCount(1);
             limited[0].ConnectionId.Should().Be(connectionA.Id);
         }

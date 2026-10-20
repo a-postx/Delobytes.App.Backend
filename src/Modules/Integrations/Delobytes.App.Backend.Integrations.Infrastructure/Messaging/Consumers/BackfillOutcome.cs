@@ -1,5 +1,3 @@
-using Delobytes.App.Backend.Integrations.Contracts.Models;
-
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
@@ -11,9 +9,12 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 internal sealed record BackfillOutcome
 {
     /// <summary>
-    /// Gets the orders of every day fetched by this run, deduplicated by order identity.
+    /// Gets the total number of orders published across every day fetched by this run. Each day
+    /// is published as its own unit of work as soon as it is fetched (see
+    /// <c>ProcessOrdersImportConsumer.FetchBackfillDaysAsync</c>), so this record no longer carries
+    /// the orders themselves.
     /// </summary>
-    public required List<ChannelOrderSnapshot> Orders { get; init; }
+    public required int TotalOrders { get; init; }
 
     /// <summary>
     /// Gets the number of calendar days fetched, which equals the number of HTTP requests issued:

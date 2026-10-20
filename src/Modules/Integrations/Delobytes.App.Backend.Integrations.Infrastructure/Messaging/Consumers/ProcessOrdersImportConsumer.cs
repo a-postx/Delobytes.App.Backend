@@ -175,23 +175,76 @@ public class ProcessOrdersImportConsumer
             // in place is not recoverable.
             bool isBackfill = !backfillState.IsCompleted;
 
-            List<ChannelOrderSnapshot> allOrders;
-            int requestsIssued;
-            int rowsWithoutIdentity;
-            DateTimeOffset? maxChangedAt;
+            // A redelivered message continues batch numbering where the last attempt left off,
+            // identified by IsFetchCompleted == false: that attempt published some units and
+            // persisted their count, but never reached the finishing write below. Starting over at
+            // 0 would reuse BatchIds already recorded for different content under this JobRunId.
+            int nextBatchIndex = previousPayload != null && previousPayload.IsFetchCompleted == false
+                ? previousPayload.TotalBatches
+                : 0;
+
+            // Publishes one unit of work (one backfill day, or the whole delta window) as soon as
+            // it is fetched, then persists how many batches have been published so far so a crash
+            // immediately afterwards cannot lose more than the next unit. An empty unit publishes
+            // nothing: there is no batch to count and no progress to persist.
+            async Task PublishUnitAsync(List<ChannelOrderSnapshot> unitOrders, CancellationToken publishCancellationToken)
+            {
+                if (unitOrders.Count == 0)
+                {
+                    return;
+                }
+
+                foreach (List<ChannelOrderSnapshot> batch in SplitIntoBatches(unitOrders))
+                {
+                    OrdersBatchImportRequestedEvent batchEvent = new OrdersBatchImportRequestedEvent
+                    {
+                        JobRunId = jobRun.Id,
+                        ConnectionId = connection.Id,
+                        ChannelId = connection.ChannelId,
+                        BatchId = CreateBatchId(jobRun.Id, nextBatchIndex),
+                        Orders = batch,
+                        IsTerminal = false,
+                    };
+
+                    await _eventPublisher.PublishAsync(batchEvent, publishCancellationToken);
+                    nextBatchIndex++;
+                }
+
+                OrdersImportCheckpointPayload progressPayload = new OrdersImportCheckpointPayload
+                {
+                    TotalBatches = nextBatchIndex,
+                    WindowTo = windowTo,
+                    IsBackfill = isBackfill,
+                    IsFetchCompleted = false,
+                };
+
+                await _jobCheckpointRepository.UpsertAsync(
+                    new JobCheckpoint
+                    {
+                        JobRunId = jobRun.Id,
+                        Payload = JsonSerializer.Serialize(progressPayload),
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                    },
+                    publishCancellationToken);
+            }
+
+            int requestsIssued = 0;
+            int rowsWithoutIdentity = 0;
+            int fetchedOrdersCount = 0;
+            DateTimeOffset? maxChangedAt = null;
             BackfillOutcome? backfillOutcome = null;
 
             if (isBackfill)
             {
                 backfillOutcome = await FetchBackfillDaysAsync(
-                    ordersSource, connection.Id, backfillState, jobRun.Id, cancellationToken);
+                    ordersSource, connection.Id, backfillState, jobRun.Id, PublishUnitAsync, cancellationToken);
 
-                allOrders = backfillOutcome.Orders;
                 requestsIssued = backfillOutcome.DaysFetched;
                 rowsWithoutIdentity = backfillOutcome.RowsWithoutIdentity;
+                fetchedOrdersCount = backfillOutcome.TotalOrders;
 
                 // A backwards walk earns no watermark. The newest day is fetched first, so
-                // publishing its instant as the delta watermark would mark every older day still
+                // publishing its instant as the delta watermark would mark the older days still
                 // to come as already imported. The aggregator seeds the watermark from the running
                 // maximum instead, and only on the run that finishes the walk.
                 maxChangedAt = null;
@@ -202,7 +255,7 @@ public class ProcessOrdersImportConsumer
                     backfillOutcome.DaysFetched,
                     backfillOutcome.FirstDay,
                     backfillOutcome.LastDay,
-                    allOrders.Count,
+                    backfillOutcome.TotalOrders,
                     backfillOutcome.StoppedByThrottle,
                     backfillOutcome.StoppedByBudget,
                     backfillState.NextDayToFetch,
@@ -253,27 +306,29 @@ public class ProcessOrdersImportConsumer
                 OrdersFetchResult fetchResult = await FetchAllPagesAsync(
                     ordersSource, connection.Id, request, jobRun.Id, cancellationToken);
 
-                allOrders = fetchResult.Orders;
                 requestsIssued = fetchResult.RequestsIssued;
                 rowsWithoutIdentity = fetchResult.RowsWithoutIdentity;
-                maxChangedAt = GetMaxChangedAt(allOrders, windowTo);
-            }
+                maxChangedAt = GetMaxChangedAt(fetchResult.Orders, windowTo);
 
-            List<List<ChannelOrderSnapshot>> batches = SplitIntoBatches(allOrders);
+                await PublishUnitAsync(fetchResult.Orders, cancellationToken);
+                fetchedOrdersCount = fetchResult.Orders.Count;
+            }
 
             OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
             {
-                TotalBatches = batches.Count,
+                TotalBatches = nextBatchIndex + 1,
                 MaxChangedAt = maxChangedAt,
                 WindowTo = windowTo,
                 PagesFetched = requestsIssued,
                 IsBackfill = isBackfill,
                 IsBackfillCompleted = isBackfill && backfillState.IsCompleted,
                 MaxObservedLastChangeDate = isBackfill ? backfillState.MaxObservedLastChangeDate : null,
+                IsFetchCompleted = true,
             };
 
-            // Must be persisted before the first publish: the aggregator can only finalise once it
-            // knows how many batch results to wait for.
+            // The final count must be persisted before the terminal batch is published: the
+            // aggregator finalises on the terminal result (or on any later data result that brings
+            // the count up to TotalBatches), and it can only do that once it knows the final count.
             await _jobCheckpointRepository.UpsertAsync(
                 new JobCheckpoint
                 {
@@ -283,20 +338,17 @@ public class ProcessOrdersImportConsumer
                 },
                 cancellationToken);
 
-            for (int i = 0; i < batches.Count; i++)
+            OrdersBatchImportRequestedEvent terminalBatchEvent = new OrdersBatchImportRequestedEvent
             {
-                OrdersBatchImportRequestedEvent batchEvent = new OrdersBatchImportRequestedEvent
-                {
-                    JobRunId = jobRun.Id,
-                    ConnectionId = connection.Id,
-                    ChannelId = connection.ChannelId,
-                    BatchId = CreateBatchId(jobRun.Id, i),
-                    Orders = batches[i],
-                    IsTerminal = i == batches.Count - 1,
-                };
+                JobRunId = jobRun.Id,
+                ConnectionId = connection.Id,
+                ChannelId = connection.ChannelId,
+                BatchId = CreateBatchId(jobRun.Id, nextBatchIndex),
+                Orders = new List<ChannelOrderSnapshot>(),
+                IsTerminal = true,
+            };
 
-                await _eventPublisher.PublishAsync(batchEvent, cancellationToken);
-            }
+            await _eventPublisher.PublishAsync(terminalBatchEvent, cancellationToken);
 
             if (backfillOutcome != null && backfillOutcome.IsStateChanged)
             {
@@ -312,9 +364,9 @@ public class ProcessOrdersImportConsumer
                 "JobRun {JobRunId}: branch={Branch}, fetched {Orders} orders in {Requests} requests, published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}",
                 jobRun.Id,
                 isBackfill ? "backfill" : "delta",
-                allOrders.Count,
+                fetchedOrdersCount,
                 requestsIssued,
-                batches.Count,
+                payload.TotalBatches,
                 rowsWithoutIdentity);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -375,29 +427,25 @@ public class ProcessOrdersImportConsumer
     }
 
     /// <summary>
-    /// Fetches the backfill days that fit in this run's time budget, newest first, one
-    /// <c>flag=1</c> request per calendar day. The loop ends on the budget, on the scope boundary,
-    /// or on a throttled response; a throttle is never waited out in-process, because the wait it
-    /// implies is far longer than the job timeout and the next scheduled run is the correct retry.
-    /// The cursor on <paramref name="state"/> is advanced in memory only: the caller persists it
-    /// after the batches of this run are published.
+    /// Walks the backfill days that fit in this run's time budget, newest first, one <c>flag=1</c>
+    /// request per calendar day. Each fetched day is published as one unit of work as soon as it is
+    /// fetched. The cursor on <paramref name="state"/> is advanced in memory only: the caller
+    /// persists it after the batches of this run are published.
     /// </summary>
     private async Task<BackfillOutcome> FetchBackfillDaysAsync(
         IOrdersSource ordersSource,
         Guid connectionId,
         OrdersBackfillState state,
         Guid jobRunId,
+        Func<List<ChannelOrderSnapshot>, CancellationToken, Task> publishUnit,
         CancellationToken cancellationToken)
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow + _backfillRunBudget;
         DateTimeOffset dayCursor = GetMoscowDayStart(state.NextDayToFetch);
         DateTimeOffset oldestDay = GetMoscowDayStart(state.OldestDayInScope);
 
-        // Keyed by order identity, ordered afterwards so the batch composition of one run does not
-        // depend on hash order.
-        Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
-
         int daysFetched = 0;
+        int totalOrders = 0;
         int rowsWithoutIdentity = 0;
         bool stoppedByThrottle = false;
         bool stoppedByBudget = false;
@@ -476,13 +524,11 @@ public class ProcessOrdersImportConsumer
                     "and flag=1 cannot be split below one day. The day cannot be imported completely.");
             }
 
-            daysFetched++;
-            firstDay ??= dayCursor;
-            lastDay = dayCursor;
+            Dictionary<string, ChannelOrderSnapshot> dayByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
             foreach (ChannelOrderSnapshot order in ordersPage.Orders)
             {
-                if (ordersByOrderKey.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
+                if (dayByOrderKey.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
                 {
                     // One calendar day is disjoint from every other in this run, so a repeat
                     // identity inside one day is the source reporting the same order twice rather
@@ -496,7 +542,7 @@ public class ProcessOrdersImportConsumer
                         mergedLines,
                         new[] { existing.OrderDate, order.OrderDate });
 
-                    ordersByOrderKey[order.ExternalOrderId] = headerSource with
+                    dayByOrderKey[order.ExternalOrderId] = headerSource with
                     {
                         Lines = mergedLines,
                         ExternalStatus = mergedHeader.ExternalStatus,
@@ -508,7 +554,7 @@ public class ProcessOrdersImportConsumer
                 }
                 else
                 {
-                    ordersByOrderKey.Add(order.ExternalOrderId, order);
+                    dayByOrderKey.Add(order.ExternalOrderId, order);
                 }
 
                 if (order.StatusChangedAt != null)
@@ -522,12 +568,23 @@ public class ProcessOrdersImportConsumer
                 }
             }
 
+            List<ChannelOrderSnapshot> dayOrders = dayByOrderKey.Values
+                .OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal)
+                .ToList();
+
+            await publishUnit(dayOrders, cancellationToken);
+
+            totalOrders += dayOrders.Count;
+            daysFetched++;
+            firstDay ??= dayCursor;
+            lastDay = dayCursor;
+
             dayCursor = dayCursor.AddDays(-1);
         }
 
-        // The cursor is advanced here, in memory, only for the days actually fetched: dayCursor now
-        // holds the first day this run did not fetch, which is exactly where the next run resumes.
-        // A throttled or budget-stopped run therefore leaves that day unfetched rather than skipped.
+        // The cursor moves only for the days actually fetched: dayCursor now holds the first day
+        // this run did not fetch, which is exactly where the next run resumes. A throttled or
+        // budget-stopped run therefore leaves that day unfetched rather than skipped.
         state.NextDayToFetch = dayCursor;
         state.MaxObservedLastChangeDate = maxObservedLastChangeDate;
 
@@ -544,13 +601,9 @@ public class ProcessOrdersImportConsumer
                 oldestDay);
         }
 
-        List<ChannelOrderSnapshot> orders = ordersByOrderKey.Values
-            .OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal)
-            .ToList();
-
         return new BackfillOutcome
         {
-            Orders = orders,
+            TotalOrders = totalOrders,
             DaysFetched = daysFetched,
             RowsWithoutIdentity = rowsWithoutIdentity,
             StoppedByThrottle = stoppedByThrottle,

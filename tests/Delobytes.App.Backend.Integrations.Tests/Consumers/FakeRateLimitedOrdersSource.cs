@@ -42,8 +42,8 @@ internal sealed class FakeRateLimitedOrdersSource : IChannelApiClient, IOrdersSo
     {
         CallCount++;
 
-        bool acquired = await _rateLimiter.TryAcquireAsync(
-            _apiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
+        bool acquired = (await _rateLimiter.TryAcquireAsync(
+            _apiKey, WildberriesApiMethod.SupplierOrders, cancellationToken)).Acquired;
 
         if (!acquired)
         {

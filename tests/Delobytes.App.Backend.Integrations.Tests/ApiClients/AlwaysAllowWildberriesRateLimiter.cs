@@ -15,21 +15,33 @@ namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 /// </summary>
 internal sealed class AlwaysAllowWildberriesRateLimiter : IWildberriesRateLimiter
 {
-    public Task<bool> TryAcquireAsync(
+    public Task<RateLimitAcquireResult> TryAcquireAsync(
         string apiKey,
         WildberriesApiMethod method,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(true);
+        return Task.FromResult(new RateLimitAcquireResult
+        {
+            Acquired = true,
+            NextRequestAllowedAt = DateTimeOffset.UtcNow
+        });
     }
 
-    public Task ReportRateLimitedAsync(
+    public Task<DateTimeOffset> ReportRateLimitedAsync(
         string apiKey,
         WildberriesApiMethod method,
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        return Task.FromResult(DateTimeOffset.UtcNow);
+    }
+
+    public Task<DateTimeOffset> GetNextRequestAllowedAtAsync(
+        string apiKey,
+        WildberriesApiMethod method,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(DateTimeOffset.UtcNow);
     }
 
     public Task ReportSuccessAsync(

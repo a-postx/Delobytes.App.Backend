@@ -35,7 +35,7 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
     }
 
     /// <inheritdoc/>
-    public async Task<bool> TryAcquireAsync(
+    public async Task<RateLimitAcquireResult> TryAcquireAsync(
         string apiKey,
         WildberriesApiMethod method,
         CancellationToken cancellationToken)
@@ -43,7 +43,7 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
         string fingerprint = WildberriesKeyFingerprint.Compute(apiKey);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        bool acquired = await _repository.MutateAsync(
+        RateLimitAcquireResult result = await _repository.MutateAsync(
             fingerprint,
             method,
             () => CreateDefault(now),
@@ -51,16 +51,25 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
             {
                 if (throttle.NextRequestAllowedAt > now)
                 {
-                    return false;
+                    return new RateLimitAcquireResult
+                    {
+                        Acquired = false,
+                        NextRequestAllowedAt = throttle.NextRequestAllowedAt
+                    };
                 }
 
                 throttle.NextRequestAllowedAt = now.AddSeconds(throttle.CurrentIntervalSeconds);
                 throttle.LastRequestAt = now;
-                return true;
+
+                return new RateLimitAcquireResult
+                {
+                    Acquired = true,
+                    NextRequestAllowedAt = throttle.NextRequestAllowedAt
+                };
             },
             cancellationToken);
 
-        if (!acquired)
+        if (!result.Acquired)
         {
             _logger.LogDebug(
                 "Запрос Wildberries {Method} для отпечатка ключа {KeyFingerprint} отложен лимитером.",
@@ -68,11 +77,11 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
                 fingerprint);
         }
 
-        return acquired;
+        return result;
     }
 
     /// <inheritdoc/>
-    public async Task ReportRateLimitedAsync(
+    public async Task<DateTimeOffset> ReportRateLimitedAsync(
         string apiKey,
         WildberriesApiMethod method,
         RateLimitSignal signal,
@@ -90,11 +99,18 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
                 // §1.2 fact 3: `retry` is the server's advice for the next call; `reset`
                 // describes the whole window and is honoured only as a fallback and as the
                 // window length remembered for ReportSuccessAsync's pace derivation.
-                int wait = signal.RetrySeconds ?? signal.ResetSeconds ?? throttle.CurrentIntervalSeconds;
+                int? serverWait = signal.RetrySeconds ?? signal.ResetSeconds;
+                int wait = serverWait ?? throttle.CurrentIntervalSeconds;
 
                 throttle.NextRequestAllowedAt = now.AddSeconds(wait + _options.BackoffPadSeconds);
-                throttle.CurrentIntervalSeconds = Math
-                    .Min(Math.Max(throttle.CurrentIntervalSeconds, wait), _options.FallbackIntervalSeconds);
+
+                // A server-advised wait is ground truth and must never be clamped down to
+                // FallbackIntervalSeconds: that cap exists only for the no-headers case, where
+                // the real allowance is unknown and a bounded guess is all there is.
+                throttle.CurrentIntervalSeconds = serverWait.HasValue
+                    ? Math.Max(throttle.CurrentIntervalSeconds, wait)
+                    : Math.Min(Math.Max(throttle.CurrentIntervalSeconds, wait), _options.FallbackIntervalSeconds);
+
                 throttle.SuccessStreak = 0;
                 throttle.LastLimit = signal.Limit;
                 throttle.LastRemaining = signal.Remaining;
@@ -123,6 +139,22 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
             signal.RetrySeconds,
             signal.ResetSeconds,
             nextAttempt);
+
+        return nextAttempt;
+    }
+
+    /// <inheritdoc/>
+    public async Task<DateTimeOffset> GetNextRequestAllowedAtAsync(
+        string apiKey,
+        WildberriesApiMethod method,
+        CancellationToken cancellationToken)
+    {
+        string fingerprint = WildberriesKeyFingerprint.Compute(apiKey);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        WildberriesMethodThrottle? throttle = await _repository.GetAsync(fingerprint, method, cancellationToken);
+
+        return throttle?.NextRequestAllowedAt ?? now;
     }
 
     /// <inheritdoc/>

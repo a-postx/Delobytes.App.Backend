@@ -77,6 +77,15 @@ public class JobRun : ITenantScoped, IRowVersionedEntity
     public int RecordsFailed { get; set; }
 
     /// <summary>
+    /// Gets or sets the earliest instant this job may be dispatched. Null means "as soon as
+    /// picked up". Set when a Wildberries backfill or delta run defers its continuation to a
+    /// rate-limiter-advised instant; a deferred Pending row still blocks the hourly schedule for
+    /// its connection (see HasActiveJobAsync) but must not occupy a tenant parallelism slot
+    /// before it is actually due.
+    /// </summary>
+    public DateTimeOffset? NotBefore { get; set; }
+
+    /// <summary>
     /// Gets or sets the row version for optimistic concurrency (PostgreSQL xmin).
     /// </summary>
     public uint RowVersion { get; set; }

@@ -516,12 +516,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
 
-        bool slotAcquired = await _rateLimiter.TryAcquireAsync(
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(
             connection.ApiKey,
             WildberriesApiMethod.SupplierOrders,
             cancellationToken);
 
-        if (!slotAcquired)
+        if (!acquireResult.Acquired)
         {
             // Not a failure and not an empty day: the caller keeps its cursor and returns later.
             _logger.LogInformation(
@@ -530,7 +530,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 connectionId,
                 WildberriesApiMethod.SupplierOrders);
 
-            return CreateThrottledPage();
+            return CreateThrottledPage(acquireResult.NextRequestAllowedAt);
         }
 
         string dateFromParameter = Uri.EscapeDataString(
@@ -726,7 +726,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// <summary>
     /// Builds the page returned when no request was issued or the API refused it.
     /// </summary>
-    private static OrdersPage CreateThrottledPage()
+    private static OrdersPage CreateThrottledPage(DateTimeOffset retryAt)
     {
         return new OrdersPage
         {
@@ -734,6 +734,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             HasMore = false,
             CoveredUntil = null,
             Throttled = true,
+            RetryAt = retryAt,
             RowsWithoutIdentity = 0
         };
     }
@@ -750,7 +751,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     {
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        await _rateLimiter.ReportRateLimitedAsync(
+        DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
             apiKey,
             WildberriesApiMethod.SupplierOrders,
             signal,
@@ -772,7 +773,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             signal.ResetSeconds,
             TruncateForLog(responseBody));
 
-        return CreateThrottledPage();
+        return CreateThrottledPage(retryAt);
     }
 
     /// <summary>

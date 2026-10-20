@@ -49,10 +49,20 @@ public interface IJobRunRepository
     public Task<bool> HasActiveJobAsync(Guid connectionId, JobType jobType, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Returns up to <paramref name="limit"/> Pending job runs for the given tenant,
-    /// ordered by creation date ascending, for the worker to pick up.
+    /// Returns up to <paramref name="limit"/> Pending job runs for the given tenant that are
+    /// due (<c>NotBefore == null || NotBefore &lt;= now</c>), ordered by creation date
+    /// ascending, for the worker to pick up.
     /// </summary>
-    public Task<List<JobRun>> GetPendingJobsAsync(Guid tenantId, int limit, CancellationToken cancellationToken);
+    public Task<List<JobRun>> GetPendingJobsAsync(
+        Guid tenantId, int limit, DateTimeOffset now, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns true when a Pending job run other than <paramref name="excludeJobRunId"/> already
+    /// exists for the given connection and job type. Used before creating a continuation run so
+    /// a redelivered message cannot create a duplicate.
+    /// </summary>
+    public Task<bool> HasPendingJobAsync(
+        Guid connectionId, JobType jobType, Guid excludeJobRunId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Returns the number of Running job runs for the given tenant, used by the worker to

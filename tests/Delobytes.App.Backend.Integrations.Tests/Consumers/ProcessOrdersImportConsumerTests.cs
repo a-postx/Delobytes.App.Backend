@@ -342,15 +342,26 @@ public class ProcessOrdersImportConsumerTests
             new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
+        // Two writes: the progress payload persisted right after the unit's batches are published
+        // (IsFetchCompleted = false), then the final payload that announces the terminal batch.
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Exactly(2));
 
         _eventPublisher.Verify(
             p => p.PublishAsync(
                 It.Is<OrdersBatchImportRequestedEvent>(e =>
                     e.JobRunId == jobRun.Id &&
                     e.Orders.Count == 5 &&
+                    !e.IsTerminal),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _eventPublisher.Verify(
+            p => p.PublishAsync(
+                It.Is<OrdersBatchImportRequestedEvent>(e =>
+                    e.JobRunId == jobRun.Id &&
+                    e.Orders.Count == 0 &&
                     e.IsTerminal),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -413,9 +424,11 @@ public class ProcessOrdersImportConsumerTests
             new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
+        // 75 orders at a batch size of 30 make three data batches, followed by the separate empty
+        // terminal batch that tells the aggregator no further units are coming.
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
-            Times.Exactly(3));
+            Times.Exactly(4));
     }
 
     [Fact]

@@ -40,7 +40,7 @@ public class SchedulerHostedServiceTests
     public SchedulerHostedServiceTests()
     {
         _connectionRepositoryMock
-            .Setup(r => r.FindByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildConnection());
 
         _tenantSettingsProviderMock
@@ -203,7 +203,7 @@ public class SchedulerHostedServiceTests
         inactive.IsActive = false;
 
         _connectionRepositoryMock
-            .Setup(r => r.FindByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(inactive);
 
         JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
@@ -226,7 +226,7 @@ public class SchedulerHostedServiceTests
     public async Task Tick_WhenConnectionIsMissing_SkipsJobRunButAdvancesSchedule()
     {
         _connectionRepositoryMock
-            .Setup(r => r.FindByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Connection?)null);
 
         JobSchedule schedule = BuildSchedule(JobType.OrdersImport);

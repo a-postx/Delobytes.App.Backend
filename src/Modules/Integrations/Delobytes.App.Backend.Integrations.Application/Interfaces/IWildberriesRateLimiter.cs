@@ -13,11 +13,12 @@ public interface IWildberriesRateLimiter
 {
     /// <summary>
     /// Attempts to reserve the next request slot for <paramref name="apiKey"/>/<paramref name="method"/>.
-    /// Returns <c>false</c> without any side effect when the pacing state says the next request
-    /// is not yet due; otherwise advances the pacing state and returns <c>true</c>. Safe under
-    /// concurrent callers for the same (key, method) pair.
+    /// Returns a result with <c>Acquired == false</c> without any side effect when the pacing
+    /// state says the next request is not yet due; otherwise advances the pacing state and
+    /// returns <c>Acquired == true</c>. Safe under concurrent callers for the same (key, method)
+    /// pair.
     /// </summary>
-    public Task<bool> TryAcquireAsync(
+    public Task<RateLimitAcquireResult> TryAcquireAsync(
         string apiKey,
         WildberriesApiMethod method,
         CancellationToken cancellationToken);
@@ -26,10 +27,21 @@ public interface IWildberriesRateLimiter
     /// Records the headers of a throttled (<c>429</c>) response and computes the next allowed
     /// instant from the server's own advice.
     /// </summary>
-    public Task ReportRateLimitedAsync(
+    /// <returns>The computed next allowed attempt instant.</returns>
+    public Task<DateTimeOffset> ReportRateLimitedAsync(
         string apiKey,
         WildberriesApiMethod method,
         RateLimitSignal signal,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the next allowed request instant for <paramref name="apiKey"/>/<paramref name="method"/>
+    /// without reserving a slot or taking the advisory lock. Returns now when no pacing row exists
+    /// yet.
+    /// </summary>
+    public Task<DateTimeOffset> GetNextRequestAllowedAtAsync(
+        string apiKey,
+        WildberriesApiMethod method,
         CancellationToken cancellationToken);
 
     /// <summary>

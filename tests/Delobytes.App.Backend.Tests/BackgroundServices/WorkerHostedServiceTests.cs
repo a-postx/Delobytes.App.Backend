@@ -53,7 +53,7 @@ public class WorkerHostedServiceTests
             .ReturnsAsync(0);
 
         _jobRunRepositoryMock
-            .Setup(r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun>());
 
         _eventPublisherMock
@@ -75,7 +75,7 @@ public class WorkerHostedServiceTests
         await RunSingleTickAsync(worker);
 
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _eventPublisherMock.Verify(
             p => p.PublishAsync(It.IsAny<It.IsAnyType>(), It.IsAny<CancellationToken>()),
@@ -165,7 +165,7 @@ public class WorkerHostedServiceTests
         await RunSingleTickAsync(worker);
 
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(_tenantId, 2, It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(_tenantId, 2, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -181,7 +181,7 @@ public class WorkerHostedServiceTests
         await RunSingleTickAsync(worker);
 
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _eventPublisherMock.Verify(
             p => p.PublishAsync(It.IsAny<It.IsAnyType>(), It.IsAny<CancellationToken>()),
@@ -203,7 +203,7 @@ public class WorkerHostedServiceTests
             r => r.CountRunningJobsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -220,7 +220,7 @@ public class WorkerHostedServiceTests
         await RunSingleTickAsync(worker);
 
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -267,10 +267,10 @@ public class WorkerHostedServiceTests
         await RunSingleTickAsync(worker);
 
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(tenantAId, 5, It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(tenantAId, 5, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(tenantBId, 2, It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(tenantBId, 2, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -293,7 +293,7 @@ public class WorkerHostedServiceTests
 
         JobRun pending = BuildJobRun(JobType.OrdersImport);
         _jobRunRepositoryMock
-            .Setup(r => r.GetPendingJobsAsync(healthyTenantId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetPendingJobsAsync(healthyTenantId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun> { pending });
 
         WorkerHostedService worker = BuildWorker();
@@ -325,10 +325,10 @@ public class WorkerHostedServiceTests
         JobRun tenantBJob = BuildJobRun(JobType.OrdersImport);
 
         _jobRunRepositoryMock
-            .Setup(r => r.GetPendingJobsAsync(tenantAId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetPendingJobsAsync(tenantAId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun> { tenantAJob });
         _jobRunRepositoryMock
-            .Setup(r => r.GetPendingJobsAsync(tenantBId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetPendingJobsAsync(tenantBId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun> { tenantBJob });
 
         _eventPublisherMock
@@ -366,7 +366,7 @@ public class WorkerHostedServiceTests
         await worker.StopAsync(CancellationToken.None);
 
         _jobRunRepositoryMock.Verify(
-            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
     }
 
@@ -392,7 +392,7 @@ public class WorkerHostedServiceTests
     private void SetupPending(params JobRun[] jobs)
     {
         _jobRunRepositoryMock
-            .Setup(r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetPendingJobsAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(jobs.ToList());
     }
 

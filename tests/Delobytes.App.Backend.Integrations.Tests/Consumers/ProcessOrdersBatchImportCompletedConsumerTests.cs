@@ -651,6 +651,7 @@ public class ProcessOrdersBatchImportCompletedConsumerTests
             MaxChangedAt = null,
             WindowTo = DateTimeOffset.UtcNow,
             PagesFetched = 1,
+            IsFetchCompleted = true,
         };
 
         _jobCheckpointRepo

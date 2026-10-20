@@ -104,7 +104,9 @@ public class WorkerHostedService : BackgroundService
                 return;
             }
 
-            List<JobRun> pendingJobs = await jobRunRepository.GetPendingJobsAsync(tenantId, availableSlots, cancellationToken);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+
+            List<JobRun> pendingJobs = await jobRunRepository.GetPendingJobsAsync(tenantId, availableSlots, now, cancellationToken);
 
             foreach (JobRun jobRun in pendingJobs)
             {

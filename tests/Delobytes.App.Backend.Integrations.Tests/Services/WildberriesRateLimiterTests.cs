@@ -95,17 +95,18 @@ public class WildberriesRateLimiterTests
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
         string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
 
-        bool first = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        RateLimitAcquireResult first = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
         WildberriesMethodThrottle? afterFirst = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
-        bool second = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        RateLimitAcquireResult second = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
         WildberriesMethodThrottle? afterSecond = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
-        first.Should().BeTrue();
-        second.Should().BeFalse();
+        first.Acquired.Should().BeTrue();
+        second.Acquired.Should().BeFalse();
+        second.NextRequestAllowedAt.Should().Be(afterFirst!.NextRequestAllowedAt, "a refusal reports the stored slot the caller must wait for");
 
         afterSecond.Should().NotBeNull();
-        afterSecond!.NextRequestAllowedAt.Should().Be(afterFirst!.NextRequestAllowedAt);
+        afterSecond!.NextRequestAllowedAt.Should().Be(afterFirst.NextRequestAllowedAt);
         afterSecond.LastRequestAt.Should().Be(afterFirst.LastRequestAt);
     }
 
@@ -115,8 +116,8 @@ public class WildberriesRateLimiterTests
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
 
-        bool ordersAcquired = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
-        bool cardsAcquired = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.ContentCardsList, CancellationToken.None);
+        bool ordersAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None)).Acquired;
+        bool cardsAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.ContentCardsList, CancellationToken.None)).Acquired;
 
         ordersAcquired.Should().BeTrue();
         cardsAcquired.Should().BeTrue("the limit applies per path, not per base URL or per key alone");
@@ -131,8 +132,8 @@ public class WildberriesRateLimiterTests
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
 
-        bool connectionAAcquired = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
-        bool connectionBAcquired = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        bool connectionAAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None)).Acquired;
+        bool connectionBAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None)).Acquired;
 
         connectionAAcquired.Should().BeTrue();
         connectionBAcquired.Should().BeFalse();
@@ -381,5 +382,94 @@ public class WildberriesRateLimiterTests
 
         steppedDown!.CurrentIntervalSeconds.Should().Be((int)(options.InitialIntervalSeconds * 0.8));
         steppedDown.CurrentIntervalSeconds.Should().BeLessThan(options.InitialIntervalSeconds);
+    }
+
+    [Fact]
+    public async Task ReportRateLimitedAsync_RetryFarBeyondFallback_SetsCurrentIntervalToRetryWithoutFallbackCap()
+    {
+        FakeWildberriesMethodThrottleRepository repository = new();
+        WildberriesRateLimitOptions options = new WildberriesRateLimitOptions
+        {
+            InitialIntervalSeconds = 60,
+            FallbackIntervalSeconds = 3600,
+            BackoffPadSeconds = 5,
+        };
+        WildberriesRateLimiter limiter = CreateLimiter(repository, options);
+        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+
+        await limiter.ReportRateLimitedAsync(
+            ApiKey,
+            WildberriesApiMethod.SupplierOrders,
+            BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: 10800),
+            CancellationToken.None);
+
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+
+        row.Should().NotBeNull();
+        row!.CurrentIntervalSeconds.Should().Be(
+            10800, "a server-advised wait is ground truth and must not be clamped by FallbackIntervalSeconds");
+    }
+
+    [Fact]
+    public async Task ReportRateLimitedAsync_NoRetryOrResetHeaders_CurrentIntervalIsCappedByFallback()
+    {
+        FakeWildberriesMethodThrottleRepository repository = new();
+        WildberriesRateLimitOptions options = new WildberriesRateLimitOptions
+        {
+            InitialIntervalSeconds = 60,
+            FallbackIntervalSeconds = 3600,
+            BackoffPadSeconds = 5,
+        };
+        WildberriesRateLimiter limiter = CreateLimiter(repository, options);
+        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+
+        // No RetrySeconds/ResetSeconds: the wait falls back to the current interval, and the
+        // resulting CurrentIntervalSeconds must still respect the fallback cap.
+        await limiter.ReportRateLimitedAsync(
+            ApiKey,
+            WildberriesApiMethod.SupplierOrders,
+            BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: null),
+            CancellationToken.None);
+
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+
+        row.Should().NotBeNull();
+        row!.CurrentIntervalSeconds.Should().BeLessOrEqualTo(options.FallbackIntervalSeconds);
+    }
+
+    [Fact]
+    public async Task GetNextRequestAllowedAtAsync_DoesNotMutateState()
+    {
+        FakeWildberriesMethodThrottleRepository repository = new();
+        WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
+        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+
+        await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+
+        WildberriesMethodThrottle? before = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+
+        DateTimeOffset nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
+            ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+
+        WildberriesMethodThrottle? after = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+
+        nextAllowed.Should().Be(before!.NextRequestAllowedAt);
+        after!.NextRequestAllowedAt.Should().Be(before.NextRequestAllowedAt);
+        after.LastRequestAt.Should().Be(before.LastRequestAt);
+    }
+
+    [Fact]
+    public async Task GetNextRequestAllowedAtAsync_NoRowExists_ReturnsNow()
+    {
+        FakeWildberriesMethodThrottleRepository repository = new();
+        WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions());
+
+        DateTimeOffset before = DateTimeOffset.UtcNow;
+        DateTimeOffset nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
+            ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        DateTimeOffset after = DateTimeOffset.UtcNow;
+
+        nextAllowed.Should().BeOnOrAfter(before);
+        nextAllowed.Should().BeOnOrBefore(after);
     }
 }

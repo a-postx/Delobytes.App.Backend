@@ -46,4 +46,12 @@ public class OrdersPage
     /// cursor and retry later rather than treat this as a completed empty day.
     /// </summary>
     public bool Throttled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the instant the caller may retry this request. Required (non-null) when
+    /// <see cref="Throttled"/> is <c>true</c>: the newly reserved slot when the limiter refused
+    /// the attempt, or the server-advised instant computed from a <c>429</c>. Null when
+    /// <see cref="Throttled"/> is <c>false</c>.
+    /// </summary>
+    public DateTimeOffset? RetryAt { get; set; }
 }

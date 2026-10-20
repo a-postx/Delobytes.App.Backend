@@ -17,6 +17,11 @@ namespace Delobytes.App.Backend.BackgroundServices;
 /// </summary>
 public class SchedulerHostedService : BackgroundService
 {
+    /// <summary>
+    /// SystemChannelTemplate.Code for Wildberries connections, compared case-insensitively.
+    /// </summary>
+    private const string WildberriesChannelCode = "wildberries";
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BackgroundJobsOptions _options;
     private readonly ILogger<SchedulerHostedService> _logger;
@@ -101,7 +106,7 @@ public class SchedulerHostedService : BackgroundService
             IJobScheduleRepository scheduleRepository = scope.ServiceProvider.GetRequiredService<IJobScheduleRepository>();
             ITenantSettingsProvider tenantSettingsProvider = scope.ServiceProvider.GetRequiredService<ITenantSettingsProvider>();
 
-            Connection? connection = await connectionRepository.FindByIdAsync(schedule.ConnectionId, cancellationToken);
+            Connection? connection = await connectionRepository.FindByIdWithTemplateAsync(schedule.ConnectionId, cancellationToken);
 
             if (connection == null || !connection.IsActive)
             {
@@ -125,6 +130,29 @@ public class SchedulerHostedService : BackgroundService
                     schedule.Id,
                     schedule.ConnectionId);
                 return;
+            }
+
+            if (schedule.JobType == JobType.OrdersImport
+                && string.Equals(connection.SystemChannelTemplate?.Code, WildberriesChannelCode, StringComparison.OrdinalIgnoreCase))
+            {
+                IWildberriesRateLimiter rateLimiter = scope.ServiceProvider.GetRequiredService<IWildberriesRateLimiter>();
+
+                DateTimeOffset nextAllowedAt = await rateLimiter.GetNextRequestAllowedAtAsync(
+                    connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
+
+                if (nextAllowedAt > now)
+                {
+                    // Same semantics as the hasActiveJob skip above: NextRunAt stays untouched so
+                    // the schedule is re-evaluated on every subsequent tick until the limiter
+                    // slot opens, instead of waiting for the next cron boundary.
+                    _logger.LogDebug(
+                        "SchedulerHostedService: schedule {ScheduleId} skipped, Wildberries rate " +
+                        "limiter slot for connection {ConnectionId} is not available until {NextAllowedAt:O}.",
+                        schedule.Id,
+                        schedule.ConnectionId,
+                        nextAllowedAt);
+                    return;
+                }
             }
 
             JobRun jobRun = new JobRun

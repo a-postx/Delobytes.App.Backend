@@ -102,15 +102,30 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
-    public Task<List<JobRun>> GetPendingJobsAsync(Guid tenantId, int limit, CancellationToken cancellationToken)
+    public Task<List<JobRun>> GetPendingJobsAsync(
+        Guid tenantId, int limit, DateTimeOffset now, CancellationToken cancellationToken)
     {
         // The current ITenantContext already restricts the query via the global query filter;
         // the explicit TenantId comparison guards against a mismatched ambient context.
         return _context.JobRuns
-            .Where(j => EF.Property<Guid>(j, "TenantId") == tenantId && j.Status == JobStatus.Pending)
+            .Where(j => EF.Property<Guid>(j, "TenantId") == tenantId
+                && j.Status == JobStatus.Pending
+                && (j.NotBefore == null || j.NotBefore <= now))
             .OrderBy(j => j.CreatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> HasPendingJobAsync(
+        Guid connectionId, JobType jobType, Guid excludeJobRunId, CancellationToken cancellationToken)
+    {
+        return _context.JobRuns.AnyAsync(
+            j => j.ConnectionId == connectionId
+                && j.JobType == jobType
+                && j.Status == JobStatus.Pending
+                && j.Id != excludeJobRunId,
+            cancellationToken);
     }
 
     /// <inheritdoc/>
