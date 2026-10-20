@@ -4,7 +4,6 @@ using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
-using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -23,7 +22,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
-    public const int BatchSize = 10;
+    public const int BatchSize = 30;
 
     /// <summary>
     /// Hard bound on the number of HTTP requests one run may issue. Bisection of a window does

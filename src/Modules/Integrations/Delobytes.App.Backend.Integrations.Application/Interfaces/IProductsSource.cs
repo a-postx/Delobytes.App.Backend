@@ -1,11 +1,11 @@
 using Delobytes.App.Backend.Integrations.Application.Models;
 
-namespace Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
+namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 
 /// <summary>
 /// Channel-neutral capability for retrieving product cards. Implemented by API clients that
 /// support product catalog sync, so a new job type touching only orders does not require
-/// changes to <see cref="Interfaces.IChannelApiClient"/> across every marketplace.
+/// changes to <see cref="IChannelApiClient"/> across every marketplace.
 /// </summary>
 public interface IProductsSource
 {

@@ -9,7 +9,6 @@ using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
-using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -391,12 +390,12 @@ public class ProcessOrdersImportConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_25Orders_PublishesMultipleBatches()
+    public async Task ProcessAsync_75Orders_PublishesMultipleBatches()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
         JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
-        List<ChannelOrderSnapshot> orders = BuildOrders(25);
+        List<ChannelOrderSnapshot> orders = BuildOrders(75);
 
         SetupDefaults(jobRun);
 

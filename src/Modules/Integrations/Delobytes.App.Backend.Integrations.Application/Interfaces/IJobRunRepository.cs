@@ -127,3 +127,16 @@ public interface IJobRunRepository
     /// </summary>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Aggregated counters across all batch results for a single JobRun.
+/// </summary>
+public sealed class JobRunBatchResultTotals
+{
+    public int TotalProcessed { get; init; }
+    public int TotalCreated { get; init; }
+    public int TotalUpdated { get; init; }
+    public int TotalSkipped { get; init; }
+    public int TotalFailed { get; init; }
+    public string? CombinedErrors { get; init; }
+}

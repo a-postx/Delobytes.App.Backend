@@ -4,7 +4,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
-/// Channel-neutral page of product cards returned by <see cref="Services.MarketplaceClients.IProductsSource"/>.
+/// Channel-neutral page of product cards returned by <see cref="Interfaces.IProductsSource"/>.
 /// </summary>
 public class ProductCardsPage
 {

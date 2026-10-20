@@ -2,7 +2,6 @@ using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Options;
-using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;

@@ -1,6 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.Models;
 
-namespace Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
+namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 
 /// <summary>
 /// Channel-neutral capability for retrieving orders. Implemented by API clients that support

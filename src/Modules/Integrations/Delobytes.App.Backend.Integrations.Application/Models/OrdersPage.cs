@@ -3,7 +3,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
-/// Channel-neutral page of orders returned by <see cref="Services.MarketplaceClients.IOrdersSource"/>.
+/// Channel-neutral page of orders returned by <see cref="Interfaces.IOrdersSource"/>.
 /// </summary>
 public class OrdersPage
 {

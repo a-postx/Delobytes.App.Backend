@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
-/// Channel-neutral request for one page of orders, used by <see cref="Services.MarketplaceClients.IOrdersSource"/>.
+/// Channel-neutral request for one page of orders, used by <see cref="Interfaces.IOrdersSource"/>.
 /// </summary>
 public class OrdersRequest
 {

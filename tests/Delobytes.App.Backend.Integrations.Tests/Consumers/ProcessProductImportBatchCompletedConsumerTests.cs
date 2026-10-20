@@ -326,8 +326,8 @@ public class ProcessProductImportBatchCompletedConsumerTests
 
         JobRunBatchResultTotals totals = new JobRunBatchResultTotals
         {
-            TotalProcessed = 10,
-            TotalCreated = 7,
+            TotalProcessed = 30,
+            TotalCreated = 27,
             TotalUpdated = 3,
             TotalSkipped = 0,
             TotalFailed = 0,
@@ -382,7 +382,7 @@ public class ProcessProductImportBatchCompletedConsumerTests
         await consumer.ProcessAsync(BuildEvent(jobRun.Id, isLastBatch: true), messageId, CancellationToken.None);
 
         jobRun.Status.Should().Be(JobStatus.Success);
-        jobRun.RecordsCreated.Should().Be(7);
+        jobRun.RecordsCreated.Should().Be(27);
         jobRun.RecordsUpdated.Should().Be(3);
         jobRun.Error.Should().BeNull();
         jobRun.CompletedAt.Should().NotBeNull();
@@ -427,8 +427,8 @@ public class ProcessProductImportBatchCompletedConsumerTests
 
         JobRunBatchResultTotals totals = new JobRunBatchResultTotals
         {
-            TotalProcessed = 10,
-            TotalCreated = 6,
+            TotalProcessed = 30,
+            TotalCreated = 26,
             TotalUpdated = 2,
             TotalSkipped = 0,
             TotalFailed = 2,

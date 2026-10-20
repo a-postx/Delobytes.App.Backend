@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
-using Delobytes.App.Backend.Integrations.Application.Services.MarketplaceClients;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
