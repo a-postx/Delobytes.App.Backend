@@ -293,6 +293,44 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("JobTypeConfigurations", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersBackfillState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("MaxObservedLastChangeDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("NextDayToFetch")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("OldestDayInScope")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConnectionId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OrdersBackfillStates_ConnectionId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("OrdersBackfillStates", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
                 {
                     b.Property<Guid>("JobRunId")
@@ -480,6 +518,56 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("SystemChannelTemplates", "integrations");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.WildberriesMethodThrottle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CurrentIntervalSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("KeyFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("LastLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LastRemaining")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("LastRequestAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("LastRetryAfterSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LastStatusCode")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Method")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("NextRequestAllowedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ObservedWindowSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SuccessStreak")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeyFingerprint", "Method")
+                        .IsUnique()
+                        .HasDatabaseName("IX_WildberriesMethodThrottles_KeyFingerprint_Method");
+
+                    b.ToTable("WildberriesMethodThrottles", "integrations");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.SystemChannelTemplate", "SystemChannelTemplate")
@@ -525,6 +613,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.JobSchedule", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Connection");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersBackfillState", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.Connection", "Connection")
                         .WithMany()
