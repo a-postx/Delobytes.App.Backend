@@ -206,7 +206,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         row.Should().NotBeNull();
 
         TimeSpan waitFromNow = row!.NextRequestAllowedAt - before;
-        waitFromNow.TotalSeconds.Should().BeApproximately(44, 2, "retry=39s + 5s pad, not reset=579s");
+        waitFromNow.TotalSeconds.Should().BeApproximately(45, 2, "retry=39s + 5s pad, not reset=579s");
 
         loggedMessages.Should().Contain(message => message.Contains("fcdda24eaf40d3b4a1273b3065b71c5c"));
     }

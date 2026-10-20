@@ -10,8 +10,24 @@ public sealed record OrdersImportCheckpointPayload
 {
     /// <summary>
     /// Gets the number of batch results the aggregator must record before finalising the run.
+    /// While <see cref="IsFetchCompleted"/> is false, this value is the number of batches published
+    /// so far; once <see cref="IsFetchCompleted"/> is true, it is the final batch count.
     /// </summary>
     public int TotalBatches { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the orchestrator finished fetching all the work units for
+    /// this run. Null (for payloads written before this change) is treated as true (completed).
+    /// The aggregator finalises the run only when <see cref="IsFetchCompleted"/> != false and
+    /// the recorded batch results count equals <see cref="TotalBatches"/>.
+    /// </summary>
+    public bool? IsFetchCompleted { get; init; }
+
+    /// <summary>
+    /// Gets the handover watermark (the start instant for the first delta run after the backfill
+    /// and catch-up finish). Set only by the run that completes the catch-up phase (stage 5).
+    /// </summary>
+    public DateTimeOffset? HandoverWatermark { get; init; }
 
     /// <summary>
     /// Gets the newest source change instant the run observed, or null when the run fetched

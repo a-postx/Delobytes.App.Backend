@@ -147,18 +147,25 @@ public class ProcessOrdersBatchImportCompletedConsumer
 
         int recordedBatches = await _jobRunRepository.CountBatchResultsAsync(jobRun.Id, cancellationToken);
 
-        if (recordedBatches < payload.TotalBatches)
+        // A payload with IsFetchCompleted == null (written before this change) is treated as
+        // completed. Finalise only when the orchestrator finished fetching (IsFetchCompleted != false)
+        // and all the batches it announced have arrived (recordedBatches >= TotalBatches).
+        bool fetchCompleted = payload.IsFetchCompleted != false;
+
+        if (!fetchCompleted || recordedBatches < payload.TotalBatches)
         {
-            // Other batches are still being processed. Whichever result brings the count up to
-            // TotalBatches finalises the job — it is not necessarily the one the orchestrator
-            // flagged as terminal, since a small trailing batch can finish before its larger
-            // siblings. Counters are deliberately not written yet: they are an aggregate over every
-            // batch, so a mid-run write would publish a partial total as if it were the final one.
+            // Other batches are still being processed, or the orchestrator is still fetching and
+            // publishing more units. Whichever result brings the count up to TotalBatches after
+            // IsFetchCompleted becomes true finalises the job — it is not necessarily the one the
+            // orchestrator flagged as terminal, since a small trailing batch can finish before its
+            // larger siblings. Counters are deliberately not written yet: they are an aggregate over
+            // every batch, so a mid-run write would publish a partial total as if it were the final one.
             _logger.LogInformation(
-                "JobRun {JobRunId}: {Recorded}/{Total} batch results recorded, waiting for the rest",
+                "JobRun {JobRunId}: {Recorded}/{Total} batch results recorded, IsFetchCompleted={IsFetchCompleted}, waiting for the rest",
                 jobRun.Id,
                 recordedBatches,
-                payload.TotalBatches);
+                payload.TotalBatches,
+                payload.IsFetchCompleted);
 
             return;
         }
