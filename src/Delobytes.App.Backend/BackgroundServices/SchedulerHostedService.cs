@@ -189,6 +189,10 @@ public class SchedulerHostedService : BackgroundService
                 CreatedAt = now,
             };
 
+            _logger.LogInformation(
+                "SchedulerHostedService: About to create JobRun, current tenantContext.TenantId = {TenantId}",
+                tenantContext.TenantId);
+
             await jobRunRepository.CreateAsync(jobRun, cancellationToken);
 
             switch (schedule.JobType)
