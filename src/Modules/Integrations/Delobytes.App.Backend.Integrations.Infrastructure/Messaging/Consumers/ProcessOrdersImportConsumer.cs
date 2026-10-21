@@ -168,6 +168,14 @@ public class ProcessOrdersImportConsumer
         {
             jobRun.Status = JobStatus.Running;
             jobRun.StartedAt = _timeProvider.GetUtcNow();
+
+            // Clears a continuation's deferred marker as it starts running: IX_JobRuns_
+            // ActivePerConnectionType excludes rows with NotBefore set so that creating this
+            // continuation did not collide with the run it continues, and that exclusion must
+            // not outlive the deferral, or two genuinely active runs of the same (ConnectionId,
+            // JobType) could coexist without the index catching it.
+            jobRun.NotBefore = null;
+
             await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
 

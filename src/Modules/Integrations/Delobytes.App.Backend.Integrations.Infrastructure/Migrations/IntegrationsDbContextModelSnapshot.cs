@@ -174,7 +174,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.HasIndex("ConnectionId", "JobType")
                         .IsUnique()
                         .HasDatabaseName("IX_JobRuns_ActivePerConnectionType")
-                        .HasFilter("\"Status\" IN (0, 1)");
+                        .HasFilter("\"Status\" IN (0, 1) AND \"NotBefore\" IS NULL");
 
                     b.HasIndex("Status", "StartedAt")
                         .HasDatabaseName("IX_JobRuns_Status_StartedAt");

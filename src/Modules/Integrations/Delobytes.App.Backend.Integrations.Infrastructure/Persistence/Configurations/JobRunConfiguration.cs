@@ -63,11 +63,16 @@ public class JobRunConfiguration : IEntityTypeConfiguration<JobRun>
 
         // Enforces "one active job per (ConnectionId, JobType)" at the database level;
         // the HasActiveJobAsync check alone is not safe under concurrent requests.
-        // Status is mapped as int: 0=Pending, 1=Running (see JobStatus enum).
+        // Status is mapped as int: 0=Pending, 1=Running (see JobStatus enum). NotBefore IS NULL
+        // excludes a deferred continuation (Pending with a future NotBefore) created while the
+        // current run of the same (ConnectionId, JobType) is still Running/Pending: without this
+        // exclusion that insert violates the index, because two rows then satisfy "Status IN (0,
+        // 1)" at once. The continuation re-enters the index as soon as it becomes due and its
+        // NotBefore is cleared on dispatch (see ProcessOrdersImportConsumer.ProcessAsync).
         builder.HasIndex(j => new { j.ConnectionId, j.JobType })
             .IsUnique()
             .HasDatabaseName("IX_JobRuns_ActivePerConnectionType")
-            .HasFilter("\"Status\" IN (0, 1)");
+            .HasFilter("\"Status\" IN (0, 1) AND \"NotBefore\" IS NULL");
 
         builder.HasOne(j => j.Connection)
             .WithMany()
