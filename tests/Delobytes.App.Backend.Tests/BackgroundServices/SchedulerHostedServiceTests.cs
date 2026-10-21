@@ -27,7 +27,7 @@ namespace Delobytes.App.Backend.Tests.BackgroundServices;
 /// the parallelism limit, is the worker's job.
 /// </summary>
 [Collection("BackgroundServices")]
-public class SchedulerHostedServiceTests
+public partial class SchedulerHostedServiceTests
 {
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _connectionId = Guid.NewGuid();

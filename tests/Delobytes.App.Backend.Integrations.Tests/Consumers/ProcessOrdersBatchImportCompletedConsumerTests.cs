@@ -24,7 +24,7 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 /// handling, and the MassTransit adapter's use of the batch's deterministic BatchId (not the
 /// transport MessageId) as the idempotency key.
 /// </summary>
-public class ProcessOrdersBatchImportCompletedConsumerTests
+public partial class ProcessOrdersBatchImportCompletedConsumerTests
 {
     /// <summary>
     /// Fixed rather than DateTimeOffset.UtcNow, so assertions on the persisted watermark compare

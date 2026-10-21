@@ -26,7 +26,7 @@ using Xunit;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
-public class ProcessOrdersImportConsumerTests
+public partial class ProcessOrdersImportConsumerTests
 {
     private readonly FakeTimeProvider _timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
 

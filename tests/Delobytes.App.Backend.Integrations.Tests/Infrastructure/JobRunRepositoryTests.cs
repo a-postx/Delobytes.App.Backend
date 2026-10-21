@@ -18,7 +18,7 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 /// the worker, cross-tenant reads for the watchdog, and the active-job check used to
 /// enforce one Pending/Running job per (ConnectionId, JobType).
 /// </summary>
-public class JobRunRepositoryTests
+public partial class JobRunRepositoryTests
 {
     private static DbContextOptions<IntegrationsDbContext> BuildOptions()
     {

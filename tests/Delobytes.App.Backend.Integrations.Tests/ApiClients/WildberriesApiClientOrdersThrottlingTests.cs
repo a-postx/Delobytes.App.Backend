@@ -138,8 +138,9 @@ public class WildberriesApiClientOrdersThrottlingTests
                 return response;
             });
 
+        FakeWildberriesMethodThrottleRepository repository = new FakeWildberriesMethodThrottleRepository();
         WildberriesRateLimiter rateLimiter = BuildRealLimiter(
-            new FakeWildberriesMethodThrottleRepository(), new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
+            repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
 
         WildberriesApiClient client = BuildClient(mockHttp, rateLimiter);
 
@@ -152,6 +153,12 @@ public class WildberriesApiClientOrdersThrottlingTests
         first.RetryAt.Should().BeNull();
         second.Throttled.Should().BeTrue();
         second.RetryAt.Should().NotBeNull("a refused slot must carry the newly reserved next slot");
+        WildberriesMethodThrottle? stored = await repository.GetAsync(
+            WildberriesKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
+            WildberriesApiMethod.SupplierOrders,
+            CancellationToken.None);
+        stored.Should().NotBeNull();
+        second.RetryAt.Should().Be(stored!.NextRequestAllowedAt);
         second.Orders.Should().BeEmpty();
         second.HasMore.Should().BeFalse();
 

@@ -31,7 +31,7 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 /// fresh connection starts from, the one-request-per-calendar-day shape of the walk, where the run
 /// stops and why, and what the cursor and the checkpoint payload look like afterwards.
 /// </summary>
-public class ProcessOrdersImportConsumerBackfillTests
+public partial class ProcessOrdersImportConsumerBackfillTests
 {
     private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
 

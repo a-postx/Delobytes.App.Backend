@@ -28,7 +28,7 @@ namespace Delobytes.App.Backend.Tests.BackgroundServices;
 /// dispatch into the internal event that actually starts the orchestration consumer.
 /// </summary>
 [Collection("BackgroundServices")]
-public class WorkerHostedServiceTests
+public partial class WorkerHostedServiceTests
 {
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _connectionId = Guid.NewGuid();
