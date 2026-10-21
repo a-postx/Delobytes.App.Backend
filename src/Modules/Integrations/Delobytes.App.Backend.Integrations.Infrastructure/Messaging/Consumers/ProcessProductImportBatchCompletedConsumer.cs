@@ -12,8 +12,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// recorded (see <see cref="ProductsImportJob.TotalImportBatches"/>) — not simply when the batch
 /// flagged IsLastBatch happens to arrive, since a small trailing batch can finish before larger
 /// sibling batches still in flight. Idempotent: duplicate deliveries are skipped via MessageId
-/// deduplication, and concurrent finalisation attempts are serialised via JobRun's xmin
-/// concurrency token (see <see cref="Contracts.Interfaces.IRowVersionedEntity"/>).
+/// deduplication, and concurrent finalisation attempts are serialised via JobRun's xmin.
 /// </summary>
 public class ProcessProductImportBatchCompletedConsumer
 {
@@ -89,8 +88,7 @@ public class ProcessProductImportBatchCompletedConsumer
             return;
         }
 
-        // Cancelled fix: unlike the old SyncJob model (which dropped incoming results for a
-        // Cancelled job), the batch result is still recorded and its counters still accumulated,
+        // The batch result is still recorded and its counters still accumulated,
         // so a cancelled run reports what it actually completed instead of zeroes.
         JobRunBatchResult batchResult = new JobRunBatchResult
         {
@@ -119,11 +117,9 @@ public class ProcessProductImportBatchCompletedConsumer
             return;
         }
 
-        // The terminal batch is the only one that knows the final batch count (see
-        // ProcessProductsImportConsumer.PublishBatchAsync). Persist it on first sight so that
-        // later-arriving non-terminal batches — including ones that complete after this one —
-        // can themselves detect "all batches are in" and finalise the job, instead of only the
-        // batch literally flagged IsLastBatch being allowed to do so.
+        // The terminal batch is the only one that knows the final batch count.
+        // Persist it on first sight so that later-arriving non-terminal batches — including ones
+        // that complete after this one — can themselves detect "all batches are in".
         if (message.IsLastBatch)
         {
             importJob.TotalImportBatches = message.TotalBatches;
@@ -220,8 +216,7 @@ public class ProcessProductImportBatchCompletedConsumer
 
         // The watermark only advances on an actually successful run: a Failed/Cancelled run
         // must not move SyncCheckpoint forward, or the next run would skip records this one
-        // never confirmed. Connection.LastSyncAt, in contrast, records that *a* run completed
-        // at all (any status), per decision 12 — used for "last sync attempt" display, not resume.
+        // never confirmed.
         if (jobRun.Status == JobStatus.Success)
         {
             SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository.GetAsync(

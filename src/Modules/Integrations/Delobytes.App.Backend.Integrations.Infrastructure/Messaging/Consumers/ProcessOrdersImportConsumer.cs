@@ -16,9 +16,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
 /// Orchestrates an orders import run: computes the delta/backfill window from SyncCheckpoint,
-/// fetches the whole window (narrowing it while the endpoint reports a partial response), persists
-/// the expected batch count in JobCheckpoint and publishes OrdersBatchImportRequestedEvent per
-/// batch. Not user-cancellable (scheduled job).
+/// fetches the whole window (narrowing it while the endpoint reports a partial response).
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
@@ -26,8 +24,7 @@ public class ProcessOrdersImportConsumer
 
     /// <summary>
     /// Hard bound on the number of HTTP requests one run may issue. Bisection of a window does
-    /// not loop, but the bound protects against a pathological configuration (a floor far below
-    /// the requested window) turning one run into an unbounded request storm.
+    /// not loop, but the bound protects against a pathological configuration.
     /// </summary>
     public const int MaxRequestsPerRun = 1000;
 
@@ -39,6 +36,7 @@ public class ProcessOrdersImportConsumer
     private readonly IJobRunRepository _jobRunRepository;
     private readonly IJobCheckpointRepository _jobCheckpointRepository;
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
+    private readonly IOrdersBackfillStateRepository _ordersBackfillStateRepository;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
     private readonly JobRunExecutionContext _jobRunExecutionContext;
@@ -46,11 +44,6 @@ public class ProcessOrdersImportConsumer
     private readonly ILogger<ProcessOrdersImportConsumer> _logger;
     private readonly TimeSpan _minWindow;
     private readonly TimeSpan _backfillRunBudget;
-
-    /// <summary>
-    /// Repository for the per-connection backfill cursor.
-    /// </summary>
-    private readonly IOrdersBackfillStateRepository _ordersBackfillStateRepository;
 
     private readonly TimeProvider _timeProvider;
     private readonly IWildberriesRateLimiter _rateLimiter;
@@ -66,8 +59,7 @@ public class ProcessOrdersImportConsumer
 
     /// <summary>
     /// Rows the source reported as unmappable across every page of the current fetch. Reset per
-    /// fetch; non-zero always ends the run in failure, so it exists to make the count visible in
-    /// logs and checkpoints rather than to influence the outcome.
+    /// fetch.
     /// </summary>
     private int _rowsWithoutIdentity;
 
@@ -169,19 +161,11 @@ public class ProcessOrdersImportConsumer
             jobRun.Status = JobStatus.Running;
             jobRun.StartedAt = _timeProvider.GetUtcNow();
 
-            // Clears a continuation's deferred marker as it starts running: IX_JobRuns_
-            // ActivePerConnectionType excludes rows with NotBefore set so that creating this
-            // continuation did not collide with the run it continues, and that exclusion must
-            // not outlive the deferral, or two genuinely active runs of the same (ConnectionId,
-            // JobType) could coexist without the index catching it.
             jobRun.NotBefore = null;
 
             await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
 
-        // Correlates every HTTP call made through apiClient below with this JobRun, so
-        // RawApiResponseCaptureHandler can attribute captured rows to it. The finally below covers
-        // every exit path of the try, including the early returns inside it.
         _jobRunExecutionContext.SetCurrent(jobRun.Id);
 
         try
@@ -413,9 +397,12 @@ public class ProcessOrdersImportConsumer
             await _eventPublisher.PublishAsync(terminalBatchEvent, cancellationToken);
 
             _logger.LogInformation(
-                "JobRun {JobRunId}: branch={Branch}, fetched {Orders} orders in {Requests} requests, published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}",
+                "JobRun {JobRunId}: backfill={Backfill}, fetched {Orders} orders in {Requests} requests, " +
+                "published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}, stopReason={StopReason}, " +
+                "inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}, " +
+                "continuationId={ContinuationId}, continuationNotBefore={ContinuationNotBefore}",
                 jobRun.Id,
-                isBackfill ? "backfill" : "delta",
+                isBackfill,
                 fetchedOrdersCount,
                 requestsIssued,
                 payload.TotalBatches,
@@ -464,12 +451,9 @@ public class ProcessOrdersImportConsumer
     /// <summary>
     /// Loads the per-connection backfill cursor, creating it on first contact. A fresh cursor starts
     /// at today 00:00 MSK and walks backwards to today - <see cref="BackfillWindow"/>, which is the
-    /// scope the single-request backfill used to cover. Starting today rather than 90 days ago is
-    /// what puts recent orders in the UI after the first run.
+    /// scope the single-request backfill used to cover.
     /// </summary>
-    private async Task<OrdersBackfillState> GetOrCreateBackfillStateAsync(
-        Guid connectionId,
-        CancellationToken cancellationToken)
+    private async Task<OrdersBackfillState> GetOrCreateBackfillStateAsync(Guid connectionId, CancellationToken cancellationToken)
     {
         OrdersBackfillState? state = await _ordersBackfillStateRepository.GetAsync(connectionId, cancellationToken);
 
@@ -750,8 +734,6 @@ public class ProcessOrdersImportConsumer
     /// block, report the cap again, and never advance. Rows falling exactly on a boundary are
     /// reported by both siblings; the dedup dictionary collapses them into one order and unions
     /// their lines, so the bisection can cut through a cart without losing or duplicating a unit.
-    /// Rows the source could not identify fail the window outright: the dictionary only merges rows
-    /// that agree on identity, and an unidentified row has none to agree on.
     /// </summary>
     private async Task FetchWindowAsync(
         IOrdersSource ordersSource,
@@ -799,10 +781,6 @@ public class ProcessOrdersImportConsumer
             // "Which report is newer" and "which lines we have" are two independent questions.
             // IsLaterReport below answers only the first, and it decides the fields that are neither
             // derived from lines nor re-derivable after the merge (warehouse, region, substatus).
-            // The line union happens regardless of its result, because the newer report frequently
-            // carries a subset of the cart. A bisection splits carts, so half A can hold unit 1 and
-            // half B unit 2 of one gNumber; letting the winner's Lines replace the accumulated set
-            // would silently drop whichever unit the older half contributed.
             bool isIncomingLater = IsLaterReport(order, existing);
 
             List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines);
@@ -857,9 +835,9 @@ public class ProcessOrdersImportConsumer
 
         if (unknownSpan <= _minWindow)
         {
-            // Accepting the truncated response would silently drop orders, which is the defect this
-            // path exists to fix; the run fails instead so the operator sees a window granularity
-            // that the endpoint cannot serve rather than a partial import reported as success.
+            // Accepting the truncated response would silently drop orders so the operator sees
+            // a window granularity that the endpoint cannot serve rather than a partial import
+            // reported as success.
             _logger.LogWarning(
                 "JobRun {JobRunId}: window {From} - {To} still returns a partial response with {Remaining} left to read at the minimum granularity of {MinWindow}, failing the run",
                 jobRunId,
@@ -908,11 +886,7 @@ public class ProcessOrdersImportConsumer
     /// <see cref="ChannelOrderLineSnapshot.LineKey"/>. An unseen key is appended, keeping the lines
     /// already known; a key present on both sides keeps the version whose own
     /// <see cref="ChannelOrderLineSnapshot.StatusChangedAt"/> is later, and keeps the accumulated
-    /// version on an exact tie, so the result does not depend on arrival order. The comparison is per
-    /// line rather than per report: the order-level instant says nothing about which version of one
-    /// unit is fresher, and two reports that split a cart usually do not carry the same unit at all.
-    /// Returning a fresh list rather than mutating either argument is what lets
-    /// <see cref="ChannelOrderSnapshot"/> stay an immutable record without making Lines settable.
+    /// version on an exact tie, so the result does not depend on arrival order.
     /// </summary>
     private static List<ChannelOrderLineSnapshot> UnionLines(
         List<ChannelOrderLineSnapshot> existing,
@@ -970,9 +944,7 @@ public class ProcessOrdersImportConsumer
     /// (unparseable or absent) contributes nothing, and <c>OrderDate</c> is never substituted —
     /// it lives on a different time axis than the one the endpoint filters by, so folding it in
     /// would push the watermark past the served instant and drop the row from every later delta
-    /// run. The result is clamped to the run's own window end, since nothing the run fetched can
-    /// justify a later watermark; the checkpointed <paramref name="windowTo"/> makes that clamp
-    /// stable across redelivery.
+    /// run.
     /// </summary>
     private DateTimeOffset? GetMaxChangedAt(List<ChannelOrderSnapshot> orders, DateTimeOffset windowTo)
     {
@@ -1028,9 +1000,7 @@ public class ProcessOrdersImportConsumer
     /// Orders whether <paramref name="candidate"/> is a later report of the same order than
     /// <paramref name="current"/>. <c>StatusChangedAt</c> is the channel's own "as of" instant and
     /// decides; <c>OrderDate</c> breaks the tie where a channel reports no change time, and an
-    /// exact tie keeps the current report so the merge does not depend on arrival order. Note that
-    /// the snapshots are records whose <c>Lines</c> is a list, so value equality would be
-    /// reference-based anyway — comparing the instants is both correct and order-independent.
+    /// exact tie keeps the current report so the merge does not depend on arrival order.
     /// </summary>
     private static bool IsLaterReport(ChannelOrderSnapshot candidate, ChannelOrderSnapshot current)
     {

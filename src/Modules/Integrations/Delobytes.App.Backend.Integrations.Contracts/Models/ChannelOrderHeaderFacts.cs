@@ -2,15 +2,8 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Models;
 
 /// <summary>
 /// Cart-level fields that <see cref="ChannelOrderSnapshot"/> derives from its lines rather than
-/// reads from the payload. Produced by <see cref="Reduce"/> and by nothing else, so a cart assembled
-/// from several reports - or from several runs - cannot end up describing a header that contradicts
-/// its own line set.
+/// reads from the payload.
 /// </summary>
-/// <remarks>
-/// Lives in the contracts assembly rather than next to the mapper because the reduction has to run
-/// again after the lines are merged (in the orchestrator) and again after they are persisted (in
-/// Sales), and Sales does not reference the Integrations infrastructure.
-/// </remarks>
 public sealed record ChannelOrderHeaderFacts
 {
     /// <summary>
@@ -47,8 +40,7 @@ public sealed record ChannelOrderHeaderFacts
     /// <param name="rowOrderDates">
     /// Every placement instant reported for the cart, from all reports that contributed to it.
     /// Kept separate from <paramref name="lines"/> because the line snapshot does not carry the
-    /// placement time, and taking the minimum over each report's own minimum is the same as taking
-    /// it over their rows.
+    /// placement time.
     /// </param>
     /// <returns>The reduced cart-level fields.</returns>
     public static ChannelOrderHeaderFacts Reduce(

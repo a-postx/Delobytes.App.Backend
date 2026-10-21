@@ -111,11 +111,7 @@ public class ProcessProductsImportConsumer
         int batchSize = _options.BatchSize > 0 ? _options.BatchSize : 50;
         int batchNumber = 0;
 
-        // Resume from the saved checkpoint cursor when redelivered mid-import. Unlike the old
-        // SyncJob.NextCursor field, this lives in JobCheckpoint — per-task state that dies with
-        // the JobRun, as opposed to SyncCheckpoint's cross-run business watermark (not used here:
-        // the Wildberries product cards endpoint has no date-range parameter to resume by, only
-        // the opaque cursor already carried in JobCheckpoint).
+        // Resume from the saved checkpoint cursor when redelivered mid-import.
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
         ProductCardsCursor? cursor = DeserializeCursor(checkpoint?.Payload);
 
@@ -280,6 +276,7 @@ public class ProcessProductsImportConsumer
         catch (OperationCanceledException)
         {
             _logger.LogWarning("JobRun {JobRunId}: processing was cancelled", jobRun.Id);
+
             // Do not change status — let MassTransit redeliver. Checkpoint is already persisted.
             throw;
         }

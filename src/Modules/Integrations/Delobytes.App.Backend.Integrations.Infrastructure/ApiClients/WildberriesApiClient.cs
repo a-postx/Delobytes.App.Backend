@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -22,38 +21,15 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// </summary>
 public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource
 {
-    /// <summary>
-    /// Number of attempts made when a response body cannot be deserialized. Kept small because
-    /// a payload that trips the deserializer is usually deterministic within one import run.
-    /// </summary>
     private const int DeserializationMaxAttempts = 3;
-
-    /// <summary>
-    /// Wildberries settles in rubles; the orders endpoint reports no currency field of its own.
-    /// </summary>
     private const string WildberriesCurrency = "RUB";
 
     /// <summary>
-    /// Longest <c>gNumber</c> or <c>srid</c>/sticker identity this mapper accepts. Matches the
-    /// <c>HasMaxLength(100)</c> on both <c>Order.ExternalOrderId</c> and <c>OrderLine.LineKey</c>
+    /// Longest <c>gNumber</c> or <c>srid</c>/sticker identity this mapper accepts.
     /// </summary>
     private const int MaxIdentityLength = 100;
-
-    /// <summary>
-    /// Maximum number of response body characters written to logs.
-    /// </summary>
     private const int ResponseBodyLogLimit = 500;
-
-    /// <summary>
-    /// Namespace prefix for order identities derived from the sticker. Wildberries reports
-    /// <c>srid</c> as an opaque token, so a prefixed sticker cannot be mistaken for one and,
-    /// unlike a bare sticker, cannot be confused with any identifier a future payload adds.
-    /// </summary>
     private const string StickerIdentityPrefix = "wb-stk:";
-
-    /// <summary>
-    /// Base delay between deserialization attempts; grows linearly per attempt.
-    /// </summary>
     private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
@@ -72,6 +48,23 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private Guid? _templateId;
 
     private string? _channelCode;
+
+    /// <summary>
+    /// Base delay before retrying a response body that failed to deserialize. Exposed as a
+    /// settable property rather than a constructor parameter so the container keeps a single
+    /// unambiguous constructor; tests shorten it to keep retry assertions fast.
+    /// </summary>
+    internal TimeSpan DeserializationRetryDelay { get; set; } = DefaultDeserializationRetryDelay;
+
+    /// <inheritdoc/>
+    public string ChannelCode
+    {
+        get
+        {
+            return _channelCode ?? throw new InvalidOperationException(
+            "Template must be bound before reading ChannelCode. Obtain the client from IChannelApiClientFactory.");
+        }
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WildberriesApiClient"/> class.
@@ -93,25 +86,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     }
 
     /// <summary>
-    /// Base delay before retrying a response body that failed to deserialize. Exposed as a
-    /// settable property rather than a constructor parameter so the container keeps a single
-    /// unambiguous constructor; tests shorten it to keep retry assertions fast.
-    /// </summary>
-    internal TimeSpan DeserializationRetryDelay { get; set; } = DefaultDeserializationRetryDelay;
-
-    /// <inheritdoc/>
-    public string ChannelCode
-    {
-        get
-        {
-            return _channelCode ?? throw new InvalidOperationException(
-            "Template must be bound before reading ChannelCode. Obtain the client from IChannelApiClientFactory.");
-        }
-    }
-
-    /// <summary>
     /// Binds this client instance to a system channel template.
-    /// Called by <see cref="ChannelApiClientFactory"/> before the client is returned to a caller.
     /// Both the template identity and the channel code are written here and nowhere else, so
     /// they cannot disagree.
     /// </summary>
@@ -187,6 +162,35 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             _logger.LogWarning(ex, "Failed to retrieve Wildberries seller info.");
             return null;
         }
+    }
+
+    /// <inheritdoc cref="IProductsSource.GetProductCardsAsync"/>
+    ///
+    /// <remarks>
+    /// Thin adapter over the cursor/limit overload below: the capability interface carries no
+    /// success/failure flag of its own, so a non-success <see cref="ApiResponse{T}"/> is raised
+    /// as an exception instead of being returned silently.
+    /// </remarks>
+    public async Task<ProductCardsPage> GetProductCardsAsync(
+        Guid connectionId, ProductCardsPageRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ApiResponse<ProductCardsData> response =
+            await GetProductCardsAsync(connectionId, request.Cursor, request.Limit, cancellationToken);
+
+        if (!response.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Failed to retrieve Wildberries product cards: {response.ErrorMessage}");
+        }
+
+        return new ProductCardsPage
+        {
+            Cards = response.Data?.Cards.ToList() ?? new List<WildberriesCardSnapshot>(),
+            NextCursor = response.Data?.NextCursor,
+            TotalCount = response.Data?.TotalCount ?? 0
+        };
     }
 
     /// <inheritdoc/>
@@ -361,9 +365,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             }
             catch (JsonException ex) when (attempt < DeserializationMaxAttempts)
             {
-                // Retried in-place: a single malformed payload should not fail the whole import
-                // job. The HTTP request is rebuilt each attempt because HttpRequestMessage
-                // cannot be sent twice.
+                // Retried in-place: a single malformed payload should not fail the whole import job.
                 TimeSpan delay = DeserializationRetryDelay * attempt;
 
                 _logger.LogWarning(
@@ -429,61 +431,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         }
     }
 
-    /// <inheritdoc cref="IProductsSource.GetProductCardsAsync"/>
-    ///
-    /// <remarks>
-    /// Thin adapter over the cursor/limit overload above: the capability interface carries no
-    /// success/failure flag of its own, so a non-success <see cref="ApiResponse{T}"/> is raised
-    /// as an exception instead of being returned silently.
-    /// </remarks>
-    public async Task<ProductCardsPage> GetProductCardsAsync(
-        Guid connectionId, ProductCardsPageRequest request, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        ApiResponse<ProductCardsData> response =
-            await GetProductCardsAsync(connectionId, request.Cursor, request.Limit, cancellationToken);
-
-        if (!response.IsSuccess)
-        {
-            throw new InvalidOperationException(
-                $"Failed to retrieve Wildberries product cards: {response.ErrorMessage}");
-        }
-
-        return new ProductCardsPage
-        {
-            Cards = response.Data?.Cards.ToList() ?? new List<WildberriesCardSnapshot>(),
-            NextCursor = response.Data?.NextCursor,
-            TotalCount = response.Data?.TotalCount ?? 0
-        };
-    }
-
     /// <inheritdoc cref="IOrdersSource.GetOrdersAsync"/>
     ///
     /// <remarks>
     /// The underlying endpoint (<c>/api/v1/supplier/orders</c>) accepts only <c>dateFrom</c> and
     /// <c>flag</c>: there is no server-side <c>dateTo</c> and no page size, so
     /// <see cref="OrdersRequest.DateTo"/> is applied client-side after the fetch.
-    /// <see cref="OrdersRequest.Limit"/> is advisory only and is deliberately not applied here -
-    /// the endpoint cannot honour it, and truncating locally would drop orders the caller asked
-    /// for, which is exactly the data loss this path must not reintroduce.
-    /// The endpoint does cap a single response by <see cref="WildberriesImportOptions.MaxOrdersPerResponse"/>
-    /// rows, so <see cref="OrdersPage.HasMore"/> reports whether the response was a partial subset
-    /// of the requested window and the caller has to narrow it and fetch again.
-    /// <para>
-    /// Coverage: <c>!hasMore</c> is reported as <see cref="OrdersPage.CoveredUntil"/> equal to
-    /// <see cref="OrdersRequest.DateTo"/> <b>only</b> because a <c>flag=1</c> request spans at most
-    /// one calendar day here. <c>flag=1</c> is a single-day selector, not a range filter: a request
-    /// whose window spans several days returns the orders of exactly one of them and would still
-    /// look complete, so a full response over a multi-day window would claim coverage it never
-    /// fetched. Such a request is rejected with <see cref="ArgumentException"/> below rather than
-    /// answered with a misleading page.
-    /// </para>
-    /// <para>
-    /// Pacing: every call passes the adaptive limiter first. A refused slot or a <c>429</c> both
-    /// surface as <see cref="OrdersPage.Throttled"/> and never as an exception, because a throttle
-    /// is a scheduling fact the caller acts on, not a failure of the run.
-    /// </para>
     /// </remarks>
     public async Task<OrdersPage> GetOrdersAsync(
         Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
@@ -582,23 +535,13 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>();
         Dictionary<string, List<WildberriesOrderDto>> rowsByOrderKey = new Dictionary<string, List<WildberriesOrderDto>>(StringComparer.Ordinal);
 
-        // Keeps the emitted snapshot order tied to the first row of each cart rather than to
-        // Dictionary enumeration, so the batch a cart lands in does not move between runs.
         List<string> orderKeysInArrivalOrder = new List<string>();
 
         int rowsWithoutIdentity = 0;
 
-        // Bounds how far into the window the returned rows reach. Recorded before the window filter
-        // below, because a row past dateTo is exactly what consumed the response cap, and so is what
-        // limits what this response can claim to have covered.
         DateTimeOffset? coveredUntil = null;
         DateTimeOffset? previousSelectionInstant = null;
 
-        // A capped response is a prefix of the rows, so the largest returned instant bounds what was
-        // served only while the rows arrive in ascending order of the instant they were selected by.
-        // The endpoint orders by lastChangeDate while flag=1 selects by order date, so the two axes
-        // coincide for a delta run and may diverge for a backfill; taking the maximum there would
-        // claim coverage of a region whose rows were cut off, and the caller would resume past them.
         bool coversContiguousPrefix = true;
 
         foreach (WildberriesOrderDto order in orders)
@@ -723,9 +666,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         };
     }
 
-    /// <summary>
-    /// Builds the page returned when no request was issued or the API refused it.
-    /// </summary>
     private static OrdersPage CreateThrottledPage(DateTimeOffset retryAt)
     {
         return new OrdersPage
@@ -739,9 +679,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         };
     }
 
-    /// <summary>
-    /// Records a <c>429</c> with the rate limiter and returns the throttled page.
-    /// </summary>
     private async Task<OrdersPage> HandleThrottledResponseAsync(
         string apiKey,
         Guid connectionId,
@@ -779,10 +716,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// <summary>
     /// Resolves the identity of one ordered unit. <c>srid</c> is the documented per-order id and is
     /// returned unmodified; <c>sticker</c> is the only other field the payload guarantees one of
-    /// per ordered unit, and is returned with a prefix so it stays recognisable as a derived
-    /// identity. Everything else is mutable — <c>lastChangeDate</c>, <c>isCancel</c>,
-    /// <c>cancelDate</c> and the price fields all change after the fact — and keying on any of
-    /// them would re-key existing rows on the next import.
+    /// per ordered unit, and is returned with a prefix so it stays recognisable as a derived identity.
     /// </summary>
     /// <remarks>
     /// The result is a line identity, not an order identity: it is unique within the owning order,
@@ -808,21 +742,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// one cart and the only one that is immutable, so it is the sole source of the order key; a row
     /// that does not report one has no placeable order identity and yields null.
     /// </summary>
-    /// <remarks>
-    /// There is deliberately no fallback to the line identity. A cart reported with <c>gNumber</c> in
-    /// one run and without it in another would then be persisted twice, under two different keys,
-    /// and both rows would satisfy every constraint — the duplicate would be invisible to the
-    /// database and findable only by eye. A duplicate is worse than a visible failure, so the row is
-    /// counted and the page fails instead. The line identity may still be derived from a sticker: a
-    /// line is addressed inside an order, and that order is stable.
-    /// <para>
-    /// <c>Order</c> is unique on (TenantId, ChannelId, ExternalOrderId); that is sufficient because
-    /// a tenant may bind at most one active connection per channel, enforced by
-    /// <c>CreateConnectionCommandHandler</c> through <c>HasActiveConnectionForChannelAsync</c>.
-    /// Two cabinets on one channel cannot coexist, so two <c>gNumber</c> sequences cannot meet on
-    /// this index.
-    /// </para>
-    /// </remarks>
     private static string? GetOrderKey(WildberriesOrderDto dto)
     {
         return string.IsNullOrWhiteSpace(dto.GNumber) ? null : dto.GNumber;
@@ -860,12 +779,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         return responseBody.Substring(0, ResponseBodyLogLimit);
     }
 
-    /// <summary>
-    /// Resolves the instant the endpoint selects on: flag=0 (delta) selects by lastChangeDate,
-    /// flag=1 (backfill) by the order date. This is the axis a capped response is bounded by, so it
-    /// is the only correct source for how far the response reached. Null when the row carries no
-    /// parseable instant on that axis.
-    /// </summary>
     private static DateTimeOffset? GetSelectionInstant(WildberriesOrderDto dto, int flag)
     {
         return flag == 0
@@ -873,11 +786,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             : ParseMoscowTimestamp(dto.Date);
     }
 
-    /// <summary>
-    /// Filters out rows outside the requested window. flag=0 (delta) windows by lastChangeDate;
-    /// flag=1 (backfill) windows by the order date itself, matching what each flag selects on
-    /// the Wildberries side.
-    /// </summary>
     private static bool IsWithinRequestedWindow(WildberriesOrderDto dto, int flag, DateTimeOffset dateToMsk)
     {
         DateTimeOffset? reference = GetSelectionInstant(dto, flag);
@@ -905,16 +813,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             .ToUniversalTime();
     }
 
-    /// <summary>
-    /// Maps the rows of one cart to a snapshot. <paramref name="orderKey"/> is resolved by the
-    /// caller through <see cref="GetOrderKey"/>; the rows are the units of that one cart and each
-    /// becomes a line.
-    /// </summary>
-    /// <remarks>
-    /// The header fields are reduced from the rows because the snapshot describes the cart, and the
-    /// cart has no header of its own in the payload. Fields Wildberries reports per unit and that
-    /// have no cart-level meaning take the first row's value rather than an invented merge rule.
-    /// </remarks>
     private ChannelOrderSnapshot MapToOrderSnapshot(string orderKey, List<WildberriesOrderDto> rows)
     {
         WildberriesOrderDto first = rows[0];
@@ -977,10 +875,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         };
     }
 
-    /// <summary>
-    /// Maps one row to one line. <paramref name="lineKey"/> is resolved by the caller through
-    /// <see cref="GetLineKey"/> and used verbatim so the line keeps the identity it was grouped by.
-    /// </summary>
     private static ChannelOrderLineSnapshot MapToOrderLine(WildberriesOrderDto dto, string lineKey)
     {
         return new ChannelOrderLineSnapshot
@@ -1125,10 +1019,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         [JsonPropertyName("srid")]
         public string? Srid { get; init; }
 
-        /// <summary>
-        /// Gets the identifier of the item sticker: one per ordered unit, which makes it the only
-        /// field besides <see cref="Srid"/> that Wildberries guarantees unique per order.
-        /// </summary>
         [JsonPropertyName("sticker")]
         public string? Sticker { get; init; }
     }
