@@ -521,6 +521,7 @@ public class ProcessOrdersImportConsumer
             };
 
             OrdersPage page;
+
             try
             {
                 page = await GetPacedOrdersAsync(ordersSource, connection, request, cancellationToken);
@@ -639,12 +640,26 @@ public class ProcessOrdersImportConsumer
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
             DateTimeOffset now = _timeProvider.GetUtcNow();
+
             if (now >= _deadline)
             {
-                DateTimeOffset nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
+                DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
                     connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
-                throw new OrdersFetchStoppedException("Budget", nextAllowedAt > now ? nextAllowedAt : now);
+
+                DateTimeOffset budgetTime;
+
+                if (nextAllowedAt is not null)
+                {
+                    budgetTime = nextAllowedAt.Value > now ? nextAllowedAt.Value : now;
+                }
+                else
+                {
+                    budgetTime = now;
+                }
+
+                throw new OrdersFetchStoppedException("Budget", budgetTime);
             }
 
             if (_requestsIssued >= MaxRequestsPerRun)
@@ -655,6 +670,7 @@ public class ProcessOrdersImportConsumer
             _lastRequestStartedAt = now;
             _requestsIssued++;
             OrdersPage page = await ordersSource.GetOrdersAsync(connection.Id, request, cancellationToken);
+
             if (!page.Throttled)
             {
                 return page;

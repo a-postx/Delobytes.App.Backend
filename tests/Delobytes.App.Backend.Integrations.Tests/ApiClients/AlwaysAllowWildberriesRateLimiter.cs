@@ -36,12 +36,13 @@ internal sealed class AlwaysAllowWildberriesRateLimiter : IWildberriesRateLimite
         return Task.FromResult(DateTimeOffset.UtcNow);
     }
 
-    public Task<DateTimeOffset> GetNextRequestAllowedAtAsync(
+    public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
         string apiKey,
         WildberriesApiMethod method,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(DateTimeOffset.UtcNow);
+        DateTimeOffset? result = DateTimeOffset.UtcNow;
+        return Task.FromResult(result);
     }
 
     public Task ReportSuccessAsync(

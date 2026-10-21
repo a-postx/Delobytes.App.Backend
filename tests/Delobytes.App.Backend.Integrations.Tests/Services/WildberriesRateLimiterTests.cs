@@ -448,7 +448,7 @@ public class WildberriesRateLimiterTests
 
         WildberriesMethodThrottle? before = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
-        DateTimeOffset nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
+        DateTimeOffset? nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
             ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
         WildberriesMethodThrottle? after = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
@@ -459,17 +459,14 @@ public class WildberriesRateLimiterTests
     }
 
     [Fact]
-    public async Task GetNextRequestAllowedAtAsync_NoRowExists_ReturnsNow()
+    public async Task GetNextRequestAllowedAtAsync_NoRowExists_ReturnsNull()
     {
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions());
 
-        DateTimeOffset before = DateTimeOffset.UtcNow;
-        DateTimeOffset nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
+        DateTimeOffset? nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
             ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
-        DateTimeOffset after = DateTimeOffset.UtcNow;
 
-        nextAllowed.Should().BeOnOrAfter(before);
-        nextAllowed.Should().BeOnOrBefore(after);
+        nextAllowed.Should().BeNull();
     }
 }

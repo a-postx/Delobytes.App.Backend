@@ -144,17 +144,16 @@ public class WildberriesRateLimiter : IWildberriesRateLimiter
     }
 
     /// <inheritdoc/>
-    public async Task<DateTimeOffset> GetNextRequestAllowedAtAsync(
+    public async Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
         string apiKey,
         WildberriesApiMethod method,
         CancellationToken cancellationToken)
     {
         string fingerprint = WildberriesKeyFingerprint.Compute(apiKey);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
 
         WildberriesMethodThrottle? throttle = await _repository.GetAsync(fingerprint, method, cancellationToken);
 
-        return throttle?.NextRequestAllowedAt ?? now;
+        return throttle?.NextRequestAllowedAt;
     }
 
     /// <inheritdoc/>

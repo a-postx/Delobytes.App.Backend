@@ -39,7 +39,7 @@ public interface IWildberriesRateLimiter
     /// without reserving a slot or taking the advisory lock. Returns now when no pacing row exists
     /// yet.
     /// </summary>
-    public Task<DateTimeOffset> GetNextRequestAllowedAtAsync(
+    public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
         string apiKey,
         WildberriesApiMethod method,
         CancellationToken cancellationToken);

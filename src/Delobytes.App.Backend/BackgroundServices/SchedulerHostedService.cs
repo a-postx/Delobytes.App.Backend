@@ -161,14 +161,12 @@ public class SchedulerHostedService : BackgroundService
             {
                 IWildberriesRateLimiter rateLimiter = scope.ServiceProvider.GetRequiredService<IWildberriesRateLimiter>();
 
-                DateTimeOffset nextAllowedAt = await rateLimiter.GetNextRequestAllowedAtAsync(
+                DateTimeOffset? nextAllowedAt = await rateLimiter.GetNextRequestAllowedAtAsync(
                     connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
 
-                if (nextAllowedAt > now)
+                if (nextAllowedAt is not null && nextAllowedAt > now)
                 {
-                    // Same semantics as the hasActiveJob skip above: NextRunAt stays untouched so
-                    // the schedule is re-evaluated on every subsequent tick until the limiter
-                    // slot opens, instead of waiting for the next cron boundary.
+                    // Ждём, не пишем в базу каждый тик, когда очевидно что джоба будет завалена лимитером
                     _logger.LogDebug(
                         "SchedulerHostedService: schedule {ScheduleId} skipped, Wildberries rate " +
                         "limiter slot for connection {ConnectionId} is not available until {NextAllowedAt:O}.",
