@@ -49,7 +49,6 @@ public class OrdersBackfillStateRepository : IOrdersBackfillStateRepository
             existing.CompletedAt = state.CompletedAt;
             existing.CatchUpNextDay = state.CatchUpNextDay;
             existing.HandoverWatermark = state.HandoverWatermark;
-            existing.MaxObservedLastChangeDate = state.MaxObservedLastChangeDate;
         }
 
         await _context.SaveChangesAsync(cancellationToken);

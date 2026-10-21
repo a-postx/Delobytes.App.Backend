@@ -93,7 +93,6 @@ public partial class JobRunRepositoryTests
             OrdersBackfillState state = new OrdersBackfillState
             {
                 ConnectionId = connection.Id, OldestDayInScope = now.AddDays(-90), NextDayToFetch = now,
-                MaxObservedLastChangeDate = now.AddDays(-1),
             };
             await repository.UpsertAsync(state, default);
             context.ChangeTracker.Clear();
@@ -111,7 +110,6 @@ public partial class JobRunRepositoryTests
             completed.HandoverWatermark.Should().Be(now.AddMinutes(-30));
             completed.IsCompleted.Should().BeTrue();
             completed.CompletedAt.Should().Be(now);
-            completed.MaxObservedLastChangeDate.Should().Be(now.AddDays(-1));
             (await context.OrdersBackfillStates.CountAsync()).Should().Be(1);
         }
     }
@@ -129,7 +127,6 @@ public partial class JobRunRepositoryTests
             handover.IsNullable.Should().BeTrue();
             notBefore.FindAnnotation("Relational:DefaultValue").Should().BeNull();
             notBefore.FindAnnotation("Relational:DefaultValueSql").Should().BeNull();
-            context.Model.FindEntityType(typeof(OrdersBackfillState))!.FindProperty(nameof(OrdersBackfillState.MaxObservedLastChangeDate)).Should().NotBeNull();
         }
     }
     [Fact]

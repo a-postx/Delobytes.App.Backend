@@ -48,9 +48,4 @@ public sealed record OrdersImportCheckpointPayload
     /// Gets a value indicating whether this run completed catch-up.
     /// </summary>
     public bool IsBackfillCompleted { get; init; }
-
-    /// <summary>
-    /// Gets the legacy observed watermark retained for payload compatibility.
-    /// </summary>
-    public DateTimeOffset? MaxObservedLastChangeDate { get; init; }
 }

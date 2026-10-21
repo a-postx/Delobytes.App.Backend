@@ -204,7 +204,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             OldestDayInScope = state.OldestDayInScope,
             IsCompleted = state.IsCompleted,
             CompletedAt = state.CompletedAt,
-            MaxObservedLastChangeDate = state.MaxObservedLastChangeDate,
             CatchUpNextDay = state.CatchUpNextDay,
             HandoverWatermark = state.HandoverWatermark,
         };
@@ -423,7 +422,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         persistedPayload.IsBackfillCompleted.Should().BeTrue();
         persistedPayload.PagesFetched.Should().Be(expectedDays + 1);
 
-        persistedPayload.MaxObservedLastChangeDate.Should().BeNull();
         persistedPayload.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - ProcessOrdersImportConsumer.SafetyOverlap);
         _persistedState.CatchUpNextDay.Should().Be(newestDay);
         persistedPayload.MaxChangedAt.Should().BeNull();
@@ -469,7 +467,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _persistedState.Should().NotBeNull();
         _persistedState!.IsCompleted.Should().BeFalse();
         _persistedState.NextDayToFetch.Should().Be(unfetchedDay);
-        _persistedState.MaxObservedLastChangeDate.Should().BeNull();
 
         persistedPayload.Should().NotBeNull();
         persistedPayload!.IsBackfill.Should().BeTrue();
@@ -813,7 +810,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             OldestDayInScope = _timeProvider.GetUtcNow().AddDays(-90),
             IsCompleted = true,
             CompletedAt = _timeProvider.GetUtcNow().AddDays(-1),
-            MaxObservedLastChangeDate = lastChangedAt,
         };
 
         UseStateStore();

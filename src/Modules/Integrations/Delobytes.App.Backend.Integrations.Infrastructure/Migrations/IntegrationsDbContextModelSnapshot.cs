@@ -317,9 +317,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("boolean");
 
-                    b.Property<DateTimeOffset?>("MaxObservedLastChangeDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTimeOffset>("NextDayToFetch")
                         .HasColumnType("timestamp with time zone");
 

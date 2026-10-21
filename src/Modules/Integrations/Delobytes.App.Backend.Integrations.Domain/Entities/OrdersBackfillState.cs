@@ -49,11 +49,6 @@ public class OrdersBackfillState : ITenantScoped
     public DateTimeOffset? CompletedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the legacy observed watermark. Retained for stored data compatibility.
-    /// </summary>
-    public DateTimeOffset? MaxObservedLastChangeDate { get; set; }
-
-    /// <summary>
     /// Navigation property: the connection this backfill belongs to.
     /// </summary>
     public Connection Connection { get; set; } = default!;

@@ -24,9 +24,9 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     /// Fixed rather than DateTimeOffset.UtcNow so assertions on the persisted watermark compare
     /// against a known value instead of whatever time the test happened to run at.
     /// </summary>
-    private static readonly DateTimeOffset MaxObservedLastChangeDate = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset ReferenceInstant = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
-    private static readonly DateTimeOffset HandoverWatermark = MaxObservedLastChangeDate.AddHours(-1);
+    private static readonly DateTimeOffset HandoverWatermark = ReferenceInstant.AddHours(-1);
 
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
@@ -76,7 +76,6 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     private static OrdersImportCheckpointPayload BuildPayload(
         bool isBackfill,
         bool isBackfillCompleted,
-        DateTimeOffset? maxObservedLastChangeDate,
         DateTimeOffset? maxChangedAt)
     {
         return new OrdersImportCheckpointPayload
@@ -87,7 +86,6 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
             PagesFetched = 1,
             IsBackfill = isBackfill,
             IsBackfillCompleted = isBackfillCompleted,
-            MaxObservedLastChangeDate = maxObservedLastChangeDate,
             HandoverWatermark = isBackfillCompleted ? HandoverWatermark : null,
         };
     }
@@ -177,12 +175,11 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     public async Task ProcessAsync_BackfillRunNotFinished_LeavesExistingWatermarkUntouched()
     {
         JobRun jobRun = BuildJobRun();
-        DateTimeOffset existingWatermark = MaxObservedLastChangeDate.AddDays(-30);
+        DateTimeOffset existingWatermark = ReferenceInstant.AddDays(-30);
 
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: false,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, existingWatermark));
@@ -203,7 +200,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     public async Task ProcessAsync_BackfillRunNotFinished_StillRecordsSuccessAndRunId()
     {
         JobRun jobRun = BuildJobRun();
-        DateTimeOffset existingWatermark = MaxObservedLastChangeDate.AddDays(-30);
+        DateTimeOffset existingWatermark = ReferenceInstant.AddDays(-30);
         DateTimeOffset previousSuccessAt = DateTimeOffset.UtcNow.AddDays(-1);
 
         SyncCheckpoint existing = BuildExistingCheckpoint(jobRun, existingWatermark);
@@ -212,7 +209,6 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: false,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
         SetupFinalisingRun(jobRun, payload, existing);
@@ -236,7 +232,6 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: false,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
         SetupFinalisingRun(jobRun, payload, existingCheckpoint: null);
@@ -257,12 +252,11 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     public async Task ProcessAsync_BackfillRunFinishing_SeedsWatermarkFromHandover()
     {
         JobRun jobRun = BuildJobRun();
-        DateTimeOffset existingWatermark = MaxObservedLastChangeDate.AddDays(-30);
+        DateTimeOffset existingWatermark = ReferenceInstant.AddDays(-30);
 
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: true,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, existingWatermark));
@@ -283,10 +277,9 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: true,
-            maxObservedLastChangeDate: null,
             maxChangedAt: null);
 
-        SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, MaxObservedLastChangeDate.AddDays(-30)));
+        SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, ReferenceInstant.AddDays(-30)));
 
         ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
 
@@ -300,13 +293,12 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     public async Task ProcessAsync_DeltaRun_WritesWatermarkFromPayload()
     {
         JobRun jobRun = BuildJobRun();
-        DateTimeOffset previousWatermark = MaxObservedLastChangeDate.AddDays(-30);
+        DateTimeOffset previousWatermark = ReferenceInstant.AddDays(-30);
 
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: false,
             isBackfillCompleted: false,
-            maxObservedLastChangeDate: null,
-            maxChangedAt: MaxObservedLastChangeDate);
+            maxChangedAt: ReferenceInstant);
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, previousWatermark));
 
@@ -317,19 +309,18 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         // Regression guard: the delta branch must keep writing exactly what the orchestrator
         // observed, and must not consult any backfill field.
         _savedCheckpoint.Should().NotBeNull();
-        _savedCheckpoint!.LastChangedAt.Should().Be(MaxObservedLastChangeDate);
+        _savedCheckpoint!.LastChangedAt.Should().Be(ReferenceInstant);
     }
 
     [Fact]
     public async Task ProcessAsync_DeltaRunFetchedNothing_KeepsPreviousWatermark()
     {
         JobRun jobRun = BuildJobRun();
-        DateTimeOffset previousWatermark = MaxObservedLastChangeDate.AddDays(-30);
+        DateTimeOffset previousWatermark = ReferenceInstant.AddDays(-30);
 
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: false,
             isBackfillCompleted: false,
-            maxObservedLastChangeDate: null,
             maxChangedAt: null);
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, previousWatermark));
@@ -347,7 +338,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     public async Task ProcessAsync_BackfillBranchIsTakenFromPayload_NotFromState()
     {
         JobRun jobRun = BuildJobRun();
-        DateTimeOffset existingWatermark = MaxObservedLastChangeDate.AddDays(-30);
+        DateTimeOffset existingWatermark = ReferenceInstant.AddDays(-30);
 
         // The payload says the walk is still running while the running maximum is already known.
         // The aggregator must judge the run by the branch it took, never by a cursor row the
@@ -355,7 +346,6 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: false,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, existingWatermark));
@@ -376,10 +366,9 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: true,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
-        SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, MaxObservedLastChangeDate.AddDays(-30)));
+        SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, ReferenceInstant.AddDays(-30)));
 
         _jobRunRepo
             .Setup(r => r.GetBatchResultTotalsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
@@ -415,10 +404,9 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         OrdersImportCheckpointPayload payload = BuildPayload(
             isBackfill: true,
             isBackfillCompleted: true,
-            maxObservedLastChangeDate: MaxObservedLastChangeDate,
             maxChangedAt: null);
 
-        SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, MaxObservedLastChangeDate.AddDays(-30)));
+        SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, ReferenceInstant.AddDays(-30)));
 
         ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
 
@@ -431,6 +419,6 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         _savedCheckpoint!.LastChangedAt.Should().Be(HandoverWatermark);
         expectedWindowFrom.Should().Be(HandoverWatermark.Subtract(ProcessOrdersImportConsumer.SafetyOverlap));
-        expectedWindowFrom.Should().BeAfter(MaxObservedLastChangeDate.AddDays(-1));
+        expectedWindowFrom.Should().BeAfter(ReferenceInstant.AddDays(-1));
     }
 }

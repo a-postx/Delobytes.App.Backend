@@ -218,7 +218,6 @@ public partial class ProcessOrdersImportConsumerTests
                 OldestDayInScope = _timeProvider.GetUtcNow().AddDays(-90),
                 IsCompleted = true,
                 CompletedAt = DateTimeOffset.UtcNow,
-                MaxObservedLastChangeDate = null,
                 HandoverWatermark = _timeProvider.GetUtcNow().AddDays(-90),
             });
 

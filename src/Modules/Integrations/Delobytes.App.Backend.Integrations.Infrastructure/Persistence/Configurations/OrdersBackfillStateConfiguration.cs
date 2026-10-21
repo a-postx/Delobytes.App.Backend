@@ -34,8 +34,6 @@ public class OrdersBackfillStateConfiguration : IEntityTypeConfiguration<OrdersB
 
         builder.Property(s => s.HandoverWatermark);
 
-        builder.Property(s => s.MaxObservedLastChangeDate);
-
         // One backfill cursor per connection.
         builder.HasIndex(s => s.ConnectionId)
             .IsUnique()

@@ -137,7 +137,6 @@ public partial class ProcessOrdersImportConsumerTests
         {
             ConnectionId = connection.Id, IsCompleted = true, OldestDayInScope = oldest,
             HandoverWatermark = legacy ? null : handover,
-            MaxObservedLastChangeDate = _timeProvider.GetUtcNow().AddDays(-1),
         });
         List<OrdersRequest> requests = new List<OrdersRequest>();
         _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))

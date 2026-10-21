@@ -148,7 +148,6 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             OldestDayInScope = state.OldestDayInScope,
             IsCompleted = state.IsCompleted,
             CompletedAt = state.CompletedAt,
-            MaxObservedLastChangeDate = state.MaxObservedLastChangeDate,
             CatchUpNextDay = state.CatchUpNextDay,
             HandoverWatermark = state.HandoverWatermark,
         };
