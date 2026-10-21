@@ -16,9 +16,11 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
 
@@ -38,6 +40,8 @@ public class ProcessOrdersImportConsumerBackfillTests
     /// deliberately not fixed, so the only stable watermark expectation is one derived from a day.
     /// </summary>
     private static readonly TimeSpan ObservedChangeTimeOfDay = TimeSpan.FromHours(12);
+
+    private readonly FakeTimeProvider _timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero));
 
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
@@ -83,10 +87,12 @@ public class ProcessOrdersImportConsumerBackfillTests
             _eventPublisher.Object,
             _jobRunExecutionContext,
             Options.Create(options),
-            _logger.Object);
+            _logger.Object,
+            new AlwaysAllowWildberriesRateLimiter(),
+            _timeProvider);
     }
 
-    private static SystemChannelTemplate BuildWildberriesTemplate()
+    private SystemChannelTemplate BuildWildberriesTemplate()
     {
         return new SystemChannelTemplate
         {
@@ -96,11 +102,11 @@ public class ProcessOrdersImportConsumerBackfillTests
             ApiBaseUrl = "https://suppliers-api.wildberries.ru",
             ApiVersion = "v3",
             IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _timeProvider.GetUtcNow(),
         };
     }
 
-    private static Connection BuildConnection(SystemChannelTemplate template)
+    private Connection BuildConnection(SystemChannelTemplate template)
     {
         return new Connection
         {
@@ -110,12 +116,12 @@ public class ProcessOrdersImportConsumerBackfillTests
             Name = "Test WB",
             ApiKey = "test-key",
             IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _timeProvider.GetUtcNow(),
             SystemChannelTemplate = template,
         };
     }
 
-    private static JobRun BuildJobRun(Connection connection)
+    private JobRun BuildJobRun(Connection connection)
     {
         return new JobRun
         {
@@ -123,7 +129,7 @@ public class ProcessOrdersImportConsumerBackfillTests
             ConnectionId = connection.Id,
             JobType = JobType.OrdersImport,
             Status = JobStatus.Pending,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _timeProvider.GetUtcNow(),
             Connection = connection,
         };
     }
@@ -199,6 +205,8 @@ public class ProcessOrdersImportConsumerBackfillTests
             IsCompleted = state.IsCompleted,
             CompletedAt = state.CompletedAt,
             MaxObservedLastChangeDate = state.MaxObservedLastChangeDate,
+            CatchUpNextDay = state.CatchUpNextDay,
+            HandoverWatermark = state.HandoverWatermark,
         };
     }
 
@@ -321,7 +329,7 @@ public class ProcessOrdersImportConsumerBackfillTests
     [Fact]
     public async Task ProcessAsync_FreshConnection_FirstRequestTargetsTodayAndWalksBackwards()
     {
-        DateTimeOffset expectedToday = GetMoscowDayStart(DateTimeOffset.UtcNow);
+        DateTimeOffset expectedToday = GetMoscowDayStart(_timeProvider.GetUtcNow());
 
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
@@ -360,7 +368,7 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         int expectedDays = GetDayCountInScope();
 
-        _issuedRequests.Should().HaveCount(expectedDays);
+        _issuedRequests.Should().HaveCount(expectedDays + 1);
 
         for (int i = 0; i < _issuedRequests.Count; i++)
         {
@@ -371,13 +379,13 @@ public class ProcessOrdersImportConsumerBackfillTests
             // days would claim coverage it never fetched.
             request.Flag.Should().Be(1);
             request.DateTo.Should().Be(request.DateFrom.AddDays(1).AddSeconds(-1));
-            request.DateFrom.Should().Be(_issuedRequests[0].DateFrom.AddDays(-i));
+            request.DateFrom.Should().Be(i < expectedDays ? _issuedRequests[0].DateFrom.AddDays(-i) : _issuedRequests[0].DateFrom);
             request.Limit.Should().Be(0);
         }
     }
 
     [Fact]
-    public async Task ProcessAsync_FreshConnection_CompletesTheWalkAndLeavesCursorPastTheScopeBoundary()
+    public async Task ProcessAsync_FreshConnection_CompletesWalkAndCatchUpWithHandoverWatermark()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
@@ -397,27 +405,27 @@ public class ProcessOrdersImportConsumerBackfillTests
         DateTimeOffset newestDay = _issuedRequests[0].DateFrom;
         DateTimeOffset oldestDay = newestDay.AddDays(-(expectedDays - 1));
 
-        _issuedRequests.Last().DateFrom.Should().Be(oldestDay);
+        _issuedRequests[expectedDays - 1].DateFrom.Should().Be(oldestDay);
+        _issuedRequests.Last().DateFrom.Should().Be(newestDay);
 
         _persistedState.Should().NotBeNull();
         _persistedState!.IsCompleted.Should().BeTrue();
         _persistedState.CompletedAt.Should().NotBeNull();
         _persistedState.NextDayToFetch.Should().Be(oldestDay.AddDays(-1));
 
-        // Two orders per day, each published exactly once and once only.
         List<string> publishedIds = PublishedOrderIds();
 
-        publishedIds.Should().HaveCount(expectedDays * 2);
+        publishedIds.Should().HaveCount((expectedDays + 1) * 2);
         publishedIds.Distinct().Should().HaveCount(expectedDays * 2);
 
         persistedPayload.Should().NotBeNull();
         persistedPayload!.IsBackfill.Should().BeTrue();
         persistedPayload.IsBackfillCompleted.Should().BeTrue();
-        persistedPayload.PagesFetched.Should().Be(expectedDays);
+        persistedPayload.PagesFetched.Should().Be(expectedDays + 1);
 
-        // The running maximum is the newest fetched day's own change instant, and no delta
-        // watermark is claimed by a run that walked backwards.
-        persistedPayload.MaxObservedLastChangeDate.Should().Be(newestDay + ObservedChangeTimeOfDay);
+        persistedPayload.MaxObservedLastChangeDate.Should().BeNull();
+        persistedPayload.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - ProcessOrdersImportConsumer.SafetyOverlap);
+        _persistedState.CatchUpNextDay.Should().Be(newestDay);
         persistedPayload.MaxChangedAt.Should().BeNull();
     }
 
@@ -435,7 +443,7 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         UseSource((request, call) => Task.FromResult(call == 1
             ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false }
-            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true }));
+            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
         ProcessOrdersImportConsumer consumer = CreateConsumer();
 
@@ -461,16 +469,22 @@ public class ProcessOrdersImportConsumerBackfillTests
         _persistedState.Should().NotBeNull();
         _persistedState!.IsCompleted.Should().BeFalse();
         _persistedState.NextDayToFetch.Should().Be(unfetchedDay);
-        _persistedState.MaxObservedLastChangeDate.Should().Be(fetchedDay + ObservedChangeTimeOfDay);
+        _persistedState.MaxObservedLastChangeDate.Should().BeNull();
 
         persistedPayload.Should().NotBeNull();
         persistedPayload!.IsBackfill.Should().BeTrue();
         persistedPayload.IsBackfillCompleted.Should().BeFalse();
         persistedPayload.MaxChangedAt.Should().BeNull();
+        _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next =>
+            next.ConnectionId == connection.Id && next.JobType == JobType.OrdersImport
+            && next.Status == JobStatus.Pending && next.NotBefore == _timeProvider.GetUtcNow().AddHours(3)),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _jobRunRepo.Verify(r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task ProcessAsync_ThrottledOnFirstDay_PersistsNothingAndRetriesSameDay()
+    public async Task ProcessAsync_ThrottledOnFirstDay_PersistsInitialCursorAndDefersContinuation()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
@@ -482,7 +496,7 @@ public class ProcessOrdersImportConsumerBackfillTests
         UseSource((_, _) => Task.FromResult(new OrdersPage
         {
             Orders = new List<ChannelOrderSnapshot>(),
-            Throttled = true,
+            Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3),
         }));
 
         ProcessOrdersImportConsumer consumer = CreateConsumer();
@@ -491,13 +505,12 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         _issuedRequests.Should().ContainSingle();
 
-        // Nothing was fetched: publishing a terminal empty batch would still be correct for the
-        // aggregator, but the cursor must not move and no state may be written over the retry.
         _backfillStateRepo.Verify(
             r => r.UpsertAsync(It.IsAny<OrdersBackfillState>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
 
-        _persistedState.Should().BeNull();
+        _persistedState.Should().NotBeNull();
+        _persistedState!.NextDayToFetch.Should().Be(GetMoscowDayStart(_timeProvider.GetUtcNow()));
     }
 
     [Fact]
@@ -514,14 +527,14 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         // The second day is served slowly enough that the one-second budget is spent by the time
         // the loop turns to the third: the stop is caused by the budget alone, not by the throttle.
-        UseSource(async (request, call) =>
+        UseSource((request, call) =>
         {
             if (call == 2)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(1100));
+                _timeProvider.Advance(TimeSpan.FromSeconds(1));
             }
 
-            return new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false };
+            return Task.FromResult(new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false });
         });
 
         ProcessOrdersImportConsumer consumer = CreateConsumer(backfillRunBudgetSeconds: 1);
@@ -539,6 +552,10 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         persistedPayload.Should().NotBeNull();
         persistedPayload!.IsBackfillCompleted.Should().BeFalse();
+        persistedPayload.PagesFetched.Should().Be(2);
+        _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next =>
+            next.Status == JobStatus.Pending && next.ConnectionId == connection.Id
+            && next.NotBefore >= _timeProvider.GetUtcNow()), It.IsAny<CancellationToken>()), Times.Once);
 
         PublishedOrderIds().Should().HaveCount(4);
     }
@@ -550,7 +567,10 @@ public class ProcessOrdersImportConsumerBackfillTests
         Connection connection = BuildConnection(template);
         JobRun jobRun = BuildJobRun(connection);
 
+        OrdersImportCheckpointPayload? persistedPayload = null;
+
         SetupRun(jobRun);
+        CapturePersistedPayload(payload => persistedPayload = payload);
         UseStateStore();
 
         UseSource((request, call) => Task.FromResult(call == 1
@@ -575,9 +595,17 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
 
-        _persistedState.Should().BeNull();
+        persistedPayload.Should().NotBeNull();
+        persistedPayload!.IsFetchCompleted.Should().BeFalse();
+        persistedPayload.TotalBatches.Should().Be(0);
+        persistedPayload.IsBackfill.Should().BeTrue();
+        persistedPayload.IsBackfillCompleted.Should().BeFalse();
+        persistedPayload.HandoverWatermark.Should().BeNull();
+
+        _persistedState.Should().NotBeNull();
+        _persistedState!.NextDayToFetch.Should().Be(GetMoscowDayStart(_timeProvider.GetUtcNow()));
     }
 
     [Fact]
@@ -608,7 +636,8 @@ public class ProcessOrdersImportConsumerBackfillTests
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
-        _persistedState.Should().BeNull();
+        _persistedState.Should().NotBeNull();
+        _persistedState!.NextDayToFetch.Should().Be(GetMoscowDayStart(_timeProvider.GetUtcNow()));
     }
 
     [Fact]
@@ -638,7 +667,7 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         UseSource((request, call) => Task.FromResult(call == 1
             ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false }
-            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true }));
+            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
         ProcessOrdersImportConsumer consumer = CreateConsumer();
 
@@ -649,8 +678,7 @@ public class ProcessOrdersImportConsumerBackfillTests
         // A cursor that ran ahead of the published batches would lose those days silently and
         // unrecoverably; persisting last costs a re-fetch on a crash, which the idempotent upsert
         // absorbs.
-        trace.Last().Should().Be("persist");
-        trace.Should().ContainSingle(entry => entry == "persist");
+        trace.Should().Equal("persist", "publish", "persist", "publish");
     }
 
     [Fact]
@@ -665,21 +693,31 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         _backfillStateRepo
             .Setup(r => r.UpsertAsync(It.IsAny<OrdersBackfillState>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("connection lost while persisting the cursor"));
+            .Callback<OrdersBackfillState, CancellationToken>((state, _) =>
+            {
+                if (_persistedState != null)
+                {
+                    throw new InvalidOperationException("connection lost while persisting the cursor");
+                }
+
+                _persistedState = Clone(state);
+            })
+            .Returns(Task.CompletedTask);
 
         UseSource((request, call) => Task.FromResult(call <= 3
             ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false }
-            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true }));
+            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
         ProcessOrdersImportConsumer consumer = CreateConsumer();
 
         await RunAsync(firstRun, connection, consumer);
 
         firstRun.Status.Should().Be(JobStatus.Failed);
-        _persistedState.Should().BeNull("the cursor write is what failed");
+        _persistedState.Should().NotBeNull();
+        _persistedState!.NextDayToFetch.Should().Be(_issuedRequests[0].DateFrom);
 
         List<string> firstRunOrderIds = PublishedOrderIds();
-        firstRunOrderIds.Should().HaveCount(6);
+        firstRunOrderIds.Should().HaveCount(2);
 
         // Second run against a store that accepts the write.
         _issuedRequests.Clear();
@@ -690,7 +728,7 @@ public class ProcessOrdersImportConsumerBackfillTests
 
         UseSource((request, call) => Task.FromResult(call <= 3
             ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false }
-            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true }));
+            : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
         ProcessOrdersImportConsumer secondConsumer = CreateConsumer();
 
@@ -703,7 +741,8 @@ public class ProcessOrdersImportConsumerBackfillTests
             .Skip(firstRunOrderIds.Count)
             .ToList();
 
-        secondRunOrderIds.Should().BeEquivalentTo(firstRunOrderIds);
+        secondRunOrderIds.Take(firstRunOrderIds.Count).Should().Equal(firstRunOrderIds);
+        secondRunOrderIds.Should().HaveCount(6);
 
         _persistedState.Should().NotBeNull();
         _persistedState!.IsCompleted.Should().BeFalse();
@@ -711,7 +750,7 @@ public class ProcessOrdersImportConsumerBackfillTests
     }
 
     [Fact]
-    public async Task ProcessAsync_NinetyDaysAcrossThrottledRuns_ProducesEveryDayExactlyOnce()
+    public async Task ProcessAsync_NinetyDaysAcrossThrottledRuns_RefetchesWalkStartDuringCatchUp()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
@@ -738,7 +777,7 @@ public class ProcessOrdersImportConsumerBackfillTests
             // does once its window closes. The throttle is what ends the run, not the scope.
             UseSource((request, call) => Task.FromResult(call <= daysPerRun
                 ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false }
-                : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true }));
+                : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
             ProcessOrdersImportConsumer consumer = CreateConsumer();
 
@@ -752,8 +791,8 @@ public class ProcessOrdersImportConsumerBackfillTests
         _persistedState.Should().NotBeNull();
         _persistedState!.IsCompleted.Should().BeTrue();
 
-        allPublished.Should().HaveCount(expectedDays * 2);
-        allPublished.Distinct().Should().HaveCount(expectedDays * 2, "no day may be imported twice and none may be skipped");
+        allPublished.Should().HaveCount((expectedDays + 1) * 2);
+        allPublished.Distinct().Should().HaveCount(expectedDays * 2, "the backwards walk covers each day once and catch-up re-fetches the walk start day");
     }
 
     [Fact]
@@ -762,7 +801,7 @@ public class ProcessOrdersImportConsumerBackfillTests
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
         JobRun jobRun = BuildJobRun(connection);
-        DateTimeOffset lastChangedAt = DateTimeOffset.UtcNow.AddHours(-2);
+        DateTimeOffset lastChangedAt = _timeProvider.GetUtcNow().AddHours(-2);
 
         SetupRun(jobRun);
 
@@ -770,10 +809,10 @@ public class ProcessOrdersImportConsumerBackfillTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            NextDayToFetch = DateTimeOffset.UtcNow.AddDays(-91),
-            OldestDayInScope = DateTimeOffset.UtcNow.AddDays(-90),
+            NextDayToFetch = _timeProvider.GetUtcNow().AddDays(-91),
+            OldestDayInScope = _timeProvider.GetUtcNow().AddDays(-90),
             IsCompleted = true,
-            CompletedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            CompletedAt = _timeProvider.GetUtcNow().AddDays(-1),
             MaxObservedLastChangeDate = lastChangedAt,
         };
 

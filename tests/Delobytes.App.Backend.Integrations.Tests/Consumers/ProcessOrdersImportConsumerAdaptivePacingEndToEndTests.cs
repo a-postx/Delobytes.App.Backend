@@ -17,28 +17,26 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Tests.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
 /// <summary>
-/// End-to-end test combining the real <see cref="WildberriesRateLimiter"/> (Stage 2) with the
-/// time-budgeted backfill orchestrator (Stage 4) through a fixture-backed <c>IOrdersSource</c>
-/// double rather than a mocked, un-paced one: every call is genuinely gated by
-/// <c>TryAcquireAsync</c>/<c>ReportSuccessAsync</c>, so the test is sensitive to the same pacing
-/// bugs a real HTTP run would be. <c>InitialIntervalSeconds</c> is compressed to 1 second, as
-/// specified, which still requires the test to wait out that one real second between the two runs
-/// it takes to clear the pacing gate the first time.
+/// Exercises backfill and delta with the adaptive rate limiter and fixture-backed source.
 /// </summary>
 public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
 {
     private static readonly TimeSpan ObservedChangeTimeOfDay = TimeSpan.FromHours(12);
     private const string ApiKey = "wb-e2e-test-key";
+
+    private readonly FakeTimeProvider _timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
 
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
@@ -151,6 +149,8 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             IsCompleted = state.IsCompleted,
             CompletedAt = state.CompletedAt,
             MaxObservedLastChangeDate = state.MaxObservedLastChangeDate,
+            CatchUpNextDay = state.CatchUpNextDay,
+            HandoverWatermark = state.HandoverWatermark,
         };
     }
 
@@ -197,12 +197,13 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             .Returns(source);
     }
 
-    private ProcessOrdersImportConsumer CreateConsumer(int backfillRunBudgetSeconds = 1200)
+    private ProcessOrdersImportConsumer CreateConsumer(IWildberriesRateLimiter rateLimiter, int backfillRunBudgetSeconds = 1200)
     {
         WildberriesImportOptions options = new WildberriesImportOptions
         {
             MinOrdersWindow = TimeSpan.FromHours(1),
             BackfillRunBudgetSeconds = backfillRunBudgetSeconds,
+            MaxInProcessWaitSeconds = 0,
         };
 
         return new ProcessOrdersImportConsumer(
@@ -214,7 +215,9 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             _eventPublisher.Object,
             _jobRunExecutionContext,
             Options.Create(options),
-            NullLogger<ProcessOrdersImportConsumer>.Instance);
+            NullLogger<ProcessOrdersImportConsumer>.Instance,
+            rateLimiter,
+            _timeProvider);
     }
 
     private OrdersImportCheckpointPayload? CaptureLastPayload()
@@ -257,11 +260,6 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
 
         UseStateStore();
 
-        // InitialIntervalSeconds compressed to 1s per the Stage 6 spec. SpeedUpAfterSuccesses=1
-        // and MinIntervalSeconds=0 make the pace collapse to 0 after the very first reported
-        // success, exactly like a real key whose window turns out to allow back-to-back calls;
-        // from that point on every later TryAcquireAsync in the same or a later run succeeds
-        // immediately, so only the gap opened by the first call's 1s interval needs a real wait.
         WildberriesRateLimitOptions rateLimitOptions = new WildberriesRateLimitOptions
         {
             InitialIntervalSeconds = 1,
@@ -284,7 +282,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         JobRun firstRun = BuildJobRun(connection);
         SetupRun(firstRun, source);
 
-        ProcessOrdersImportConsumer consumer = CreateConsumer();
+        ProcessOrdersImportConsumer consumer = CreateConsumer(rateLimiter);
         await consumer.ProcessAsync(
             new OrdersImportRequestedEvent { JobRunId = firstRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
@@ -294,13 +292,18 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
 
         int expectedDays = GetDayCountInScope();
 
-        // --- wait out the one real pacing gap opened by the first call, then run #2 ---
-        await Task.Delay(TimeSpan.FromMilliseconds(1300));
+        WildberriesMethodThrottle? throttle = await throttleRepository.GetAsync(
+            WildberriesKeyFingerprint.Compute(ApiKey), WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        throttle.Should().NotBeNull();
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        // The limiter uses wall time; move its persisted slot instead of sleeping in the test.
+        throttle!.NextRequestAllowedAt = DateTimeOffset.MinValue;
+        await throttleRepository.UpsertAsync(throttle, CancellationToken.None);
 
         JobRun secondRun = BuildJobRun(connection);
         SetupRun(secondRun, source);
 
-        ProcessOrdersImportConsumer secondConsumer = CreateConsumer();
+        ProcessOrdersImportConsumer secondConsumer = CreateConsumer(rateLimiter);
         await secondConsumer.ProcessAsync(
             new OrdersImportRequestedEvent { JobRunId = secondRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
@@ -310,20 +313,22 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             "once the pace collapses to 0 after the first success, nothing gates the remaining days within the same run");
 
         List<string> publishedIds = PublishedOrderIds();
-        publishedIds.Should().HaveCount(expectedDays * 2, "every day in scope must be imported exactly once");
-        publishedIds.Distinct().Should().HaveCount(expectedDays * 2, "no day may be fetched twice across the two runs");
+        publishedIds.Should().HaveCount((expectedDays + 1) * 2);
+        publishedIds.Distinct().Should().HaveCount(expectedDays * 2);
+        _persistedState.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - ProcessOrdersImportConsumer.SafetyOverlap);
 
         OrdersImportCheckpointPayload? lastPayload = CaptureLastPayload();
         lastPayload.Should().NotBeNull();
         lastPayload!.IsBackfill.Should().BeTrue();
         lastPayload.IsBackfillCompleted.Should().BeTrue();
+        lastPayload.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
         lastPayload.MaxChangedAt.Should().BeNull("a backwards walk never claims the delta watermark itself");
 
         // --- run #3: the cursor is complete, so this run must take the delta branch ---
         JobRun thirdRun = BuildJobRun(connection);
         SetupRun(thirdRun, source);
 
-        ProcessOrdersImportConsumer thirdConsumer = CreateConsumer();
+        ProcessOrdersImportConsumer thirdConsumer = CreateConsumer(rateLimiter);
         await thirdConsumer.ProcessAsync(
             new OrdersImportRequestedEvent { JobRunId = thirdRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
@@ -342,9 +347,11 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         // would race the watchdog instead of stopping itself cleanly.
         const int ordersImportWatchdogTimeoutSeconds = 30 * 60;
 
-        WildberriesImportOptions.DefaultBackfillRunBudgetSeconds.Should().BeLessThan(ordersImportWatchdogTimeoutSeconds);
+        (WildberriesImportOptions.DefaultBackfillRunBudgetSeconds + WildberriesImportOptions.DefaultMaxInProcessWaitSeconds)
+            .Should().BeLessThan(ordersImportWatchdogTimeoutSeconds);
 
-        int safetyMarginSeconds = ordersImportWatchdogTimeoutSeconds - WildberriesImportOptions.DefaultBackfillRunBudgetSeconds;
+        int safetyMarginSeconds = ordersImportWatchdogTimeoutSeconds
+            - WildberriesImportOptions.DefaultBackfillRunBudgetSeconds - WildberriesImportOptions.DefaultMaxInProcessWaitSeconds;
         safetyMarginSeconds.Should().BeGreaterThanOrEqualTo(5 * 60, "the budget must leave comfortable room, not just technically fit");
     }
 }

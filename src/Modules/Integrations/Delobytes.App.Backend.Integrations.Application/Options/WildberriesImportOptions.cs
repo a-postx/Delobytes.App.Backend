@@ -16,6 +16,13 @@ public class WildberriesImportOptions
     /// </summary>
     public const int DefaultBackfillRunBudgetSeconds = 1200;
 
+    public const int DefaultMaxInProcessWaitSeconds = 300;
+
+    /// <summary>
+    /// Keep the run budget plus this wait below the 30-minute OrdersImport watchdog timeout.
+    /// </summary>
+    public int MaxInProcessWaitSeconds { get; set; } = DefaultMaxInProcessWaitSeconds;
+
     /// <summary>
     /// Number of product cards to retrieve per API call. Must be between 1 and 100.
     /// </summary>
@@ -36,9 +43,8 @@ public class WildberriesImportOptions
     public TimeSpan MinOrdersWindow { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
-    /// Wall-clock budget for one backfill run. Must stay comfortably below
-    /// <c>JobTypeConfiguration.TimeoutMinutes</c> for OrdersImport (30 by default), because
-    /// <c>WatchdogHostedService</c> fails any run still executing when that timeout expires.
+    /// Wall-clock fetch budget for both backfill and delta. The budget plus
+    /// MaxInProcessWaitSeconds must stay below the 30-minute OrdersImport watchdog timeout.
     /// </summary>
     public int BackfillRunBudgetSeconds { get; set; } = DefaultBackfillRunBudgetSeconds;
 }

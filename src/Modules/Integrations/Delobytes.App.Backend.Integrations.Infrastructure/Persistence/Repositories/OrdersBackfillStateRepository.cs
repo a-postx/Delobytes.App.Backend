@@ -47,6 +47,8 @@ public class OrdersBackfillStateRepository : IOrdersBackfillStateRepository
             existing.OldestDayInScope = state.OldestDayInScope;
             existing.IsCompleted = state.IsCompleted;
             existing.CompletedAt = state.CompletedAt;
+            existing.CatchUpNextDay = state.CatchUpNextDay;
+            existing.HandoverWatermark = state.HandoverWatermark;
             existing.MaxObservedLastChangeDate = state.MaxObservedLastChangeDate;
         }
 

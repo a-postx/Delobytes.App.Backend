@@ -283,16 +283,6 @@ public class ProcessOrdersBatchImportCompletedConsumer
         await PublishCompletedEventAsync(jobRun, cancellationToken);
     }
 
-    /// <summary>
-    /// Decides what, if anything, this run writes to <c>SyncCheckpoint.LastChangedAt</c>.
-    /// A delta run writes the watermark the orchestrator observed. A backfill run writes nothing
-    /// until the walk finishes, because the walk runs backwards from today: the newest day is
-    /// fetched first, so its instant as a watermark would mark every older day still to come as
-    /// already imported and strand them. The run that finishes the walk writes the running maximum
-    /// <c>lastChangeDate</c> the walk accumulated, which is the only instant it justified.
-    /// </summary>
-    /// <param name="payload">Checkpoint payload written by the orchestrator.</param>
-    /// <returns>The watermark to persist, or null to leave the existing one untouched.</returns>
     private DateTimeOffset? ResolveWatermark(OrdersImportCheckpointPayload payload)
     {
         if (!payload.IsBackfill)
@@ -307,15 +297,13 @@ public class ProcessOrdersBatchImportCompletedConsumer
         if (!payload.IsBackfillCompleted)
         {
             _logger.LogInformation(
-                "Backfill run has not finished the walk, leaving the delta watermark untouched");
+                "Backfill run has not finished catch-up, leaving the delta watermark untouched");
 
             return null;
         }
 
-        // A walk that finished without ever seeing a row still has to release the delta branch from
-        // its pre-handover fallback, and there is no observed instant to do it with. "Now" is the
-        // honest ceiling there: the walk is over, so nothing older can still be discovered by it.
-        return payload.MaxObservedLastChangeDate ?? DateTimeOffset.UtcNow;
+        return payload.HandoverWatermark
+            ?? throw new InvalidOperationException("Completed orders backfill has no handover watermark.");
     }
 
     private async Task PublishCompletedEventAsync(JobRun jobRun, CancellationToken cancellationToken)

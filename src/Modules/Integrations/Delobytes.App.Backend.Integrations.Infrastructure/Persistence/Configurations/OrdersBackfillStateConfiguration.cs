@@ -30,6 +30,10 @@ public class OrdersBackfillStateConfiguration : IEntityTypeConfiguration<OrdersB
 
         builder.Property(s => s.CompletedAt);
 
+        builder.Property(s => s.CatchUpNextDay);
+
+        builder.Property(s => s.HandoverWatermark);
+
         builder.Property(s => s.MaxObservedLastChangeDate);
 
         // One backfill cursor per connection.

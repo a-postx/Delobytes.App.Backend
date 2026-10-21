@@ -4,8 +4,7 @@ namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 
 /// <summary>
 /// Per-connection progress cursor for the day-by-day Wildberries orders backfill. Tracks the
-/// walk-backwards-from-today cursor across pod restarts and throttled runs, and accumulates the
-/// watermark that seeds <see cref="SyncCheckpoint"/> once the backfill completes.
+/// backwards and catch-up cursors across pod restarts and throttled runs. Seeds <see cref="SyncCheckpoint"/> once the backfill completes.
 /// </summary>
 public class OrdersBackfillState : ITenantScoped
 {
@@ -35,9 +34,13 @@ public class OrdersBackfillState : ITenantScoped
     public DateTimeOffset OldestDayInScope { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the backfill has fetched every day in scope.
+    /// Gets or sets a value indicating whether both the backwards walk and catch-up completed.
     /// </summary>
     public bool IsCompleted { get; set; }
+
+    public DateTimeOffset? CatchUpNextDay { get; set; }
+
+    public DateTimeOffset? HandoverWatermark { get; set; }
 
     /// <summary>
     /// Gets or sets the date and time the backfill completed. Null until <see cref="IsCompleted"/>
@@ -46,9 +49,7 @@ public class OrdersBackfillState : ITenantScoped
     public DateTimeOffset? CompletedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the running maximum <c>lastChangeDate</c> observed across every backfilled
-    /// day; seeds the delta watermark on completion so the handover does not skip or re-read
-    /// orders.
+    /// Gets or sets the legacy observed watermark. Retained for stored data compatibility.
     /// </summary>
     public DateTimeOffset? MaxObservedLastChangeDate { get; set; }
 

@@ -1,10 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 
 /// <summary>
-/// JobCheckpoint payload shared by the orders import orchestrator and its aggregator.
-/// Written before any batch is published so the aggregator always knows the expected batch count
-/// and, on a backfill run, whether that run finished the walk — without re-reading a state row the
-/// orchestrator only persists after the batches are published.
+/// JobCheckpoint payload shared by the orders orchestrator and aggregator.
 /// </summary>
 public sealed record OrdersImportCheckpointPayload
 {
@@ -24,8 +21,7 @@ public sealed record OrdersImportCheckpointPayload
     public bool? IsFetchCompleted { get; init; }
 
     /// <summary>
-    /// Gets the handover watermark (the start instant for the first delta run after the backfill
-    /// and catch-up finish). Set only by the run that completes the catch-up phase (stage 5).
+    /// Gets the handover watermark captured before the final catch-up request.
     /// </summary>
     public DateTimeOffset? HandoverWatermark { get; init; }
 
@@ -44,8 +40,7 @@ public sealed record OrdersImportCheckpointPayload
     public DateTimeOffset WindowTo { get; init; }
 
     /// <summary>
-    /// Gets the number of HTTP requests the run issued; for a backfill run that is the number of
-    /// calendar days it fetched.
+    /// Gets the number of source requests, including throttled attempts.
     /// </summary>
     public int PagesFetched { get; init; }
 
@@ -58,17 +53,12 @@ public sealed record OrdersImportCheckpointPayload
     public bool IsBackfill { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether this backfill run was the one that reached the end of the
-    /// walk. Only that run may hand the watermark over; earlier runs of the walk must leave it
-    /// untouched. Carried here rather than read from <c>OrdersBackfillState</c> because the
-    /// orchestrator advances that cursor only after the batches of the run are published, so the
-    /// aggregator can observe it either before or after the write and must not depend on which.
+    /// Gets a value indicating whether this run completed catch-up.
     /// </summary>
     public bool IsBackfillCompleted { get; init; }
 
     /// <summary>
-    /// Gets the running maximum <c>lastChangeDate</c> the walk observed across every day it
-    /// fetched, up to and including this run. Null when the walk has seen no row at all.
+    /// Gets the legacy observed watermark retained for payload compatibility.
     /// </summary>
     public DateTimeOffset? MaxObservedLastChangeDate { get; init; }
 }

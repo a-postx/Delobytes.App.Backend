@@ -302,11 +302,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("CatchUpNextDay")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("ConnectionId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("HandoverWatermark")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("boolean");

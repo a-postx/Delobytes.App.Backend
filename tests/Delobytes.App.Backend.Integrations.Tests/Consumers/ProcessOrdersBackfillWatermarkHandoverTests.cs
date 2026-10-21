@@ -16,10 +16,7 @@ using Xunit;
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
 /// <summary>
-/// Tests for the watermark handover at the end of the day-by-day backfill: a run that is still
-/// walking must leave the delta watermark alone, the run that finishes the walk must seed it from
-/// the instant the walk itself observed, and a delta run must keep writing exactly what the
-/// orchestrator reported.
+/// Tests the catch-up handover and delta watermarks.
 /// </summary>
 public class ProcessOrdersBackfillWatermarkHandoverTests
 {
@@ -28,6 +25,8 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     /// against a known value instead of whatever time the test happened to run at.
     /// </summary>
     private static readonly DateTimeOffset MaxObservedLastChangeDate = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset HandoverWatermark = MaxObservedLastChangeDate.AddHours(-1);
 
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
@@ -89,6 +88,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
             IsBackfill = isBackfill,
             IsBackfillCompleted = isBackfillCompleted,
             MaxObservedLastChangeDate = maxObservedLastChangeDate,
+            HandoverWatermark = isBackfillCompleted ? HandoverWatermark : null,
         };
     }
 
@@ -254,7 +254,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     }
 
     [Fact]
-    public async Task ProcessAsync_BackfillRunFinishing_SeedsWatermarkFromRunningMaximum()
+    public async Task ProcessAsync_BackfillRunFinishing_SeedsWatermarkFromHandover()
     {
         JobRun jobRun = BuildJobRun();
         DateTimeOffset existingWatermark = MaxObservedLastChangeDate.AddDays(-30);
@@ -272,11 +272,11 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
         _savedCheckpoint.Should().NotBeNull();
-        _savedCheckpoint!.LastChangedAt.Should().Be(MaxObservedLastChangeDate);
+        _savedCheckpoint!.LastChangedAt.Should().Be(HandoverWatermark);
     }
 
     [Fact]
-    public async Task ProcessAsync_BackfillFinishingWithNoObservedInstant_SeedsWatermarkFromNow()
+    public async Task ProcessAsync_BackfillFinishingWithNoObservedInstant_UsesHandoverWatermark()
     {
         JobRun jobRun = BuildJobRun();
 
@@ -290,16 +290,10 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
 
-        DateTimeOffset before = DateTimeOffset.UtcNow;
-
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
-        // A walk that reached the boundary without ever seeing a row still has to release the delta
-        // branch from its pre-handover fallback, and there is no observed instant to do it with.
         _savedCheckpoint.Should().NotBeNull();
-        _savedCheckpoint!.LastChangedAt.Should().NotBeNull();
-        _savedCheckpoint.LastChangedAt!.Value.Should().BeOnOrAfter(before);
-        _savedCheckpoint.LastChangedAt!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
+        _savedCheckpoint!.LastChangedAt.Should().Be(HandoverWatermark);
     }
 
     [Fact]
@@ -432,13 +426,11 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         _savedCheckpoint.Should().NotBeNull();
 
-        // What the delta branch would compute from the handed-over checkpoint. It must sit inside
-        // the backfilled range's newest edge, not ninety days behind it: the walk covered the range,
-        // so the next run only has to re-read the overlap.
         DateTimeOffset expectedWindowFrom = _savedCheckpoint!.LastChangedAt!.Value
             .Subtract(ProcessOrdersImportConsumer.SafetyOverlap);
 
-        expectedWindowFrom.Should().Be(MaxObservedLastChangeDate.Subtract(ProcessOrdersImportConsumer.SafetyOverlap));
+        _savedCheckpoint!.LastChangedAt.Should().Be(HandoverWatermark);
+        expectedWindowFrom.Should().Be(HandoverWatermark.Subtract(ProcessOrdersImportConsumer.SafetyOverlap));
         expectedWindowFrom.Should().BeAfter(MaxObservedLastChangeDate.AddDays(-1));
     }
 }

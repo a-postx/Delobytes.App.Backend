@@ -13,6 +13,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Polly;
 
@@ -59,6 +60,8 @@ public static class ServiceCollectionExtensions
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
 
         services.AddMemoryCache();
+
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
 
         services.AddScoped<IConnectionRepository, ConnectionRepository>();
         services.AddScoped<IJobRunRepository, JobRunRepository>();

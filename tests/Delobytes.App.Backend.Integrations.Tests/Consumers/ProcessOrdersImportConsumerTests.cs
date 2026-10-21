@@ -16,9 +16,11 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
 
@@ -26,6 +28,8 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
 public class ProcessOrdersImportConsumerTests
 {
+    private readonly FakeTimeProvider _timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<IJobCheckpointRepository> _jobCheckpointRepo = new();
     private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
@@ -60,7 +64,9 @@ public class ProcessOrdersImportConsumerTests
             _eventPublisher.Object,
             _jobRunExecutionContext,
             wrappedOptions,
-            _logger.Object);
+            _logger.Object,
+            new AlwaysAllowWildberriesRateLimiter(),
+            _timeProvider);
     }
 
     private static SystemChannelTemplate BuildWildberriesTemplate()
@@ -202,10 +208,6 @@ public class ProcessOrdersImportConsumerTests
             .Setup(r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        // A finished cursor keeps every case below on the delta branch, which is the branch these
-        // tests were written against. OldestDayInScope reproduces the window the first run used to
-        // derive on its own (now - 90 days), so a case that leaves SyncCheckpoint unstubbed still
-        // reads the same window it always did.
         _backfillStateRepo
             .Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OrdersBackfillState
@@ -213,10 +215,11 @@ public class ProcessOrdersImportConsumerTests
                 Id = Guid.NewGuid(),
                 ConnectionId = Guid.Empty,
                 NextDayToFetch = DateTimeOffset.UtcNow.AddDays(-90),
-                OldestDayInScope = DateTimeOffset.UtcNow.AddDays(-90),
+                OldestDayInScope = _timeProvider.GetUtcNow().AddDays(-90),
                 IsCompleted = true,
                 CompletedAt = DateTimeOffset.UtcNow,
                 MaxObservedLastChangeDate = null,
+                HandoverWatermark = _timeProvider.GetUtcNow().AddDays(-90),
             });
 
         _clientFactory
@@ -346,7 +349,7 @@ public class ProcessOrdersImportConsumerTests
         // (IsFetchCompleted = false), then the final payload that announces the terminal batch.
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+            Times.Exactly(3));
 
         _eventPublisher.Verify(
             p => p.PublishAsync(
@@ -495,6 +498,8 @@ public class ProcessOrdersImportConsumerTests
 
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Flag.Should().Be(0);
+        capturedRequest.DateFrom.Should().Be((lastChangedAt - ProcessOrdersImportConsumer.SafetyOverlap)
+            .ToOffset(TimeSpan.FromHours(3)));
     }
 
     [Fact]
@@ -1620,11 +1625,10 @@ public class ProcessOrdersImportConsumerTests
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
-        // No checkpoint payload: the aggregator must never be told how many batches to expect for a
-        // window that was not fully imported, otherwise the run could finalise as a success.
         _jobCheckpointRepo.Verify(
-            r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            r => r.UpsertAsync(It.Is<JobCheckpoint>(checkpoint =>
+                checkpoint.Payload.Contains("\"IsFetchCompleted\":false")), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
