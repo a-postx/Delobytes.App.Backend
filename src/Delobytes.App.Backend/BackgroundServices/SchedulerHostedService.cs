@@ -94,12 +94,6 @@ public class SchedulerHostedService : BackgroundService
     // every tenant-scoped repository resolved inside must see the matching ambient TenantId.
     private async Task ProcessScheduleAsync(JobSchedule schedule, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "SchedulerHostedService: ProcessScheduleAsync ENTRY for schedule {ScheduleId}, connection {ConnectionId}, tenant {TenantId}",
-            schedule.Id,
-            schedule.ConnectionId,
-            schedule.TenantId);
-
         using IServiceScope scope = _scopeFactory.CreateScope();
 
         MessageTenantContext tenantContext = scope.ServiceProvider.GetRequiredService<MessageTenantContext>();
@@ -112,16 +106,7 @@ public class SchedulerHostedService : BackgroundService
             IJobScheduleRepository scheduleRepository = scope.ServiceProvider.GetRequiredService<IJobScheduleRepository>();
             ITenantSettingsProvider tenantSettingsProvider = scope.ServiceProvider.GetRequiredService<ITenantSettingsProvider>();
 
-            _logger.LogInformation(
-                "SchedulerHostedService: About to fetch connection {ConnectionId}",
-                schedule.ConnectionId);
-
             Connection? connection = await connectionRepository.FindByIdWithTemplateAsync(schedule.ConnectionId, cancellationToken);
-
-            _logger.LogInformation(
-                "SchedulerHostedService: Connection fetched: IsNull={IsNull}, IsActive={IsActive}",
-                connection == null,
-                connection?.IsActive);
 
             if (connection == null || !connection.IsActive)
             {
@@ -134,16 +119,7 @@ public class SchedulerHostedService : BackgroundService
                 return;
             }
 
-            _logger.LogInformation(
-                "SchedulerHostedService: About to check HasActiveJobAsync for connection {ConnectionId}, type {JobType}",
-                schedule.ConnectionId,
-                schedule.JobType);
-
             bool hasActiveJob = await jobRunRepository.HasActiveJobAsync(schedule.ConnectionId, schedule.JobType, cancellationToken);
-
-            _logger.LogInformation(
-                "SchedulerHostedService: HasActiveJob result: {HasActiveJob}",
-                hasActiveJob);
 
             if (hasActiveJob)
             {
@@ -186,10 +162,6 @@ public class SchedulerHostedService : BackgroundService
                 RequestedByUserId = null,
                 CreatedAt = now,
             };
-
-            _logger.LogInformation(
-                "SchedulerHostedService: About to create JobRun, current tenantContext.TenantId = {TenantId}",
-                tenantContext.TenantId);
 
             await jobRunRepository.CreateAsync(jobRun, cancellationToken);
 
