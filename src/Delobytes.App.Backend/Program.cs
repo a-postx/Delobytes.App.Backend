@@ -1,11 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.IdentityModel.Tokens.Jwt;
 using System.Reflection;
 using System.Text.Json;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.BackgroundServices;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Infrastructure;
@@ -13,16 +11,11 @@ using Delobytes.App.Backend.Infrastructure.Swagger;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
-using Delobytes.AspNetCore;
 using Delobytes.AspNetCore.Common.Constants;
 using Delobytes.AspNetCore.Logging;
 using FluentValidation;
 using MassTransit;
-using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using Serilog;
 
@@ -131,6 +124,7 @@ public partial class Program
                 cfg.RegisterServicesFromAssembly(typeof(Identity.Application.Commands.Login.LoginCommand).Assembly);
                 cfg.RegisterServicesFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
                 cfg.RegisterServicesFromAssembly(typeof(Catalog.Application.Commands.Components.CreateComponent.CreateComponentCommand).Assembly);
+                cfg.RegisterServicesFromAssembly(typeof(Sales.Application.Queries.Orders.GetOrdersChart.GetOrdersChartQuery).Assembly);
 
                 // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
@@ -139,11 +133,8 @@ public partial class Program
 
             builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
             builder.Services.AddValidatorsFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
-
-            // Catalog validators live in the same assembly as its MediatR handlers (registered
-            // above). The module had no validators until UpdateProductCommandValidator, so nothing
-            // was ever resolved from here before.
-            builder.Services.AddValidatorsFromAssembly(typeof(UpdateProductCommand).Assembly);
+            builder.Services.AddValidatorsFromAssembly(typeof(Catalog.Application.Commands.Products.UpdateProduct.UpdateProductCommand).Assembly);
+            builder.Services.AddValidatorsFromAssembly(typeof(Sales.Application.Queries.Orders.GetOrdersChart.GetOrdersChartQuery).Assembly);
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
             {
@@ -193,25 +184,15 @@ public partial class Program
             builder.Services.AddCustomHealthChecks(secrets);
 
             // ── MassTransit + RabbitMQ (CloudAMQP) ─────────────────────────────────-
-            // Connects to CloudAMQP when CloudAmqpConnectionString is set;
-            // falls back to in-memory transport in Development without credentials.
             builder.Services.AddMessaging(secrets?.MessageBusConnectionString);
 
-            // ── Background jobs scheduler/worker (Integrations, Stage 11) ──────────────────
+            // ── Background jobs ──────────────────
             // Separate IHostedServices: the scheduler only creates Pending JobRun rows per cron
             // schedule, the worker is the sole place that enforces per-tenant parallelism and
             // publishes the event that actually triggers the orchestration consumer.
             builder.Services.AddHostedService<SchedulerHostedService>();
             builder.Services.AddHostedService<WorkerHostedService>();
-
-            // ── Watchdog (Integrations, Stage 12) ──────────────────────────────────────────
-            // Fails Running JobRuns stuck past their per-type timeout (JobTypeConfiguration);
-            // terminal transition, no automatic retry.
             builder.Services.AddHostedService<WatchdogHostedService>();
-
-            // ── RawApiResponse cleanup (Integrations, Stage 14) ────────────────────────────────
-            // Periodically deletes RawApiResponses past the configured retention window: the
-            // table has no other bound on its growth.
             builder.Services.AddHostedService<RawApiResponseCleanupHostedService>();
 
             // ── CORS ─────────────────────────────────────────────────────────────────────
@@ -235,16 +216,10 @@ public partial class Program
                 return 1;
             }
 
-            // Correlation id — first in the pipeline so the identifier is available to every
-            // component below it, including exception handling and framework-generated responses
-            // such as routing 404 and authentication 401 that never reach application code.
             app.UseMiddleware<CorrelationIdMiddleware>();
 
-            // Захват тела ДОЛЖЕН быть снаружи обработчика исключений,
-            // тогда ошибка сериализуется в живой буфер, а не в уже закрытый
             app.UseHttpContextLogging();
 
-            // Global exception handling
             app.UseMiddleware<ExceptionHandlingMiddleware>();
 
             app.UseCors(CorsPolicyNames.AllowAny);
