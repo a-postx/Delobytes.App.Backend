@@ -5,6 +5,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Delobytes.App.Backend.Sales.Infrastructure;
 
@@ -31,6 +32,10 @@ public static class ServiceCollectionExtensions
                 npgsqlOptions.MigrationsHistoryTable("__SalesMigrationsHistory", "sales")));
 
         services.AddScoped<OrdersBatchImportRequestedConsumer>();
+
+        // Registered independently of Integrations' own TryAddSingleton call: Sales must not
+        // depend on that module being loaded first.
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
 
         return services;
     }

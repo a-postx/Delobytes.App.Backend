@@ -94,14 +94,19 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     [Fact]
     public async Task ProcessAsync_CursorOutsideRetention_SkipsExpiredDaysAndWarnsWithCount()
     {
+        const int overshootDays = 5;
+
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
         DateTimeOffset today = GetMoscowDayStart(_timeProvider.GetUtcNow());
+        DateTimeOffset retentionStart = today.AddDays(-(int)ProcessOrdersImportConsumer.BackfillWindow.TotalDays);
         SetupRun(run);
         _persistedState = new OrdersBackfillState
         {
-            Id = Guid.NewGuid(), ConnectionId = connection.Id,
-            OldestDayInScope = today.AddDays(-95), NextDayToFetch = today.AddDays(-91),
+            Id = Guid.NewGuid(),
+            ConnectionId = connection.Id,
+            OldestDayInScope = retentionStart.AddDays(-overshootDays),
+            NextDayToFetch = retentionStart.AddDays(-1),
         };
         UseStateStore();
         UseInstantCompleteSource();
@@ -109,9 +114,10 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(run, connection, CreateConsumer());
 
         _issuedRequests.Should().NotBeEmpty();
-        _issuedRequests.Should().OnlyContain(q => q.DateFrom >= today.AddDays(-90) && q.Flag == 1);
+        _issuedRequests.Should().OnlyContain(q => q.DateFrom >= retentionStart && q.Flag == 1);
+        _issuedRequests[0].DateFrom.Should().Be(today.AddDays(-overshootDays));
         _persistedState!.IsCompleted.Should().BeTrue();
-        _logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains("5") && value.ToString()!.Contains("outside retention")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+        _logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains($"skipped {overshootDays} backfill day(s) outside retention")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [Fact]
