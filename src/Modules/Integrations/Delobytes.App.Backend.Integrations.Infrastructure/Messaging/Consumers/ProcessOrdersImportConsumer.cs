@@ -29,7 +29,7 @@ public class ProcessOrdersImportConsumer
     public const int MaxRequestsPerRun = 1000;
 
     public static readonly TimeSpan SafetyOverlap = TimeSpan.FromMinutes(30);
-    public static readonly TimeSpan BackfillWindow = TimeSpan.FromDays(90);
+    public static readonly TimeSpan BackfillWindow = TimeSpan.FromDays(180);
 
     private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
 
