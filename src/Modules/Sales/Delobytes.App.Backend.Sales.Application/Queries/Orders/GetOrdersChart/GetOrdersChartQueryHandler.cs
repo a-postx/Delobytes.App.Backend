@@ -86,6 +86,7 @@ public class GetOrdersChartQueryHandler : IRequestHandler<GetOrdersChartQuery, G
             {
                 Quantity = points.Sum(point => point.Quantity),
                 Amount = decimal.Round(points.Sum(point => point.Amount), 2),
+                OrderCount = points.Sum(point => point.OrderCount),
             },
             Points = points,
         };

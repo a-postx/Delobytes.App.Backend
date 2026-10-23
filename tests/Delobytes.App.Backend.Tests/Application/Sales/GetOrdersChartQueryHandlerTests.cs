@@ -382,9 +382,10 @@ public class GetOrdersChartQueryHandlerTests
         GetOrdersChartResponse response = await handler.Handle(new GetOrdersChartQuery(), CancellationToken.None);
 
         // Assert
-        response.Points.Should().OnlyContain(p => p.Quantity == 0 && p.Amount == 0m);
+        response.Points.Should().OnlyContain(p => p.Quantity == 0 && p.Amount == 0m && p.OrderCount == 0);
         response.Totals.Quantity.Should().Be(0);
         response.Totals.Amount.Should().Be(0m);
+        response.Totals.OrderCount.Should().Be(0);
     }
 
     [Fact]
@@ -396,12 +397,14 @@ public class GetOrdersChartQueryHandlerTests
         {
             new OrderLineFact
             {
+                OrderId = Guid.NewGuid(),
                 OrderDate = new DateTimeOffset(2026, 1, 5, 23, 30, 0, TimeSpan.Zero),
                 Quantity = 2,
                 UnitPrice = 100.50m,
             },
             new OrderLineFact
             {
+                OrderId = Guid.NewGuid(),
                 OrderDate = new DateTimeOffset(2026, 1, 7, 23, 30, 0, TimeSpan.Zero),
                 Quantity = 1,
                 UnitPrice = null,
@@ -429,14 +432,50 @@ public class GetOrdersChartQueryHandlerTests
         response.Points[1].PeriodStart.Should().Be(new DateOnly(2026, 1, 6));
         response.Points[1].Quantity.Should().Be(2);
         response.Points[1].Amount.Should().Be(201.00m);
+        response.Points[1].OrderCount.Should().Be(1);
 
         // The null-priced unit still counts as ordered; it contributes nothing to the amount.
         response.Points[3].PeriodStart.Should().Be(new DateOnly(2026, 1, 8));
         response.Points[3].Quantity.Should().Be(1);
         response.Points[3].Amount.Should().Be(0m);
+        response.Points[3].OrderCount.Should().Be(1);
 
         response.Totals.Quantity.Should().Be(3);
         response.Totals.Amount.Should().Be(201.00m);
+        response.Totals.OrderCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Handle_MultipleLinesSameOrder_CountsOrderOnceInTotals()
+    {
+        // Arrange: two lines of the same order must contribute a single order to the totals,
+        // even though they add to quantity and amount separately.
+        Guid orderId = Guid.NewGuid();
+        DateTimeOffset orderDate = new(2026, 1, 6, 10, 0, 0, TimeSpan.Zero);
+        List<OrderLineFact> facts = new()
+        {
+            new OrderLineFact { OrderId = orderId, OrderDate = orderDate, Quantity = 1, UnitPrice = 100m },
+            new OrderLineFact { OrderId = orderId, OrderDate = orderDate, Quantity = 1, UnitPrice = 50m },
+        };
+
+        _repositoryMock
+            .Setup(r => r.GetLineFactsAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<OrderLineFact>)facts);
+
+        GetOrdersChartQueryHandler handler = BuildHandler();
+
+        // Act
+        GetOrdersChartResponse response = await handler.Handle(new GetOrdersChartQuery(), CancellationToken.None);
+
+        // Assert
+        response.Totals.Quantity.Should().Be(2);
+        response.Totals.Amount.Should().Be(150m);
+        response.Totals.OrderCount.Should().Be(1);
     }
 
     [Fact]

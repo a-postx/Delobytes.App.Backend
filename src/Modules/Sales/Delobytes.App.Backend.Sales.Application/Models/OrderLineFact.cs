@@ -2,11 +2,14 @@ namespace Delobytes.App.Backend.Sales.Application.Models;
 
 /// <summary>
 /// A flat, per-line fact of a surviving order line, already filtered by currency and
-/// cancellation. Carries no tenant or identifier columns: the repository query that produces
-/// it has already scoped everything that matters.
+/// cancellation. Carries no tenant columns: the repository query that produces it has already
+/// scoped everything that matters. <see cref="OrderId"/> is kept only to count distinct orders.
 /// </summary>
 public class OrderLineFact
 {
+    /// <summary>Gets or sets the owning order's identifier, used to count distinct orders per bucket.</summary>
+    public Guid OrderId { get; set; }
+
     /// <summary>Gets or sets the owning order's placement time, stored and returned as UTC.</summary>
     public DateTimeOffset OrderDate { get; set; }
 

@@ -62,6 +62,7 @@ public class SalesChartBucketingTests
         daily.Should().ContainSingle();
         daily[0].Quantity.Should().Be(1);
         daily[0].Amount.Should().Be(0m);
+        daily[0].OrderCount.Should().Be(1);
     }
 
     [Fact]
@@ -81,6 +82,27 @@ public class SalesChartBucketingTests
         daily.Should().ContainSingle();
         daily[0].Quantity.Should().Be(5);
         daily[0].Amount.Should().Be(351.75m);
+        daily[0].OrderCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void GroupByLocalDay_MultipleLinesSameOrder_CountsOrderOnce()
+    {
+        // Arrange: two lines of the same order must count as a single order.
+        Guid orderId = Guid.NewGuid();
+        List<OrderLineFact> facts = new()
+        {
+            Fact(new DateTimeOffset(2026, 1, 5, 8, 0, 0, TimeSpan.Zero), quantity: 1, unitPrice: 100m, orderId: orderId),
+            Fact(new DateTimeOffset(2026, 1, 5, 9, 0, 0, TimeSpan.Zero), quantity: 1, unitPrice: 50m, orderId: orderId),
+        };
+
+        // Act
+        IReadOnlyList<OrderDailyTotal> daily = SalesChartBucketing.GroupByLocalDay(facts, TenantZonePlus3);
+
+        // Assert
+        daily.Should().ContainSingle();
+        daily[0].Quantity.Should().Be(2);
+        daily[0].OrderCount.Should().Be(1);
     }
 
     [Fact]
@@ -217,7 +239,7 @@ public class SalesChartBucketingTests
 
         // Assert
         points.Should().HaveCount(3);
-        points.Should().OnlyContain(point => point.Quantity == 0 && point.Amount == 0m);
+        points.Should().OnlyContain(point => point.Quantity == 0 && point.Amount == 0m && point.OrderCount == 0);
     }
 
     [Fact]
@@ -239,6 +261,7 @@ public class SalesChartBucketingTests
         points[0].PeriodStart.Should().Be(new DateOnly(2026, 1, 5));
         points[0].Quantity.Should().Be(0);
         points[0].Amount.Should().Be(0m);
+        points[0].OrderCount.Should().Be(0);
     }
 
     [Fact]
@@ -284,8 +307,8 @@ public class SalesChartBucketingTests
         // Arrange: both 01-06 and 01-08 belong to the week starting 01-05.
         List<OrderDailyTotal> daily = new()
         {
-            Total(new DateOnly(2026, 1, 6), quantity: 2, amount: 100.10m),
-            Total(new DateOnly(2026, 1, 8), quantity: 3, amount: 50.20m),
+            Total(new DateOnly(2026, 1, 6), quantity: 2, amount: 100.10m, orderCount: 1),
+            Total(new DateOnly(2026, 1, 8), quantity: 3, amount: 50.20m, orderCount: 2),
         };
 
         // Act
@@ -300,6 +323,7 @@ public class SalesChartBucketingTests
         points[0].PeriodStart.Should().Be(new DateOnly(2026, 1, 5));
         points[0].Quantity.Should().Be(5);
         points[0].Amount.Should().Be(150.30m);
+        points[0].OrderCount.Should().Be(3);
     }
 
     [Fact]
@@ -323,6 +347,7 @@ public class SalesChartBucketingTests
         // Assert
         points.Should().ContainSingle();
         points[0].Amount.Should().Be(30.02m);
+        points[0].OrderCount.Should().Be(3);
     }
 
     [Fact]
@@ -372,25 +397,32 @@ public class SalesChartBucketingTests
         points.Should().ContainSingle();
         points[0].Quantity.Should().Be(1);
         points[0].Amount.Should().Be(10m);
+        points[0].OrderCount.Should().Be(1);
     }
 
-    private static OrderLineFact Fact(DateTimeOffset orderDate, int quantity = 1, decimal? unitPrice = 100m)
+    private static OrderLineFact Fact(
+        DateTimeOffset orderDate,
+        int quantity = 1,
+        decimal? unitPrice = 100m,
+        Guid? orderId = null)
     {
         return new OrderLineFact
         {
+            OrderId = orderId ?? Guid.NewGuid(),
             OrderDate = orderDate,
             Quantity = quantity,
             UnitPrice = unitPrice,
         };
     }
 
-    private static OrderDailyTotal Total(DateOnly day, int quantity, decimal amount)
+    private static OrderDailyTotal Total(DateOnly day, int quantity, decimal amount, int orderCount = 1)
     {
         return new OrderDailyTotal
         {
             Day = day,
             Quantity = quantity,
             Amount = amount,
+            OrderCount = orderCount,
         };
     }
 }

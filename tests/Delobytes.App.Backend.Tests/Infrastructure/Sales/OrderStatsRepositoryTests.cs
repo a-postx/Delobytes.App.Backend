@@ -289,7 +289,8 @@ public class OrderStatsRepositoryTests
         SalesDbContext setupContext = BuildContext(_tenantId, databaseName);
 
         DateTimeOffset orderDate = new(2026, 1, 6, 12, 0, 0, TimeSpan.Zero);
-        setupContext.Orders.Add(BuildOrder(_channelId, orderDate, quantity: 3, unitPrice: 149.99m));
+        Order order = BuildOrder(_channelId, orderDate, quantity: 3, unitPrice: 149.99m);
+        setupContext.Orders.Add(order);
         await setupContext.SaveChangesAsync();
 
         SalesDbContext readContext = BuildContext(_tenantId, databaseName);
@@ -305,6 +306,7 @@ public class OrderStatsRepositoryTests
 
         // Assert
         facts.Should().ContainSingle();
+        facts[0].OrderId.Should().Be(order.Id);
         facts[0].OrderDate.Should().Be(orderDate);
         facts[0].Quantity.Should().Be(3);
         facts[0].UnitPrice.Should().Be(149.99m);

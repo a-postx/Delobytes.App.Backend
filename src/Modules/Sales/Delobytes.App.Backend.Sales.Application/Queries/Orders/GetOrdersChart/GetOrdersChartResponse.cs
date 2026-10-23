@@ -42,6 +42,9 @@ public class OrdersChartTotals
 
     /// <summary>Gets or sets the total ordered amount across the period, rounded to 2 decimals.</summary>
     public decimal Amount { get; set; }
+
+    /// <summary>Gets or sets the total number of distinct orders across the period.</summary>
+    public int OrderCount { get; set; }
 }
 
 /// <summary>
@@ -57,4 +60,7 @@ public class OrdersChartPoint
 
     /// <summary>Gets or sets the ordered amount in this bucket, rounded to 2 decimals. Zero when there is no data.</summary>
     public decimal Amount { get; set; }
+
+    /// <summary>Gets or sets the number of distinct orders in this bucket. Zero when there is no data.</summary>
+    public int OrderCount { get; set; }
 }

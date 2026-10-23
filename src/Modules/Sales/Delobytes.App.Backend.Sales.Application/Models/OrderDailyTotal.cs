@@ -14,4 +14,7 @@ public class OrderDailyTotal
 
     /// <summary>Gets or sets the ordered amount on this day.</summary>
     public decimal Amount { get; set; }
+
+    /// <summary>Gets or sets the number of distinct orders that placed a line on this day.</summary>
+    public int OrderCount { get; set; }
 }

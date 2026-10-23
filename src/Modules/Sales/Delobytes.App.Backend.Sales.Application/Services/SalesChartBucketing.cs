@@ -16,7 +16,9 @@ public static class SalesChartBucketing
     /// Converts each fact's UTC <see cref="OrderLineFact.OrderDate"/> to the tenant-local
     /// calendar day and sums <see cref="OrderLineFact.Quantity"/> and
     /// <c>UnitPrice * Quantity</c> per day. A null <see cref="OrderLineFact.UnitPrice"/>
-    /// contributes 0 to the amount but the line still counts towards the quantity.
+    /// contributes 0 to the amount but the line still counts towards the quantity. The number
+    /// of distinct <see cref="OrderLineFact.OrderId"/> values per day is also counted so the
+    /// caller can derive the average order amount.
     /// </summary>
     /// <param name="facts">Flat per-line facts, already filtered by currency and cancellation.</param>
     /// <param name="timeZone">Tenant IANA time zone used to resolve the local calendar day.</param>
@@ -31,6 +33,7 @@ public static class SalesChartBucketing
                 Day = group.Key,
                 Quantity = group.Sum(fact => fact.Quantity),
                 Amount = group.Sum(fact => (fact.UnitPrice ?? 0m) * fact.Quantity),
+                OrderCount = group.Select(fact => fact.OrderId).Distinct().Count(),
             })
             .ToList();
     }
@@ -101,6 +104,7 @@ public static class SalesChartBucketing
                     PeriodStart = group.Key,
                     Quantity = group.Sum(daily => daily.Quantity),
                     Amount = decimal.Round(group.Sum(daily => daily.Amount), 2),
+                    OrderCount = group.Sum(daily => daily.OrderCount),
                 });
 
         List<OrdersChartPoint> points = new();
@@ -111,7 +115,7 @@ public static class SalesChartBucketing
         {
             points.Add(buckets.TryGetValue(bucketStart, out OrdersChartPoint? existing)
                 ? existing
-                : new OrdersChartPoint { PeriodStart = bucketStart, Quantity = 0, Amount = 0m });
+                : new OrdersChartPoint { PeriodStart = bucketStart, Quantity = 0, Amount = 0m, OrderCount = 0 });
 
             bucketStart = GetNextBucketStart(bucketStart, granularity);
         }

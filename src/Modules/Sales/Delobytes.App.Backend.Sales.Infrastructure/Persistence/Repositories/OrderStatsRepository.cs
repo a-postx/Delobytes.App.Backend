@@ -47,6 +47,7 @@ public class OrderStatsRepository : IOrderStatsRepository
         return await query
             .Select(line => new OrderLineFact
             {
+                OrderId = line.OrderId,
                 OrderDate = line.Order.OrderDate,
                 Quantity = line.Quantity,
                 UnitPrice = line.UnitPrice,
