@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -74,8 +75,6 @@ public class WorkerHostedService : BackgroundService
         }
     }
 
-    // One scope per tenant: a scoped DbContext resolved here must see exactly this tenant's
-    // ambient TenantId, both for the query filter and for the parallelism accounting below.
     private async Task ProcessTenantAsync(Guid tenantId, CancellationToken cancellationToken)
     {
         using IServiceScope scope = _scopeFactory.CreateScope();
@@ -88,6 +87,7 @@ public class WorkerHostedService : BackgroundService
             IJobRunRepository jobRunRepository = scope.ServiceProvider.GetRequiredService<IJobRunRepository>();
             ITenantSettingsProvider tenantSettingsProvider = scope.ServiceProvider.GetRequiredService<ITenantSettingsProvider>();
             IEventPublisher eventPublisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+            ICorrelationScope correlationScope = scope.ServiceProvider.GetRequiredService<ICorrelationScope>();
 
             int parallelism = await tenantSettingsProvider.GetMaxBackgroundJobsParallelismAsync(tenantId, cancellationToken);
 
@@ -110,7 +110,7 @@ public class WorkerHostedService : BackgroundService
 
             foreach (JobRun jobRun in pendingJobs)
             {
-                await DispatchAsync(jobRun, eventPublisher, cancellationToken);
+                await DispatchAsync(jobRun, eventPublisher, correlationScope, cancellationToken);
             }
         }
         finally
@@ -119,34 +119,41 @@ public class WorkerHostedService : BackgroundService
         }
     }
 
-    private async Task DispatchAsync(JobRun jobRun, IEventPublisher eventPublisher, CancellationToken cancellationToken)
+    private async Task DispatchAsync(
+        JobRun jobRun,
+        IEventPublisher eventPublisher,
+        ICorrelationScope correlationScope,
+        CancellationToken cancellationToken)
     {
-        switch (jobRun.JobType)
+        using (correlationScope.BeginNew())
         {
-            case JobType.ProductsImport:
-                await eventPublisher.PublishAsync(
-                    new ProductsImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
-                    cancellationToken);
-                break;
+            switch (jobRun.JobType)
+            {
+                case JobType.ProductsImport:
+                    await eventPublisher.PublishAsync(
+                        new ProductsImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
+                        cancellationToken);
+                    break;
 
-            case JobType.OrdersImport:
-                await eventPublisher.PublishAsync(
-                    new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
-                    cancellationToken);
-                break;
+                case JobType.OrdersImport:
+                    await eventPublisher.PublishAsync(
+                        new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
+                        cancellationToken);
+                    break;
 
-            default:
-                _logger.LogWarning(
-                    "WorkerHostedService: JobRun {JobRunId} has unsupported JobType {JobType}, cannot dispatch.",
-                    jobRun.Id,
-                    jobRun.JobType);
-                return;
+                default:
+                    _logger.LogWarning(
+                        "WorkerHostedService: JobRun {JobRunId} has unsupported JobType {JobType}, cannot dispatch.",
+                        jobRun.Id,
+                        jobRun.JobType);
+                    return;
+            }
+
+            _logger.LogInformation(
+                "WorkerHostedService: dispatched JobRun {JobRunId} ({JobType}) for connection {ConnectionId}.",
+                jobRun.Id,
+                jobRun.JobType,
+                jobRun.ConnectionId);
         }
-
-        _logger.LogInformation(
-            "WorkerHostedService: dispatched JobRun {JobRunId} ({JobType}) for connection {ConnectionId}.",
-            jobRun.Id,
-            jobRun.JobType,
-            jobRun.ConnectionId);
     }
 }

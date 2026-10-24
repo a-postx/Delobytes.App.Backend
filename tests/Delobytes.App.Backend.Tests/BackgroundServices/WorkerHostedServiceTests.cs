@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -14,6 +15,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -380,6 +382,15 @@ public partial class WorkerHostedServiceTests
         services.AddSingleton(_tenantSettingsProviderMock.Object);
         services.AddSingleton(_eventPublisherMock.Object);
         services.AddSingleton(_tenantContext);
+
+        // Real registrations (not mocks): ProcessTenantAsync resolves ICorrelationScope to open
+        // a chain per JobRun dispatch, same as the production container wires it up.
+        Mock<IHttpContextAccessor> httpContextAccessorMock = new Mock<IHttpContextAccessor>();
+        httpContextAccessorMock.SetupGet(a => a.HttpContext).Returns((HttpContext?)null);
+        services.AddSingleton(httpContextAccessorMock.Object);
+        services.AddScoped<CorrelationContext>();
+        services.AddScoped<ICorrelationContext>(sp => sp.GetRequiredService<CorrelationContext>());
+        services.AddScoped<ICorrelationScope, CorrelationScope>();
 
         ServiceProvider provider = services.BuildServiceProvider();
 

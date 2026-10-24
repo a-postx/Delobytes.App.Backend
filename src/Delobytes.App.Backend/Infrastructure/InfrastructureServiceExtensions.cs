@@ -45,6 +45,7 @@ public static class InfrastructureServiceExtensions
         // because MassTransit consume filters need the setter, not just ICorrelationContext.
         services.AddScoped<CorrelationContext>();
         services.AddScoped<ICorrelationContext>(sp => sp.GetRequiredService<CorrelationContext>());
+        services.AddScoped<ICorrelationScope, CorrelationScope>();
 
         services.Configure<ObjectStorageOptions>(configuration.GetSection("ObjectStorage"));
 
