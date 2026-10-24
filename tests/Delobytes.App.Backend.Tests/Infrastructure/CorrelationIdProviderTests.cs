@@ -1,27 +1,25 @@
-using System.Text.RegularExpressions;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
 
 namespace Delobytes.App.Backend.Tests.Infrastructure;
 
 /// <summary>
-/// Tests for <see cref="CorrelationIdProvider"/>, which guards the boundary between
-/// attacker-controlled header input and values that end up in logs and responses.
+/// Tests for <see cref="CorrelationIdProvider"/>.
 /// </summary>
 public class CorrelationIdProviderTests
 {
     [Fact]
-    public void Create_ReturnsLowercaseHexOfExpectedLength()
+    public void Create_ReturnsNonEmptyGuid()
     {
-        string id = CorrelationIdProvider.Create();
+        Guid id = CorrelationIdProvider.Create();
 
-        id.Should().MatchRegex("^[0-9a-f]{32}$");
+        id.Should().NotBe(Guid.Empty);
     }
 
     [Fact]
     public void Create_CalledRepeatedly_ReturnsDistinctValues()
     {
-        HashSet<string> ids = new HashSet<string>();
+        HashSet<Guid> ids = new HashSet<Guid>();
 
         for (int i = 0; i < 100; i++)
         {
@@ -31,90 +29,73 @@ public class CorrelationIdProviderTests
         ids.Should().HaveCount(100);
     }
 
+    [Fact]
+    public void Resolve_Guid_WithValue_ReturnsThatValue()
+    {
+        Guid existing = Guid.NewGuid();
+
+        CorrelationIdProvider.Resolve((Guid?)existing).Should().Be(existing);
+    }
+
+    [Fact]
+    public void Resolve_Guid_WithNull_GeneratesSubstitute()
+    {
+        Guid resolved = CorrelationIdProvider.Resolve((Guid?)null);
+
+        resolved.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public void Resolve_Guid_WithEmptyGuid_GeneratesSubstitute()
+    {
+        // Guid.Empty cannot have been produced by Create(), so treating it the same as "absent"
+        // protects against an uninitialised default(Guid) being mistaken for a real identifier.
+        Guid resolved = CorrelationIdProvider.Resolve((Guid?)Guid.Empty);
+
+        resolved.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public void Resolve_String_WithWellFormedGuid_ParsesIt()
+    {
+        Guid source = Guid.NewGuid();
+
+        CorrelationIdProvider.Resolve(source.ToString()).Should().Be(source);
+    }
+
+    [Fact]
+    public void Resolve_String_AcceptsGuidWithoutDashes()
+    {
+        Guid source = Guid.NewGuid();
+
+        CorrelationIdProvider.Resolve(source.ToString("N")).Should().Be(source);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("has space")]
-    [InlineData("has/slash")]
-    [InlineData("has.dot")]
-    [InlineData("has:colon")]
-    [InlineData("newline\ninjection")]
+    [InlineData("not a valid id")]
+    [InlineData("client-supplied-id")]
     [InlineData("<script>alert(1)</script>")]
-    [InlineData("юникод")]
-    public void IsWellFormed_RejectsUnsafeValues(string? value)
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public void Resolve_String_WithUnparsableOrEmptyValue_GeneratesSubstitute(string? value)
     {
-        CorrelationIdProvider.IsWellFormed(value).Should().BeFalse();
+        Guid resolved = CorrelationIdProvider.Resolve(value);
+
+        resolved.Should().NotBe(Guid.Empty);
     }
 
     [Fact]
-    public void IsWellFormed_RejectsValueLongerThan64Characters()
+    public void GeneratedValuesAreAlwaysAcceptedByResolve()
     {
-        string tooLong = new string('a', 65);
-
-        CorrelationIdProvider.IsWellFormed(tooLong).Should().BeFalse();
-    }
-
-    [Fact]
-    public void IsWellFormed_AcceptsValueOfExactly64Characters()
-    {
-        string boundary = new string('a', 64);
-
-        CorrelationIdProvider.IsWellFormed(boundary).Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("4bf92f3577b34da6a3ce929d0e0e4736")]
-    [InlineData("5c1e0a3d-1b2e-4d5f-8a9b-0c1d2e3f4a5b")]
-    [InlineData("trace_id-with_underscores")]
-    [InlineData("ABC123")]
-    public void IsWellFormed_AcceptsOrdinaryIdentifierValues(string value)
-    {
-        CorrelationIdProvider.IsWellFormed(value).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Resolve_WithWellFormedValue_ReturnsThatValue()
-    {
-        string incoming = "client-supplied-id";
-
-        CorrelationIdProvider.Resolve(incoming).Should().Be(incoming);
-    }
-
-    [Fact]
-    public void Resolve_WithMalformedValue_GeneratesSubstitute()
-    {
-        string resolved = CorrelationIdProvider.Resolve("not a valid id");
-
-        resolved.Should().NotBe("not a valid id");
-        CorrelationIdProvider.IsWellFormed(resolved).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Resolve_WithNull_GeneratesSubstitute()
-    {
-        CorrelationIdProvider.Resolve(null).Should().MatchRegex("^[0-9a-f]{32}$");
-    }
-
-    [Fact]
-    public void Resolve_DoesNotEchoValueThatDiffersOnlyByLength()
-    {
-        string tooLong = new string('a', 200);
-
-        CorrelationIdProvider.Resolve(tooLong).Should().NotBe(tooLong);
-        CorrelationIdProvider.Resolve(tooLong).Length.Should().Be(32);
-    }
-
-    [Fact]
-    public void GeneratedValuesAreAlwaysAcceptedByTheValidator()
-    {
-        // Guards against the generator and the validator drifting apart.
+        // Guards against the generator and the resolver drifting apart.
         for (int i = 0; i < 50; i++)
         {
-            string id = CorrelationIdProvider.Create();
+            Guid id = CorrelationIdProvider.Create();
 
-            CorrelationIdProvider.IsWellFormed(id).Should().BeTrue();
-            Regex.IsMatch(id, "^[A-Za-z0-9_-]{1,64}$").Should().BeTrue();
+            CorrelationIdProvider.Resolve(id.ToString()).Should().Be(id);
+            CorrelationIdProvider.Resolve((Guid?)id).Should().Be(id);
         }
     }
 }

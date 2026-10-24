@@ -10,5 +10,5 @@ public interface ICorrelationContext
     /// <summary>
     /// Gets the correlation identifier of the current request.
     /// </summary>
-    public string? CorrelationId { get; }
+    public Guid? CorrelationId { get; }
 }

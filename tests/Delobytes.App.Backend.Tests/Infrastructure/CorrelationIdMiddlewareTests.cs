@@ -3,7 +3,6 @@ using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Delobytes.App.Backend.Tests.Infrastructure;
 
@@ -32,64 +31,69 @@ public class CorrelationIdMiddlewareTests
         => middleware.InvokeAsync(context);
 
     [Fact]
-    public async Task Invoke_AlwaysWritesCorrelationHeaderToResponse()
+    public async Task Invoke_AlwaysWritesAWellFormedGuidToTheResponseHeader()
     {
         DefaultHttpContext context = BuildContext();
 
         await InvokeAsync(BuildMiddleware(_ => Task.CompletedTask), context);
 
-        context.Response.Headers[CorrelationHeaders.CorrelationId].ToString()
-            .Should().MatchRegex("^[0-9a-f]{32}$");
+        Guid.TryParse(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString(), out _)
+            .Should().BeTrue();
     }
 
     [Fact]
-    public async Task Invoke_WithWellFormedIncomingHeader_EchoesTheSameValue()
+    public async Task Invoke_IgnoresClientSuppliedHeader_AlwaysGeneratesItsOwn()
     {
+        // A client-supplied identifier is not trusted as a chain identifier: the server always
+        // generates its own, regardless of what arrived on the request.
         DefaultHttpContext context = BuildContext("client-trace-42");
 
         await InvokeAsync(BuildMiddleware(_ => Task.CompletedTask), context);
 
         context.Response.Headers[CorrelationHeaders.CorrelationId].ToString()
-            .Should().Be("client-trace-42");
+            .Should().NotBe("client-trace-42");
     }
 
     [Fact]
-    public async Task Invoke_WithMalformedIncomingHeader_DoesNotEchoIt()
+    public async Task Invoke_WithMalformedIncomingHeader_StillGeneratesAWellFormedGuid()
     {
         DefaultHttpContext context = BuildContext("bad value with spaces");
 
         await InvokeAsync(BuildMiddleware(_ => Task.CompletedTask), context);
 
-        context.Response.Headers[CorrelationHeaders.CorrelationId].ToString()
-            .Should().NotBe("bad value with spaces");
+        Guid.TryParse(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString(), out _)
+            .Should().BeTrue();
     }
 
     [Fact]
-    public async Task Invoke_StoresCorrelationIdInHttpContextItems()
+    public async Task Invoke_StoresCorrelationIdInHttpContextItemsAsGuid()
     {
-        DefaultHttpContext context = BuildContext("pinned-id");
+        DefaultHttpContext context = BuildContext();
 
         await InvokeAsync(BuildMiddleware(_ => Task.CompletedTask), context);
 
-        context.Items[CorrelationIdProvider.HttpContextItemKey].Should().Be("pinned-id");
+        object? stored = context.Items[CorrelationIdProvider.HttpContextItemKey];
+
+        stored.Should().BeOfType<Guid>();
+        stored.Should().NotBe(Guid.Empty);
     }
 
     [Fact]
     public async Task Invoke_CorrelationIdIsAvailableToDownstreamMiddleware()
     {
         DefaultHttpContext context = BuildContext();
-        string? observed = null;
+        Guid? observed = null;
 
         await InvokeAsync(
             BuildMiddleware(ctx =>
             {
-                observed = ctx.Items[CorrelationIdProvider.HttpContextItemKey] as string;
+                observed = ctx.Items[CorrelationIdProvider.HttpContextItemKey] as Guid?;
                 return Task.CompletedTask;
             }),
             context);
 
         observed.Should().NotBeNull();
-        observed.Should().Be(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString());
+        observed!.Value.ToString().Should().Be(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString());
     }
 
     [Fact]
@@ -114,7 +118,7 @@ public class CorrelationIdMiddlewareTests
     [Fact]
     public async Task Invoke_WhenDownstreamThrows_HeaderIsStillPresent()
     {
-        DefaultHttpContext context = BuildContext("survives-failure");
+        DefaultHttpContext context = BuildContext();
 
         // InvokeAsync deliberately does not catch: ExceptionHandlingMiddleware sits above and is
         // responsible for turning this into a response. The header must already be on the response.
@@ -123,7 +127,8 @@ public class CorrelationIdMiddlewareTests
             context);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        context.Response.Headers[CorrelationHeaders.CorrelationId].ToString().Should().Be("survives-failure");
+        Guid.TryParse(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString(), out _)
+            .Should().BeTrue();
     }
 
     [Fact]

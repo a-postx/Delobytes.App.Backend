@@ -19,6 +19,9 @@ namespace Delobytes.App.Backend.Tests.Infrastructure;
 /// entry written outside the LogContext scope looks exactly like one written inside it. These tests
 /// wire up a real Serilog pipeline with LogContext enrichment and an in-memory sink, and activate the
 /// middleware through ApplicationBuilder so the test does not depend on where the logger is injected.
+/// The identifier itself is always server-generated (the middleware no longer trusts an incoming
+/// client header), so each test reads the actual value back off the response rather than pinning it
+/// through the request.
 /// </summary>
 public class CorrelationIdMiddlewareLoggingTests
 {
@@ -38,11 +41,13 @@ public class CorrelationIdMiddlewareLoggingTests
             return Task.CompletedTask;
         });
 
-        DefaultHttpContext context = BuildContext("support-ticket-id");
+        DefaultHttpContext context = BuildContext();
 
         await pipeline.InvokeAsync(context);
 
-        AssertAllEntriesCarry(pipeline.Sink.Events, "support-ticket-id");
+        string generatedId = context.Response.Headers[CorrelationHeaders.CorrelationId].ToString();
+
+        AssertAllEntriesCarry(pipeline.Sink.Events, generatedId);
     }
 
     [Fact]
@@ -53,9 +58,6 @@ public class CorrelationIdMiddlewareLoggingTests
         // Here, a single Serilog instance receives events from both concurrent async flows, and the
         // only thing separating them is the AsyncLocal stack maintained by LogContext. If the push
         // and pop happen on the wrong continuations the wrong ID ends up on an event.
-        string firstId = "parallel-first-aaa";
-        string secondId = "parallel-second-bbb";
-
         int arrivedCount = 0;
         TaskCompletionSource<bool> barrier = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -77,9 +79,17 @@ public class CorrelationIdMiddlewareLoggingTests
                 .LogInformation("downstream ran");
         });
 
+        DefaultHttpContext first = BuildContext();
+        DefaultHttpContext second = BuildContext();
+
         await Task.WhenAll(
-            pipeline.InvokeAsync(BuildContext(firstId)),
-            pipeline.InvokeAsync(BuildContext(secondId)));
+            pipeline.InvokeAsync(first),
+            pipeline.InvokeAsync(second));
+
+        string firstId = first.Response.Headers[CorrelationHeaders.CorrelationId].ToString();
+        string secondId = second.Response.Headers[CorrelationHeaders.CorrelationId].ToString();
+
+        firstId.Should().NotBe(secondId);
 
         List<LogEvent> allEvents = pipeline.Sink.Events;
         allEvents.Should().NotBeEmpty();
@@ -112,8 +122,10 @@ public class CorrelationIdMiddlewareLoggingTests
         // unrelated work that runs on the same thread or task after the request ends.
         using CorrelationPipeline pipeline = CorrelationPipeline.Create(_ => Task.CompletedTask);
 
-        DefaultHttpContext context = BuildContext("scoped-id");
+        DefaultHttpContext context = BuildContext();
         await pipeline.InvokeAsync(context);
+
+        string generatedId = context.Response.Headers[CorrelationHeaders.CorrelationId].ToString();
 
         int countAfterRequest = pipeline.Sink.Events.Count;
 
@@ -127,7 +139,7 @@ public class CorrelationIdMiddlewareLoggingTests
         externalEvents.Should().NotBeEmpty();
         externalEvents.Should().NotContain(
             e => e.Properties.ContainsKey(LoggingLogKeys.CorrelationId) &&
-                 e.Properties[LoggingLogKeys.CorrelationId].ToString().Contains("scoped-id"),
+                 e.Properties[LoggingLogKeys.CorrelationId].ToString().Contains(generatedId),
             "correlation id must not appear in log entries written after the request scope ends");
     }
 
@@ -147,15 +159,10 @@ public class CorrelationIdMiddlewareLoggingTests
             e => e.Properties[LoggingLogKeys.CorrelationId].ToString().Contains(expected));
     }
 
-    private static DefaultHttpContext BuildContext(string? incomingHeader = null)
+    private static DefaultHttpContext BuildContext()
     {
         DefaultHttpContext context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
-
-        if (incomingHeader is not null)
-        {
-            context.Request.Headers[CorrelationHeaders.CorrelationId] = incomingHeader;
-        }
 
         return context;
     }

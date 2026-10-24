@@ -228,13 +228,15 @@ public class ExceptionHandlingMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
-        context.Response.Headers[CorrelationHeaders.CorrelationId]
-            .ToString().Should().MatchRegex("^[0-9a-f]{32}$");
+        Guid.TryParse(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString(), out _)
+            .Should().BeTrue();
     }
 
     [Fact]
-    public async Task Invoke_WithIncomingCorrelationHeader_EchoesItOnErrorResponse()
+    public async Task Invoke_WithIncomingCorrelationHeader_DoesNotEchoIt()
     {
+        // A client-supplied value is never trusted as a chain identifier anywhere in this
+        // codebase, including this defensive fallback — the server always generates its own.
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new InvalidOperationException("Some error."));
 
@@ -244,11 +246,11 @@ public class ExceptionHandlingMiddlewareTests
         await middleware.InvokeAsync(context);
 
         context.Response.Headers[CorrelationHeaders.CorrelationId]
-            .ToString().Should().Be("user-quotable-id");
+            .ToString().Should().NotBe("user-quotable-id");
     }
 
     [Fact]
-    public async Task Invoke_WithIncomingMalformedCorrelationHeader_SubstitutesIt()
+    public async Task Invoke_WithIncomingMalformedCorrelationHeader_StillGeneratesAWellFormedGuid()
     {
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new InvalidOperationException("Some error."));
@@ -258,8 +260,8 @@ public class ExceptionHandlingMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
-        context.Response.Headers[CorrelationHeaders.CorrelationId]
-            .ToString().Should().NotBe("bad value with spaces");
+        Guid.TryParse(context.Response.Headers[CorrelationHeaders.CorrelationId].ToString(), out _)
+            .Should().BeTrue();
     }
 
     [Fact]

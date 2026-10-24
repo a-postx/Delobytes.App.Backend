@@ -103,11 +103,12 @@ public class ExceptionHandlingMiddleware
         context.Response.StatusCode = errorCode.Status;
 
         // CorrelationIdMiddleware sets this header before the pipeline runs, so normally it is
-        // already present. Defensive fallback for tests or non-standard host composition.
+        // already present. Defensive fallback for tests or non-standard host composition — always
+        // a fresh server-generated id, never the incoming request header: a client-supplied value
+        // is not trusted as a chain identifier anywhere in this codebase.
         if (!context.Response.Headers.ContainsKey(CorrelationHeaders.CorrelationId))
         {
-            context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Resolve(
-                context.Request.Headers[CorrelationHeaders.CorrelationId].ToString());
+            context.Response.Headers[CorrelationHeaders.CorrelationId] = CorrelationIdProvider.Create().ToString();
         }
 
         ErrorResponse body = ErrorResponse.FromCode(errorCode, message, validationErrors);

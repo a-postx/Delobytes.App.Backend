@@ -59,19 +59,53 @@ public class CorrelationFiltersTests
     [Fact]
     public async Task Publish_WithExistingCorrelationId_PropagatesItIntoHeaders()
     {
-        _correlationContextMock.Setup(c => c.CorrelationId).Returns("chain-1");
+        Guid chainId = Guid.NewGuid();
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns(chainId);
 
         await _publishFilter.Send(_publishContextMock.Object, _nextPublishPipeMock.Object);
 
         _publishHeadersMock.Verify(
-            h => h.Set(CorrelationHeaders.CorrelationId, (string)"chain-1"),
+            h => h.Set(CorrelationHeaders.CorrelationId, chainId.ToString()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Publish_WithEmptyNativeCorrelationId_SynchronisesItWithOurs()
+    {
+        // No saga claims PublishContext.CorrelationId yet in this project, so when it is empty it
+        // is free to mirror our own identifier — making the chain visible to broker-level tooling
+        // and fault messages without a second, project-specific enricher.
+        Guid chainId = Guid.NewGuid();
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns(chainId);
+
+        await _publishFilter.Send(_publishContextMock.Object, _nextPublishPipeMock.Object);
+
+        _publishContextMock.VerifySet(c => c.CorrelationId = chainId, Times.Once);
+    }
+
+    [Fact]
+    public async Task Publish_WithNativeCorrelationIdAlreadySet_DoesNotOverwriteIt()
+    {
+        // A saga's message send topology (CorrelatedBy<Guid>) or an explicit CorrelateById may have
+        // already set this field to the business id it uses to locate its instance; our chain id
+        // must not clobber it. The header still carries our id regardless — that is a separate,
+        // unrelated mechanism.
+        Guid sagaId = Guid.NewGuid();
+        _publishContextMock.SetupGet(c => c.CorrelationId).Returns(sagaId);
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns(Guid.NewGuid());
+
+        await _publishFilter.Send(_publishContextMock.Object, _nextPublishPipeMock.Object);
+
+        _publishContextMock.VerifySet(c => c.CorrelationId = It.IsAny<Guid?>(), Times.Never);
+        _publishHeadersMock.Verify(
+            h => h.Set(CorrelationHeaders.CorrelationId, It.IsAny<string>()),
             Times.Once);
     }
 
     [Fact]
     public async Task Publish_WithoutCorrelationId_GeneratesOne()
     {
-        _correlationContextMock.Setup(c => c.CorrelationId).Returns((string?)null);
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns((Guid?)null);
 
         await _publishFilter.Send(_publishContextMock.Object, _nextPublishPipeMock.Object);
 
@@ -80,24 +114,26 @@ public class CorrelationFiltersTests
         _publishHeadersMock.Verify(
             h => h.Set(CorrelationHeaders.CorrelationId, It.IsAny<string>()),
             Times.Once);
+
+        _publishContextMock.VerifySet(c => c.CorrelationId = It.IsAny<Guid?>(), Times.Once);
     }
 
     [Fact]
-    public async Task Publish_WithMalformedCorrelationId_ReplacesIt()
+    public async Task Publish_WithEmptyGuidCorrelationId_GeneratesSubstitute()
     {
-        _correlationContextMock.Setup(c => c.CorrelationId).Returns("not a valid id");
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns((Guid?)Guid.Empty);
 
         await _publishFilter.Send(_publishContextMock.Object, _nextPublishPipeMock.Object);
 
         _publishHeadersMock.Verify(
-            h => h.Set(CorrelationHeaders.CorrelationId, (string)"not a valid id"),
+            h => h.Set(CorrelationHeaders.CorrelationId, Guid.Empty.ToString()),
             Times.Never);
     }
 
     [Fact]
     public async Task Publish_AlwaysCallsNextPipe()
     {
-        _correlationContextMock.Setup(c => c.CorrelationId).Returns("chain-1");
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns(Guid.NewGuid());
 
         await _publishFilter.Send(_publishContextMock.Object, _nextPublishPipeMock.Object);
 
@@ -120,10 +156,11 @@ public class CorrelationFiltersTests
     [Fact]
     public async Task Consume_WithHeaderPresent_MakesItAvailableDuringPipeExecution()
     {
-        string? observedInsidePipe = null;
+        Guid chainId = Guid.NewGuid();
+        Guid? observedInsidePipe = null;
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
-            .Returns("chain-1");
+            .Returns(chainId.ToString());
 
         _nextConsumePipeMock
             .Setup(p => p.Send(It.IsAny<ConsumeContext<TestMessage>>()))
@@ -135,7 +172,7 @@ public class CorrelationFiltersTests
 
         await _consumeFilter.Send(_consumeContextMock.Object, _nextConsumePipeMock.Object);
 
-        observedInsidePipe.Should().Be("chain-1");
+        observedInsidePipe.Should().Be(chainId);
     }
 
     [Fact]
@@ -143,7 +180,7 @@ public class CorrelationFiltersTests
     {
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
-            .Returns("chain-1");
+            .Returns(Guid.NewGuid().ToString());
 
         await _consumeFilter.Send(_consumeContextMock.Object, _nextConsumePipeMock.Object);
 
@@ -157,7 +194,7 @@ public class CorrelationFiltersTests
     {
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
-            .Returns("chain-1");
+            .Returns(Guid.NewGuid().ToString());
         _nextConsumePipeMock
             .Setup(p => p.Send(It.IsAny<ConsumeContext<TestMessage>>()))
             .ThrowsAsync(new InvalidOperationException("consumer failed"));
@@ -171,7 +208,7 @@ public class CorrelationFiltersTests
     [Fact]
     public async Task Consume_WithoutHeader_GeneratesOneSoConsumerLogsAreTraceable()
     {
-        string? observedInsidePipe = null;
+        Guid? observedInsidePipe = null;
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
             .Returns((string?)null);
@@ -187,13 +224,15 @@ public class CorrelationFiltersTests
         await _consumeFilter.Send(_consumeContextMock.Object, _nextConsumePipeMock.Object);
 
         observedInsidePipe.Should().NotBeNull();
-        observedInsidePipe.Should().MatchRegex("^[0-9a-f]{32}$");
+        observedInsidePipe.Should().NotBe(Guid.Empty);
     }
 
     [Fact]
-    public async Task Consume_WithMalformedHeader_DoesNotReuseItVerbatim()
+    public async Task Consume_WithMalformedHeader_GeneratesSubstituteInstead()
     {
-        string? observedInsidePipe = null;
+        // The header on the wire is still a plain string, so a legacy or mis-instrumented producer
+        // can still send something that is not a GUID — it must not be parsed as one.
+        Guid? observedInsidePipe = null;
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
             .Returns("bad value with spaces");
@@ -208,7 +247,8 @@ public class CorrelationFiltersTests
 
         await _consumeFilter.Send(_consumeContextMock.Object, _nextConsumePipeMock.Object);
 
-        observedInsidePipe.Should().NotBe("bad value with spaces");
+        observedInsidePipe.Should().NotBeNull();
+        observedInsidePipe.Should().NotBe(Guid.Empty);
     }
 
     [Fact]
@@ -216,7 +256,7 @@ public class CorrelationFiltersTests
     {
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
-            .Returns("chain-1");
+            .Returns(Guid.NewGuid().ToString());
 
         await _consumeFilter.Send(_consumeContextMock.Object, _nextConsumePipeMock.Object);
 
@@ -243,7 +283,8 @@ public class CorrelationFiltersTests
     [Fact]
     public async Task PublishThenConsume_PreservesTheSameIdentifier()
     {
-        _correlationContextMock.Setup(c => c.CorrelationId).Returns("end-to-end-chain");
+        Guid chainId = Guid.NewGuid();
+        _correlationContextMock.Setup(c => c.CorrelationId).Returns(chainId);
 
         string? capturedHeader = null;
         _publishHeadersMock
@@ -256,7 +297,7 @@ public class CorrelationFiltersTests
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
             .Returns(() => capturedHeader);
 
-        string? observedInsideConsumer = null;
+        Guid? observedInsideConsumer = null;
         _nextConsumePipeMock
             .Setup(p => p.Send(It.IsAny<ConsumeContext<TestMessage>>()))
             .Returns(() =>
@@ -267,7 +308,7 @@ public class CorrelationFiltersTests
 
         await _consumeFilter.Send(_consumeContextMock.Object, _nextConsumePipeMock.Object);
 
-        observedInsideConsumer.Should().Be("end-to-end-chain");
+        observedInsideConsumer.Should().Be(chainId);
     }
 
     public class TestMessage
