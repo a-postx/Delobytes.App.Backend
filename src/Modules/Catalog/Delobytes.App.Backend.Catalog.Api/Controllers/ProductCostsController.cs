@@ -4,7 +4,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// Cost calculation endpoints for products.

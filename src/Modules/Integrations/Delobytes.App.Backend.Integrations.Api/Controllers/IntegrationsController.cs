@@ -13,9 +13,10 @@ using Delobytes.App.Backend.Integrations.Application.Queries.GetJobs;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Integrations.Api.Controllers;
 
 [ApiController]
 [Route("api/integrations")]
@@ -29,6 +30,9 @@ public class IntegrationsController : ControllerBase
         _mediator = mediator;
     }
 
+    /// <summary>
+    /// Get the available channels.
+    /// </summary>
     [HttpGet("channels")]
     public async Task<ActionResult<GetAvailableChannelsResponse>> GetChannels(CancellationToken cancellationToken)
     {
@@ -38,6 +42,9 @@ public class IntegrationsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Get the current connections.
+    /// </summary>
     [HttpGet("connections")]
     public async Task<ActionResult<GetConnectionsResponse>> GetConnections(CancellationToken cancellationToken)
     {
@@ -47,6 +54,9 @@ public class IntegrationsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Creates a connection.
+    /// </summary>
     [HttpPost("connections")]
     public async Task<ActionResult<CreateConnectionResponse>> CreateConnection(
         [FromBody] CreateConnectionRequest request,
@@ -66,6 +76,9 @@ public class IntegrationsController : ControllerBase
         return CreatedAtAction(nameof(GetConnections), new { id = response.ConnectionId }, response);
     }
 
+    /// <summary>
+    /// Deletes the connection.
+    /// </summary>
     [HttpDelete("connections/{id:guid}")]
     public async Task<IActionResult> DeleteConnection(Guid id, CancellationToken cancellationToken)
     {

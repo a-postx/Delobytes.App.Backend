@@ -8,7 +8,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// CRUD endpoints for the Work Rates catalog.
@@ -27,6 +27,7 @@ public class WorkRatesController : ControllerBase
         _mediator = mediator;
     }
 
+    /// <summary>Gets all work rates.</summary>
     [HttpGet]
     public async Task<ActionResult<GetWorkRatesResponse>> GetAll(CancellationToken cancellationToken)
     {
@@ -34,6 +35,7 @@ public class WorkRatesController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Gets the work rate by ID.</summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetWorkRateResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -49,6 +51,7 @@ public class WorkRatesController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Creates the work rate.</summary>
     [HttpPost]
     public async Task<ActionResult<CreateWorkRateResponse>> Create(
         [FromBody] CreateWorkRateApiRequest request,
@@ -66,6 +69,7 @@ public class WorkRatesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
+    /// <summary>Updates the work rate.</summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(
         Guid id,
@@ -113,6 +117,7 @@ public class WorkRatesController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Deletes the work rate.</summary>
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {

@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
+using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.DeleteProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.UpdateProductWorkRate;
 using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates.GetAllProductWorkRates;
@@ -6,16 +6,13 @@ using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates.GetProd
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// Endpoints for the Product Work Rates catalog.
-/// Creating a new rate (POST) supersedes the version currently in force and appends a new one;
-/// an existing, still-active version can also be corrected in place (PUT), e.g. to fix a typo.
-/// Deletion withdraws the version from the removal date onwards (DELETE): the record is retained
-/// and keeps resolving for every earlier date, so historical cost calculations are unaffected.
 /// </summary>
 [ApiController]
 [Route("api/catalogs/product-work-rates")]
@@ -31,21 +28,7 @@ public class ProductWorkRatesController : ControllerBase
 
     /// <summary>
     /// Returns the work rate list as a page of products, each with all of its versions.
-    /// An omitted search keeps the full list; when supplied it is trimmed, capped at 200 characters
-    /// and matched case-insensitively as a substring of the product name or SKU (a match in either
-    /// field is enough). The status filter is applied per product, not per version: active means the
-    /// product has at least one active version, inactive that it has at least one superseded or
-    /// removed one. Be aware that the source is the work rate table, so "All" returns every product
-    /// that has at least one version, not every product in the catalog — a product without a rate
-    /// cannot be returned here. An omitted page keeps the legacy behaviour: the whole list is
-    /// returned and no Skip/Take is applied. When page is supplied, pageSize defaults to 25 and is
-    /// clamped to 1..200, sortBy must be one of productName (default), updatedAt, validFrom, and
-    /// sortDir is asc (default) or desc; the date keys describe the latest version of each product.
-    /// Invalid sortBy, sortDir or page values fall back silently to their defaults instead of failing
-    /// the request. Set includeCounts to receive per-group totals for the filter labels, counted over
-    /// the searched result set and per product, not per version.
-    /// Paging counts products: a product with several versions always arrives whole on one page, so
-    /// totalCount is the number of matching products, not the number of rows in the response.
+    /// An omitted search keeps the full list;
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(GetAllProductWorkRatesResponse), StatusCodes.Status200OK)]
@@ -146,9 +129,7 @@ public class ProductWorkRatesController : ControllerBase
 
     /// <summary>
     /// Withdraws a rate version from today (or from the day after its start, for a future-dated
-    /// version) onwards. The record is retained and keeps resolving for every earlier date, so
-    /// historical margin calculation snapshots remain valid. Idempotent: calling this again on an
-    /// already-removed version does not move the removal date.
+    /// version) onwards.
     /// Requires Manager or Administrator role.
     /// </summary>
     [HttpDelete("{id:guid}")]

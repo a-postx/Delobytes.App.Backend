@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
+
 namespace Delobytes.App.Backend.Catalog.Application.Commands.BomLines.UpsertProductBom;
 
 public class UpsertProductBomCommand : IRequest<UpsertProductBomResponse>, IRequireRole

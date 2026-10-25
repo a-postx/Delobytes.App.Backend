@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
+using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.CreateProduct;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
@@ -12,14 +12,13 @@ using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// CRUD and lifecycle endpoints for Products.
-/// DELETE is asynchronous: returns 202 Accepted; clients poll GET {id}/deletion-status for progress.
-/// Two creation paths are planned: manual (this API) and marketplace import (not yet implemented).
 /// </summary>
 [ApiController]
 [Route("api/catalogs/products")]
@@ -35,18 +34,7 @@ public class ProductsController : ControllerBase
 
     /// <summary>
     /// Returns products filtered by status and search term, sorted and optionally paged.
-    /// Omitted status means all statuses. An omitted search keeps the full list; when supplied it is
-    /// trimmed, capped at 200 characters and matched case-insensitively as a substring of the product
-    /// name or SKU (a match in either field is enough), alongside the status filter. Omitted page keeps
-    /// the legacy behaviour: the full list is returned and no Skip/Take is applied. When page is
-    /// supplied, pageSize defaults to 50 and is clamped to 1..200, sortBy must be one of name (default),
-    /// sku, status, createdAt, updatedAt, and sortDir is asc (default) or desc. Sorting by updatedAt uses
-    /// the creation moment for products that were never edited. Invalid sortBy, sortDir or page values
-    /// fall back silently to their defaults instead of failing the request. Set includeCounts to also
-    /// receive per-status totals for the filter tabs, computed over the searched result set. Set
-    /// includeWorkRateCoverage to add hasActiveWorkRate to every item, telling the client whether the
-    /// product already has an active assembly output rate; it is off by default because it costs an
-    /// extra collection include per returned product.
+    /// Omitted status means all statuses. An omitted search keeps the full list.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(GetProductsResponse), StatusCodes.Status200OK)]
@@ -78,6 +66,7 @@ public class ProductsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Gets the product by ID.</summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetProductResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -93,6 +82,7 @@ public class ProductsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Creates a product.</summary>
     [HttpPost]
     public async Task<ActionResult<CreateProductResponse>> Create(
         [FromBody] CreateProductRequest request,
@@ -144,6 +134,7 @@ public class ProductsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Gets the cost history.</summary>
     [HttpGet("{id:guid}/cost/history")]
     public async Task<ActionResult<GetProductCostHistoryResponse>> GetCostHistory(
         Guid id,
@@ -163,6 +154,7 @@ public class ProductsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Adds the product to archive.</summary>
     [HttpPost("{id:guid}/archive")]
     public async Task<ActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {

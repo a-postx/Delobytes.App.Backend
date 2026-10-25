@@ -3,9 +3,10 @@ using FluentValidation;
 using FluentValidation.Results;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Sales.Api.Controllers;
 
 /// <summary>
 /// Read-only sales reporting endpoints.
@@ -28,9 +29,7 @@ public class SalesOrdersController : ControllerBase
 
     /// <summary>
     /// Returns the ordered units and ordered amount series in the tenant currency,
-    /// bucketed by day, week or month. Dates are tenant-local calendar dates and
-    /// inclusive; from defaults to the last 7 days ending today, to defaults to today, and
-    /// granularity defaults to an adaptive choice by range length.
+    /// bucketed by day, week or month.
     /// </summary>
     /// <param name="from">First day of the period, tenant-local (inclusive).</param>
     /// <param name="to">Last day of the period, tenant-local (inclusive).</param>

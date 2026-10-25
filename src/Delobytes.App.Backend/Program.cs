@@ -4,16 +4,18 @@ using System.Reflection;
 using System.Text.Json;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.BackgroundServices;
+using Delobytes.App.Backend.Catalog.Api;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
+using Delobytes.App.Backend.Identity.Api;
 using Delobytes.App.Backend.Infrastructure;
-using Delobytes.App.Backend.Infrastructure.Swagger;
+using Delobytes.App.Backend.Integrations.Api;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
+using Delobytes.App.Backend.Sales.Api;
 using Delobytes.AspNetCore.Common.Constants;
 using Delobytes.AspNetCore.Logging;
-using FluentValidation;
 using MassTransit;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
@@ -81,11 +83,6 @@ public partial class Program
                 options.DescribeAllParametersInCamelCase();
                 options.EnableAnnotations();
 
-                var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-                options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
-
-                options.SchemaFilter<LoginExampleSchemaFilter>();
-
                 options.SwaggerDoc("v1", new OpenApiInfo
                 {
                     Title = "Delobytes App Backend API",
@@ -120,21 +117,20 @@ public partial class Program
 
             builder.Services.AddMediatR(cfg =>
             {
-                cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Identity.Application.Commands.Login.LoginCommand).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Catalog.Application.Commands.Components.CreateComponent.CreateComponentCommand).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(Sales.Application.Queries.Orders.GetOrdersChart.GetOrdersChartQuery).Assembly);
+                cfg.AddIdentityHandlers();
+                cfg.AddIntegrationsHandlers();
+                cfg.AddCatalogHandlers();
+                cfg.AddSalesHandlers();
 
                 // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
                 cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
             });
 
-            builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
-            builder.Services.AddValidatorsFromAssembly(typeof(Integrations.Application.Queries.GetAvailableChannels.GetAvailableChannelsQuery).Assembly);
-            builder.Services.AddValidatorsFromAssembly(typeof(Catalog.Application.Commands.Products.UpdateProduct.UpdateProductCommand).Assembly);
-            builder.Services.AddValidatorsFromAssembly(typeof(Sales.Application.Queries.Orders.GetOrdersChart.GetOrdersChartQuery).Assembly);
+            builder.Services.AddIdentityApi();
+            builder.Services.AddIntegrationsApi();
+            builder.Services.AddCatalogApi();
+            builder.Services.AddSalesApi();
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
             {

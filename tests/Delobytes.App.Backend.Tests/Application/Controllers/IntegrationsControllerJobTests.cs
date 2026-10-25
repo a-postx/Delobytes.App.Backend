@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Controllers;
+using Delobytes.App.Backend.Integrations.Api.Controllers;
 using Delobytes.App.Backend.Integrations.Application.Commands.CancelJob;
 using Delobytes.App.Backend.Integrations.Application.Commands.StartJob;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;

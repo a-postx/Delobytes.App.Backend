@@ -5,12 +5,12 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// Endpoints for managing sales channels (Channel) — independent business entities that
 /// hold product costs and analytics data. A channel may optionally have a Connection
-/// (see IntegrationsController) attached to it for automated data collection.
+/// attached for automated data collection.
 /// </summary>
 [ApiController]
 [Route("api/catalogs/channels")]
@@ -24,6 +24,9 @@ public class ChannelsController : ControllerBase
         _mediator = mediator;
     }
 
+    /// <summary>
+    /// Get all channels.
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<GetChannelsResponse>> GetAll(CancellationToken cancellationToken)
     {
@@ -31,6 +34,9 @@ public class ChannelsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Create a channel.
+    /// </summary>
     [HttpPost]
     public async Task<ActionResult<CreateChannelResponse>> Create(
         [FromBody] CreateChannelRequest request,
@@ -49,6 +55,9 @@ public class ChannelsController : ControllerBase
         return CreatedAtAction(nameof(GetAll), new { id = response.Id }, response);
     }
 
+    /// <summary>
+    /// Update the channel.
+    /// </summary>
     [HttpPatch("{id:guid}")]
     public async Task<ActionResult> Rename(
         Guid id,

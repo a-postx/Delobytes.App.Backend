@@ -8,8 +8,9 @@ using Delobytes.App.Backend.Identity.Application.Commands.YandexCallback;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Identity.Api.Controllers;
 
 /// <summary>
 /// Authentication and authorization endpoints.
@@ -106,8 +107,7 @@ public class AuthController : ControllerBase
     /// <summary>
     /// Complete the Yandex ID OAuth 2.0 authorization-code flow.
     /// The client sends the code received from Yandex; the backend exchanges it
-    /// for a Yandex token, resolves or creates the local user account, and
-    /// returns a local JWT identical in shape to the regular login response.
+    /// for a Yandex token, resolves or creates the local user account, and returns a local JWT.
     /// </summary>
     /// <param name="command">Authorization code and redirect URI.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -124,9 +124,8 @@ public class AuthController : ControllerBase
 
     /// <summary>
     /// Complete the Google OAuth 2.0 authorization-code flow.
-    /// The client sends the code received from Google; the backend exchanges it
-    /// for a Google token, resolves or creates the local user account, and
-    /// returns a local JWT identical in shape to the regular login response.
+    /// The client sends the code received from Google; the backend exchanges it for a Google token,
+    /// resolves or creates the local user account, and returns a local JWT.
     /// </summary>
     /// <param name="command">Authorization code and redirect URI.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

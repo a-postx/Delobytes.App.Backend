@@ -7,7 +7,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// CRUD endpoints for the Suppliers catalog.
@@ -24,6 +24,7 @@ public class SuppliersController : ControllerBase
         _mediator = mediator;
     }
 
+    /// <summary>Gets all suppliers.</summary>
     [HttpGet]
     public async Task<ActionResult<GetSuppliersResponse>> GetAll(CancellationToken cancellationToken)
     {
@@ -31,6 +32,7 @@ public class SuppliersController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Gets the supplier by ID.</summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetSupplierResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -46,6 +48,7 @@ public class SuppliersController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Creates the supplier.</summary>
     [HttpPost]
     public async Task<ActionResult<CreateSupplierResponse>> Create(
         [FromBody] CreateSupplierRequest request,
@@ -65,6 +68,7 @@ public class SuppliersController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
+    /// <summary>Updates the supplier.</summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(
         Guid id,
@@ -92,6 +96,7 @@ public class SuppliersController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Deletes the supplier.</summary>
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {

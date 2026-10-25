@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Amazon.Runtime.Internal.Util;
-using Delobytes.App.Backend.Controllers;
+using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands.GoogleCallback;
 using Delobytes.App.Backend.Identity.Application.Commands.Login;
 using Delobytes.App.Backend.Identity.Application.Commands.YandexCallback;

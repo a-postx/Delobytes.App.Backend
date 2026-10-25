@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Controllers;
+using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Queries.GetCurrentUser;
 using FluentAssertions;
 using MediatR;

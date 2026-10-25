@@ -3,7 +3,7 @@ using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
-namespace Delobytes.App.Backend.Infrastructure.Swagger;
+namespace Delobytes.App.Backend.Identity.Api.Swagger;
 
 /// <summary>
 /// Добавляет значения в пример LoginCommand.

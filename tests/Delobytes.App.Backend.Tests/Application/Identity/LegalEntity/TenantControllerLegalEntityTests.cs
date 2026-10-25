@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Delobytes.App.Backend.Controllers;
+using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
 using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
 using FluentAssertions;

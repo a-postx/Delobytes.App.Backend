@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Delobytes.App.Backend.Contracts.Accounting;
-using Delobytes.App.Backend.Controllers;
+using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.CreateTenantTaxProfile;
 using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.DeleteTenantTaxProfile;
 using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles.GetActiveTenantTaxProfile;

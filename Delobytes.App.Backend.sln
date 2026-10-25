@@ -56,6 +56,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Persi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Sales.Contracts", "src\Modules\Sales\Delobytes.App.Backend.Sales.Contracts\Delobytes.App.Backend.Sales.Contracts.csproj", "{B464862B-D6DE-C8C5-7671-782E77046AB3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Catalog.Api", "src\Modules\Catalog\Delobytes.App.Backend.Catalog.Api\Delobytes.App.Backend.Catalog.Api.csproj", "{0B92B2B3-E827-BF8F-DF89-323F47A506C2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Identity.Api", "src\Modules\Identity\Delobytes.App.Backend.Identity.Api\Delobytes.App.Backend.Identity.Api.csproj", "{F2F61721-517B-AD94-11B0-6F39E6363279}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Integrations.Api", "src\Modules\Integrations\Delobytes.App.Backend.Integrations.Api\Delobytes.App.Backend.Integrations.Api.csproj", "{ABE8102D-53DD-12E8-BDAF-D8806993FD2A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Sales.Api", "src\Modules\Sales\Delobytes.App.Backend.Sales.Api\Delobytes.App.Backend.Sales.Api.csproj", "{19C72C45-D1AE-B733-2B12-F34C463F7CF1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -142,6 +150,22 @@ Global
 		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0B92B2B3-E827-BF8F-DF89-323F47A506C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0B92B2B3-E827-BF8F-DF89-323F47A506C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0B92B2B3-E827-BF8F-DF89-323F47A506C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0B92B2B3-E827-BF8F-DF89-323F47A506C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F2F61721-517B-AD94-11B0-6F39E6363279}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F2F61721-517B-AD94-11B0-6F39E6363279}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F2F61721-517B-AD94-11B0-6F39E6363279}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F2F61721-517B-AD94-11B0-6F39E6363279}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ABE8102D-53DD-12E8-BDAF-D8806993FD2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ABE8102D-53DD-12E8-BDAF-D8806993FD2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ABE8102D-53DD-12E8-BDAF-D8806993FD2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ABE8102D-53DD-12E8-BDAF-D8806993FD2A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{19C72C45-D1AE-B733-2B12-F34C463F7CF1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19C72C45-D1AE-B733-2B12-F34C463F7CF1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19C72C45-D1AE-B733-2B12-F34C463F7CF1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19C72C45-D1AE-B733-2B12-F34C463F7CF1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -172,6 +196,10 @@ Global
 		{8BBAB29B-D34B-5C6C-B728-7B28B05BE935} = {EAFEFD2F-73D3-4237-9FBA-FD7ED5FABDD6}
 		{CA0A48D5-E291-BDE4-953A-98AE35E8CC4A} = {B988D1FB-BD6F-4FFB-86E2-E78EC7E3B471}
 		{B464862B-D6DE-C8C5-7671-782E77046AB3} = {BD6FA63C-EE2F-4C4C-B166-F0A70A0C8178}
+		{0B92B2B3-E827-BF8F-DF89-323F47A506C2} = {EAFEFD2F-73D3-4237-9FBA-FD7ED5FABDD6}
+		{F2F61721-517B-AD94-11B0-6F39E6363279} = {9C257205-0276-4997-9B54-63F565521B56}
+		{ABE8102D-53DD-12E8-BDAF-D8806993FD2A} = {E8A1F2B3-4C5D-4E6F-A7B8-C9D0E1F2A3B4}
+		{19C72C45-D1AE-B733-2B12-F34C463F7CF1} = {BD6FA63C-EE2F-4C4C-B166-F0A70A0C8178}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A7527D03-2D70-4CFC-892B-1F843B9CA53F}

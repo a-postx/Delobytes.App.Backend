@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
-using Delobytes.App.Backend.Controllers;
+using Delobytes.App.Backend.Catalog.Api.Controllers;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;

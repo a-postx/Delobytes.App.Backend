@@ -57,10 +57,13 @@
   <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
     <ProjectReference Include="..\Modules\Identity\Delobytes.App.Backend.Identity.Infrastructure\Delobytes.App.Backend.Identity.Infrastructure.csproj" />
-    <ProjectReference Include="..\Modules\Identity\Delobytes.App.Backend.Identity.Application\Delobytes.App.Backend.Identity.Application.csproj" />
+    <ProjectReference Include="..\Modules\Identity\Delobytes.App.Backend.Identity.Api\Delobytes.App.Backend.Identity.Api.csproj" />
     <ProjectReference Include="..\Modules\Catalog\Delobytes.App.Backend.Catalog.Infrastructure\Delobytes.App.Backend.Catalog.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Catalog\Delobytes.App.Backend.Catalog.Api\Delobytes.App.Backend.Catalog.Api.csproj" />
     <ProjectReference Include="..\Modules\Integrations\Delobytes.App.Backend.Integrations.Infrastructure\Delobytes.App.Backend.Integrations.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Integrations\Delobytes.App.Backend.Integrations.Api\Delobytes.App.Backend.Integrations.Api.csproj" />
     <ProjectReference Include="..\Modules\Sales\Delobytes.App.Backend.Sales.Infrastructure\Delobytes.App.Backend.Sales.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Sales\Delobytes.App.Backend.Sales.Api\Delobytes.App.Backend.Sales.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

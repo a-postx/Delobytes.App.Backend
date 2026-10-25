@@ -8,9 +8,10 @@ using Delobytes.App.Backend.Catalog.Application.Queries.Components.GetComponents
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Delobytes.App.Backend.Controllers;
+namespace Delobytes.App.Backend.Catalog.Api.Controllers;
 
 /// <summary>
 /// CRUD endpoints for the Components catalog.
@@ -31,16 +32,7 @@ public class ComponentsController : ControllerBase
 
     /// <summary>
     /// Returns components filtered by status and search term, sorted and optionally paged.
-    /// Omitted isActive means both statuses. An omitted search keeps the full list; when supplied
-    /// it is trimmed, capped at 200 characters and matched case-insensitively as a substring of
-    /// the component name. Omitted page keeps the legacy behaviour relied upon by the product BOM
-    /// editor: the full list is returned and no Skip/Take is applied. When page is supplied,
-    /// pageSize defaults to 50 and is clamped to 1..200, sortBy must be one of name (default),
-    /// supplier, validFrom, createdAt, and sortDir is asc (default) or desc. Sorting by supplier or
-    /// validFrom uses the component's active price version; a component without an active price
-    /// always sorts last, in both directions. Invalid sortBy, sortDir or page values fall back
-    /// silently to their defaults instead of failing the request. Set includeCounts to also
-    /// receive per-status totals for the filter tabs, computed over the searched result set.
+    /// Omitted isActive means both statuses. An omitted search keeps the full list.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(GetComponentsResponse), StatusCodes.Status200OK)]
@@ -70,6 +62,7 @@ public class ComponentsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Gets the component by ID.</summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetComponentResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -85,6 +78,7 @@ public class ComponentsController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>Creates the component.</summary>
     [HttpPost]
     public async Task<ActionResult<CreateComponentResponse>> Create(
         [FromBody] CreateComponentRequest request,
@@ -106,6 +100,7 @@ public class ComponentsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
+    /// <summary>Updates the component.</summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(
         Guid id,
@@ -172,6 +167,7 @@ public class ComponentsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Deletes the component.</summary>
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
