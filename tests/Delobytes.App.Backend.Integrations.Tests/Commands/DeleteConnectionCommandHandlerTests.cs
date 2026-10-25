@@ -1,6 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Integrations.Application.Commands.DeleteConnection;
+using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;

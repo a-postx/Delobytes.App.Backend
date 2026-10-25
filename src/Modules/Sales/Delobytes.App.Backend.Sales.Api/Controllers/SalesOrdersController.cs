@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Sales.Application.Queries.Orders.GetOrdersChart;
+using Delobytes.App.Backend.Sales.Application.Queries.Orders;
 using FluentValidation;
 using FluentValidation.Results;
 using MediatR;

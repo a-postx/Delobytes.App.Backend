@@ -1,14 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.ArchiveProduct;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.CreateProduct;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestProductDeletion;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.RestoreProduct;
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
+using Delobytes.App.Backend.Catalog.Application.Commands.Products;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProduct;
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductCost;
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductCostHistory;
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductDeletionStatus;
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProducts;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;

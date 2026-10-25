@@ -1,6 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.ChannelParameterSets.CreateChannelParameterSet;
-using Delobytes.App.Backend.Catalog.Application.Queries.ChannelParameterSets.GetActiveChannelParameterSet;
-using Delobytes.App.Backend.Catalog.Application.Queries.ChannelParameterSets.GetChannelParameterSets;
+using Delobytes.App.Backend.Catalog.Application.Commands.ChannelParameterSets;
+using Delobytes.App.Backend.Catalog.Application.Queries.ChannelParameterSets;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

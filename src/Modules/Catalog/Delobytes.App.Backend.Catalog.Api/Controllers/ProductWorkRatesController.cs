@@ -1,8 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.DeleteProductWorkRate;
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.UpdateProductWorkRate;
-using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates.GetAllProductWorkRates;
-using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates.GetProductWorkRates;
+using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates;
+using Delobytes.App.Backend.Catalog.Application.Queries.ProductWorkRates;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;

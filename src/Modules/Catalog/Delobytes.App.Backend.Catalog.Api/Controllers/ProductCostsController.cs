@@ -1,5 +1,4 @@
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductCost;
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.PreviewProductBomCost;
+using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

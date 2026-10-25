@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
-using Delobytes.App.Backend.Identity.Application.Queries.GetTenantMembers;
+using Delobytes.App.Backend.Identity.Application.Queries;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using FluentAssertions;
 using Moq;

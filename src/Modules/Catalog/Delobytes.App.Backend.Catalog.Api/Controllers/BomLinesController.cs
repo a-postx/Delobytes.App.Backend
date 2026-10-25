@@ -1,8 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.CreateBomLine;
-using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.DeleteBomLine;
-using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.UpsertProductBom;
-using Delobytes.App.Backend.Catalog.Application.Queries.BomLines.GetProductBom;
-using Delobytes.App.Backend.Catalog.Application.Queries.BomLines.GetProductBomHistory;
+using Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
+using Delobytes.App.Backend.Catalog.Application.Queries.BomLines;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

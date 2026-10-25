@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Delobytes.App.Backend.Identity.Api.Controllers;
-using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
-using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
+using Delobytes.App.Backend.Identity.Application.Commands;
+using Delobytes.App.Backend.Identity.Application.Queries;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;

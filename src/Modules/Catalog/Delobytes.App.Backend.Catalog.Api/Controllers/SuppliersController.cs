@@ -1,8 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.Suppliers.CreateSupplier;
-using Delobytes.App.Backend.Catalog.Application.Commands.Suppliers.DeleteSupplier;
-using Delobytes.App.Backend.Catalog.Application.Commands.Suppliers.UpdateSupplier;
-using Delobytes.App.Backend.Catalog.Application.Queries.Suppliers.GetSupplier;
-using Delobytes.App.Backend.Catalog.Application.Queries.Suppliers.GetSuppliers;
+using Delobytes.App.Backend.Catalog.Application.Commands.Suppliers;
+using Delobytes.App.Backend.Catalog.Application.Queries.Suppliers;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

@@ -1,6 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.Channels.CreateChannel;
-using Delobytes.App.Backend.Catalog.Application.Commands.Channels.RenameChannel;
-using Delobytes.App.Backend.Catalog.Application.Queries.Channels.GetChannels;
+using Delobytes.App.Backend.Catalog.Application.Commands.Channels;
+using Delobytes.App.Backend.Catalog.Application.Queries.Channels;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

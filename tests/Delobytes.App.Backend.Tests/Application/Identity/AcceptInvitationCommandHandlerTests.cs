@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
-using Delobytes.App.Backend.Identity.Application.Commands.AcceptInvitation;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using FluentAssertions;

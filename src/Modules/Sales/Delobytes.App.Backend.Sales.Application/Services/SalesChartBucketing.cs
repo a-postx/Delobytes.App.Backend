@@ -1,5 +1,5 @@
 using Delobytes.App.Backend.Sales.Application.Models;
-using Delobytes.App.Backend.Sales.Application.Queries.Orders.GetOrdersChart;
+using Delobytes.App.Backend.Sales.Application.Queries.Orders;
 
 namespace Delobytes.App.Backend.Sales.Application.Services;
 

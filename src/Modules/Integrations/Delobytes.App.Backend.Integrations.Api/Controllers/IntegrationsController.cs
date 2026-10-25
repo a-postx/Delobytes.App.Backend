@@ -1,15 +1,9 @@
-using Delobytes.App.Backend.Integrations.Application.Commands.CancelJob;
-using Delobytes.App.Backend.Integrations.Application.Commands.CreateConnection;
-using Delobytes.App.Backend.Integrations.Application.Commands.DeleteConnection;
-using Delobytes.App.Backend.Integrations.Application.Commands.StartJob;
+using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetConnections;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetJob;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetJobs;
+using Delobytes.App.Backend.Integrations.Application.Queries;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;

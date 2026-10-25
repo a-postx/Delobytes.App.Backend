@@ -1,5 +1,5 @@
 using Delobytes.App.Backend.Identity.Application.Interfaces;
-using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
+using Delobytes.App.Backend.Identity.Application.Queries;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Moq;
 using Xunit;

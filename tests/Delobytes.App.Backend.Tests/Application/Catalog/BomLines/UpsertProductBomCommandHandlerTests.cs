@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.BomLines.UpsertProductBom;
+using Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;

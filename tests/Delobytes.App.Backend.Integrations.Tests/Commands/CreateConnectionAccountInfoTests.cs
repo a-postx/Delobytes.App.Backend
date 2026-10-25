@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Commands.CreateConnection;
+using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;

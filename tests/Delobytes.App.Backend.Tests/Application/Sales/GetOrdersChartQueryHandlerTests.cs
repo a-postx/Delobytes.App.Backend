@@ -6,7 +6,7 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Sales.Application.Models;
-using Delobytes.App.Backend.Sales.Application.Queries.Orders.GetOrdersChart;
+using Delobytes.App.Backend.Sales.Application.Queries.Orders;
 using FluentAssertions;
 using FluentValidation;
 using Moq;

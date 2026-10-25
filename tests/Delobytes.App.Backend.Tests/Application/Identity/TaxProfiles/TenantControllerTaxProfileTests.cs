@@ -1,10 +1,8 @@
 using System.Security.Claims;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Identity.Api.Controllers;
-using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.CreateTenantTaxProfile;
-using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.DeleteTenantTaxProfile;
-using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles.GetActiveTenantTaxProfile;
-using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles.GetTenantTaxProfiles;
+using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
+using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;

@@ -1,4 +1,3 @@
-using Delobytes.App.Backend.Catalog.Application.Queries.Products.GetProductCost;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;

@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Delobytes.App.Backend.Identity.Api.Controllers;
-using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

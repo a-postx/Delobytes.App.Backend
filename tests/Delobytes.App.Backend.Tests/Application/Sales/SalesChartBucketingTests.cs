@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Delobytes.App.Backend.Sales.Application.Models;
-using Delobytes.App.Backend.Sales.Application.Queries.Orders.GetOrdersChart;
+using Delobytes.App.Backend.Sales.Application.Queries.Orders;
 using Delobytes.App.Backend.Sales.Application.Services;
 using FluentAssertions;
 using Xunit;

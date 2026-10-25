@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates.CreateProductWorkRate;
+using Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates;
 using FluentAssertions;
 using FluentValidation.Results;
 using Xunit;

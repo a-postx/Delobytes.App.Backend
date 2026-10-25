@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.Queries.GetConnections;
+using Delobytes.App.Backend.Integrations.Application.Queries;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using FluentAssertions;
 using Moq;

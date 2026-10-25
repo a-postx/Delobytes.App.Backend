@@ -1,6 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductChannelCosts.DeleteProductChannelCost;
-using Delobytes.App.Backend.Catalog.Application.Commands.ProductChannelCosts.UpsertProductChannelCost;
-using Delobytes.App.Backend.Catalog.Application.Queries.ProductChannelCosts.GetProductChannelCosts;
+using Delobytes.App.Backend.Catalog.Application.Commands.ProductChannelCosts;
+using Delobytes.App.Backend.Catalog.Application.Queries.ProductChannelCosts;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

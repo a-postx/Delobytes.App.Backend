@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantLegalEntity;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using FluentAssertions;
 using FluentValidation.Results;
 using Xunit;

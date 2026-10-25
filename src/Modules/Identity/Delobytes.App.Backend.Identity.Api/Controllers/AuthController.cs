@@ -1,10 +1,6 @@
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
-using Delobytes.App.Backend.Identity.Application.Commands.GoogleCallback;
-using Delobytes.App.Backend.Identity.Application.Commands.Login;
-using Delobytes.App.Backend.Identity.Application.Commands.Register;
-using Delobytes.App.Backend.Identity.Application.Commands.YandexCallback;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

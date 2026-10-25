@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Queries.GetAvailableChannels;
+using Delobytes.App.Backend.Integrations.Application.Queries;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;

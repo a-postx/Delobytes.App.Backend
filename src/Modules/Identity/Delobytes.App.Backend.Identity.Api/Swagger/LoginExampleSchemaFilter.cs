@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Identity.Application.Commands.Login;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;

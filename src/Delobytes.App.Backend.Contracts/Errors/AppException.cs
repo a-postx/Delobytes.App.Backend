@@ -1,5 +1,3 @@
-using Delobytes.App.Backend.Contracts.Errors;
-
 namespace Delobytes.App.Backend.Contracts.Errors;
 
 public class AppException : Exception

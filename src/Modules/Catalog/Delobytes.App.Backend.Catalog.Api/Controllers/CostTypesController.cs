@@ -1,6 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.CostTypes.CreateCostType;
-using Delobytes.App.Backend.Catalog.Application.Commands.CostTypes.UpdateCostType;
-using Delobytes.App.Backend.Catalog.Application.Queries.CostTypes.GetCostTypes;
+using Delobytes.App.Backend.Catalog.Application.Commands.CostTypes;
+using Delobytes.App.Backend.Catalog.Application.Queries.CostTypes;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

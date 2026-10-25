@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Identity.Application.Commands.UpdateTenantName;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Moq;

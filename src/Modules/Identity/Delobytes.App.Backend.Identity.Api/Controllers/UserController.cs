@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Delobytes.App.Backend.Identity.Application.Queries.GetCurrentUser;
+using Delobytes.App.Backend.Identity.Application.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

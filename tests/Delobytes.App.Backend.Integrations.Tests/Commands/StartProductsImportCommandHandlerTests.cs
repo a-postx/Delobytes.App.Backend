@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application;
-using Delobytes.App.Backend.Integrations.Application.Commands.StartProductsImport;
+using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;

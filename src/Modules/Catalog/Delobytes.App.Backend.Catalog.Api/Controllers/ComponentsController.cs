@@ -1,10 +1,5 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.Components.CreateComponent;
-using Delobytes.App.Backend.Catalog.Application.Commands.Components.CreateComponentPrice;
-using Delobytes.App.Backend.Catalog.Application.Commands.Components.DeleteComponent;
-using Delobytes.App.Backend.Catalog.Application.Commands.Components.RestoreComponent;
-using Delobytes.App.Backend.Catalog.Application.Commands.Components.UpdateComponent;
-using Delobytes.App.Backend.Catalog.Application.Queries.Components.GetComponent;
-using Delobytes.App.Backend.Catalog.Application.Queries.Components.GetComponents;
+using Delobytes.App.Backend.Catalog.Application.Commands.Components;
+using Delobytes.App.Backend.Catalog.Application.Queries.Components;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;

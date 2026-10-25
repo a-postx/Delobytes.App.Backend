@@ -1,5 +1,5 @@
 using Delobytes.App.Backend.Contracts.Accounting;
-using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles.CreateTenantTaxProfile;
+using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 using FluentAssertions;
 using FluentValidation.Results;
 using Xunit;

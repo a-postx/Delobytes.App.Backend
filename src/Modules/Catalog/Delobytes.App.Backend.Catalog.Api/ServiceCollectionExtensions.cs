@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Catalog.Application.Commands.Products.UpdateProduct;
+using Delobytes.App.Backend.Catalog.Application.Commands.Products;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;

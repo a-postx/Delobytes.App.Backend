@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+
 namespace Delobytes.App.Backend.Catalog.Application.Queries.BomLines;
 
 public class BomLineDto

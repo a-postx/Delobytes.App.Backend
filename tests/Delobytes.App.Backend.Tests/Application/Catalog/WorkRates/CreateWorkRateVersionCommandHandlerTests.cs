@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates.CreateWorkRateVersion;
+using Delobytes.App.Backend.Catalog.Application.Commands.WorkRates;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;

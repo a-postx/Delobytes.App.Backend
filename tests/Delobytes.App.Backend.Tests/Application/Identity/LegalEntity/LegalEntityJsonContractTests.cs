@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Delobytes.App.Backend.Identity.Application.Queries.GetTenantLegalEntity;
+using Delobytes.App.Backend.Identity.Application.Queries;
 using FluentAssertions;
 using Xunit;
 

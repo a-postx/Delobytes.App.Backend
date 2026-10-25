@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Api.Controllers;
-using Delobytes.App.Backend.Identity.Application.Queries.GetCurrentUser;
+using Delobytes.App.Backend.Identity.Application.Queries;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;

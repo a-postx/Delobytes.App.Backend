@@ -1,5 +1,5 @@
 using Delobytes.App.Backend.Identity.Api.Swagger;
-using Delobytes.App.Backend.Identity.Application.Commands.CreateTenant;
+using Delobytes.App.Backend.Identity.Application.Commands;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
