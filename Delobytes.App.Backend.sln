@@ -54,6 +54,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Catal
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Persistence", "src\Delobytes.App.Backend.Persistence\Delobytes.App.Backend.Persistence.csproj", "{CA0A48D5-E291-BDE4-953A-98AE35E8CC4A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Sales.Contracts", "src\Modules\Sales\Delobytes.App.Backend.Sales.Contracts\Delobytes.App.Backend.Sales.Contracts.csproj", "{B464862B-D6DE-C8C5-7671-782E77046AB3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -136,6 +138,10 @@ Global
 		{CA0A48D5-E291-BDE4-953A-98AE35E8CC4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CA0A48D5-E291-BDE4-953A-98AE35E8CC4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CA0A48D5-E291-BDE4-953A-98AE35E8CC4A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B464862B-D6DE-C8C5-7671-782E77046AB3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -165,6 +171,7 @@ Global
 		{2DD1D5E2-04DC-4E89-A7D6-B2F0B1198F6C} = {E8A1F2B3-4C5D-4E6F-A7B8-C9D0E1F2A3B4}
 		{8BBAB29B-D34B-5C6C-B728-7B28B05BE935} = {EAFEFD2F-73D3-4237-9FBA-FD7ED5FABDD6}
 		{CA0A48D5-E291-BDE4-953A-98AE35E8CC4A} = {B988D1FB-BD6F-4FFB-86E2-E78EC7E3B471}
+		{B464862B-D6DE-C8C5-7671-782E77046AB3} = {BD6FA63C-EE2F-4C4C-B166-F0A70A0C8178}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A7527D03-2D70-4CFC-892B-1F843B9CA53F}

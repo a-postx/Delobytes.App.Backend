@@ -2,6 +2,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
+using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Interceptors;
@@ -75,7 +76,10 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IProductPhotoService, ProductPhotoService>();
 
+        services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+
         services.AddScoped<ImportProductBatchConsumer>();
+        services.AddScoped<ProductOrdersCheckCompletedConsumer>();
 
         return services;
     }

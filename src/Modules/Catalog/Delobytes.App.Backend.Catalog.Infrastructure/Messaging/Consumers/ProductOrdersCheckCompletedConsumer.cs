@@ -1,42 +1,45 @@
-using Delobytes.App.Backend.Catalog.Application.Events;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
-using MediatR;
+using Delobytes.App.Backend.Sales.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
-namespace Delobytes.App.Backend.EventHandlers;
+namespace Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 
 /// <summary>
-/// Handles ProductOrdersCheckCompleted published by ProductDeletionRequestedHandler.
-/// Finalises or cancels the product deletion based on orders check result.
+/// Consumer for ProductOrdersCheckCompletedEvent, published by Sales after checking Orders
+/// existence for a pending product deletion. Finalises or cancels the deletion.
 /// Clients poll GET /api/catalogs/products/{id}/deletion-status to monitor progress.
-/// Lives in the host project because it needs access to CatalogDbContext.
 /// </summary>
-public class ProductOrdersCheckCompletedHandler : INotificationHandler<ProductOrdersCheckCompleted>
+public class ProductOrdersCheckCompletedConsumer
 {
     private readonly IProductRepository _productRepository;
     private readonly IProductPhotoService _photoService;
-    private readonly ILogger<ProductOrdersCheckCompletedHandler> _logger;
+    private readonly ILogger<ProductOrdersCheckCompletedConsumer> _logger;
 
-    public ProductOrdersCheckCompletedHandler(
+    public ProductOrdersCheckCompletedConsumer(
         IProductRepository productRepository,
         IProductPhotoService photoService,
-        ILogger<ProductOrdersCheckCompletedHandler> logger)
+        ILogger<ProductOrdersCheckCompletedConsumer> logger)
     {
         _productRepository = productRepository;
         _photoService = photoService;
         _logger = logger;
     }
 
-    public async Task Handle(ProductOrdersCheckCompleted notification, CancellationToken cancellationToken)
+    /// <summary>
+    /// Processes the ProductOrdersCheckCompletedEvent message.
+    /// </summary>
+    /// <param name="message">Event message.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task ProcessAsync(ProductOrdersCheckCompletedEvent message, CancellationToken cancellationToken)
     {
-        Product? product = await _productRepository.GetWithChannelProductsByIdAsync(notification.ProductId, cancellationToken);
+        Product? product = await _productRepository.GetWithChannelProductsByIdAsync(message.ProductId, cancellationToken);
 
         if (product == null)
         {
-            _logger.LogWarning("Product {ProductId} not found when completing deletion check", notification.ProductId);
+            _logger.LogWarning("Product {ProductId} not found when completing deletion check", message.ProductId);
             return;
         }
 
@@ -44,12 +47,12 @@ public class ProductOrdersCheckCompletedHandler : INotificationHandler<ProductOr
         {
             _logger.LogWarning(
                 "Product {ProductId} has status {Status}, expected DeletionPending — skipping",
-                notification.ProductId,
+                message.ProductId,
                 product.Status);
             return;
         }
 
-        if (notification.HasOrders)
+        if (message.HasOrders)
         {
             product.Status = ProductStatus.DeletionFailed;
             product.DeletionRequestedAt = null;
@@ -57,7 +60,7 @@ public class ProductOrdersCheckCompletedHandler : INotificationHandler<ProductOr
             _logger.LogInformation(
                 "Product {ProductId} deletion cancelled: {OrderCount} order(s) exist",
                 product.Id,
-                notification.OrderCount);
+                message.OrderCount);
         }
         else
         {

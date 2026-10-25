@@ -1,5 +1,6 @@
-using Delobytes.App.Backend.Catalog.Application.Events;
+using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Interfaces;
@@ -11,18 +12,18 @@ namespace Delobytes.App.Backend.Catalog.Application.Commands.Products.RequestPro
 public class RequestProductDeletionCommandHandler : IRequestHandler<RequestProductDeletionCommand, RequestProductDeletionResponse>
 {
     private readonly IProductRepository _repository;
-    private readonly IPublisher _publisher;
+    private readonly IEventPublisher _eventPublisher;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<RequestProductDeletionCommandHandler> _logger;
 
     public RequestProductDeletionCommandHandler(
         IProductRepository repository,
-        IPublisher publisher,
+        IEventPublisher eventPublisher,
         ITenantContext tenantContext,
         ILogger<RequestProductDeletionCommandHandler> logger)
     {
         _repository = repository;
-        _publisher = publisher;
+        _eventPublisher = eventPublisher;
         _tenantContext = tenantContext;
         _logger = logger;
     }
@@ -78,7 +79,7 @@ public class RequestProductDeletionCommandHandler : IRequestHandler<RequestProdu
 
         List<Guid> channelProductIds = product.ChannelProducts.Select(cp => cp.Id).ToList();
 
-        ProductDeletionRequested domainEvent = new ProductDeletionRequested
+        ProductDeletionRequestedEvent domainEvent = new ProductDeletionRequestedEvent
         {
             ProductId = product.Id,
             ChannelProductIds = channelProductIds,
@@ -86,7 +87,7 @@ public class RequestProductDeletionCommandHandler : IRequestHandler<RequestProdu
             RequestedAt = DateTimeOffset.UtcNow,
         };
 
-        await _publisher.Publish(domainEvent, cancellationToken);
+        await _eventPublisher.PublishAsync(domainEvent, cancellationToken);
 
         _logger.LogInformation(
             "Product {ProductId} deletion requested; awaiting orders check for {Count} channel product(s)",

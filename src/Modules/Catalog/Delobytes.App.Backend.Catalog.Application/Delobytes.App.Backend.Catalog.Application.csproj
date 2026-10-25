@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Domain\Delobytes.App.Backend.Catalog.Domain.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Contracts\Delobytes.App.Backend.Catalog.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

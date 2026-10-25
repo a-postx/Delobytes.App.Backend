@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
                 npgsqlOptions.MigrationsHistoryTable("__SalesMigrationsHistory", "sales")));
 
         services.AddScoped<OrdersBatchImportRequestedConsumer>();
+        services.AddScoped<ProductDeletionRequestedConsumer>();
         services.AddScoped<IOrderStatsRepository, OrderStatsRepository>();
 
         // Registered independently of Integrations' own TryAddSingleton call: Sales must not
