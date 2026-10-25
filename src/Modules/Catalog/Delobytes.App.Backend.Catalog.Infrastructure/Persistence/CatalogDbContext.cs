@@ -1,26 +1,18 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Security;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 
 /// <summary>
 /// EF Core DbContext for the Catalog module.
 /// </summary>
-public class CatalogDbContext : DbContext
+public class CatalogDbContext : TenantScopedDbContext
 {
-    private readonly ITenantContext _tenantContext;
-
     public CatalogDbContext(DbContextOptions<CatalogDbContext> options, ITenantContext tenantContext)
-        : base(options)
+        : base(options, tenantContext)
     {
-        _tenantContext = tenantContext;
     }
 
     public DbSet<Channel> Channels => Set<Channel>();
@@ -43,155 +35,14 @@ public class CatalogDbContext : DbContext
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
     public DbSet<ProductCostSnapshot> ProductCostSnapshots => Set<ProductCostSnapshot>();
 
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-    {
-        configurationBuilder.AddSharedModelConventions();
-    }
-
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.HasDefaultSchema("catalog");
-
-        foreach (IMutableEntityType entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
-            {
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex("TenantId");
-
-                ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
-
-                MethodInfo efPropertyMethod = typeof(EF)
-                    .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
-                    .MakeGenericMethod(typeof(Guid?));
-
-                MethodCallExpression tenantIdAccess = Expression.Call(
-                    efPropertyMethod,
-                    parameter,
-                    Expression.Constant("TenantId"));
-
-                // EF Core resolves the DbContext instance at query time, not at model-build time,
-                // so TenantId always reflects the current scoped ITenantContext.
-                ConstantExpression contextRef = Expression.Constant(this, typeof(CatalogDbContext));
-                FieldInfo tenantContextField = typeof(CatalogDbContext)
-                    .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                MemberExpression tenantContextAccess = Expression.Field(contextRef, tenantContextField);
-                MemberExpression tenantIdProperty = Expression.Property(
-                    tenantContextAccess,
-                    nameof(ITenantContext.TenantId));
-
-                BinaryExpression comparison = Expression.Equal(tenantIdAccess, tenantIdProperty);
-                LambdaExpression lambda = Expression.Lambda(comparison, parameter);
-
-                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
-            }
-        }
-
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CatalogDbContext).Assembly);
-    }
 
-    /// <inheritdoc/>
-    public override int SaveChanges()
-    {
-        SetTenantId();
-        ValidateCrossTenantWrite();
-        return base.SaveChanges();
-    }
-
-    /// <inheritdoc/>
-    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        SetTenantId();
-        ValidateCrossTenantWrite();
-        return await base.SaveChangesAsync(cancellationToken);
-    }
-
-    // Guards against orphan rows: without this check, a missing tenant (e.g. a background
-    // job or message consumer with no HttpContext) would leave the shadow TenantId at its
-    // CLR default (Guid.Empty) instead of throwing, silently creating a row no tenant can
-    // ever see through the query filter.
-    private void SetTenantId()
-    {
-        List<EntityEntry> addedScopedEntries = ChangeTracker.Entries()
-            .Where(e => e.State == EntityState.Added && e.Entity is ITenantScoped)
-            .ToList();
-
-        List<EntityEntry> modifiedScopedEntries = ChangeTracker.Entries()
-            .Where(e => e.State == EntityState.Modified && e.Entity is ITenantScoped)
-            .ToList();
-
-        if (addedScopedEntries.Count == 0 && modifiedScopedEntries.Count == 0)
-        {
-            return;
-        }
-
-        Guid? tenantId = _tenantContext.TenantId;
-
-        if (!tenantId.HasValue)
-        {
-            List<string> entityNames = addedScopedEntries
-                .Concat(modifiedScopedEntries)
-                .Select(e => e.Entity.GetType().Name)
-                .Distinct()
-                .ToList();
-
-            if (entityNames.Count > 0)
-            {
-                throw new SecurityException(
-                    $"Cannot save tenant-scoped entit{(entityNames.Count == 1 ? "y" : "ies")} ({string.Join(", ", entityNames)}) " +
-                    "without a resolved TenantId. The current execution context has no tenant.");
-            }
-
-            return;
-        }
-
-        foreach (EntityEntry entry in addedScopedEntries)
-        {
-            entry.Property("TenantId").CurrentValue = tenantId.Value;
-        }
-
-        foreach (EntityEntry entry in modifiedScopedEntries)
-        {
-            PropertyEntry tenantIdProperty = entry.Property("TenantId");
-            Guid? entityTenantId = (Guid?)tenantIdProperty.CurrentValue;
-
-            if (!entityTenantId.HasValue || entityTenantId.Value == Guid.Empty)
-            {
-                // If TenantId is empty on a Modified entity, it's likely a new entity that EF Core
-                // incorrectly tracked as Modified (e.g. when added to a tracked collection with Id already set).
-                // Convert it to Added state to prevent concurrency exceptions on non-existent rows.
-                entry.State = EntityState.Added;
-                tenantIdProperty.CurrentValue = tenantId.Value;
-            }
-        }
-    }
-
-    private void ValidateCrossTenantWrite()
-    {
-        Guid? tenantId = _tenantContext.TenantId;
-        if (!tenantId.HasValue)
-        {
-            return;
-        }
-
-        IEnumerable<EntityEntry> entries = ChangeTracker.Entries()
-            .Where(e =>
-                (e.State == EntityState.Modified || e.State == EntityState.Deleted)
-                && e.Entity is ITenantScoped);
-
-        foreach (EntityEntry entry in entries)
-        {
-            Guid? entityTenantId = (Guid?)entry.Property("TenantId").CurrentValue;
-
-            if (entityTenantId.HasValue && entityTenantId.Value != tenantId.Value)
-            {
-                throw new SecurityException(
-                    $"Cross-tenant write detected on '{entry.Entity.GetType().Name}': " +
-                    $"entity TenantId '{entityTenantId}' does not match current tenant '{tenantId}'.");
-            }
-        }
+        ApplyTenantQueryFilters(modelBuilder);
     }
 }

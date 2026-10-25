@@ -1,29 +1,21 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Security;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 
 /// <summary>
 /// EF Core DbContext for the Integrations module.
 /// </summary>
-public class IntegrationsDbContext : DbContext
+public class IntegrationsDbContext : TenantScopedDbContext
 {
-    private readonly ITenantContext _tenantContext;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="IntegrationsDbContext"/> class.
     /// </summary>
     public IntegrationsDbContext(DbContextOptions<IntegrationsDbContext> options, ITenantContext tenantContext)
-        : base(options)
+        : base(options, tenantContext)
     {
-        _tenantContext = tenantContext;
     }
 
     public DbSet<SystemChannelTemplate> SystemChannelTemplates => Set<SystemChannelTemplate>();
@@ -41,155 +33,13 @@ public class IntegrationsDbContext : DbContext
     public DbSet<WildberriesMethodThrottle> WildberriesMethodThrottles => Set<WildberriesMethodThrottle>();
 
     /// <inheritdoc/>
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-    {
-        configurationBuilder.AddSharedModelConventions();
-    }
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.HasDefaultSchema("integrations");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(IntegrationsDbContext).Assembly);
 
-        modelBuilder.HasDefaultSchema("integrations");
-
-        foreach (IMutableEntityType entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
-            {
-                // Most ITenantScoped entities rely on a shadow Guid? TenantId property added
-                // here. JobSchedule declares a real, non-nullable Guid TenantId instead (the
-                // scheduler reads it directly to set up a per-tenant execution scope before
-                // resolving any tenant-scoped repository) — reusing the already-declared
-                // property instead of adding a conflicting shadow one with the same name.
-                IMutableProperty tenantIdProperty = entityType.FindProperty("TenantId")
-                    ?? modelBuilder.Entity(entityType.ClrType)
-                        .Property<Guid?>("TenantId")
-                        .IsRequired()
-                        .Metadata;
-
-                bool hasSingleColumnTenantIndex = entityType.GetIndexes()
-                    .Any(i => i.Properties.Count == 1 && i.Properties[0].Name == "TenantId");
-
-                if (!hasSingleColumnTenantIndex)
-                {
-                    modelBuilder.Entity(entityType.ClrType).HasIndex("TenantId");
-                }
-
-                ParameterExpression parameter = Expression.Parameter(entityType.ClrType, "e");
-
-                MethodInfo efPropertyMethod = typeof(EF)
-                    .GetMethod(nameof(EF.Property), BindingFlags.Static | BindingFlags.Public)!
-                    .MakeGenericMethod(tenantIdProperty.ClrType);
-
-                MethodCallExpression tenantIdAccess = Expression.Call(
-                    efPropertyMethod,
-                    parameter,
-                    Expression.Constant("TenantId"));
-
-                // Unify to Guid? before comparing: a real, non-nullable Guid property (e.g.
-                // JobSchedule.TenantId) must be widened so Expression.Equal can compare it
-                // against ITenantContext.TenantId (Guid?) without a CLR type mismatch.
-                Expression tenantIdAsNullable = tenantIdProperty.ClrType == typeof(Guid?)
-                    ? tenantIdAccess
-                    : Expression.Convert(tenantIdAccess, typeof(Guid?));
-
-                // Expression.Constant(this) captures the DbContext instance reference.
-                // EF Core recognises DbContext-typed constants in query filter trees and
-                // substitutes the *current* instance at query execution time, so TenantId
-                // is read from the live scoped ITenantContext on every request — not frozen
-                // to the value present when the singleton model cache was first built.
-                ConstantExpression contextRef = Expression.Constant(this, typeof(IntegrationsDbContext));
-                FieldInfo tenantContextField = typeof(IntegrationsDbContext)
-                    .GetField("_tenantContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                MemberExpression tenantContextAccess = Expression.Field(contextRef, tenantContextField);
-                MemberExpression tenantIdProperty2 = Expression.Property(
-                    tenantContextAccess,
-                    nameof(ITenantContext.TenantId));
-
-                BinaryExpression comparison = Expression.Equal(tenantIdAsNullable, tenantIdProperty2);
-                LambdaExpression lambda = Expression.Lambda(comparison, parameter);
-
-                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    public override int SaveChanges()
-    {
-        SetTenantId();
-        ValidateCrossTenantWrite();
-        return base.SaveChanges();
-    }
-
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        SetTenantId();
-        ValidateCrossTenantWrite();
-        return base.SaveChangesAsync(cancellationToken);
-    }
-
-    // Guards against orphan rows: without this check, a missing tenant (e.g. a background
-    // job or message consumer with no HttpContext) would leave the shadow TenantId at its
-    // CLR default (Guid.Empty) instead of throwing, silently creating a row no tenant can
-    // ever see through the query filter.
-    private void SetTenantId()
-    {
-        List<EntityEntry> addedScopedEntries = ChangeTracker.Entries()
-            .Where(e => e.State == EntityState.Added && e.Entity is ITenantScoped)
-            .ToList();
-
-        if (addedScopedEntries.Count == 0)
-        {
-            return;
-        }
-
-        Guid? tenantId = _tenantContext.TenantId;
-
-        if (!tenantId.HasValue)
-        {
-            string entityNames = string.Join(", ", addedScopedEntries.Select(e => e.Entity.GetType().Name).Distinct());
-            throw new SecurityException(
-                $"Cannot save tenant-scoped entit{(addedScopedEntries.Count == 1 ? "y" : "ies")} ({entityNames}) " +
-                "without a resolved TenantId. The current execution context has no tenant.");
-        }
-
-        foreach (EntityEntry entry in addedScopedEntries)
-        {
-            entry.Property("TenantId").CurrentValue = tenantId.Value;
-        }
-    }
-
-    // Prevents writes to entities belonging to a different tenant.
-    // Added entities are already protected by SetTenantId() overwriting the value.
-    // This guard targets Modified and Deleted: an entity loaded via IgnoreQueryFilters()
-    // or with a manually-tampered shadow property would otherwise pass through undetected.
-    private void ValidateCrossTenantWrite()
-    {
-        Guid? tenantId = _tenantContext.TenantId;
-        if (!tenantId.HasValue)
-        {
-            // System / background context — no user-scoped enforcement.
-            return;
-        }
-
-        IEnumerable<EntityEntry> entries = ChangeTracker.Entries()
-            .Where(e =>
-                (e.State == EntityState.Modified || e.State == EntityState.Deleted)
-                && e.Entity is ITenantScoped);
-
-        foreach (EntityEntry entry in entries)
-        {
-            Guid? entityTenantId = (Guid?)entry.Property("TenantId").CurrentValue;
-
-            if (entityTenantId.HasValue && entityTenantId.Value != tenantId.Value)
-            {
-                throw new SecurityException(
-                    $"Cross-tenant write detected on '{entry.Entity.GetType().Name}': " +
-                    $"entity TenantId '{entityTenantId}' does not match current tenant '{tenantId}'.");
-            }
-        }
+        ApplyTenantQueryFilters(modelBuilder);
     }
 }
