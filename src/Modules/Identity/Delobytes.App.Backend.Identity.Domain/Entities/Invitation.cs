@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Identity.Domain.Entities;
@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Identity.Domain.Entities;
 /// <summary>
 /// Represents an invitation to join a tenant.
 /// </summary>
-public class Invitation : ITenantScoped
+public class Invitation : ITenantScoped, IAuditableEntity
 {
     /// <summary>
     /// Gets or sets the invitation unique identifier.
@@ -37,6 +37,22 @@ public class Invitation : ITenantScoped
     /// Gets or sets the date and time when the invitation was created.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the date and time when the invitation was last modified.
+    /// </summary>
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the identifier of the user who created the invitation.
+    /// </summary>
+    public Guid? CreatedByUserId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the identifier of the user who last modified the invitation
+    /// (e.g. accepted it). Populated by <c>AuditableEntityInterceptor</c>.
+    /// </summary>
+    public Guid? UpdatedByUserId { get; set; }
 
     /// <summary>
     /// Gets or sets the date and time when the invitation expires.

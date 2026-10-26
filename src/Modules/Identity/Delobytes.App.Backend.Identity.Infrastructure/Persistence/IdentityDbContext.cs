@@ -8,7 +8,6 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 
 /// <summary>
 /// EF Core DbContext for the Identity module.
-/// Contains Identity-specific entity sets (Tenants, Users, TenantMemberships).
 /// </summary>
 public class IdentityDbContext : TenantScopedDbContext
 {
@@ -46,17 +45,6 @@ public class IdentityDbContext : TenantScopedDbContext
     /// Gets or sets the TenantTaxProfiles entity set.
     /// </summary>
     public DbSet<TenantTaxProfile> TenantTaxProfiles => Set<TenantTaxProfile>();
-
-    /// <summary>
-    /// Identity does not use the shared model conventions (tenant shadow property, audit
-    /// properties, RowVersion/xmin mapping, UTC DateTimeOffset conversion): it never has, and
-    /// enabling them now is a separate, riskier change that could drift the model away from the
-    /// already-applied <c>IdentityDbContextModelSnapshot</c> migrations. Left as a deliberate,
-    /// flagged gap rather than silently fixed here.
-    /// </summary>
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-    {
-    }
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)

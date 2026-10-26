@@ -34,6 +34,12 @@ public class InvitationConfiguration : IEntityTypeConfiguration<Invitation>
         builder.Property(i => i.CreatedAt)
             .IsRequired();
 
+        builder.Property(i => i.UpdatedAt);
+
+        builder.Property(i => i.CreatedByUserId);
+
+        builder.Property(i => i.UpdatedByUserId);
+
         builder.Property(i => i.ExpiresAt)
             .IsRequired();
 

@@ -29,10 +29,7 @@ public abstract class TenantScopedDbContext : DbContext
     }
 
     /// <summary>
-    /// Registers the shared model conventions (tenant shadow property, audit properties,
-    /// RowVersion/xmin mapping, UTC <see cref="DateTimeOffset"/> conversion). Override with an
-    /// empty body to opt a module out (see <c>IdentityDbContext</c>, which currently does not use
-    /// these conventions and must not start using them silently as a side effect of deduplication).
+    /// Registers the shared model conventions for every module DbContext.
     /// </summary>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

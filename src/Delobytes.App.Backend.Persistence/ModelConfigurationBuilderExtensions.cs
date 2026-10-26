@@ -10,9 +10,8 @@ namespace Delobytes.App.Backend.Persistence;
 public static class ModelConfigurationBuilderExtensions
 {
     /// <summary>
-    /// Registers the shared model conventions (tenant shadow property, audit properties and
-    /// RowVersion/xmin mapping) for a module DbContext. Call from
-    /// <c>DbContext.ConfigureConventions</c>.
+    /// Registers the shared model conventions (tenant shadow property and RowVersion/xmin
+    /// mapping) for a module DbContext. Call from <c>DbContext.ConfigureConventions</c>.
     /// </summary>
     /// <param name="configurationBuilder">Model configuration builder of the DbContext.</param>
     /// <returns>The same <see cref="ModelConfigurationBuilder"/> for chaining.</returns>
@@ -20,7 +19,6 @@ public static class ModelConfigurationBuilderExtensions
         this ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.Conventions.Add(_ => new TenantIdShadowPropertyConvention());
-        configurationBuilder.Conventions.Add(_ => new AuditableEntityConvention());
         configurationBuilder.Conventions.Add(_ => new RowVersionedEntityConvention());
 
         // Both CLR types must be registered. ConfigureProperty (the path that applies pre-convention

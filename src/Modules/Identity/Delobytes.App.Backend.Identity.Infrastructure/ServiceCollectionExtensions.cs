@@ -5,12 +5,14 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
+using Delobytes.App.Backend.Persistence.Interceptors;
 using Delobytes.AspNetCore.Logging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -67,9 +69,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITenantTaxProfileRepository, Persistence.Repositories.TenantTaxProfileRepository>();
         services.AddScoped<ITenantSettingsProvider, Services.TenantSettingsProvider>();
 
-        services.AddDbContext<IdentityDbContext>(options =>
+        services.AddScoped<AuditableEntityInterceptor>();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+
+        services.AddDbContext<IdentityDbContext>((serviceProvider, options) =>
+        {
+            AuditableEntityInterceptor auditInterceptor = serviceProvider.GetRequiredService<AuditableEntityInterceptor>();
+
             options.UseNpgsql(connectionString, npgsqlOptions =>
-                npgsqlOptions.MigrationsHistoryTable("__IdentityMigrationsHistory", "identity")));
+                    npgsqlOptions.MigrationsHistoryTable("__IdentityMigrationsHistory", "identity"))
+                .AddInterceptors(auditInterceptor);
+        });
 
         // Register Yandex OAuth service
         services.AddHttpClient("YandexOAuth");

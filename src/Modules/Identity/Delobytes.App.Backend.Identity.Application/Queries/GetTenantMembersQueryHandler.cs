@@ -103,6 +103,11 @@ public class PendingInvitationInfo
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the identifier of the user who created the invitation.
+    /// </summary>
+    public Guid? CreatedByUserId { get; set; }
+
+    /// <summary>
     /// Gets or sets the date when the invitation expires.
     /// </summary>
     public DateTimeOffset ExpiresAt { get; set; }
@@ -162,6 +167,7 @@ public class GetTenantMembersQueryHandler : IRequestHandler<GetTenantMembersQuer
                 Role = i.Role.ToString(),
                 Token = i.Token,
                 CreatedAt = i.CreatedAt,
+                CreatedByUserId = i.CreatedByUserId,
                 ExpiresAt = i.ExpiresAt,
             }).ToList(),
         };

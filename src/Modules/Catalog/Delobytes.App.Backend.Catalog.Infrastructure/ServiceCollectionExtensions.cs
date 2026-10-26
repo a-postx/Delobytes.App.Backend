@@ -5,13 +5,14 @@ using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
-using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Interceptors;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Catalog.Infrastructure.Storage;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Persistence.Interceptors;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure;
 
@@ -37,6 +38,7 @@ public static class ServiceCollectionExtensions
         // EF Core resolves interceptors from the service provider that owns the DbContext,
         // which is the same scope — so a scoped interceptor is safe here.
         services.AddScoped<AuditableEntityInterceptor>();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
 
         services.AddDbContext<CatalogDbContext>((serviceProvider, options) =>
         {
