@@ -153,22 +153,9 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
-    public Task<OrdersImportJob?> GetOrdersImportJobAsync(Guid jobRunId, CancellationToken cancellationToken)
-    {
-        return _context.OrdersImportJobs.FirstOrDefaultAsync(o => o.JobRunId == jobRunId, cancellationToken);
-    }
-
-    /// <inheritdoc/>
     public async Task CreateProductsImportJobAsync(ProductsImportJob job, CancellationToken cancellationToken)
     {
         _context.ProductsImportJobs.Add(job);
-        await _context.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <inheritdoc/>
-    public async Task CreateOrdersImportJobAsync(OrdersImportJob job, CancellationToken cancellationToken)
-    {
-        _context.OrdersImportJobs.Add(job);
         await _context.SaveChangesAsync(cancellationToken);
     }
 

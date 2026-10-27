@@ -88,7 +88,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(run, connection, CreateConsumer());
 
         _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(j => j.ConnectionId == connection.Id && j.JobType == JobType.OrdersImport && j.Status == JobStatus.Pending && j.NotBefore == _timeProvider.GetUtcNow().AddHours(3)), It.IsAny<CancellationToken>()), Times.Once);
-        _jobRunRepo.Verify(r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -337,12 +336,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         continuation.JobType.Should().Be(JobType.OrdersImport);
         continuation.Status.Should().Be(JobStatus.Pending);
         continuation.NotBefore.Should().NotBeNull();
-
-        _jobRunRepo.Verify(
-            r => r.CreateOrdersImportJobAsync(
-                It.Is<OrdersImportJob>(j => j.JobRunId == continuation.Id),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
 
         JobRun secondRun = continuation;
         secondRun.Connection = connection;

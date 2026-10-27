@@ -83,19 +83,9 @@ public interface IJobRunRepository
     public Task<ProductsImportJob?> GetProductsImportJobAsync(Guid jobRunId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Finds the type-specific OrdersSync data for the given job run.
-    /// </summary>
-    public Task<OrdersImportJob?> GetOrdersImportJobAsync(Guid jobRunId, CancellationToken cancellationToken);
-
-    /// <summary>
     /// Creates the type-specific ProductsImport row linked to an existing JobRun and persists it.
     /// </summary>
     public Task CreateProductsImportJobAsync(ProductsImportJob job, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Creates the type-specific OrdersSync row linked to an existing JobRun and persists it.
-    /// </summary>
-    public Task CreateOrdersImportJobAsync(OrdersImportJob job, CancellationToken cancellationToken);
 
     /// <summary>
     /// Finds a job run by primary key with the related Connection (and its SystemChannelTemplate)

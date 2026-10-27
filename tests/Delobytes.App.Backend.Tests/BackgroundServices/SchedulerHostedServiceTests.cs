@@ -109,12 +109,6 @@ public partial class SchedulerHostedServiceTests
         created.CreatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
 
         _jobRunRepositoryMock.Verify(
-            r => r.CreateOrdersImportJobAsync(
-                It.Is<OrdersImportJob>(j => j.JobRunId == created.Id),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-
-        _jobRunRepositoryMock.Verify(
             r => r.CreateProductsImportJobAsync(It.IsAny<ProductsImportJob>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -134,10 +128,6 @@ public partial class SchedulerHostedServiceTests
                 It.Is<ProductsImportJob>(j => j.JobRunId != Guid.Empty),
                 It.IsAny<CancellationToken>()),
             Times.Once);
-
-        _jobRunRepositoryMock.Verify(
-            r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(), It.IsAny<CancellationToken>()),
-            Times.Never);
     }
 
     [Fact]
@@ -155,9 +145,6 @@ public partial class SchedulerHostedServiceTests
         _jobRunRepositoryMock.Verify(
             r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _jobRunRepositoryMock.Verify(
-            r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(), It.IsAny<CancellationToken>()),
-            Times.Never);
         _jobRunRepositoryMock.Verify(
             r => r.CreateProductsImportJobAsync(It.IsAny<ProductsImportJob>(), It.IsAny<CancellationToken>()),
             Times.Never);

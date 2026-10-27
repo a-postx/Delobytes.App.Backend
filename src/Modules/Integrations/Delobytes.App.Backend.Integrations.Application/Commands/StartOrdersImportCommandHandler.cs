@@ -79,10 +79,6 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
 
         await _jobRunRepository.CreateAsync(jobRun, cancellationToken);
 
-        await _jobRunRepository.CreateOrdersImportJobAsync(
-            new OrdersImportJob { JobRunId = jobRun.Id },
-            cancellationToken);
-
         // SyncCheckpoint is intentionally not bootstrapped here: ProcessOrdersImportConsumer
         // (Stage 9) treats a missing checkpoint as "first run" and derives the 30-day backfill
         // window itself, so there is nothing for this handler to pre-create.

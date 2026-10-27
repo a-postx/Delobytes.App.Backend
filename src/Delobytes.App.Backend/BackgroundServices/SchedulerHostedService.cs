@@ -167,12 +167,6 @@ public class SchedulerHostedService : BackgroundService
 
             switch (schedule.JobType)
             {
-                case JobType.OrdersImport:
-                    await jobRunRepository.CreateOrdersImportJobAsync(
-                        new OrdersImportJob { JobRunId = jobRun.Id },
-                        cancellationToken);
-                    break;
-
                 case JobType.ProductsImport:
                     await jobRunRepository.CreateProductsImportJobAsync(
                         new ProductsImportJob { JobRunId = jobRun.Id },

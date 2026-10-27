@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 /// <summary>
 /// Common execution metadata for a single background job run, shared by every job type
 /// (ProductsImport, OrdersImport, ...). Type-specific data lives in a separate table keyed
-/// by <see cref="Id"/> (see ProductsImportJob, OrdersImportJob).
+/// by <see cref="Id"/> (see ProductsImportJob).
 /// </summary>
 public class JobRun : ITenantScoped, IRowVersionedEntity
 {

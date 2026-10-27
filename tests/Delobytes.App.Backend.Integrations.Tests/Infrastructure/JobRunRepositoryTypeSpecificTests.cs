@@ -14,8 +14,8 @@ using Xunit;
 namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 
 /// <summary>
-/// Verifies JobRunRepository's handling of the type-specific ProductsImportJob/OrdersImportJob
-/// tables introduced to keep per-job-type fields out of the shared JobRun table.
+/// Verifies JobRunRepository's handling of the type-specific ProductsImportJob table introduced
+/// to keep per-job-type fields out of the shared JobRun table.
 /// </summary>
 public class JobRunRepositoryTypeSpecificTests
 {
@@ -107,42 +107,6 @@ public class JobRunRepositoryTypeSpecificTests
             persisted.Should().NotBeNull();
             persisted!.JobRunId.Should().Be(jobRun.Id);
             persisted.TotalImportBatches.Should().BeNull();
-        }
-    }
-
-    [Fact]
-    public async Task CreateOrdersImportJobAsync_PersistsRow_LinkedToJobRun()
-    {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
-        JobRun jobRun = BuildJobRun(connection.Id, JobType.OrdersSync);
-
-        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
-        {
-            ctx.SystemChannelTemplates.Add(template);
-            ctx.Connections.Add(connection);
-            ctx.JobRuns.Add(jobRun);
-            await ctx.SaveChangesAsync();
-        }
-
-        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
-        {
-            JobRunRepository repository = new JobRunRepository(ctx);
-            OrdersImportJob job = new OrdersImportJob { JobRunId = jobRun.Id };
-
-            await repository.CreateOrdersImportJobAsync(job, CancellationToken.None);
-        }
-
-        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
-        {
-            JobRunRepository repository = new JobRunRepository(ctx);
-
-            OrdersImportJob? persisted = await repository.GetOrdersImportJobAsync(jobRun.Id, CancellationToken.None);
-
-            persisted.Should().NotBeNull();
-            persisted!.JobRunId.Should().Be(jobRun.Id);
         }
     }
 

@@ -24,7 +24,6 @@ public class IntegrationsDbContext : TenantScopedDbContext
     public DbSet<JobRun> JobRuns => Set<JobRun>();
     public DbSet<JobRunBatchResult> JobRunBatchResults => Set<JobRunBatchResult>();
     public DbSet<ProductsImportJob> ProductsImportJobs => Set<ProductsImportJob>();
-    public DbSet<OrdersImportJob> OrdersImportJobs => Set<OrdersImportJob>();
     public DbSet<JobCheckpoint> JobCheckpoints => Set<JobCheckpoint>();
     public DbSet<SyncCheckpoint> SyncCheckpoints => Set<SyncCheckpoint>();
     public DbSet<JobSchedule> JobSchedules => Set<JobSchedule>();

@@ -196,10 +196,6 @@ public partial class ProcessOrdersImportConsumerTests
             .Setup(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        _jobRunRepo
-            .Setup(r => r.GetOrdersImportJobAsync(jobRun.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((OrdersImportJob?)null);
-
         _jobCheckpointRepo
             .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync((JobCheckpoint?)null);

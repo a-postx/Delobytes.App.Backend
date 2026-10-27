@@ -133,11 +133,10 @@ public class StartOrdersImportCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ValidRequest_CreatesJobRunAndOrdersImportJobWithPendingStatus()
+    public async Task Handle_ValidRequest_CreatesJobRunWithPendingStatus()
     {
         Connection connection = BuildConnection();
         JobRun? savedJobRun = null;
-        OrdersImportJob? savedOrdersImportJob = null;
 
         SetupHappyPathUpToJobCreation(connection);
 
@@ -145,11 +144,6 @@ public class StartOrdersImportCommandHandlerTests
             .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
             .Callback<JobRun, CancellationToken>((j, _) => savedJobRun = j)
             .ReturnsAsync((JobRun j, CancellationToken _) => j);
-
-        _jobRunRepo
-            .Setup(r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(), It.IsAny<CancellationToken>()))
-            .Callback<OrdersImportJob, CancellationToken>((j, _) => savedOrdersImportJob = j)
-            .Returns(Task.CompletedTask);
 
         StartOrdersImportCommandHandler handler = CreateHandler();
         StartOrdersImportResponse result = await handler.Handle(
@@ -164,9 +158,6 @@ public class StartOrdersImportCommandHandlerTests
         savedJobRun.JobType.Should().Be(JobType.OrdersImport);
         savedJobRun.ConnectionId.Should().Be(connection.Id);
         savedJobRun.RequestedByUserId.Should().BeNull();
-
-        savedOrdersImportJob.Should().NotBeNull();
-        savedOrdersImportJob!.JobRunId.Should().Be(savedJobRun.Id);
     }
 
     [Fact]

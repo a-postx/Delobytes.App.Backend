@@ -337,16 +337,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.ToTable("OrdersBackfillStates", "integrations");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
-                {
-                    b.Property<Guid>("JobRunId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("JobRunId");
-
-                    b.ToTable("OrdersImportJobs", "integrations");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.ProductsImportJob", b =>
                 {
                     b.Property<Guid>("JobRunId")
@@ -638,17 +628,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Connection");
-                });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", b =>
-                {
-                    b.HasOne("Delobytes.App.Backend.Integrations.Domain.Entities.JobRun", "JobRun")
-                        .WithOne()
-                        .HasForeignKey("Delobytes.App.Backend.Integrations.Domain.Entities.OrdersImportJob", "JobRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("JobRun");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Integrations.Domain.Entities.ProductsImportJob", b =>

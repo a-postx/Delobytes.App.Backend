@@ -50,7 +50,6 @@ public partial class SchedulerHostedServiceTests
         await RunSingleTickAsync(scheduler);
 
         _jobRunRepositoryMock.Verify(r => r.CreateAsync(It.Is<JobRun>(j => j.JobType == JobType.OrdersImport && j.Status == JobStatus.Pending), It.IsAny<CancellationToken>()), Times.Once);
-        _jobRunRepositoryMock.Verify(r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(), It.IsAny<CancellationToken>()), Times.Once);
         schedule.NextRunAt!.Value.Should().BeAfter(originalNextRunAt!.Value);
     }
 

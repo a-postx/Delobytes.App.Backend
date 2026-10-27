@@ -268,10 +268,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             .Setup(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        _jobRunRepo
-            .Setup(r => r.GetOrdersImportJobAsync(jobRun.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((OrdersImportJob?)null);
-
         _jobCheckpointRepo
             .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync((JobCheckpoint?)null);
@@ -475,8 +471,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next =>
             next.ConnectionId == connection.Id && next.JobType == JobType.OrdersImport
             && next.Status == JobStatus.Pending && next.NotBefore == _timeProvider.GetUtcNow().AddHours(3)),
-            It.IsAny<CancellationToken>()), Times.Once);
-        _jobRunRepo.Verify(r => r.CreateOrdersImportJobAsync(It.IsAny<OrdersImportJob>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

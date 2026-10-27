@@ -149,13 +149,6 @@ public class ProcessOrdersImportConsumer
             return;
         }
 
-        OrdersImportJob? ordersImportJob = await _jobRunRepository.GetOrdersImportJobAsync(jobRun.Id, cancellationToken);
-
-        if (ordersImportJob == null)
-        {
-            _logger.LogWarning("JobRun {JobRunId}: OrdersImportJob row is missing, continuing", jobRun.Id);
-        }
-
         if (jobRun.Status == JobStatus.Pending)
         {
             jobRun.Status = JobStatus.Running;
@@ -195,6 +188,7 @@ public class ProcessOrdersImportConsumer
                     Orders = new List<ChannelOrderSnapshot>(),
                     IsTerminal = true,
                 }, cancellationToken);
+
                 return;
             }
 
@@ -243,6 +237,7 @@ public class ProcessOrdersImportConsumer
                     };
 
                     await _eventPublisher.PublishAsync(batchEvent, publishCancellationToken);
+
                     nextBatchIndex++;
                 }
 
@@ -301,7 +296,9 @@ public class ProcessOrdersImportConsumer
                 }
 
                 _logger.LogInformation(
-                    "JobRun {JobRunId}: branch=backfill, days fetched={DaysFetched}, first day={FirstDay}, last day={LastDay}, rows={Rows}, stoppedByThrottle={StoppedByThrottle}, stoppedByBudget={StoppedByBudget}, nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
+                    "JobRun {JobRunId}: branch=backfill, days fetched={DaysFetched}, first day={FirstDay}, "
+                    + "last day={LastDay}, rows={Rows}, stoppedByThrottle={StoppedByThrottle}, "
+                    + "stoppedByBudget={StoppedByBudget}, nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
                     jobRun.Id,
                     backfillOutcome.DaysFetched,
                     backfillOutcome.FirstDay,
@@ -327,6 +324,7 @@ public class ProcessOrdersImportConsumer
                 {
                     windowFrom = backfillState.HandoverWatermark
                         ?? backfillState.OldestDayInScope + BackfillWindow;
+
                     if (!backfillState.HandoverWatermark.HasValue)
                     {
                         _logger.LogWarning(
@@ -357,6 +355,7 @@ public class ProcessOrdersImportConsumer
                 maxChangedAt = GetMaxChangedAt(fetchResult.Orders, windowTo);
 
                 await PublishUnitAsync(fetchResult.Orders, cancellationToken);
+
                 fetchedOrdersCount = fetchResult.Orders.Count;
             }
 
@@ -418,6 +417,7 @@ public class ProcessOrdersImportConsumer
             _logger.LogWarning(
                 "JobRun {JobRunId}: delta stopped, stopReason={StopReason}, inProcessWaits={InProcessWaits}, waitedSeconds={WaitedSeconds}, resumeAt={ResumeAt}",
                 jobRun.Id, ex.Reason, _inProcessWaits, _totalWaited.TotalSeconds, ex.ResumeAt);
+
             await FailJobAsync(jobRun, $"Wildberries rate limit: next request allowed at {ex.ResumeAt:O}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -472,7 +472,9 @@ public class ProcessOrdersImportConsumer
             OldestDayInScope = todayStart - BackfillWindow,
             IsCompleted = false,
         };
+
         await _ordersBackfillStateRepository.UpsertAsync(state, cancellationToken);
+
         return state;
     }
 
@@ -512,6 +514,7 @@ public class ProcessOrdersImportConsumer
 
             bool isCatchUp = state.CatchUpNextDay.HasValue;
             DateTimeOffset day = GetMoscowDayStart(isCatchUp ? state.CatchUpNextDay.GetValueOrDefault() : state.NextDayToFetch);
+
             OrdersRequest request = new OrdersRequest
             {
                 DateFrom = day,
@@ -544,14 +547,16 @@ public class ProcessOrdersImportConsumer
             }
 
             Dictionary<string, ChannelOrderSnapshot> dayOrders = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
+
             foreach (ChannelOrderSnapshot order in page.Orders)
             {
                 if (dayOrders.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
                 {
                     List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines);
                     ChannelOrderSnapshot headerSource = IsLaterReport(order, existing) ? order : existing;
-                    ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts.Reduce(
-                        mergedLines, new[] { existing.OrderDate, order.OrderDate });
+                    ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts
+                        .Reduce(mergedLines, new[] { existing.OrderDate, order.OrderDate });
+
                     dayOrders[order.ExternalOrderId] = headerSource with
                     {
                         Lines = mergedLines,
@@ -569,6 +574,7 @@ public class ProcessOrdersImportConsumer
             }
 
             await publishUnit(dayOrders.Values.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(), cancellationToken);
+
             totalOrders += dayOrders.Count;
             daysFetched++;
             firstDay ??= day;
@@ -611,7 +617,10 @@ public class ProcessOrdersImportConsumer
 
     private async Task CreateContinuationAsync(JobRun current, DateTimeOffset resumeAt, CancellationToken cancellationToken)
     {
-        if (await _jobRunRepository.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, cancellationToken))
+        bool hasPending = await _jobRunRepository
+            .HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, cancellationToken);
+
+        if (hasPending)
         {
             return;
         }
@@ -625,8 +634,9 @@ public class ProcessOrdersImportConsumer
             CreatedAt = _timeProvider.GetUtcNow(),
             NotBefore = resumeAt,
         };
+
         await _jobRunRepository.CreateAsync(continuation, cancellationToken);
-        await _jobRunRepository.CreateOrdersImportJobAsync(new OrdersImportJob { JobRunId = continuation.Id }, cancellationToken);
+
         _continuationId = continuation.Id;
         _continuationNotBefore = resumeAt;
     }
@@ -669,6 +679,7 @@ public class ProcessOrdersImportConsumer
 
             _lastRequestStartedAt = now;
             _requestsIssued++;
+
             OrdersPage page = await ordersSource.GetOrdersAsync(connection.Id, request, cancellationToken);
 
             if (!page.Throttled)
@@ -680,6 +691,7 @@ public class ProcessOrdersImportConsumer
                 ?? throw new InvalidOperationException("Throttled orders page has no retry time.");
             now = _timeProvider.GetUtcNow();
             TimeSpan wait = retryAt > now ? retryAt - now : TimeSpan.Zero;
+
             if (wait > _maxInProcessWait || retryAt >= _deadline)
             {
                 throw new OrdersFetchStoppedException("Throttled", retryAt);
@@ -687,7 +699,9 @@ public class ProcessOrdersImportConsumer
 
             _inProcessWaits++;
             DateTimeOffset waitStartedAt = _timeProvider.GetUtcNow();
+
             await Task.Delay(wait, _timeProvider, cancellationToken);
+
             _totalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
         }
     }
@@ -899,10 +913,7 @@ public class ProcessOrdersImportConsumer
 
     /// <summary>
     /// Unions the lines of two reports of one order, keyed by
-    /// <see cref="ChannelOrderLineSnapshot.LineKey"/>. An unseen key is appended, keeping the lines
-    /// already known; a key present on both sides keeps the version whose own
-    /// <see cref="ChannelOrderLineSnapshot.StatusChangedAt"/> is later, and keeps the accumulated
-    /// version on an exact tie, so the result does not depend on arrival order.
+    /// <see cref="ChannelOrderLineSnapshot.LineKey"/>.
     /// </summary>
     private static List<ChannelOrderLineSnapshot> UnionLines(
         List<ChannelOrderLineSnapshot> existing,
@@ -956,11 +967,7 @@ public class ProcessOrdersImportConsumer
 
     /// <summary>
     /// Derives the next delta watermark from what the endpoint actually selected on:
-    /// <c>lastChangeDate</c> for a flag=0 run. A row that reports no <c>lastChangeDate</c>
-    /// (unparseable or absent) contributes nothing, and <c>OrderDate</c> is never substituted —
-    /// it lives on a different time axis than the one the endpoint filters by, so folding it in
-    /// would push the watermark past the served instant and drop the row from every later delta
-    /// run.
+    /// <c>lastChangeDate</c> for a flag=0 run.
     /// </summary>
     private DateTimeOffset? GetMaxChangedAt(List<ChannelOrderSnapshot> orders, DateTimeOffset windowTo)
     {
