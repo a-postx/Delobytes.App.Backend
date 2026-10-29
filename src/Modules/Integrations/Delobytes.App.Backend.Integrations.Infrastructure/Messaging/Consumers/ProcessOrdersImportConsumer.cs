@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -34,7 +32,8 @@ public class ProcessOrdersImportConsumer
     private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
 
     private readonly IJobRunRepository _jobRunRepository;
-    private readonly IJobCheckpointRepository _jobCheckpointRepository;
+    private readonly OrdersImportCheckpointStore _checkpointStore;
+    private readonly OrdersBatchPublisher _batchPublisher;
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IOrdersBackfillStateRepository _ordersBackfillStateRepository;
     private readonly IChannelApiClientFactory _clientFactory;
@@ -48,20 +47,6 @@ public class ProcessOrdersImportConsumer
     private readonly TimeProvider _timeProvider;
     private readonly IWildberriesRateLimiter _rateLimiter;
     private readonly TimeSpan _maxInProcessWait;
-    private DateTimeOffset _deadline;
-    private int _inProcessWaits;
-    private TimeSpan _totalWaited;
-    private string _stopReason = "Completed";
-    private Guid? _continuationId;
-    private DateTimeOffset? _continuationNotBefore;
-    private DateTimeOffset _lastRequestStartedAt;
-    private int _requestsIssued;
-
-    /// <summary>
-    /// Rows the source reported as unmappable across every page of the current fetch. Reset per
-    /// fetch.
-    /// </summary>
-    private int _rowsWithoutIdentity;
 
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
@@ -77,7 +62,8 @@ public class ProcessOrdersImportConsumer
         TimeProvider timeProvider)
     {
         _jobRunRepository = jobRunRepository;
-        _jobCheckpointRepository = jobCheckpointRepository;
+        _checkpointStore = new OrdersImportCheckpointStore(jobCheckpointRepository, timeProvider);
+        _batchPublisher = new OrdersBatchPublisher(eventPublisher, _checkpointStore);
         _syncCheckpointRepository = syncCheckpointRepository;
         _ordersBackfillStateRepository = ordersBackfillStateRepository;
         _clientFactory = clientFactory;
@@ -108,14 +94,7 @@ public class ProcessOrdersImportConsumer
 
     public async Task ProcessAsync(OrdersImportRequestedEvent message, CancellationToken cancellationToken)
     {
-        _deadline = _timeProvider.GetUtcNow() + _backfillRunBudget;
-        _requestsIssued = 0;
-        _rowsWithoutIdentity = 0;
-        _inProcessWaits = 0;
-        _totalWaited = TimeSpan.Zero;
-        _stopReason = "Completed";
-        _continuationId = null;
-        _continuationNotBefore = null;
+        OrdersImportRunState state = new OrdersImportRunState(_timeProvider.GetUtcNow() + _backfillRunBudget);
 
         _logger.LogInformation(
             "ProcessOrdersImportConsumer: JobRunId={JobRunId}, ConnectionId={ConnectionId}",
@@ -173,9 +152,8 @@ public class ProcessOrdersImportConsumer
                 return;
             }
 
-            JobCheckpoint? existingJobCheckpoint = await _jobCheckpointRepository
-                .GetByJobRunIdAsync(jobRun.Id, cancellationToken);
-            OrdersImportCheckpointPayload? previousPayload = DeserializePayload(existingJobCheckpoint?.Payload);
+            OrdersImportCheckpointPayload? previousPayload = await _checkpointStore
+                .LoadAsync(jobRun.Id, cancellationToken);
 
             if (previousPayload != null && previousPayload.IsFetchCompleted != false)
             {
@@ -213,66 +191,20 @@ public class ProcessOrdersImportConsumer
                 ? previousPayload.TotalBatches
                 : 0;
 
-            // Publishes one unit of work (one backfill day, or the whole delta window) as soon as
-            // it is fetched, then persists how many batches have been published so far so a crash
-            // immediately afterwards cannot lose more than the next unit. An empty unit publishes
-            // nothing: there is no batch to count and no progress to persist.
-            async Task PublishUnitAsync(List<ChannelOrderSnapshot> unitOrders, CancellationToken publishCancellationToken)
-            {
-                if (unitOrders.Count == 0)
-                {
-                    return;
-                }
-
-                foreach (List<ChannelOrderSnapshot> batch in SplitIntoBatches(unitOrders))
-                {
-                    OrdersBatchImportRequestedEvent batchEvent = new OrdersBatchImportRequestedEvent
-                    {
-                        JobRunId = jobRun.Id,
-                        ConnectionId = connection.Id,
-                        ChannelId = connection.ChannelId,
-                        BatchId = CreateBatchId(jobRun.Id, nextBatchIndex),
-                        Orders = batch,
-                        IsTerminal = false,
-                    };
-
-                    await _eventPublisher.PublishAsync(batchEvent, publishCancellationToken);
-
-                    nextBatchIndex++;
-                }
-
-                OrdersImportCheckpointPayload progressPayload = new OrdersImportCheckpointPayload
-                {
-                    TotalBatches = nextBatchIndex,
-                    WindowTo = windowTo,
-                    IsBackfill = isBackfill,
-                    IsFetchCompleted = false,
-                };
-
-                await _jobCheckpointRepository.UpsertAsync(
-                    new JobCheckpoint
-                    {
-                        JobRunId = jobRun.Id,
-                        Payload = JsonSerializer.Serialize(progressPayload),
-                        UpdatedAt = _timeProvider.GetUtcNow(),
-                    },
-                    publishCancellationToken);
-            }
+            OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(nextBatchIndex, windowTo, isBackfill);
 
             if (previousPayload == null)
             {
-                await _jobCheckpointRepository.UpsertAsync(new JobCheckpoint
-                {
-                    JobRunId = jobRun.Id,
-                    Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
+                await _checkpointStore.SaveAsync(
+                    jobRun.Id,
+                    new OrdersImportCheckpointPayload
                     {
                         TotalBatches = 0,
                         WindowTo = windowTo,
                         IsBackfill = isBackfill,
                         IsFetchCompleted = false,
-                    }),
-                    UpdatedAt = _timeProvider.GetUtcNow(),
-                }, cancellationToken);
+                    },
+                    cancellationToken);
             }
 
             int requestsIssued = 0;
@@ -284,15 +216,21 @@ public class ProcessOrdersImportConsumer
             if (isBackfill)
             {
                 backfillOutcome = await FetchBackfillDaysAsync(
-                    ordersSource, connection, backfillState, jobRun.Id, PublishUnitAsync, cancellationToken);
+                    ordersSource,
+                    connection,
+                    backfillState,
+                    jobRun.Id,
+                    (unit, ct) => _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, unit, ct),
+                    state,
+                    cancellationToken);
 
-                requestsIssued = _requestsIssued;
+                requestsIssued = state.RequestsIssued;
                 rowsWithoutIdentity = backfillOutcome.RowsWithoutIdentity;
                 fetchedOrdersCount = backfillOutcome.TotalOrders;
 
                 if (!backfillState.IsCompleted && backfillOutcome.ResumeAt.HasValue)
                 {
-                    await CreateContinuationAsync(jobRun, backfillOutcome.ResumeAt.Value, cancellationToken);
+                    await CreateContinuationAsync(jobRun, backfillOutcome.ResumeAt.Value, state, cancellationToken);
                 }
 
                 _logger.LogInformation(
@@ -348,20 +286,20 @@ public class ProcessOrdersImportConsumer
                     request.DateTo);
 
                 OrdersFetchResult fetchResult = await FetchAllPagesAsync(
-                    ordersSource, connection, request, jobRun.Id, cancellationToken);
+                    ordersSource, connection, request, jobRun.Id, state, cancellationToken);
 
                 requestsIssued = fetchResult.RequestsIssued;
                 rowsWithoutIdentity = fetchResult.RowsWithoutIdentity;
                 maxChangedAt = GetMaxChangedAt(fetchResult.Orders, windowTo);
 
-                await PublishUnitAsync(fetchResult.Orders, cancellationToken);
+                await _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, fetchResult.Orders, cancellationToken);
 
                 fetchedOrdersCount = fetchResult.Orders.Count;
             }
 
             OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
             {
-                TotalBatches = nextBatchIndex + 1,
+                TotalBatches = cursor.NextIndex + 1,
                 MaxChangedAt = maxChangedAt,
                 WindowTo = windowTo,
                 PagesFetched = requestsIssued,
@@ -374,26 +312,9 @@ public class ProcessOrdersImportConsumer
             // The final count must be persisted before the terminal batch is published: the
             // aggregator finalises on the terminal result (or on any later data result that brings
             // the count up to TotalBatches), and it can only do that once it knows the final count.
-            await _jobCheckpointRepository.UpsertAsync(
-                new JobCheckpoint
-                {
-                    JobRunId = jobRun.Id,
-                    Payload = JsonSerializer.Serialize(payload),
-                    UpdatedAt = _timeProvider.GetUtcNow(),
-                },
-                cancellationToken);
+            await _checkpointStore.SaveAsync(jobRun.Id, payload, cancellationToken);
 
-            OrdersBatchImportRequestedEvent terminalBatchEvent = new OrdersBatchImportRequestedEvent
-            {
-                JobRunId = jobRun.Id,
-                ConnectionId = connection.Id,
-                ChannelId = connection.ChannelId,
-                BatchId = CreateBatchId(jobRun.Id, nextBatchIndex),
-                Orders = new List<ChannelOrderSnapshot>(),
-                IsTerminal = true,
-            };
-
-            await _eventPublisher.PublishAsync(terminalBatchEvent, cancellationToken);
+            await _batchPublisher.PublishTerminalAsync(jobRun, connection, cursor.NextIndex, cancellationToken);
 
             _logger.LogInformation(
                 "JobRun {JobRunId}: backfill={Backfill}, fetched {Orders} orders in {Requests} requests, " +
@@ -406,17 +327,17 @@ public class ProcessOrdersImportConsumer
                 requestsIssued,
                 payload.TotalBatches,
                 rowsWithoutIdentity,
-                _stopReason,
-                _inProcessWaits,
-                _totalWaited.TotalSeconds,
-                _continuationId,
-                _continuationNotBefore);
+                state.StopReason,
+                state.InProcessWaits,
+                state.TotalWaited.TotalSeconds,
+                state.ContinuationId,
+                state.ContinuationNotBefore);
         }
         catch (OrdersFetchStoppedException ex)
         {
             _logger.LogWarning(
                 "JobRun {JobRunId}: delta stopped, stopReason={StopReason}, inProcessWaits={InProcessWaits}, waitedSeconds={WaitedSeconds}, resumeAt={ResumeAt}",
-                jobRun.Id, ex.Reason, _inProcessWaits, _totalWaited.TotalSeconds, ex.ResumeAt);
+                jobRun.Id, ex.Reason, state.InProcessWaits, state.TotalWaited.TotalSeconds, ex.ResumeAt);
 
             await FailJobAsync(jobRun, $"Wildberries rate limit: next request allowed at {ex.ResumeAt:O}");
         }
@@ -441,11 +362,7 @@ public class ProcessOrdersImportConsumer
     /// </summary>
     public static Guid CreateBatchId(Guid jobRunId, int batchIndex)
     {
-        byte[] input = new byte[20];
-        jobRunId.ToByteArray().CopyTo(input, 0);
-        BitConverter.GetBytes(batchIndex).CopyTo(input, 16);
-        byte[] hash = MD5.HashData(input);
-        return new Guid(hash);
+        return OrdersBatchPublisher.CreateBatchId(jobRunId, batchIndex);
     }
 
     /// <summary>
@@ -484,6 +401,7 @@ public class ProcessOrdersImportConsumer
         OrdersBackfillState state,
         Guid jobRunId,
         Func<List<ChannelOrderSnapshot>, CancellationToken, Task> publishUnit,
+        OrdersImportRunState runState,
         CancellationToken cancellationToken)
     {
         int daysFetched = 0;
@@ -527,11 +445,11 @@ public class ProcessOrdersImportConsumer
 
             try
             {
-                page = await GetPacedOrdersAsync(ordersSource, connection, request, cancellationToken);
+                page = await GetPacedOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
             }
             catch (OrdersFetchStoppedException ex)
             {
-                _stopReason = ex.Reason;
+                runState.StopReason = ex.Reason;
                 resumeAt = ex.ResumeAt;
                 break;
             }
@@ -546,34 +464,11 @@ public class ProcessOrdersImportConsumer
                 throw new InvalidOperationException($"Orders backfill received a partial response for day {day:yyyy-MM-dd} MSK; flag=1 cannot be split below one day.");
             }
 
-            Dictionary<string, ChannelOrderSnapshot> dayOrders = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
+            List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
 
-            foreach (ChannelOrderSnapshot order in page.Orders)
-            {
-                if (dayOrders.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
-                {
-                    List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines);
-                    ChannelOrderSnapshot headerSource = IsLaterReport(order, existing) ? order : existing;
-                    ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts
-                        .Reduce(mergedLines, new[] { existing.OrderDate, order.OrderDate });
-
-                    dayOrders[order.ExternalOrderId] = headerSource with
-                    {
-                        Lines = mergedLines,
-                        ExternalStatus = mergedHeader.ExternalStatus,
-                        CancelReason = mergedHeader.CancelReason,
-                        OrderDate = mergedHeader.OrderDate,
-                        StatusChangedAt = mergedHeader.StatusChangedAt,
-                        ChannelReportedTotal = mergedHeader.ChannelReportedTotal,
-                    };
-                }
-                else
-                {
-                    dayOrders.Add(order.ExternalOrderId, order);
-                }
-            }
-
-            await publishUnit(dayOrders.Values.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(), cancellationToken);
+            await publishUnit(
+                dayOrders.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(),
+                cancellationToken);
 
             totalOrders += dayOrders.Count;
             daysFetched++;
@@ -584,7 +479,7 @@ public class ProcessOrdersImportConsumer
             {
                 if (day >= GetMoscowDayStart(_timeProvider.GetUtcNow()))
                 {
-                    state.HandoverWatermark = _lastRequestStartedAt - SafetyOverlap;
+                    state.HandoverWatermark = runState.LastRequestStartedAt - SafetyOverlap;
                     state.IsCompleted = true;
                     state.CompletedAt = _timeProvider.GetUtcNow();
                     state.CatchUpNextDay = day;
@@ -607,15 +502,15 @@ public class ProcessOrdersImportConsumer
             TotalOrders = totalOrders,
             DaysFetched = daysFetched,
             RowsWithoutIdentity = 0,
-            StoppedByThrottle = _stopReason == "Throttled",
-            StoppedByBudget = _stopReason == "Budget",
+            StoppedByThrottle = runState.StopReason == "Throttled",
+            StoppedByBudget = runState.StopReason == "Budget",
             FirstDay = firstDay,
             LastDay = lastDay,
             ResumeAt = resumeAt,
         };
     }
 
-    private async Task CreateContinuationAsync(JobRun current, DateTimeOffset resumeAt, CancellationToken cancellationToken)
+    private async Task CreateContinuationAsync(JobRun current, DateTimeOffset resumeAt, OrdersImportRunState state, CancellationToken cancellationToken)
     {
         bool hasPending = await _jobRunRepository
             .HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, cancellationToken);
@@ -637,14 +532,15 @@ public class ProcessOrdersImportConsumer
 
         await _jobRunRepository.CreateAsync(continuation, cancellationToken);
 
-        _continuationId = continuation.Id;
-        _continuationNotBefore = resumeAt;
+        state.ContinuationId = continuation.Id;
+        state.ContinuationNotBefore = resumeAt;
     }
 
     private async Task<OrdersPage> GetPacedOrdersAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,
+        OrdersImportRunState state,
         CancellationToken cancellationToken)
     {
         while (true)
@@ -653,7 +549,7 @@ public class ProcessOrdersImportConsumer
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
 
-            if (now >= _deadline)
+            if (now >= state.Deadline)
             {
                 DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
                     connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
@@ -672,13 +568,13 @@ public class ProcessOrdersImportConsumer
                 throw new OrdersFetchStoppedException("Budget", budgetTime);
             }
 
-            if (_requestsIssued >= MaxRequestsPerRun)
+            if (state.RequestsIssued >= MaxRequestsPerRun)
             {
                 throw new InvalidOperationException($"Orders fetch exceeded the per-run request budget of {MaxRequestsPerRun}.");
             }
 
-            _lastRequestStartedAt = now;
-            _requestsIssued++;
+            state.LastRequestStartedAt = now;
+            state.RequestsIssued++;
 
             OrdersPage page = await ordersSource.GetOrdersAsync(connection.Id, request, cancellationToken);
 
@@ -692,17 +588,17 @@ public class ProcessOrdersImportConsumer
             now = _timeProvider.GetUtcNow();
             TimeSpan wait = retryAt > now ? retryAt - now : TimeSpan.Zero;
 
-            if (wait > _maxInProcessWait || retryAt >= _deadline)
+            if (wait > _maxInProcessWait || retryAt >= state.Deadline)
             {
                 throw new OrdersFetchStoppedException("Throttled", retryAt);
             }
 
-            _inProcessWaits++;
+            state.InProcessWaits++;
             DateTimeOffset waitStartedAt = _timeProvider.GetUtcNow();
 
             await Task.Delay(wait, _timeProvider, cancellationToken);
 
-            _totalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
+            state.TotalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
         }
     }
 
@@ -738,19 +634,20 @@ public class ProcessOrdersImportConsumer
         Connection connection,
         OrdersRequest request,
         Guid jobRunId,
+        OrdersImportRunState state,
         CancellationToken cancellationToken)
     {
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
-        _rowsWithoutIdentity = 0;
+        state.RowsWithoutIdentity = 0;
 
-        await FetchWindowAsync(ordersSource, connection, request, jobRunId, ordersByOrderKey, cancellationToken);
+        await FetchWindowAsync(ordersSource, connection, request, jobRunId, ordersByOrderKey, state, cancellationToken);
 
         return new OrdersFetchResult
         {
             Orders = ordersByOrderKey.Values.ToList(),
-            RequestsIssued = _requestsIssued,
-            RowsWithoutIdentity = _rowsWithoutIdentity,
+            RequestsIssued = state.RequestsIssued,
+            RowsWithoutIdentity = state.RowsWithoutIdentity,
         };
     }
 
@@ -771,9 +668,10 @@ public class ProcessOrdersImportConsumer
         OrdersRequest request,
         Guid jobRunId,
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey,
+        OrdersImportRunState state,
         CancellationToken cancellationToken)
     {
-        OrdersPage ordersPage = await GetPacedOrdersAsync(ordersSource, connection, request, cancellationToken);
+        OrdersPage ordersPage = await GetPacedOrdersAsync(ordersSource, connection, request, state, cancellationToken);
 
         if (ordersPage.RowsWithoutIdentity > 0)
         {
@@ -782,7 +680,7 @@ public class ProcessOrdersImportConsumer
             // this window would hide them from every later delta run as well. Failing here reuses
             // the same fail-fast stance as the unresolvable partial response below, and lets the
             // next scheduled run retry the window once the source data is complete.
-            _rowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
+            state.RowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
 
             _logger.LogError(
                 "JobRun {JobRunId}: window {From} - {To} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
@@ -808,32 +706,7 @@ public class ProcessOrdersImportConsumer
                 continue;
             }
 
-            // "Which report is newer" and "which lines we have" are two independent questions.
-            // IsLaterReport below answers only the first, and it decides the fields that are neither
-            // derived from lines nor re-derivable after the merge (warehouse, region, substatus).
-            bool isIncomingLater = IsLaterReport(order, existing);
-
-            List<ChannelOrderLineSnapshot> mergedLines = UnionLines(existing.Lines, order.Lines);
-            ChannelOrderSnapshot headerSource = isIncomingLater ? order : existing;
-
-            // The header is reduced from the merged line set, never taken from the winning report:
-            // either half may hold the only cancelled unit of a cart, or the only live one, and the
-            // winning report's own header describes the units it happened to carry. The placement
-            // instant goes through the same reduction, so the merged cart keeps the earliest instant
-            // any half reported.
-            ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts.Reduce(
-                mergedLines,
-                new[] { existing.OrderDate, order.OrderDate });
-
-            ordersByOrderKey[order.ExternalOrderId] = headerSource with
-            {
-                Lines = mergedLines,
-                ExternalStatus = mergedHeader.ExternalStatus,
-                CancelReason = mergedHeader.CancelReason,
-                OrderDate = mergedHeader.OrderDate,
-                StatusChangedAt = mergedHeader.StatusChangedAt,
-                ChannelReportedTotal = mergedHeader.ChannelReportedTotal
-            };
+            ordersByOrderKey[order.ExternalOrderId] = OrderSnapshotMerger.Merge(existing, order);
         }
 
         // The endpoint filters by dateFrom alone and serves rows in ascending order of the selection
@@ -907,62 +780,8 @@ public class ProcessOrdersImportConsumer
             nextFrom,
             midpoint);
 
-        await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, cancellationToken);
-        await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, cancellationToken);
-    }
-
-    /// <summary>
-    /// Unions the lines of two reports of one order, keyed by
-    /// <see cref="ChannelOrderLineSnapshot.LineKey"/>.
-    /// </summary>
-    private static List<ChannelOrderLineSnapshot> UnionLines(
-        List<ChannelOrderLineSnapshot> existing,
-        List<ChannelOrderLineSnapshot> incoming)
-    {
-        List<ChannelOrderLineSnapshot> merged = new List<ChannelOrderLineSnapshot>(existing);
-
-        foreach (ChannelOrderLineSnapshot line in incoming)
-        {
-            int index = merged.FindIndex(
-                existingLine => string.Equals(existingLine.LineKey, line.LineKey, StringComparison.Ordinal));
-
-            if (index < 0)
-            {
-                merged.Add(line);
-                continue;
-            }
-
-            if (IsLaterLine(line, merged[index]))
-            {
-                merged[index] = line;
-            }
-        }
-
-        return merged;
-    }
-
-    /// <summary>
-    /// Orders whether <paramref name="candidate"/> is a later version of one line than
-    /// <paramref name="current"/>. A version reporting no instant never displaces one that reports
-    /// an instant, and equal instants resolve in favour of the accumulated version, so replaying a
-    /// report cannot flip the stored facts back and forth.
-    /// </summary>
-    private static bool IsLaterLine(ChannelOrderLineSnapshot candidate, ChannelOrderLineSnapshot current)
-    {
-        DateTimeOffset? candidateInstant = candidate.StatusChangedAt;
-        DateTimeOffset? currentInstant = current.StatusChangedAt;
-
-        if (candidateInstant == null)
-        {
-            return false;
-        }
-
-        if (currentInstant == null)
-        {
-            return true;
-        }
-
-        return candidateInstant.Value > currentInstant.Value;
+        await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
+        await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
     }
 
     /// <summary>
@@ -999,55 +818,6 @@ public class ProcessOrdersImportConsumer
         }
 
         return max?.ToUniversalTime();
-    }
-
-    private static List<List<ChannelOrderSnapshot>> SplitIntoBatches(List<ChannelOrderSnapshot> orders)
-    {
-        List<List<ChannelOrderSnapshot>> batches = new List<List<ChannelOrderSnapshot>>();
-
-        for (int i = 0; i < orders.Count; i += BatchSize)
-        {
-            batches.Add(orders.Skip(i).Take(BatchSize).ToList());
-        }
-
-        // An empty terminal batch still flows through Sales so the aggregator finalises the run.
-        if (batches.Count == 0)
-        {
-            batches.Add(new List<ChannelOrderSnapshot>());
-        }
-
-        return batches;
-    }
-
-    /// <summary>
-    /// Orders whether <paramref name="candidate"/> is a later report of the same order than
-    /// <paramref name="current"/>. <c>StatusChangedAt</c> is the channel's own "as of" instant and
-    /// decides; <c>OrderDate</c> breaks the tie where a channel reports no change time, and an
-    /// exact tie keeps the current report so the merge does not depend on arrival order.
-    /// </summary>
-    private static bool IsLaterReport(ChannelOrderSnapshot candidate, ChannelOrderSnapshot current)
-    {
-        DateTimeOffset candidateInstant = candidate.StatusChangedAt ?? candidate.OrderDate;
-        DateTimeOffset currentInstant = current.StatusChangedAt ?? current.OrderDate;
-
-        return candidateInstant > currentInstant;
-    }
-
-    private static OrdersImportCheckpointPayload? DeserializePayload(string? payload)
-    {
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<OrdersImportCheckpointPayload>(payload);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 
     private async Task FailJobAsync(JobRun jobRun, string error)
