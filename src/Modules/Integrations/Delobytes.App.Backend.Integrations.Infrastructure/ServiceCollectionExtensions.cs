@@ -80,6 +80,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProcessProductImportBatchCompletedConsumer>();
         services.AddScoped<OrdersImportCheckpointStore>();
         services.AddScoped<OrdersBatchPublisher>();
+        services.AddScoped<PacedOrdersSource>();
         services.AddScoped<ProcessOrdersImportConsumer>();
         services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
 

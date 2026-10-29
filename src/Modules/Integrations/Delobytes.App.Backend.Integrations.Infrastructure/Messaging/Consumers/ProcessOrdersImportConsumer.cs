@@ -18,22 +18,15 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
-    public const int BatchSize = 30;
+    public const int BatchSize = OrdersImportConstants.BatchSize;
 
-    /// <summary>
-    /// Hard bound on the number of HTTP requests one run may issue. Bisection of a window does
-    /// not loop, but the bound protects against a pathological configuration.
-    /// </summary>
-    public const int MaxRequestsPerRun = 1000;
-
-    public static readonly TimeSpan SafetyOverlap = TimeSpan.FromMinutes(30);
-    public static readonly TimeSpan BackfillWindow = TimeSpan.FromDays(180);
-
-    private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
+    public static readonly TimeSpan SafetyOverlap = OrdersImportConstants.SafetyOverlap;
+    public static readonly TimeSpan BackfillWindow = OrdersImportConstants.BackfillWindow;
 
     private readonly IJobRunRepository _jobRunRepository;
     private readonly OrdersImportCheckpointStore _checkpointStore;
     private readonly OrdersBatchPublisher _batchPublisher;
+    private readonly PacedOrdersSource _pacedSource;
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IOrdersBackfillStateRepository _ordersBackfillStateRepository;
     private readonly IChannelApiClientFactory _clientFactory;
@@ -45,7 +38,6 @@ public class ProcessOrdersImportConsumer
     private readonly TimeSpan _backfillRunBudget;
 
     private readonly TimeProvider _timeProvider;
-    private readonly IWildberriesRateLimiter _rateLimiter;
     private readonly TimeSpan _maxInProcessWait;
 
     public ProcessOrdersImportConsumer(
@@ -81,7 +73,6 @@ public class ProcessOrdersImportConsumer
                 : WildberriesImportOptions.DefaultBackfillRunBudgetSeconds);
 
         _logger = logger;
-        _rateLimiter = rateLimiter;
         _timeProvider = timeProvider;
         _maxInProcessWait = TimeSpan.FromSeconds(_options.MaxInProcessWaitSeconds >= 0
             ? _options.MaxInProcessWaitSeconds
@@ -90,6 +81,13 @@ public class ProcessOrdersImportConsumer
         {
             throw new ArgumentOutOfRangeException(nameof(options), "Run budget plus maximum wait must be below 30 minutes.");
         }
+
+        _pacedSource = new PacedOrdersSource(rateLimiter, timeProvider, _maxInProcessWait);
+    }
+
+    public static Guid CreateBatchId(Guid jobRunId, int batchIndex)
+    {
+        return OrdersBatchPublisher.CreateBatchId(jobRunId, batchIndex);
     }
 
     public async Task ProcessAsync(OrdersImportRequestedEvent message, CancellationToken cancellationToken)
@@ -252,29 +250,20 @@ public class ProcessOrdersImportConsumer
                 SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
                     .GetAsync(connection.Id, JobType.OrdersImport, cancellationToken);
 
-                DateTimeOffset windowFrom;
+                DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
+                    syncCheckpoint, backfillState, out bool usedLegacyFallback);
 
-                if (syncCheckpoint?.LastChangedAt != null)
+                if (usedLegacyFallback)
                 {
-                    windowFrom = syncCheckpoint.LastChangedAt.Value - SafetyOverlap;
-                }
-                else
-                {
-                    windowFrom = backfillState.HandoverWatermark
-                        ?? backfillState.OldestDayInScope + BackfillWindow;
-
-                    if (!backfillState.HandoverWatermark.HasValue)
-                    {
-                        _logger.LogWarning(
-                            "JobRun {JobRunId}: legacy completed backfill has no handover watermark; using walk start {WindowFrom}",
-                            jobRun.Id, windowFrom);
-                    }
+                    _logger.LogWarning(
+                        "JobRun {JobRunId}: legacy completed backfill has no handover watermark; using walk start {WindowFrom}",
+                        jobRun.Id, windowFrom);
                 }
 
                 OrdersRequest request = new OrdersRequest
                 {
-                    DateFrom = windowFrom.ToOffset(MoscowOffset),
-                    DateTo = windowTo.ToOffset(MoscowOffset),
+                    DateFrom = windowFrom.ToOffset(OrdersWindowPlanner.MoscowOffset),
+                    DateTo = windowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
                     Flag = 0,
                     Limit = 0,
                 };
@@ -290,7 +279,15 @@ public class ProcessOrdersImportConsumer
 
                 requestsIssued = fetchResult.RequestsIssued;
                 rowsWithoutIdentity = fetchResult.RowsWithoutIdentity;
-                maxChangedAt = GetMaxChangedAt(fetchResult.Orders, windowTo);
+                maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(fetchResult.Orders, windowTo, out DateTimeOffset? observedBeyondWindow);
+
+                if (observedBeyondWindow.HasValue)
+                {
+                    _logger.LogWarning(
+                        "Orders import: observed lastChangeDate {Observed} is later than the run window end {WindowTo}, clamping the watermark",
+                        observedBeyondWindow.Value,
+                        windowTo);
+                }
 
                 await _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, fetchResult.Orders, cancellationToken);
 
@@ -357,15 +354,6 @@ public class ProcessOrdersImportConsumer
     }
 
     /// <summary>
-    /// Deterministic per (JobRunId, index) so a redelivered orchestrator republishes the same
-    /// BatchIds and the aggregator deduplicates them instead of double counting.
-    /// </summary>
-    public static Guid CreateBatchId(Guid jobRunId, int batchIndex)
-    {
-        return OrdersBatchPublisher.CreateBatchId(jobRunId, batchIndex);
-    }
-
-    /// <summary>
     /// Loads the per-connection backfill cursor, creating it on first contact. A fresh cursor starts
     /// at today 00:00 MSK and walks backwards to today - <see cref="BackfillWindow"/>, which is the
     /// scope the single-request backfill used to cover.
@@ -379,7 +367,7 @@ public class ProcessOrdersImportConsumer
             return state;
         }
 
-        DateTimeOffset todayStart = GetMoscowDayStart(_timeProvider.GetUtcNow());
+        DateTimeOffset todayStart = OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow());
 
         state = new OrdersBackfillState
         {
@@ -414,7 +402,7 @@ public class ProcessOrdersImportConsumer
         {
             cancellationToken.ThrowIfCancellationRequested();
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            DateTimeOffset retentionStart = GetMoscowDayStart(now - BackfillWindow);
+            DateTimeOffset retentionStart = OrdersWindowPlanner.GetMoscowDayStart(now - BackfillWindow);
             DateTimeOffset oldestDay = state.OldestDayInScope > retentionStart
                 ? state.OldestDayInScope : retentionStart;
 
@@ -426,12 +414,12 @@ public class ProcessOrdersImportConsumer
                     _logger.LogWarning("JobRun {JobRunId}: skipped {SkippedDays} backfill day(s) outside retention", jobRunId, skippedDays);
                 }
 
-                state.CatchUpNextDay = GetMoscowDayStart(state.OldestDayInScope + BackfillWindow);
+                state.CatchUpNextDay = OrdersWindowPlanner.GetMoscowDayStart(state.OldestDayInScope + BackfillWindow);
                 await _ordersBackfillStateRepository.UpsertAsync(state, cancellationToken);
             }
 
             bool isCatchUp = state.CatchUpNextDay.HasValue;
-            DateTimeOffset day = GetMoscowDayStart(isCatchUp ? state.CatchUpNextDay.GetValueOrDefault() : state.NextDayToFetch);
+            DateTimeOffset day = OrdersWindowPlanner.GetMoscowDayStart(isCatchUp ? state.CatchUpNextDay.GetValueOrDefault() : state.NextDayToFetch);
 
             OrdersRequest request = new OrdersRequest
             {
@@ -445,7 +433,7 @@ public class ProcessOrdersImportConsumer
 
             try
             {
-                page = await GetPacedOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
+                page = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
             }
             catch (OrdersFetchStoppedException ex)
             {
@@ -477,7 +465,7 @@ public class ProcessOrdersImportConsumer
 
             if (isCatchUp)
             {
-                if (day >= GetMoscowDayStart(_timeProvider.GetUtcNow()))
+                if (day >= OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow()))
                 {
                     state.HandoverWatermark = runState.LastRequestStartedAt - SafetyOverlap;
                     state.IsCompleted = true;
@@ -536,99 +524,6 @@ public class ProcessOrdersImportConsumer
         state.ContinuationNotBefore = resumeAt;
     }
 
-    private async Task<OrdersPage> GetPacedOrdersAsync(
-        IOrdersSource ordersSource,
-        Connection connection,
-        OrdersRequest request,
-        OrdersImportRunState state,
-        CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            DateTimeOffset now = _timeProvider.GetUtcNow();
-
-            if (now >= state.Deadline)
-            {
-                DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
-                    connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
-
-                DateTimeOffset budgetTime;
-
-                if (nextAllowedAt is not null)
-                {
-                    budgetTime = nextAllowedAt.Value > now ? nextAllowedAt.Value : now;
-                }
-                else
-                {
-                    budgetTime = now;
-                }
-
-                throw new OrdersFetchStoppedException("Budget", budgetTime);
-            }
-
-            if (state.RequestsIssued >= MaxRequestsPerRun)
-            {
-                throw new InvalidOperationException($"Orders fetch exceeded the per-run request budget of {MaxRequestsPerRun}.");
-            }
-
-            state.LastRequestStartedAt = now;
-            state.RequestsIssued++;
-
-            OrdersPage page = await ordersSource.GetOrdersAsync(connection.Id, request, cancellationToken);
-
-            if (!page.Throttled)
-            {
-                return page;
-            }
-
-            DateTimeOffset retryAt = page.RetryAt
-                ?? throw new InvalidOperationException("Throttled orders page has no retry time.");
-            now = _timeProvider.GetUtcNow();
-            TimeSpan wait = retryAt > now ? retryAt - now : TimeSpan.Zero;
-
-            if (wait > _maxInProcessWait || retryAt >= state.Deadline)
-            {
-                throw new OrdersFetchStoppedException("Throttled", retryAt);
-            }
-
-            state.InProcessWaits++;
-            DateTimeOffset waitStartedAt = _timeProvider.GetUtcNow();
-
-            await Task.Delay(wait, _timeProvider, cancellationToken);
-
-            state.TotalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
-        }
-    }
-
-    private sealed class OrdersFetchStoppedException : Exception
-    {
-        public OrdersFetchStoppedException(string reason, DateTimeOffset resumeAt)
-        {
-            Reason = reason;
-            ResumeAt = resumeAt;
-        }
-
-        public string Reason { get; }
-
-        public DateTimeOffset ResumeAt { get; }
-    }
-
-    private static DateTimeOffset GetMoscowDayStart(DateTimeOffset instant)
-    {
-        DateTimeOffset moscow = instant.ToOffset(MoscowOffset);
-
-        return new DateTimeOffset(
-            moscow.Year,
-            moscow.Month,
-            moscow.Day,
-            0,
-            0,
-            0,
-            MoscowOffset);
-    }
-
     private async Task<OrdersFetchResult> FetchAllPagesAsync(
         IOrdersSource ordersSource,
         Connection connection,
@@ -671,7 +566,7 @@ public class ProcessOrdersImportConsumer
         OrdersImportRunState state,
         CancellationToken cancellationToken)
     {
-        OrdersPage ordersPage = await GetPacedOrdersAsync(ordersSource, connection, request, state, cancellationToken);
+        OrdersPage ordersPage = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, state, cancellationToken);
 
         if (ordersPage.RowsWithoutIdentity > 0)
         {
@@ -782,42 +677,6 @@ public class ProcessOrdersImportConsumer
 
         await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
         await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
-    }
-
-    /// <summary>
-    /// Derives the next delta watermark from what the endpoint actually selected on:
-    /// <c>lastChangeDate</c> for a flag=0 run.
-    /// </summary>
-    private DateTimeOffset? GetMaxChangedAt(List<ChannelOrderSnapshot> orders, DateTimeOffset windowTo)
-    {
-        DateTimeOffset? max = null;
-
-        foreach (ChannelOrderSnapshot order in orders)
-        {
-            if (order.StatusChangedAt == null)
-            {
-                continue;
-            }
-
-            DateTimeOffset value = order.StatusChangedAt.Value;
-
-            if (max == null || value > max.Value)
-            {
-                max = value;
-            }
-        }
-
-        if (max.HasValue && max.Value > windowTo)
-        {
-            _logger.LogWarning(
-                "Orders import: observed lastChangeDate {Observed} is later than the run window end {WindowTo}, clamping the watermark",
-                max.Value,
-                windowTo);
-
-            return windowTo;
-        }
-
-        return max?.ToUniversalTime();
     }
 
     private async Task FailJobAsync(JobRun jobRun, string error)
