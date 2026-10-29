@@ -50,6 +50,13 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     private readonly Mock<IChannelApiClientFactory> _clientFactory = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<ILogger<ProcessOrdersImportConsumer>> _logger = new();
+
+    // Plain ILogger, not ILogger<T>: Moq cannot proxy ILogger<T> when T is internal, because
+    // ILogger<T> lives in the strong-named Logging.Abstractions assembly and Castle requires the
+    // internal type argument to be visible to DynamicProxyGenAssembly2. The consumers only need the
+    // non-generic interface, so the mocks stay proxy-free.
+    private readonly Mock<ILogger> _bisectingReaderLogger = new();
+    private readonly Mock<ILogger> _backfillWalkerLogger = new();
     private readonly Mock<IOrdersChannelClient> _ordersSource = new();
 
     public interface IOrdersChannelClient : IChannelApiClient, IOrdersSource { }
@@ -89,7 +96,21 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             Options.Create(options),
             _logger.Object,
             new AlwaysAllowWildberriesRateLimiter(),
-            _timeProvider);
+            _timeProvider,
+            BuildLoggerFactory());
+    }
+
+    private ILoggerFactory BuildLoggerFactory()
+    {
+        Mock<ILoggerFactory> loggerFactory = new();
+        loggerFactory
+            .Setup(f => f.CreateLogger(It.Is<string>(name => name.Contains(nameof(BisectingOrdersReader)))))
+            .Returns(_bisectingReaderLogger.Object);
+        loggerFactory
+            .Setup(f => f.CreateLogger(It.Is<string>(name => name.Contains(nameof(OrdersBackfillWalker)))))
+            .Returns(_backfillWalkerLogger.Object);
+
+        return loggerFactory.Object;
     }
 
     private SystemChannelTemplate BuildWildberriesTemplate()
@@ -487,7 +508,8 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         UseSource((_, _) => Task.FromResult(new OrdersPage
         {
             Orders = new List<ChannelOrderSnapshot>(),
-            Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3),
+            Throttled = true,
+            RetryAt = _timeProvider.GetUtcNow().AddHours(3),
         }));
 
         ProcessOrdersImportConsumer consumer = CreateConsumer();

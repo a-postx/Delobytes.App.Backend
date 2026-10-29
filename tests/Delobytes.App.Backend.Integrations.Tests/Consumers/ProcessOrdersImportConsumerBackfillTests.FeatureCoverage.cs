@@ -116,7 +116,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _issuedRequests.Should().OnlyContain(q => q.DateFrom >= retentionStart && q.Flag == 1);
         _issuedRequests[0].DateFrom.Should().Be(today.AddDays(-overshootDays));
         _persistedState!.IsCompleted.Should().BeTrue();
-        _logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains($"skipped {overshootDays} backfill day(s) outside retention")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+        _backfillWalkerLogger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains($"skipped {overshootDays} backfill day(s) outside retention")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [Fact]

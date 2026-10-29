@@ -81,6 +81,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrdersImportCheckpointStore>();
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<PacedOrdersSource>();
+        services.AddScoped<BisectingOrdersReader>();
+        services.AddScoped<OrdersBackfillWalker>();
         services.AddScoped<ProcessOrdersImportConsumer>();
         services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
 

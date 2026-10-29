@@ -27,8 +27,9 @@ public class ProcessOrdersImportConsumer
     private readonly OrdersImportCheckpointStore _checkpointStore;
     private readonly OrdersBatchPublisher _batchPublisher;
     private readonly PacedOrdersSource _pacedSource;
+    private readonly BisectingOrdersReader _bisectingReader;
+    private readonly OrdersBackfillWalker _backfillWalker;
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
-    private readonly IOrdersBackfillStateRepository _ordersBackfillStateRepository;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
     private readonly JobRunExecutionContext _jobRunExecutionContext;
@@ -51,13 +52,13 @@ public class ProcessOrdersImportConsumer
         IOptions<WildberriesImportOptions> options,
         ILogger<ProcessOrdersImportConsumer> logger,
         IWildberriesRateLimiter rateLimiter,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILoggerFactory loggerFactory)
     {
         _jobRunRepository = jobRunRepository;
         _checkpointStore = new OrdersImportCheckpointStore(jobCheckpointRepository, timeProvider);
         _batchPublisher = new OrdersBatchPublisher(eventPublisher, _checkpointStore);
         _syncCheckpointRepository = syncCheckpointRepository;
-        _ordersBackfillStateRepository = ordersBackfillStateRepository;
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
         _jobRunExecutionContext = jobRunExecutionContext;
@@ -83,6 +84,18 @@ public class ProcessOrdersImportConsumer
         }
 
         _pacedSource = new PacedOrdersSource(rateLimiter, timeProvider, _maxInProcessWait);
+
+        // BisectingOrdersReader/OrdersBackfillWalker are internal; a public constructor cannot take
+        // ILogger<T> of an internal T (CS0051), so the category-specific loggers are built from the
+        // factory here rather than requested as typed constructor parameters.
+        _bisectingReader = new BisectingOrdersReader(_pacedSource, new Logger<BisectingOrdersReader>(loggerFactory), _minWindow);
+        _backfillWalker = new OrdersBackfillWalker(
+            _pacedSource,
+            ordersBackfillStateRepository,
+            new Logger<OrdersBackfillWalker>(loggerFactory),
+            timeProvider,
+            BackfillWindow,
+            SafetyOverlap);
     }
 
     public static Guid CreateBatchId(Guid jobRunId, int batchIndex)
@@ -172,7 +185,7 @@ public class ProcessOrdersImportConsumer
             // persisted for the aggregator would no longer match what is being republished.
             DateTimeOffset windowTo = previousPayload?.WindowTo ?? _timeProvider.GetUtcNow();
 
-            OrdersBackfillState backfillState = await GetOrCreateBackfillStateAsync(connection.Id, cancellationToken);
+            OrdersBackfillState backfillState = await _backfillWalker.GetOrCreateAsync(connection.Id, cancellationToken);
 
             // The walk decides the branch, not the watermark. A connection that was syncing under
             // the old single-request backfill has an incomplete history precisely because that
@@ -213,13 +226,13 @@ public class ProcessOrdersImportConsumer
 
             if (isBackfill)
             {
-                backfillOutcome = await FetchBackfillDaysAsync(
+                backfillOutcome = await _backfillWalker.FetchBackfillDaysAsync(
                     ordersSource,
                     connection,
                     backfillState,
                     jobRun.Id,
-                    (unit, ct) => _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, unit, ct),
                     state,
+                    (unit, ct) => _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, unit, ct),
                     cancellationToken);
 
                 requestsIssued = state.RequestsIssued;
@@ -274,7 +287,7 @@ public class ProcessOrdersImportConsumer
                     request.DateFrom,
                     request.DateTo);
 
-                OrdersFetchResult fetchResult = await FetchAllPagesAsync(
+                OrdersFetchResult fetchResult = await _bisectingReader.FetchAllPagesAsync(
                     ordersSource, connection, request, jobRun.Id, state, cancellationToken);
 
                 requestsIssued = fetchResult.RequestsIssued;
@@ -353,151 +366,6 @@ public class ProcessOrdersImportConsumer
         }
     }
 
-    /// <summary>
-    /// Loads the per-connection backfill cursor, creating it on first contact. A fresh cursor starts
-    /// at today 00:00 MSK and walks backwards to today - <see cref="BackfillWindow"/>, which is the
-    /// scope the single-request backfill used to cover.
-    /// </summary>
-    private async Task<OrdersBackfillState> GetOrCreateBackfillStateAsync(Guid connectionId, CancellationToken cancellationToken)
-    {
-        OrdersBackfillState? state = await _ordersBackfillStateRepository.GetAsync(connectionId, cancellationToken);
-
-        if (state != null)
-        {
-            return state;
-        }
-
-        DateTimeOffset todayStart = OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow());
-
-        state = new OrdersBackfillState
-        {
-            Id = Guid.NewGuid(),
-            ConnectionId = connectionId,
-            NextDayToFetch = todayStart,
-            OldestDayInScope = todayStart - BackfillWindow,
-            IsCompleted = false,
-        };
-
-        await _ordersBackfillStateRepository.UpsertAsync(state, cancellationToken);
-
-        return state;
-    }
-
-    private async Task<BackfillOutcome> FetchBackfillDaysAsync(
-        IOrdersSource ordersSource,
-        Connection connection,
-        OrdersBackfillState state,
-        Guid jobRunId,
-        Func<List<ChannelOrderSnapshot>, CancellationToken, Task> publishUnit,
-        OrdersImportRunState runState,
-        CancellationToken cancellationToken)
-    {
-        int daysFetched = 0;
-        int totalOrders = 0;
-        DateTimeOffset? firstDay = null;
-        DateTimeOffset? lastDay = null;
-        DateTimeOffset? resumeAt = null;
-
-        while (!state.IsCompleted)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            DateTimeOffset now = _timeProvider.GetUtcNow();
-            DateTimeOffset retentionStart = OrdersWindowPlanner.GetMoscowDayStart(now - BackfillWindow);
-            DateTimeOffset oldestDay = state.OldestDayInScope > retentionStart
-                ? state.OldestDayInScope : retentionStart;
-
-            if (!state.CatchUpNextDay.HasValue && state.NextDayToFetch < oldestDay)
-            {
-                int skippedDays = Math.Max(0, (int)(state.NextDayToFetch - state.OldestDayInScope).TotalDays + 1);
-                if (skippedDays > 0)
-                {
-                    _logger.LogWarning("JobRun {JobRunId}: skipped {SkippedDays} backfill day(s) outside retention", jobRunId, skippedDays);
-                }
-
-                state.CatchUpNextDay = OrdersWindowPlanner.GetMoscowDayStart(state.OldestDayInScope + BackfillWindow);
-                await _ordersBackfillStateRepository.UpsertAsync(state, cancellationToken);
-            }
-
-            bool isCatchUp = state.CatchUpNextDay.HasValue;
-            DateTimeOffset day = OrdersWindowPlanner.GetMoscowDayStart(isCatchUp ? state.CatchUpNextDay.GetValueOrDefault() : state.NextDayToFetch);
-
-            OrdersRequest request = new OrdersRequest
-            {
-                DateFrom = day,
-                DateTo = day.AddDays(1).AddSeconds(-1),
-                Flag = 1,
-                Limit = 0,
-            };
-
-            OrdersPage page;
-
-            try
-            {
-                page = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
-            }
-            catch (OrdersFetchStoppedException ex)
-            {
-                runState.StopReason = ex.Reason;
-                resumeAt = ex.ResumeAt;
-                break;
-            }
-
-            if (page.RowsWithoutIdentity > 0)
-            {
-                throw new InvalidOperationException($"Orders backfill received {page.RowsWithoutIdentity} row(s) without a usable order identity for day {day:yyyy-MM-dd} MSK.");
-            }
-
-            if (page.HasMore)
-            {
-                throw new InvalidOperationException($"Orders backfill received a partial response for day {day:yyyy-MM-dd} MSK; flag=1 cannot be split below one day.");
-            }
-
-            List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
-
-            await publishUnit(
-                dayOrders.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(),
-                cancellationToken);
-
-            totalOrders += dayOrders.Count;
-            daysFetched++;
-            firstDay ??= day;
-            lastDay = day;
-
-            if (isCatchUp)
-            {
-                if (day >= OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow()))
-                {
-                    state.HandoverWatermark = runState.LastRequestStartedAt - SafetyOverlap;
-                    state.IsCompleted = true;
-                    state.CompletedAt = _timeProvider.GetUtcNow();
-                    state.CatchUpNextDay = day;
-                }
-                else
-                {
-                    state.CatchUpNextDay = day.AddDays(1);
-                }
-            }
-            else
-            {
-                state.NextDayToFetch = day.AddDays(-1);
-            }
-
-            await _ordersBackfillStateRepository.UpsertAsync(state, cancellationToken);
-        }
-
-        return new BackfillOutcome
-        {
-            TotalOrders = totalOrders,
-            DaysFetched = daysFetched,
-            RowsWithoutIdentity = 0,
-            StoppedByThrottle = runState.StopReason == "Throttled",
-            StoppedByBudget = runState.StopReason == "Budget",
-            FirstDay = firstDay,
-            LastDay = lastDay,
-            ResumeAt = resumeAt,
-        };
-    }
-
     private async Task CreateContinuationAsync(JobRun current, DateTimeOffset resumeAt, OrdersImportRunState state, CancellationToken cancellationToken)
     {
         bool hasPending = await _jobRunRepository
@@ -522,161 +390,6 @@ public class ProcessOrdersImportConsumer
 
         state.ContinuationId = continuation.Id;
         state.ContinuationNotBefore = resumeAt;
-    }
-
-    private async Task<OrdersFetchResult> FetchAllPagesAsync(
-        IOrdersSource ordersSource,
-        Connection connection,
-        OrdersRequest request,
-        Guid jobRunId,
-        OrdersImportRunState state,
-        CancellationToken cancellationToken)
-    {
-        Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
-
-        state.RowsWithoutIdentity = 0;
-
-        await FetchWindowAsync(ordersSource, connection, request, jobRunId, ordersByOrderKey, state, cancellationToken);
-
-        return new OrdersFetchResult
-        {
-            Orders = ordersByOrderKey.Values.ToList(),
-            RequestsIssued = state.RequestsIssued,
-            RowsWithoutIdentity = state.RowsWithoutIdentity,
-        };
-    }
-
-    /// <summary>
-    /// Fetches one window. The endpoint serves rows in ascending order of the selection instant and
-    /// caps a response at a fixed row count, so a capped response proves that everything up to its
-    /// last returned instant was served and leaves only the region above that instant unknown. The
-    /// recursion therefore splits that unknown region at its midpoint and resumes the left half from
-    /// the covered boundary, not from the requested <c>dateFrom</c>: the endpoint has no
-    /// <c>dateTo</c>, so re-requesting the parent's own <c>dateFrom</c> would return the identical
-    /// block, report the cap again, and never advance. Rows falling exactly on a boundary are
-    /// reported by both siblings; the dedup dictionary collapses them into one order and unions
-    /// their lines, so the bisection can cut through a cart without losing or duplicating a unit.
-    /// </summary>
-    private async Task FetchWindowAsync(
-        IOrdersSource ordersSource,
-        Connection connection,
-        OrdersRequest request,
-        Guid jobRunId,
-        Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey,
-        OrdersImportRunState state,
-        CancellationToken cancellationToken)
-    {
-        OrdersPage ordersPage = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, state, cancellationToken);
-
-        if (ordersPage.RowsWithoutIdentity > 0)
-        {
-            // A page that dropped rows cannot be imported partially: the missing orders would be
-            // indistinguishable from orders that never existed, and advancing the watermark past
-            // this window would hide them from every later delta run as well. Failing here reuses
-            // the same fail-fast stance as the unresolvable partial response below, and lets the
-            // next scheduled run retry the window once the source data is complete.
-            state.RowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
-
-            _logger.LogError(
-                "JobRun {JobRunId}: window {From} - {To} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
-                jobRunId,
-                request.DateFrom,
-                request.DateTo,
-                ordersPage.RowsWithoutIdentity);
-
-            throw new InvalidOperationException(
-                $"Orders import received {ordersPage.RowsWithoutIdentity} row(s) without a usable order identity " +
-                $"(no gNumber, or no srid and no sticker) in window {request.DateFrom:O} - {request.DateTo:O}; " +
-                "the window cannot be imported without inventing an identity that may split or merge real orders.");
-        }
-
-        foreach (ChannelOrderSnapshot order in ordersPage.Orders)
-        {
-            // Sibling windows of one bisection share their boundary instant, so an order placed on
-            // that instant is legitimately reported by both halves. That is one order observed
-            // twice, not two orders colliding, so the reports are merged — never re-keyed.
-            if (!ordersByOrderKey.TryGetValue(order.ExternalOrderId, out ChannelOrderSnapshot? existing))
-            {
-                ordersByOrderKey.Add(order.ExternalOrderId, order);
-                continue;
-            }
-
-            ordersByOrderKey[order.ExternalOrderId] = OrderSnapshotMerger.Merge(existing, order);
-        }
-
-        // The endpoint filters by dateFrom alone and serves rows in ascending order of the selection
-        // instant, capped at MaxOrdersPerResponse rows. A capped response therefore proves that
-        // everything up to its last returned instant was served, and says nothing about what lies
-        // beyond it. Bisecting the requested window instead re-issues the parent's own request: the
-        // left half keeps the parent's dateFrom, the endpoint has no dateTo, so it returns the same
-        // block, reports the cap again, and recurses down to the window floor without having read a
-        // single new row - failing the run on volume alone. The bisection has to start where the
-        // unknown region starts, which is the covered boundary.
-        // A null CoveredUntil on a capped response means the source could not prove how far it
-        // reached; falling back to the requested DateFrom keeps the run honest, since it narrows
-        // and retries rather than assuming the window was served.
-        DateTimeOffset nextFrom = request.DateFrom;
-
-        if (ordersPage.CoveredUntil != null && ordersPage.CoveredUntil.Value > nextFrom)
-        {
-            nextFrom = ordersPage.CoveredUntil.Value;
-        }
-
-        // Nothing is left unknown: either the response came back whole, or it reached the window end
-        // before hitting the cap, in which case the rows past the window are what filled it.
-        if (!ordersPage.HasMore || nextFrom >= request.DateTo)
-        {
-            return;
-        }
-
-        TimeSpan unknownSpan = request.DateTo - nextFrom;
-
-        if (unknownSpan <= _minWindow)
-        {
-            // Accepting the truncated response would silently drop orders so the operator sees
-            // a window granularity that the endpoint cannot serve rather than a partial import
-            // reported as success.
-            _logger.LogWarning(
-                "JobRun {JobRunId}: window {From} - {To} still returns a partial response with {Remaining} left to read at the minimum granularity of {MinWindow}, failing the run",
-                jobRunId,
-                nextFrom,
-                request.DateTo,
-                unknownSpan,
-                _minWindow);
-
-            throw new InvalidOperationException(
-                $"Orders import cannot narrow window {nextFrom:O} - {request.DateTo:O} below {_minWindow} " +
-                "while the endpoint keeps reporting a partial response.");
-        }
-
-        DateTimeOffset midpoint = nextFrom + TimeSpan.FromTicks(unknownSpan.Ticks / 2);
-
-        OrdersRequest firstHalf = new OrdersRequest
-        {
-            DateFrom = nextFrom,
-            DateTo = midpoint,
-            Flag = request.Flag,
-            Limit = request.Limit,
-        };
-
-        OrdersRequest secondHalf = new OrdersRequest
-        {
-            DateFrom = midpoint,
-            DateTo = request.DateTo,
-            Flag = request.Flag,
-            Limit = request.Limit,
-        };
-
-        _logger.LogInformation(
-            "JobRun {JobRunId}: window {From} - {To} exceeded the response cap, covered until {CoveredUntil}, splitting at {Midpoint}",
-            jobRunId,
-            request.DateFrom,
-            request.DateTo,
-            nextFrom,
-            midpoint);
-
-        await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
-        await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
     }
 
     private async Task FailJobAsync(JobRun jobRun, string error)

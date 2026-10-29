@@ -37,6 +37,8 @@ public partial class ProcessOrdersImportConsumerTests
     private readonly Mock<IChannelApiClientFactory> _clientFactory = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<ILogger<ProcessOrdersImportConsumer>> _logger = new();
+    private readonly Mock<ILogger> _bisectingReaderLogger = new();
+    private readonly Mock<ILogger> _backfillWalkerLogger = new();
     private readonly Mock<IOrdersChannelClient> _ordersSource = new();
     public interface IOrdersChannelClient : IChannelApiClient, IOrdersSource { }
 
@@ -66,7 +68,21 @@ public partial class ProcessOrdersImportConsumerTests
             wrappedOptions,
             _logger.Object,
             new AlwaysAllowWildberriesRateLimiter(),
-            _timeProvider);
+            _timeProvider,
+            BuildLoggerFactory());
+    }
+
+    private ILoggerFactory BuildLoggerFactory()
+    {
+        Mock<ILoggerFactory> loggerFactory = new();
+        loggerFactory
+            .Setup(f => f.CreateLogger(It.Is<string>(name => name.Contains(nameof(BisectingOrdersReader)))))
+            .Returns(_bisectingReaderLogger.Object);
+        loggerFactory
+            .Setup(f => f.CreateLogger(It.Is<string>(name => name.Contains(nameof(OrdersBackfillWalker)))))
+            .Returns(_backfillWalkerLogger.Object);
+
+        return loggerFactory.Object;
     }
 
     private static SystemChannelTemplate BuildWildberriesTemplate()

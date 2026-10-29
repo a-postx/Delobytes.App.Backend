@@ -178,7 +178,8 @@ public partial class ProcessOrdersImportConsumerTests
         ProcessOrdersImportConsumer consumer = new ProcessOrdersImportConsumer(
             _jobRunRepo.Object, _jobCheckpointRepo.Object, _syncCheckpointRepo.Object, _backfillStateRepo.Object,
             _clientFactory.Object, _eventPublisher.Object, _jobRunExecutionContext,
-            Options.Create(new WildberriesImportOptions()), _logger.Object, limiter.Object, _timeProvider);
+            Options.Create(new WildberriesImportOptions()), _logger.Object, limiter.Object, _timeProvider,
+            BuildLoggerFactory());
 
         await consumer.ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 

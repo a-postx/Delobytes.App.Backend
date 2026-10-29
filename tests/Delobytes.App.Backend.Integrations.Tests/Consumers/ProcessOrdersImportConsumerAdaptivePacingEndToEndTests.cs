@@ -212,7 +212,8 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             Options.Create(options),
             NullLogger<ProcessOrdersImportConsumer>.Instance,
             rateLimiter,
-            _timeProvider);
+            _timeProvider,
+            NullLoggerFactory.Instance);
     }
 
     private OrdersImportCheckpointPayload? CaptureLastPayload()
