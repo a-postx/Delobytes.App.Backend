@@ -87,7 +87,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         UseStateStore();
 
         UseSource((request, call) => Task.FromResult(call == 1
-            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, ProcessOrdersImportConsumer.BatchSize + 1), HasMore = false }
+            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, OrdersImportConstants.BatchSize + 1), HasMore = false }
             : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
         await RunAsync(jobRun, connection, CreateConsumer());

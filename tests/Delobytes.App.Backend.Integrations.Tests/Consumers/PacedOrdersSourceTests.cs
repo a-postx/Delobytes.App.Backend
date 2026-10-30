@@ -8,6 +8,8 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
+using Delobytes.App.Backend.Integrations.Application.Options;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
@@ -42,10 +44,16 @@ public class PacedOrdersSourceTests
 
     private PacedOrdersSource CreateSource(TimeSpan? maxInProcessWait = null)
     {
+        TimeSpan wait = maxInProcessWait ?? TimeSpan.Zero;
+        WildberriesImportOptions options = new WildberriesImportOptions
+        {
+            MaxInProcessWaitSeconds = (int)wait.TotalSeconds,
+        };
+
         return new PacedOrdersSource(
             new AlwaysAllowWildberriesRateLimiter(),
             _timeProvider,
-            maxInProcessWait ?? TimeSpan.Zero);
+            Options.Create(options));
     }
 
     [Fact]

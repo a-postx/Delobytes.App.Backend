@@ -19,8 +19,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
-    public const int BatchSize = OrdersImportConstants.BatchSize;
-
     public static readonly TimeSpan SafetyOverlap = OrdersImportConstants.SafetyOverlap;
     public static readonly TimeSpan BackfillWindow = OrdersImportConstants.BackfillWindow;
 
@@ -42,25 +40,27 @@ public class ProcessOrdersImportConsumer
 
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
-        IJobCheckpointRepository jobCheckpointRepository,
+        OrdersImportCheckpointStore checkpointStore,
+        OrdersBatchPublisher batchPublisher,
+        BisectingOrdersReader bisectingReader,
+        OrdersBackfillWalker backfillWalker,
         ISyncCheckpointRepository syncCheckpointRepository,
-        IOrdersBackfillStateRepository ordersBackfillStateRepository,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
         JobRunExecutionContext jobRunExecutionContext,
         IOptions<WildberriesImportOptions> options,
         ILogger<ProcessOrdersImportConsumer> logger,
-        IWildberriesRateLimiter rateLimiter,
         TimeProvider timeProvider,
-        ILoggerFactory loggerFactory,
         JobRunLifecycle jobRunLifecycle,
         OrdersContinuationScheduler continuationScheduler)
     {
         WildberriesImportOptions importOptions = options.Value;
 
         _jobRunRepository = jobRunRepository;
-        _checkpointStore = new OrdersImportCheckpointStore(jobCheckpointRepository, timeProvider);
-        _batchPublisher = new OrdersBatchPublisher(eventPublisher, _checkpointStore);
+        _checkpointStore = checkpointStore;
+        _batchPublisher = batchPublisher;
+        _bisectingReader = bisectingReader;
+        _backfillWalker = backfillWalker;
         _jobRunLifecycle = jobRunLifecycle;
         _continuationScheduler = continuationScheduler;
         _syncCheckpointRepository = syncCheckpointRepository;
@@ -83,24 +83,6 @@ public class ProcessOrdersImportConsumer
         {
             throw new ArgumentOutOfRangeException(nameof(options), "Run budget plus maximum wait must be below 30 minutes.");
         }
-
-        PacedOrdersSource pacedSource = new PacedOrdersSource(rateLimiter, timeProvider, _maxInProcessWait);
-
-        // BisectingOrdersReader/OrdersBackfillWalker are internal; a public constructor cannot take
-        // an internal parameter type (CS0051), so they are built here with the category-specific
-        // loggers taken from the factory.
-        TimeSpan minWindow = importOptions.MinOrdersWindow > TimeSpan.Zero
-            ? importOptions.MinOrdersWindow
-            : TimeSpan.FromHours(1);
-
-        _bisectingReader = new BisectingOrdersReader(pacedSource, new Logger<BisectingOrdersReader>(loggerFactory), minWindow);
-        _backfillWalker = new OrdersBackfillWalker(
-            pacedSource,
-            ordersBackfillStateRepository,
-            new Logger<OrdersBackfillWalker>(loggerFactory),
-            timeProvider,
-            BackfillWindow,
-            SafetyOverlap);
     }
 
     public static Guid CreateBatchId(Guid jobRunId, int batchIndex)
@@ -211,10 +193,6 @@ public class ProcessOrdersImportConsumer
 
         OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(nextBatchIndex, windowTo, isBackfill);
 
-        // The sink binds the run-scoped jobRun/connection/cursor the publisher needs; it carries
-        // per-run data, so it is constructed here rather than resolved from DI.
-        IOrdersImportUnitSink sink = new OrdersImportUnitSink(_batchPublisher, jobRun, connection, cursor);
-
         if (previousPayload == null)
         {
             await _checkpointStore.SaveAsync(
@@ -229,61 +207,68 @@ public class ProcessOrdersImportConsumer
                 cancellationToken);
         }
 
-        FetchSummary summary = isBackfill
-            ? await FetchBackfillAsync(ordersSource, connection, backfillState, jobRun, state, sink, cancellationToken)
-            : await FetchDeltaAsync(ordersSource, connection, backfillState, jobRun, state, sink, windowTo, cancellationToken);
+        OrdersWindowFetchResult result = isBackfill
+            ? await FetchBackfillAsync(ordersSource, connection, backfillState, jobRun, cursor, state, cancellationToken)
+            : await FetchDeltaAsync(ordersSource, connection, backfillState, jobRun, cursor, state, windowTo, cancellationToken);
 
         if (state.StopReason == StopReason.Throttled || state.StopReason == StopReason.Budget)
         {
-            await FinishStoppedAsync(jobRun, connection, state, cursor, windowTo, isBackfill, summary, cancellationToken);
+            await FinishStoppedAsync(jobRun, connection, state, cursor, windowTo, isBackfill, result, cancellationToken);
             return;
         }
 
-        await FinishCompletedAsync(jobRun, connection, state, cursor, windowTo, isBackfill, backfillState, summary, cancellationToken);
+        await FinishCompletedAsync(jobRun, connection, state, cursor, windowTo, isBackfill, backfillState, result, cancellationToken);
     }
 
-    private async Task<FetchSummary> FetchBackfillAsync(
+    private async Task<OrdersWindowFetchResult> FetchBackfillAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersBackfillState backfillState,
         JobRun jobRun,
+        OrdersImportBatchCursor cursor,
         OrdersImportRunState state,
-        IOrdersImportUnitSink sink,
         CancellationToken cancellationToken)
     {
         BackfillOutcome outcome = await _backfillWalker.FetchBackfillDaysAsync(
             ordersSource,
+            jobRun,
             connection,
+            cursor,
             backfillState,
-            jobRun.Id,
             state,
-            sink,
             cancellationToken);
 
         _logger.LogInformation(
             "JobRun {JobRunId}: branch=backfill, days fetched={DaysFetched}, first day={FirstDay}, "
-            + "last day={LastDay}, rows={Rows}, stoppedByThrottle={StoppedByThrottle}, "
-            + "stoppedByBudget={StoppedByBudget}, nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
+            + "last day={LastDay}, rows={Rows}, stopReason={StopReason}, "
+            + "nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
             jobRun.Id,
             outcome.DaysFetched,
             outcome.FirstDay,
             outcome.LastDay,
             outcome.TotalOrders,
-            outcome.StoppedByThrottle,
-            outcome.StoppedByBudget,
+            state.StopReason,
             backfillState.NextDayToFetch,
             backfillState.IsCompleted);
 
-        return new FetchSummary(state.RequestsIssued, 0, outcome.TotalOrders, null);
+        return new OrdersWindowFetchResult
+        {
+            Orders = new List<ChannelOrderSnapshot>(),
+            RequestsIssued = state.RequestsIssued,
+            RowsWithoutIdentity = 0,
+            StopReason = state.StopReason,
+            ResumeAt = state.ResumeAt,
+            MaxChangedAt = null,
+        };
     }
 
-    private async Task<FetchSummary> FetchDeltaAsync(
+    private async Task<OrdersWindowFetchResult> FetchDeltaAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersBackfillState backfillState,
         JobRun jobRun,
+        OrdersImportBatchCursor cursor,
         OrdersImportRunState state,
-        IOrdersImportUnitSink sink,
         DateTimeOffset windowTo,
         CancellationToken cancellationToken)
     {
@@ -324,7 +309,7 @@ public class ProcessOrdersImportConsumer
             state.StopReason = fetchResult.StopReason;
             state.ResumeAt = fetchResult.ResumeAt;
 
-            return new FetchSummary(fetchResult.RequestsIssued, fetchResult.RowsWithoutIdentity, 0, null);
+            return fetchResult;
         }
 
         DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(
@@ -338,13 +323,12 @@ public class ProcessOrdersImportConsumer
                 windowTo);
         }
 
-        await sink.PublishAsync(fetchResult.Orders, cancellationToken);
+        await _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, fetchResult.Orders, cancellationToken);
 
-        return new FetchSummary(
-            fetchResult.RequestsIssued,
-            fetchResult.RowsWithoutIdentity,
-            fetchResult.Orders.Count,
-            maxChangedAt);
+        return fetchResult with
+        {
+            MaxChangedAt = maxChangedAt,
+        };
     }
 
     /// <summary>
@@ -360,7 +344,7 @@ public class ProcessOrdersImportConsumer
         OrdersImportBatchCursor cursor,
         DateTimeOffset windowTo,
         bool isBackfill,
-        FetchSummary summary,
+        OrdersWindowFetchResult result,
         CancellationToken cancellationToken)
     {
         await _checkpointStore.SaveAsync(
@@ -369,7 +353,7 @@ public class ProcessOrdersImportConsumer
             {
                 TotalBatches = cursor.NextIndex,
                 WindowTo = windowTo,
-                PagesFetched = summary.RequestsIssued,
+                PagesFetched = result.RequestsIssued,
                 IsBackfill = isBackfill,
                 IsFetchCompleted = false,
             },
@@ -395,7 +379,7 @@ public class ProcessOrdersImportConsumer
             jobRun.Id,
             isBackfill,
             state.StopReason,
-            summary.OrdersFetched,
+            result.Orders.Count,
             state.ResumeAt,
             state.InProcessWaits,
             state.TotalWaited.TotalSeconds,
@@ -411,15 +395,15 @@ public class ProcessOrdersImportConsumer
         DateTimeOffset windowTo,
         bool isBackfill,
         OrdersBackfillState backfillState,
-        FetchSummary summary,
+        OrdersWindowFetchResult result,
         CancellationToken cancellationToken)
     {
         OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
         {
             TotalBatches = cursor.NextIndex + 1,
-            MaxChangedAt = summary.MaxChangedAt,
+            MaxChangedAt = result.MaxChangedAt,
             WindowTo = windowTo,
-            PagesFetched = summary.RequestsIssued,
+            PagesFetched = result.RequestsIssued,
             IsBackfill = isBackfill,
             IsBackfillCompleted = isBackfill && backfillState.IsCompleted,
             HandoverWatermark = isBackfill ? backfillState.HandoverWatermark : null,
@@ -434,16 +418,16 @@ public class ProcessOrdersImportConsumer
         await _batchPublisher.PublishTerminalAsync(jobRun, connection, cursor.NextIndex, cancellationToken);
 
         _logger.LogInformation(
-            "JobRun {JobRunId}: backfill={Backfill}, fetched {Orders} orders in {Requests} requests, "
+            "JobRun {JobRunId}: completed, backfill={Backfill}, rows={Rows}, requests={Requests}, "
             + "published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}, stopReason={StopReason}, "
             + "inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}, "
             + "continuationId={ContinuationId}, continuationNotBefore={ContinuationNotBefore}",
             jobRun.Id,
             isBackfill,
-            summary.OrdersFetched,
-            summary.RequestsIssued,
+            result.Orders.Count,
+            result.RequestsIssued,
             payload.TotalBatches,
-            summary.RowsWithoutIdentity,
+            result.RowsWithoutIdentity,
             state.StopReason,
             state.InProcessWaits,
             state.TotalWaited.TotalSeconds,
@@ -467,10 +451,4 @@ public class ProcessOrdersImportConsumer
             IsTerminal = true,
         }, cancellationToken);
     }
-
-    private sealed record FetchSummary(
-        int RequestsIssued,
-        int RowsWithoutIdentity,
-        int OrdersFetched,
-        DateTimeOffset? MaxChangedAt);
 }

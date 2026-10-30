@@ -7,7 +7,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// <summary>
 /// Reads and writes the orders import checkpoint payload for one job run.
 /// </summary>
-internal sealed class OrdersImportCheckpointStore
+public sealed class OrdersImportCheckpointStore
 {
     private readonly IJobCheckpointRepository _jobCheckpointRepository;
     private readonly TimeProvider _timeProvider;
@@ -20,14 +20,14 @@ internal sealed class OrdersImportCheckpointStore
         _timeProvider = timeProvider;
     }
 
-    public async Task<OrdersImportCheckpointPayload?> LoadAsync(Guid jobRunId, CancellationToken cancellationToken)
+    internal async Task<OrdersImportCheckpointPayload?> LoadAsync(Guid jobRunId, CancellationToken cancellationToken)
     {
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRunId, cancellationToken);
 
         return DeserializePayload(jobRunId, checkpoint?.Payload);
     }
 
-    public async Task SaveAsync(Guid jobRunId, OrdersImportCheckpointPayload payload, CancellationToken cancellationToken)
+    internal async Task SaveAsync(Guid jobRunId, OrdersImportCheckpointPayload payload, CancellationToken cancellationToken)
     {
         await _jobCheckpointRepository.UpsertAsync(
             new JobCheckpoint

@@ -10,11 +10,12 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// Per-connection backfill cursor and the day-by-day walk that advances it, publishing one unit
 /// of orders per calendar day.
 /// </summary>
-internal sealed class OrdersBackfillWalker
+public sealed class OrdersBackfillWalker
 {
     private readonly PacedOrdersSource _pacedSource;
     private readonly IOrdersBackfillStateRepository _backfillStateRepository;
-    private readonly ILogger _logger;
+    private readonly OrdersBatchPublisher _batchPublisher;
+    private readonly ILogger<OrdersBackfillWalker> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _backfillWindow;
     private readonly TimeSpan _safetyOverlap;
@@ -22,17 +23,17 @@ internal sealed class OrdersBackfillWalker
     public OrdersBackfillWalker(
         PacedOrdersSource pacedSource,
         IOrdersBackfillStateRepository backfillStateRepository,
-        ILogger logger,
-        TimeProvider timeProvider,
-        TimeSpan backfillWindow,
-        TimeSpan safetyOverlap)
+        OrdersBatchPublisher batchPublisher,
+        ILogger<OrdersBackfillWalker> logger,
+        TimeProvider timeProvider)
     {
         _pacedSource = pacedSource;
         _backfillStateRepository = backfillStateRepository;
+        _batchPublisher = batchPublisher;
         _logger = logger;
         _timeProvider = timeProvider;
-        _backfillWindow = backfillWindow;
-        _safetyOverlap = safetyOverlap;
+        _backfillWindow = OrdersImportConstants.BackfillWindow;
+        _safetyOverlap = OrdersImportConstants.SafetyOverlap;
     }
 
     /// <summary>
@@ -65,15 +66,16 @@ internal sealed class OrdersBackfillWalker
         return state;
     }
 
-    public async Task<BackfillOutcome> FetchBackfillDaysAsync(
+    internal async Task<BackfillOutcome> FetchBackfillDaysAsync(
         IOrdersSource ordersSource,
+        JobRun jobRun,
         Connection connection,
+        OrdersImportBatchCursor cursor,
         OrdersBackfillState state,
-        Guid jobRunId,
         OrdersImportRunState runState,
-        IOrdersImportUnitSink sink,
         CancellationToken cancellationToken)
     {
+        Guid jobRunId = jobRun.Id;
         int daysFetched = 0;
         int totalOrders = 0;
         DateTimeOffset? firstDay = null;
@@ -133,7 +135,10 @@ internal sealed class OrdersBackfillWalker
 
             List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
 
-            await sink.PublishAsync(
+            await _batchPublisher.PublishUnitAsync(
+                jobRun,
+                connection,
+                cursor,
                 dayOrders.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(),
                 cancellationToken);
 
@@ -168,11 +173,8 @@ internal sealed class OrdersBackfillWalker
         {
             TotalOrders = totalOrders,
             DaysFetched = daysFetched,
-            StoppedByThrottle = runState.StopReason == StopReason.Throttled,
-            StoppedByBudget = runState.StopReason == StopReason.Budget,
             FirstDay = firstDay,
             LastDay = lastDay,
-            ResumeAt = runState.ResumeAt,
         };
     }
 }

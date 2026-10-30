@@ -201,19 +201,46 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             MaxInProcessWaitSeconds = 0,
         };
 
+        OrdersImportCheckpointStore checkpointStore = new OrdersImportCheckpointStore(
+            _jobCheckpointRepo.Object,
+            _timeProvider);
+
+        OrdersBatchPublisher batchPublisher = new OrdersBatchPublisher(
+            _eventPublisher.Object,
+            checkpointStore);
+
+        IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+
+        PacedOrdersSource pacedSource = new PacedOrdersSource(
+            rateLimiter,
+            _timeProvider,
+            wrappedOptions);
+
+        BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
+            pacedSource,
+            NullLogger<BisectingOrdersReader>.Instance,
+            wrappedOptions);
+
+        OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
+            pacedSource,
+            _backfillStateRepo.Object,
+            batchPublisher,
+            NullLogger<OrdersBackfillWalker>.Instance,
+            _timeProvider);
+
         return new ProcessOrdersImportConsumer(
             _jobRunRepo.Object,
-            _jobCheckpointRepo.Object,
+            checkpointStore,
+            batchPublisher,
+            bisectingReader,
+            backfillWalker,
             _syncCheckpointRepo.Object,
-            _backfillStateRepo.Object,
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
-            Options.Create(options),
+            wrappedOptions,
             NullLogger<ProcessOrdersImportConsumer>.Instance,
-            rateLimiter,
             _timeProvider,
-            NullLoggerFactory.Instance,
             new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
             new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
     }

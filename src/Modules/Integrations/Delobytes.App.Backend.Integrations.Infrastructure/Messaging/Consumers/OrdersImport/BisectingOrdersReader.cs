@@ -1,8 +1,10 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
@@ -10,17 +12,24 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// Fetches a whole orders window, recursively bisecting it while the endpoint reports a partial
 /// (capped) response.
 /// </summary>
-internal sealed class BisectingOrdersReader
+public sealed class BisectingOrdersReader
 {
     private readonly PacedOrdersSource _pacedSource;
-    private readonly ILogger _logger;
+    private readonly ILogger<BisectingOrdersReader> _logger;
     private readonly TimeSpan _minWindow;
 
-    public BisectingOrdersReader(PacedOrdersSource pacedSource, ILogger logger, TimeSpan minWindow)
+    public BisectingOrdersReader(
+        PacedOrdersSource pacedSource,
+        ILogger<BisectingOrdersReader> logger,
+        IOptions<WildberriesImportOptions> options)
     {
+        WildberriesImportOptions importOptions = options.Value;
+
         _pacedSource = pacedSource;
         _logger = logger;
-        _minWindow = minWindow;
+        _minWindow = importOptions.MinOrdersWindow > TimeSpan.Zero
+            ? importOptions.MinOrdersWindow
+            : TimeSpan.FromHours(1);
     }
 
     /// <summary>
@@ -28,7 +37,7 @@ internal sealed class BisectingOrdersReader
     /// reported as a stop with no orders: anything already read belongs to an unread window, so
     /// publishing it would advance the watermark over orders the bisection never saw.
     /// </summary>
-    public async Task<OrdersWindowFetchResult> FetchAllPagesAsync(
+    internal async Task<OrdersWindowFetchResult> FetchAllPagesAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,

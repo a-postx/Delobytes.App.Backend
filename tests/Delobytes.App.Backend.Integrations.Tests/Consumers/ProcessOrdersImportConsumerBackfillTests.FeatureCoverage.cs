@@ -160,7 +160,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload { IsBackfill = true, IsFetchCompleted = false, TotalBatches = 7 }),
         });
         UseSource((request, call) => Task.FromResult(call == 1
-            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, ProcessOrdersImportConsumer.BatchSize + 1) }
+            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, OrdersImportConstants.BatchSize + 1) }
             : new OrdersPage { Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
         List<OrdersBatchImportRequestedEvent> batches = new List<OrdersBatchImportRequestedEvent>();
         OrdersImportCheckpointPayload? latest = null;
@@ -177,7 +177,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         // Batch numbering resumes at the persisted count, so the two data batches carry 7 and 8 and
         // a later run continues at 9 instead of reusing BatchIds the aggregator has recorded.
         batches.Should().HaveCount(2);
-        batches[0].Orders.Should().HaveCount(ProcessOrdersImportConsumer.BatchSize);
+        batches[0].Orders.Should().HaveCount(OrdersImportConstants.BatchSize);
         batches[1].Orders.Should().HaveCount(1);
         batches.Select(b => b.BatchId).Should().Equal(
             ProcessOrdersImportConsumer.CreateBatchId(run.Id, 7),

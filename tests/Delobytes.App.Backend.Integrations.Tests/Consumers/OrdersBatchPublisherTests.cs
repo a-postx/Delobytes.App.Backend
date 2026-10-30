@@ -132,14 +132,14 @@ public class OrdersBatchPublisherTests
             .Returns(Task.CompletedTask);
 
         List<ChannelOrderSnapshot> unit = Enumerable
-            .Range(0, ProcessOrdersImportConsumer.BatchSize + 1)
+            .Range(0, OrdersImportConstants.BatchSize + 1)
             .Select(i => BuildOrder($"ORDER-{i}"))
             .ToList();
 
         await publisher.PublishUnitAsync(jobRun, connection, cursor, unit, CancellationToken.None);
 
         published.Should().HaveCount(2);
-        published[0].Orders.Should().HaveCount(ProcessOrdersImportConsumer.BatchSize);
+        published[0].Orders.Should().HaveCount(OrdersImportConstants.BatchSize);
         published[1].Orders.Should().HaveCount(1);
         published.Select(p => p.BatchId).Should().Equal(
             OrdersBatchPublisher.CreateBatchId(jobRun.Id, 0),
@@ -206,13 +206,13 @@ public class OrdersBatchPublisherTests
     public void SplitIntoBatches_ExactlyBatchSize_ReturnsOneBatch()
     {
         List<ChannelOrderSnapshot> orders = Enumerable
-            .Range(0, ProcessOrdersImportConsumer.BatchSize)
+            .Range(0, OrdersImportConstants.BatchSize)
             .Select(i => BuildOrder($"ORDER-{i}"))
             .ToList();
 
         List<List<ChannelOrderSnapshot>> batches = OrdersBatchPublisher.SplitIntoBatches(orders);
 
         batches.Should().ContainSingle();
-        batches[0].Should().HaveCount(ProcessOrdersImportConsumer.BatchSize);
+        batches[0].Should().HaveCount(OrdersImportConstants.BatchSize);
     }
 }

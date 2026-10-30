@@ -51,12 +51,8 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<ILogger<ProcessOrdersImportConsumer>> _logger = new();
 
-    // Plain ILogger, not ILogger<T>: Moq cannot proxy ILogger<T> when T is internal, because
-    // ILogger<T> lives in the strong-named Logging.Abstractions assembly and Castle requires the
-    // internal type argument to be visible to DynamicProxyGenAssembly2. The consumers only need the
-    // non-generic interface, so the mocks stay proxy-free.
-    private readonly Mock<ILogger> _bisectingReaderLogger = new();
-    private readonly Mock<ILogger> _backfillWalkerLogger = new();
+    private readonly Mock<ILogger<BisectingOrdersReader>> _bisectingReaderLogger = new();
+    private readonly Mock<ILogger<OrdersBackfillWalker>> _backfillWalkerLogger = new();
     private readonly Mock<IOrdersChannelClient> _ordersSource = new();
 
     public interface IOrdersChannelClient : IChannelApiClient, IOrdersSource { }
@@ -85,34 +81,49 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             BackfillRunBudgetSeconds = backfillRunBudgetSeconds,
         };
 
+        OrdersImportCheckpointStore checkpointStore = new OrdersImportCheckpointStore(
+            _jobCheckpointRepo.Object,
+            _timeProvider);
+
+        OrdersBatchPublisher batchPublisher = new OrdersBatchPublisher(
+            _eventPublisher.Object,
+            checkpointStore);
+
+        AlwaysAllowWildberriesRateLimiter rateLimiter = new AlwaysAllowWildberriesRateLimiter();
+        IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+
+        PacedOrdersSource pacedSource = new PacedOrdersSource(
+            rateLimiter,
+            _timeProvider,
+            wrappedOptions);
+
+        BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
+            pacedSource,
+            _bisectingReaderLogger.Object,
+            wrappedOptions);
+
+        OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
+            pacedSource,
+            _backfillStateRepo.Object,
+            batchPublisher,
+            _backfillWalkerLogger.Object,
+            _timeProvider);
+
         return new ProcessOrdersImportConsumer(
             _jobRunRepo.Object,
-            _jobCheckpointRepo.Object,
+            checkpointStore,
+            batchPublisher,
+            bisectingReader,
+            backfillWalker,
             _syncCheckpointRepo.Object,
-            _backfillStateRepo.Object,
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
-            Options.Create(options),
+            wrappedOptions,
             _logger.Object,
-            new AlwaysAllowWildberriesRateLimiter(),
             _timeProvider,
-            BuildLoggerFactory(),
             new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
             new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
-    }
-
-    private ILoggerFactory BuildLoggerFactory()
-    {
-        Mock<ILoggerFactory> loggerFactory = new();
-        loggerFactory
-            .Setup(f => f.CreateLogger(It.Is<string>(name => name.Contains(nameof(BisectingOrdersReader)))))
-            .Returns(_bisectingReaderLogger.Object);
-        loggerFactory
-            .Setup(f => f.CreateLogger(It.Is<string>(name => name.Contains(nameof(OrdersBackfillWalker)))))
-            .Returns(_backfillWalkerLogger.Object);
-
-        return loggerFactory.Object;
     }
 
     private SystemChannelTemplate BuildWildberriesTemplate()

@@ -10,7 +10,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// Splits one fetched unit of orders into batches, publishes each as an
 /// <see cref="OrdersBatchImportRequestedEvent"/>, and persists the progress checkpoint.
 /// </summary>
-internal sealed class OrdersBatchPublisher
+public sealed class OrdersBatchPublisher
 {
     public OrdersBatchPublisher(
         IEventPublisher eventPublisher,
@@ -28,7 +28,7 @@ internal sealed class OrdersBatchPublisher
     /// fetched, then persists how many batches have been published so far so a crash immediately
     /// afterwards cannot lose more than the next unit.
     /// </summary>
-    public async Task PublishUnitAsync(
+    internal async Task PublishUnitAsync(
         JobRun jobRun,
         Connection connection,
         OrdersImportBatchCursor cursor,
@@ -71,7 +71,7 @@ internal sealed class OrdersBatchPublisher
     /// stays with the caller, because it must happen before the terminal publish and carries
     /// MaxChangedAt, PagesFetched and HandoverWatermark.
     /// </summary>
-    public async Task PublishTerminalAsync(
+    internal async Task PublishTerminalAsync(
         JobRun jobRun,
         Connection connection,
         int batchIndex,
@@ -107,9 +107,9 @@ internal sealed class OrdersBatchPublisher
     {
         List<List<ChannelOrderSnapshot>> batches = new List<List<ChannelOrderSnapshot>>();
 
-        for (int i = 0; i < orders.Count; i += ProcessOrdersImportConsumer.BatchSize)
+        for (int i = 0; i < orders.Count; i += OrdersImportConstants.BatchSize)
         {
-            batches.Add(orders.Skip(i).Take(ProcessOrdersImportConsumer.BatchSize).ToList());
+            batches.Add(orders.Skip(i).Take(OrdersImportConstants.BatchSize).ToList());
         }
 
         // An empty terminal batch still flows through Sales so the aggregator finalises the run.

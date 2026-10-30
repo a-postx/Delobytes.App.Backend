@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// Outcome of fetching one window. A stop is a value, not an exception: the caller decides whether
 /// it is recoverable (throttle, budget) or terminal (a window the endpoint cannot serve whole).
 /// </summary>
-internal sealed record OrdersWindowFetchResult
+public sealed record OrdersWindowFetchResult
 {
     public required List<ChannelOrderSnapshot> Orders { get; init; }
 
@@ -21,6 +21,8 @@ internal sealed record OrdersWindowFetchResult
     /// throttle or the run's budget.
     /// </summary>
     public DateTimeOffset? ResumeAt { get; init; }
+
+    public DateTimeOffset? MaxChangedAt { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether the window was not fully read and the run can resume later.

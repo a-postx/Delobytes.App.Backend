@@ -182,13 +182,7 @@ public partial class ProcessOrdersImportConsumerTests
                 _timeProvider.Advance(TimeSpan.FromSeconds(1200));
                 return Task.FromResult(new OrdersPage { HasMore = true, Orders = BuildOrders(1) });
             });
-        ProcessOrdersImportConsumer consumer = new ProcessOrdersImportConsumer(
-            _jobRunRepo.Object, _jobCheckpointRepo.Object, _syncCheckpointRepo.Object, _backfillStateRepo.Object,
-            _clientFactory.Object, _eventPublisher.Object, _jobRunExecutionContext,
-            Options.Create(new WildberriesImportOptions()), _logger.Object, limiter.Object, _timeProvider,
-            BuildLoggerFactory(),
-            new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
-            new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
+        ProcessOrdersImportConsumer consumer = CreateConsumer(rateLimiter: limiter.Object);
 
         await consumer.ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 
@@ -240,7 +234,7 @@ public partial class ProcessOrdersImportConsumerTests
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
         SetupDefaults(run);
-        _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersPage { Orders = BuildOrders(ProcessOrdersImportConsumer.BatchSize + 1) });
+        _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersPage { Orders = BuildOrders(OrdersImportConstants.BatchSize + 1) });
         List<string> operations = new List<string>();
         _jobCheckpointRepo.Setup(r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()))
             .Callback<JobCheckpoint, CancellationToken>((checkpoint, token) =>

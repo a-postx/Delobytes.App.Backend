@@ -1,7 +1,9 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
@@ -9,7 +11,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// Issues one orders request against the run's deadline and request budget, and waits out a
 /// throttled response in-process when the wait fits within the run's tolerance.
 /// </summary>
-internal sealed class PacedOrdersSource
+public sealed class PacedOrdersSource
 {
     private readonly IWildberriesRateLimiter _rateLimiter;
     private readonly TimeProvider _timeProvider;
@@ -18,18 +20,22 @@ internal sealed class PacedOrdersSource
     public PacedOrdersSource(
         IWildberriesRateLimiter rateLimiter,
         TimeProvider timeProvider,
-        TimeSpan maxInProcessWait)
+        IOptions<WildberriesImportOptions> options)
     {
+        WildberriesImportOptions importOptions = options.Value;
+
         _rateLimiter = rateLimiter;
         _timeProvider = timeProvider;
-        _maxInProcessWait = maxInProcessWait;
+        _maxInProcessWait = TimeSpan.FromSeconds(importOptions.MaxInProcessWaitSeconds >= 0
+            ? importOptions.MaxInProcessWaitSeconds
+            : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds);
     }
 
     /// <summary>
     /// Returns the page, or a stop value when the run's deadline or request budget ran out or the
     /// source throttled beyond what the run can wait out.
     /// </summary>
-    public async Task<OrdersAttempt> GetOrdersAsync(
+    internal async Task<OrdersAttempt> GetOrdersAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,
