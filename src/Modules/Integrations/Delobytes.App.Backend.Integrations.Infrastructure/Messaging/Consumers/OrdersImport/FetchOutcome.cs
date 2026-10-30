@@ -7,7 +7,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// value, not an exception: the caller decides whether it is recoverable (throttle, budget) or
 /// terminal (a window the endpoint cannot serve whole).
 /// </summary>
-internal sealed record FetchOutcome
+public sealed record FetchOutcome
 {
     public required int RequestsIssued { get; init; }
 
@@ -24,6 +24,19 @@ internal sealed record FetchOutcome
     public DateTimeOffset? ResumeAt { get; init; }
 
     public DateTimeOffset? MaxChangedAt { get; init; }
+
+    /// <summary>
+    /// Gets the watermark a backfill hands over to the delta path once its catch-up pass completes.
+    /// Null on a delta fetch and on any backfill that has not completed, so neither can advance a
+    /// watermark it has not earned.
+    /// </summary>
+    public DateTimeOffset? HandoverWatermark { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether a backfill fetch finished the catch-up pass. Always false on
+    /// a delta fetch.
+    /// </summary>
+    public bool IsBackfillCompleted { get; init; }
 
     /// <summary>
     /// Gets the orders read by a delta fetch. Always empty for backfill.

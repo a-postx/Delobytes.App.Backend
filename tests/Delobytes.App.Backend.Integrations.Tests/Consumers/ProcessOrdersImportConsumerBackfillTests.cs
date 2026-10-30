@@ -112,10 +112,13 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         return new ProcessOrdersImportConsumer(
             _jobRunRepo.Object,
             checkpointStore,
-            batchPublisher,
-            bisectingReader,
             backfillWalker,
-            _syncCheckpointRepo.Object,
+            new BackfillOrdersFetcher(backfillWalker),
+            new DeltaOrdersFetcher(
+                bisectingReader,
+                _syncCheckpointRepo.Object,
+                batchPublisher,
+                new Mock<ILogger<DeltaOrdersFetcher>>().Object),
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,

@@ -84,6 +84,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PacedOrdersSource>();
         services.AddScoped<BisectingOrdersReader>();
         services.AddScoped<OrdersBackfillWalker>();
+        services.AddScoped<BackfillOrdersFetcher>();
+        services.AddScoped<DeltaOrdersFetcher>();
         services.AddScoped<OrdersContinuationScheduler>();
         services.AddScoped<ProcessOrdersImportConsumer>();
         services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();

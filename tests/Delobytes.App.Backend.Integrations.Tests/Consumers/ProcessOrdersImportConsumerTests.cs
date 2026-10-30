@@ -37,6 +37,7 @@ public partial class ProcessOrdersImportConsumerTests
     private readonly Mock<IChannelApiClientFactory> _clientFactory = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
     private readonly Mock<ILogger<ProcessOrdersImportConsumer>> _logger = new();
+    private readonly Mock<ILogger<DeltaOrdersFetcher>> _deltaFetcherLogger = new();
     private readonly Mock<IOrdersChannelClient> _ordersSource = new();
     public interface IOrdersChannelClient : IChannelApiClient, IOrdersSource { }
 
@@ -88,10 +89,13 @@ public partial class ProcessOrdersImportConsumerTests
         return new ProcessOrdersImportConsumer(
             _jobRunRepo.Object,
             checkpointStore,
-            batchPublisher,
-            bisectingReader,
             backfillWalker,
-            _syncCheckpointRepo.Object,
+            new BackfillOrdersFetcher(backfillWalker),
+            new DeltaOrdersFetcher(
+                bisectingReader,
+                _syncCheckpointRepo.Object,
+                batchPublisher,
+                _deltaFetcherLogger.Object),
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,

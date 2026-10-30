@@ -1,9 +1,7 @@
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
-using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
@@ -14,8 +12,9 @@ using Microsoft.Extensions.Options;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
-/// Orchestrates an orders import run: computes the delta/backfill window from SyncCheckpoint,
-/// fetches the whole window (narrowing it while the endpoint reports a partial response).
+/// Orchestrates an orders import run: picks the fetcher for the run, awaits it once, and turns its
+/// outcome into a checkpoint, a continuation or a failure. Which fetch algorithm runs, and what a
+/// stop means for it, belongs to the fetcher.
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
@@ -24,12 +23,11 @@ public class ProcessOrdersImportConsumer
 
     private readonly IJobRunRepository _jobRunRepository;
     private readonly OrdersImportCheckpointStore _checkpointStore;
-    private readonly OrdersBatchPublisher _batchPublisher;
-    private readonly BisectingOrdersReader _bisectingReader;
     private readonly OrdersBackfillWalker _backfillWalker;
+    private readonly IOrdersFetcher _backfillFetcher;
+    private readonly IOrdersFetcher _deltaFetcher;
     private readonly JobRunLifecycle _jobRunLifecycle;
     private readonly OrdersContinuationScheduler _continuationScheduler;
-    private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
     private readonly JobRunExecutionContext _jobRunExecutionContext;
@@ -41,10 +39,9 @@ public class ProcessOrdersImportConsumer
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
         OrdersImportCheckpointStore checkpointStore,
-        OrdersBatchPublisher batchPublisher,
-        BisectingOrdersReader bisectingReader,
         OrdersBackfillWalker backfillWalker,
-        ISyncCheckpointRepository syncCheckpointRepository,
+        BackfillOrdersFetcher backfillFetcher,
+        DeltaOrdersFetcher deltaFetcher,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
         JobRunExecutionContext jobRunExecutionContext,
@@ -58,12 +55,11 @@ public class ProcessOrdersImportConsumer
 
         _jobRunRepository = jobRunRepository;
         _checkpointStore = checkpointStore;
-        _batchPublisher = batchPublisher;
-        _bisectingReader = bisectingReader;
         _backfillWalker = backfillWalker;
+        _backfillFetcher = backfillFetcher;
+        _deltaFetcher = deltaFetcher;
         _jobRunLifecycle = jobRunLifecycle;
         _continuationScheduler = continuationScheduler;
-        _syncCheckpointRepository = syncCheckpointRepository;
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
         _jobRunExecutionContext = jobRunExecutionContext;
@@ -128,20 +124,21 @@ public class ProcessOrdersImportConsumer
 
         await _jobRunLifecycle.TryStartAsync(jobRun, cancellationToken);
 
-        using IDisposable scope = _jobRunExecutionContext.EnterScope(jobRun.Id);
-
-        try
+        using (IDisposable scope = _jobRunExecutionContext.EnterScope(jobRun.Id))
         {
-            await RunImportAsync(jobRun, connection, deadline, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "JobRun {JobRunId}: orders import failed", jobRun.Id);
-            await _jobRunLifecycle.FailAsync(jobRun, ex.Message, cancellationToken);
+            try
+            {
+                await RunImportAsync(jobRun, connection, deadline, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "JobRun {JobRunId}: orders import failed", jobRun.Id);
+                await _jobRunLifecycle.FailAsync(jobRun, ex.Message, cancellationToken);
+            }
         }
     }
 
@@ -170,8 +167,32 @@ public class ProcessOrdersImportConsumer
             return;
         }
 
-        // A redelivered delta run must re-read the same window, otherwise the batch count
-        // persisted for the aggregator would no longer match what is being republished.
+        OrdersImportRun run = await CreateRunAsync(
+            jobRun, connection, deadline, ordersSource, previousPayload, cancellationToken);
+
+        IOrdersFetcher fetcher = run.IsBackfill ? _backfillFetcher : _deltaFetcher;
+
+        FetchOutcome outcome = await fetcher.FetchAsync(run, cancellationToken);
+
+        if (outcome.IsStopped)
+        {
+            await FinishStoppedAsync(run, outcome, cancellationToken);
+            return;
+        }
+
+        await FinishCompletedAsync(run, outcome, cancellationToken);
+    }
+
+    private async Task<OrdersImportRun> CreateRunAsync(
+        JobRun jobRun,
+        Connection connection,
+        DateTimeOffset deadline,
+        IOrdersSource ordersSource,
+        OrdersImportCheckpointPayload? previousPayload,
+        CancellationToken cancellationToken)
+    {
+        // A redelivered run must re-read the same window, otherwise the batch count persisted for
+        // the aggregator would no longer match what is being republished.
         DateTimeOffset windowTo = previousPayload?.WindowTo ?? _timeProvider.GetUtcNow();
 
         OrdersBackfillState backfillState = await _backfillWalker.GetOrCreateAsync(connection.Id, cancellationToken);
@@ -185,13 +206,17 @@ public class ProcessOrdersImportConsumer
 
         // A redelivered message continues batch numbering where the last attempt left off,
         // identified by IsFetchCompleted == false: that attempt published some units and
-        // persisted their count, but never reached the finishing write below. Starting over at
-        // 0 would reuse BatchIds already recorded for different content under this JobRunId.
+        // persisted their count, but never reached the finishing write. Starting over at 0 would
+        // reuse BatchIds already recorded for different content under this JobRunId.
         int nextBatchIndex = previousPayload != null && previousPayload.IsFetchCompleted == false
             ? previousPayload.TotalBatches
             : 0;
 
-        OrdersImportRun run = new OrdersImportRun(jobRun, connection, deadline, windowTo, isBackfill, nextBatchIndex);
+        OrdersImportRun run = new OrdersImportRun(jobRun, connection, deadline, windowTo, isBackfill, nextBatchIndex)
+        {
+            OrdersSource = ordersSource,
+            BackfillState = backfillState,
+        };
 
         if (previousPayload == null)
         {
@@ -207,89 +232,13 @@ public class ProcessOrdersImportConsumer
                 cancellationToken);
         }
 
-        FetchOutcome outcome = run.IsBackfill
-            ? await _backfillWalker.FetchBackfillDaysAsync(ordersSource, run, backfillState, cancellationToken)
-            : await FetchDeltaAsync(ordersSource, run, backfillState, cancellationToken);
-
-        if (outcome.IsStopped)
-        {
-            await FinishStoppedAsync(run, outcome, cancellationToken);
-            return;
-        }
-
-        await FinishCompletedAsync(run, backfillState, outcome, cancellationToken);
-    }
-
-    private async Task<FetchOutcome> FetchDeltaAsync(
-        IOrdersSource ordersSource,
-        OrdersImportRun run,
-        OrdersBackfillState backfillState,
-        CancellationToken cancellationToken)
-    {
-        SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
-            .GetAsync(run.Connection.Id, JobType.OrdersImport, cancellationToken);
-
-        DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
-            syncCheckpoint, backfillState, out bool usedLegacyFallback);
-
-        if (usedLegacyFallback)
-        {
-            _logger.LogWarning(
-                "JobRun {JobRunId}: legacy completed backfill has no handover watermark; using walk start {WindowFrom}",
-                run.JobRun.Id, windowFrom);
-        }
-
-        OrdersRequest request = new OrdersRequest
-        {
-            DateFrom = windowFrom.ToOffset(OrdersWindowPlanner.MoscowOffset),
-            DateTo = run.WindowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
-            Flag = 0,
-            Limit = 0,
-        };
-
-        _logger.LogInformation(
-            "JobRun {JobRunId}: branch=delta, fetching orders from {From} to {To}",
-            run.JobRun.Id,
-            request.DateFrom,
-            request.DateTo);
-
-        FetchOutcome outcome = await _bisectingReader.FetchAllPagesAsync(
-            ordersSource, request, run, cancellationToken);
-
-        if (outcome.IsStopped)
-        {
-            // Nothing already read is published: it belongs to an unread window, so publishing it
-            // would advance the watermark over orders the bisection never saw.
-            run.StopReason = outcome.StopReason;
-            run.ResumeAt = outcome.ResumeAt;
-
-            return outcome;
-        }
-
-        DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(
-            outcome.Orders, run.WindowTo, out DateTimeOffset? observedBeyondWindow);
-
-        if (observedBeyondWindow.HasValue)
-        {
-            _logger.LogWarning(
-                "Orders import: observed lastChangeDate {Observed} is later than the run window end {WindowTo}, clamping the watermark",
-                observedBeyondWindow.Value,
-                run.WindowTo);
-        }
-
-        await _batchPublisher.PublishUnitAsync(run, outcome.Orders, cancellationToken);
-
-        return outcome with
-        {
-            MaxChangedAt = maxChangedAt,
-        };
+        return run;
     }
 
     /// <summary>
     /// A run stopped by throttle or budget leaves its data incomplete, so it neither finalises the
-    /// job (no IsFetchCompleted=true, no terminal batch) nor reports a failure: it persists the
-    /// progress checkpoint and schedules a continuation. Both branches share this outcome so the
-    /// operator sees the same thing in JobRun history regardless of which one stopped.
+    /// job (no IsFetchCompleted=true, no completion event) nor reports a failure: it persists the
+    /// progress checkpoint and schedules a continuation.
     /// </summary>
     private async Task FinishStoppedAsync(
         OrdersImportRun run,
@@ -341,7 +290,6 @@ public class ProcessOrdersImportConsumer
 
     private async Task FinishCompletedAsync(
         OrdersImportRun run,
-        OrdersBackfillState backfillState,
         FetchOutcome outcome,
         CancellationToken cancellationToken)
     {
@@ -352,8 +300,8 @@ public class ProcessOrdersImportConsumer
             WindowTo = run.WindowTo,
             PagesFetched = outcome.RequestsIssued,
             IsBackfill = run.IsBackfill,
-            IsBackfillCompleted = run.IsBackfill && backfillState.IsCompleted,
-            HandoverWatermark = run.IsBackfill ? backfillState.HandoverWatermark : null,
+            IsBackfillCompleted = run.IsBackfill && outcome.IsBackfillCompleted,
+            HandoverWatermark = run.IsBackfill ? outcome.HandoverWatermark : null,
             IsFetchCompleted = true,
         };
 
