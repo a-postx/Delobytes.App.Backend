@@ -228,7 +228,7 @@ public partial class ProcessOrdersImportConsumerTests
             new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // TryStartAsync only writes the Pending -> Running transition; a redelivery of a run that is
+        // StartAsync only writes the Pending -> Running transition; a redelivery of a run that is
         // already Running must leave the original start instant alone.
         run.StartedAt.Should().Be(startedAt);
         _jobRunRepo.Verify(

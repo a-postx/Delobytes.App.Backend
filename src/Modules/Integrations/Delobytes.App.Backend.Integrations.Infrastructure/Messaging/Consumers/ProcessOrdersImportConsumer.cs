@@ -129,6 +129,7 @@ public class ProcessOrdersImportConsumer
             catch (Exception ex)
             {
                 _logger.LogError(ex, "JobRun {JobRunId}: orders import failed", jobRun.Id);
+
                 await _jobRunLifecycle.FailAsync(jobRun, ex.Message, cancellationToken);
             }
         }
@@ -159,23 +160,25 @@ public class ProcessOrdersImportConsumer
             return;
         }
 
-        OrdersImportRun run = await CreateRunAsync(
+        (OrdersImportContext context, int nextBatchIndex) = await CreateContextAsync(
             jobRun, connection, deadline, ordersSource, previousPayload, cancellationToken);
 
-        IOrdersFetcher fetcher = run.IsBackfill ? _backfillFetcher : _deltaFetcher;
+        OrdersRunProgress progress = new OrdersRunProgress(nextBatchIndex);
 
-        FetchOutcome outcome = await fetcher.FetchAsync(run, cancellationToken);
+        IOrdersFetcher fetcher = context.IsBackfill ? _backfillFetcher : _deltaFetcher;
+
+        FetchOutcome outcome = await fetcher.FetchAsync(context, progress, cancellationToken);
 
         if (outcome.IsStopped)
         {
-            await FinishStoppedAsync(run, outcome, cancellationToken);
+            await FinishStoppedAsync(context, progress, outcome, cancellationToken);
             return;
         }
 
-        await FinishCompletedAsync(run, outcome, cancellationToken);
+        await FinishCompletedAsync(context, progress, outcome, cancellationToken);
     }
 
-    private async Task<OrdersImportRun> CreateRunAsync(
+    private async Task<(OrdersImportContext Context, int NextBatchIndex)> CreateContextAsync(
         JobRun jobRun,
         Connection connection,
         DateTimeOffset deadline,
@@ -204,11 +207,8 @@ public class ProcessOrdersImportConsumer
             ? previousPayload.TotalBatches
             : 0;
 
-        OrdersImportRun run = new OrdersImportRun(jobRun, connection, deadline, windowTo, isBackfill, nextBatchIndex)
-        {
-            OrdersSource = ordersSource,
-            BackfillState = backfillState,
-        };
+        OrdersImportContext context = new OrdersImportContext(
+            jobRun, connection, ordersSource, backfillState, deadline, windowTo, isBackfill);
 
         if (previousPayload == null)
         {
@@ -217,14 +217,14 @@ public class ProcessOrdersImportConsumer
                 new OrdersImportCheckpointPayload
                 {
                     TotalBatches = 0,
-                    WindowTo = run.WindowTo,
-                    IsBackfill = run.IsBackfill,
+                    WindowTo = context.WindowTo,
+                    IsBackfill = context.IsBackfill,
                     IsFetchCompleted = false,
                 },
                 cancellationToken);
         }
 
-        return run;
+        return (context, nextBatchIndex);
     }
 
     /// <summary>
@@ -233,18 +233,19 @@ public class ProcessOrdersImportConsumer
     /// progress checkpoint and schedules a continuation.
     /// </summary>
     private async Task FinishStoppedAsync(
-        OrdersImportRun run,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         FetchOutcome outcome,
         CancellationToken cancellationToken)
     {
         await _checkpointStore.SaveAsync(
-            run.JobRun.Id,
+            context.JobRun.Id,
             new OrdersImportCheckpointPayload
             {
-                TotalBatches = run.NextBatchIndex,
-                WindowTo = run.WindowTo,
+                TotalBatches = progress.NextBatchIndex,
+                WindowTo = context.WindowTo,
                 PagesFetched = outcome.RequestsIssued,
-                IsBackfill = run.IsBackfill,
+                IsBackfill = context.IsBackfill,
                 IsFetchCompleted = false,
             },
             cancellationToken);
@@ -255,7 +256,7 @@ public class ProcessOrdersImportConsumer
         if (outcome.ResumeAt.HasValue)
         {
             JobRun? continuation = await _continuationScheduler
-                .ScheduleAsync(run.JobRun, outcome.ResumeAt.Value, cancellationToken);
+                .ScheduleAsync(context.JobRun, outcome.ResumeAt.Value, cancellationToken);
 
             if (continuation != null)
             {
@@ -269,31 +270,32 @@ public class ProcessOrdersImportConsumer
             + "fetched {Orders} orders, resumeAt={ResumeAt}, inProcessWaits={InProcessWaits}, "
             + "totalWaitedSeconds={TotalWaitedSeconds}, continuationId={ContinuationId}, "
             + "continuationNotBefore={ContinuationNotBefore}",
-            run.JobRun.Id,
-            run.IsBackfill,
+            context.JobRun.Id,
+            context.IsBackfill,
             outcome.StopReason,
             outcome.OrdersFetched,
             outcome.ResumeAt,
-            run.InProcessWaits,
-            run.TotalWaited.TotalSeconds,
+            progress.InProcessWaits,
+            progress.TotalWaited.TotalSeconds,
             continuationId,
             continuationNotBefore);
     }
 
     private async Task FinishCompletedAsync(
-        OrdersImportRun run,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         FetchOutcome outcome,
         CancellationToken cancellationToken)
     {
         OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
         {
-            TotalBatches = run.NextBatchIndex,
+            TotalBatches = progress.NextBatchIndex,
             MaxChangedAt = outcome.MaxChangedAt,
-            WindowTo = run.WindowTo,
+            WindowTo = context.WindowTo,
             PagesFetched = outcome.RequestsIssued,
-            IsBackfill = run.IsBackfill,
-            IsBackfillCompleted = run.IsBackfill && outcome.IsBackfillCompleted,
-            HandoverWatermark = run.IsBackfill ? outcome.HandoverWatermark : null,
+            IsBackfill = context.IsBackfill,
+            IsBackfillCompleted = context.IsBackfill && outcome.IsBackfillCompleted,
+            HandoverWatermark = context.IsBackfill ? outcome.HandoverWatermark : null,
             IsFetchCompleted = true,
         };
 
@@ -301,22 +303,22 @@ public class ProcessOrdersImportConsumer
         // aggregator finalises on whichever of the completion event or a batch result brings its
         // recorded count up to the expected total, and it can only do that once it knows the
         // final count.
-        await _checkpointStore.SaveAsync(run.JobRun.Id, payload, cancellationToken);
+        await _checkpointStore.SaveAsync(context.JobRun.Id, payload, cancellationToken);
 
         await _eventPublisher.PublishAsync(
-            BuildFetchCompletedEvent(run.JobRun.Id, run.Connection.Id, payload),
+            BuildFetchCompletedEvent(context.JobRun.Id, context.Connection.Id, payload),
             cancellationToken);
 
         _logger.LogInformation(
             "JobRun {JobRunId}: completed, backfill={Backfill}, rows={Rows}, requests={Requests}, "
             + "published {Batches} batches, inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}",
-            run.JobRun.Id,
-            run.IsBackfill,
+            context.JobRun.Id,
+            context.IsBackfill,
             outcome.OrdersFetched,
             outcome.RequestsIssued,
             payload.TotalBatches,
-            run.InProcessWaits,
-            run.TotalWaited.TotalSeconds);
+            progress.InProcessWaits,
+            progress.TotalWaited.TotalSeconds);
     }
 
     private async Task PublishFetchCompletedForFinishedRunAsync(

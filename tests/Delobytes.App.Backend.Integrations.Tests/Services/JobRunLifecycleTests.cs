@@ -35,7 +35,7 @@ public class JobRunLifecycleTests
     }
 
     [Fact]
-    public async Task TryStartAsync_PendingJob_RunsAndClearsNotBefore()
+    public async Task StartAsync_PendingJob_RunsAndClearsNotBefore()
     {
         JobRun jobRun = BuildJobRun();
         jobRun.NotBefore = _timeProvider.GetUtcNow().AddHours(1);
@@ -50,7 +50,7 @@ public class JobRunLifecycleTests
     }
 
     [Fact]
-    public async Task TryStartAsync_AlreadyRunningJob_LeavesItUntouched()
+    public async Task StartAsync_AlreadyRunningJob_LeavesItUntouched()
     {
         JobRun jobRun = BuildJobRun(JobStatus.Running);
 

@@ -1,7 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Options;
 
@@ -36,10 +35,9 @@ public sealed class PacedOrdersSource
     /// source throttled beyond what the run can wait out.
     /// </summary>
     internal async Task<OrdersAttempt> GetOrdersAsync(
-        IOrdersSource ordersSource,
-        Connection connection,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         OrdersRequest request,
-        OrdersImportRun run,
         CancellationToken cancellationToken)
     {
         while (true)
@@ -48,10 +46,10 @@ public sealed class PacedOrdersSource
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
 
-            if (now >= run.Deadline)
+            if (now >= context.Deadline)
             {
                 DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
-                    connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
+                    context.Connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
 
                 DateTimeOffset budgetTime;
 
@@ -67,15 +65,15 @@ public sealed class PacedOrdersSource
                 return OrdersAttempt.Stopped(StopReason.Budget, budgetTime);
             }
 
-            if (run.RequestsIssued >= OrdersImportConstants.MaxRequestsPerRun)
+            if (progress.RequestsIssued >= OrdersImportConstants.MaxRequestsPerRun)
             {
                 throw new InvalidOperationException($"Orders fetch exceeded the per-run request budget of {OrdersImportConstants.MaxRequestsPerRun}.");
             }
 
-            run.LastRequestStartedAt = now;
-            run.RequestsIssued++;
+            progress.LastRequestStartedAt = now;
+            progress.RequestsIssued++;
 
-            OrdersPage page = await ordersSource.GetOrdersAsync(connection.Id, request, cancellationToken);
+            OrdersPage page = await context.OrdersSource.GetOrdersAsync(context.Connection.Id, request, cancellationToken);
 
             if (!page.Throttled)
             {
@@ -87,17 +85,17 @@ public sealed class PacedOrdersSource
             now = _timeProvider.GetUtcNow();
             TimeSpan wait = retryAt > now ? retryAt - now : TimeSpan.Zero;
 
-            if (wait > _maxInProcessWait || retryAt >= run.Deadline)
+            if (wait > _maxInProcessWait || retryAt >= context.Deadline)
             {
                 return OrdersAttempt.Stopped(StopReason.Throttled, retryAt);
             }
 
-            run.InProcessWaits++;
+            progress.InProcessWaits++;
             DateTimeOffset waitStartedAt = _timeProvider.GetUtcNow();
 
             await Task.Delay(wait, _timeProvider, cancellationToken);
 
-            run.TotalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
+            progress.TotalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
         }
     }
 }

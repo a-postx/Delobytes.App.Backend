@@ -16,22 +16,17 @@ public sealed class BackfillOrdersFetcher : IOrdersFetcher
         _walker = walker;
     }
 
-    public async Task<FetchOutcome> FetchAsync(OrdersImportRun run, CancellationToken cancellationToken)
+    public async Task<FetchOutcome> FetchAsync(OrdersImportContext context, OrdersRunProgress progress, CancellationToken cancellationToken)
     {
-        IOrdersSource ordersSource = run.OrdersSource
-            ?? throw new InvalidOperationException("Backfill fetch requires a resolved orders source.");
-        OrdersBackfillState backfillState = run.BackfillState
-            ?? throw new InvalidOperationException("Backfill fetch requires the connection's backfill cursor.");
-
         FetchOutcome outcome = await _walker.FetchBackfillDaysAsync(
-            ordersSource, run, backfillState, cancellationToken);
+            context, progress, cancellationToken);
 
         // The catch-up pass is what completes the cursor and stamps the handover watermark, so both
         // have to be read off the cursor after the walk rather than before it.
         return outcome with
         {
-            IsBackfillCompleted = backfillState.IsCompleted,
-            HandoverWatermark = backfillState.IsCompleted ? backfillState.HandoverWatermark : null,
+            IsBackfillCompleted = context.BackfillState.IsCompleted,
+            HandoverWatermark = context.BackfillState.IsCompleted ? context.BackfillState.HandoverWatermark : null,
         };
     }
 }

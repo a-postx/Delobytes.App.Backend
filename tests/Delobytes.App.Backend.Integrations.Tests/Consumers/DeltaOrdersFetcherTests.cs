@@ -150,19 +150,24 @@ public class DeltaOrdersFetcherTests
             .ReturnsAsync((Guid _, OrdersRequest request, CancellationToken _) => pageProvider(request));
     }
 
-    private OrdersImportRun BuildRun(JobRun jobRun, Connection connection, OrdersBackfillState cursor, DateTimeOffset windowTo)
+    private (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+        JobRun jobRun,
+        Connection connection,
+        OrdersBackfillState cursor,
+        DateTimeOffset windowTo)
     {
-        return new OrdersImportRun(
+        var context = new OrdersImportContext(
             jobRun,
             connection,
+            _ordersSource.Object,
+            cursor,
             _timeProvider.GetUtcNow().Add(OrdersImportConstants.BackfillWindow),
             windowTo,
-            false,
-            nextBatchIndex: 0)
-        {
-            OrdersSource = _ordersSource.Object,
-            BackfillState = cursor,
-        };
+            false);
+
+        var progress = new OrdersRunProgress(0);
+
+        return (context, progress);
     }
 
     [Fact]
@@ -172,7 +177,7 @@ public class DeltaOrdersFetcherTests
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset handover = Now.AddHours(-3);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, handover);
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
 
         _syncCheckpointRepo
             .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
@@ -180,7 +185,7 @@ public class DeltaOrdersFetcherTests
 
         UseOrdersSource(_ => new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1", Now.AddMinutes(-30)) } });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         outcome.StopReason.Should().Be(StopReason.Completed);
         _issuedRequests.Should().ContainSingle();
@@ -195,7 +200,7 @@ public class DeltaOrdersFetcherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
         DateTimeOffset retryAt = Now.AddMinutes(5);
 
         _syncCheckpointRepo
@@ -205,7 +210,7 @@ public class DeltaOrdersFetcherTests
         UseOrdersSource(_ => new OrdersPage { Throttled = true, RetryAt = retryAt });
 
         // A max in-process wait of zero makes any throttle an immediate stop instead of a wait.
-        FetchOutcome outcome = await CreateFetcher(maxInProcessWaitSeconds: 0).FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher(maxInProcessWaitSeconds: 0).FetchAsync(context, progress, CancellationToken.None);
 
         outcome.StopReason.Should().Be(StopReason.Throttled);
         outcome.ResumeAt.Should().Be(retryAt);
@@ -221,7 +226,7 @@ public class DeltaOrdersFetcherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
         DateTimeOffset newest = Now.AddMinutes(-10);
 
         _syncCheckpointRepo
@@ -237,7 +242,7 @@ public class DeltaOrdersFetcherTests
             },
         });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         outcome.StopReason.Should().Be(StopReason.Completed);
         outcome.OrdersFetched.Should().Be(2);
@@ -255,7 +260,7 @@ public class DeltaOrdersFetcherTests
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
         DateTimeOffset windowTo = Now.AddMinutes(-20);
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor, windowTo);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, windowTo);
 
         _syncCheckpointRepo
             .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
@@ -266,7 +271,7 @@ public class DeltaOrdersFetcherTests
             Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1", Now.AddMinutes(-1)) },
         });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         outcome.MaxChangedAt.Should().Be(windowTo);
     }
@@ -277,7 +282,7 @@ public class DeltaOrdersFetcherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
 
         _syncCheckpointRepo
             .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
@@ -285,7 +290,7 @@ public class DeltaOrdersFetcherTests
 
         UseOrdersSource(_ => new OrdersPage());
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         outcome.StopReason.Should().Be(StopReason.Completed);
         outcome.OrdersFetched.Should().Be(0);
@@ -298,12 +303,20 @@ public class DeltaOrdersFetcherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        OrdersImportRun run = BuildRun(
-            jobRun, connection, BuildCompletedCursor(connection.Id, Now.AddHours(-3)), Now);
-        run.OrdersSource = null;
+        OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
 
-        Func<Task> act = () => CreateFetcher().FetchAsync(run, CancellationToken.None);
+        Func<Task> act = () => CreateFetcher().FetchAsync(
+            new OrdersImportContext(
+                jobRun,
+                connection,
+                null!,
+                cursor,
+                _timeProvider.GetUtcNow().Add(OrdersImportConstants.BackfillWindow),
+                Now,
+                false),
+            new OrdersRunProgress(0),
+            CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 }

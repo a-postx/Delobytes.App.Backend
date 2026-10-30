@@ -29,42 +29,37 @@ public sealed class DeltaOrdersFetcher : IOrdersFetcher
         _logger = logger;
     }
 
-    public async Task<FetchOutcome> FetchAsync(OrdersImportRun run, CancellationToken cancellationToken)
+    public async Task<FetchOutcome> FetchAsync(OrdersImportContext context, OrdersRunProgress progress, CancellationToken cancellationToken)
     {
-        IOrdersSource ordersSource = run.OrdersSource
-            ?? throw new InvalidOperationException("Delta fetch requires a resolved orders source.");
-        OrdersBackfillState backfillState = run.BackfillState
-            ?? throw new InvalidOperationException("Delta fetch requires the connection's backfill cursor.");
-
         SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
-            .GetAsync(run.Connection.Id, JobType.OrdersImport, cancellationToken);
+            .GetAsync(context.Connection.Id, JobType.OrdersImport, cancellationToken);
 
         DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
-            syncCheckpoint, backfillState, out bool usedLegacyFallback);
+            syncCheckpoint, context.BackfillState, out bool usedLegacyFallback);
 
         if (usedLegacyFallback)
         {
             _logger.LogWarning(
                 "JobRun {JobRunId}: legacy completed backfill has no handover watermark; using walk start {WindowFrom}",
-                run.JobRun.Id, windowFrom);
+                context.JobRun.Id, windowFrom);
         }
 
         OrdersRequest request = new OrdersRequest
         {
             DateFrom = windowFrom.ToOffset(OrdersWindowPlanner.MoscowOffset),
-            DateTo = run.WindowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
+            DateTo = context.WindowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
             Flag = 0,
             Limit = 0,
         };
 
         _logger.LogInformation(
             "JobRun {JobRunId}: branch=delta, fetching orders from {From} to {To}",
-            run.JobRun.Id,
+            context.JobRun.Id,
             request.DateFrom,
             request.DateTo);
 
         FetchOutcome outcome = await _bisectingReader.FetchAllPagesAsync(
-            ordersSource, request, run, cancellationToken);
+            request, context, progress, cancellationToken);
 
         if (outcome.IsStopped)
         {
@@ -74,17 +69,17 @@ public sealed class DeltaOrdersFetcher : IOrdersFetcher
         }
 
         DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(
-            outcome.Orders, run.WindowTo, out DateTimeOffset? observedBeyondWindow);
+            outcome.Orders, context.WindowTo, out DateTimeOffset? observedBeyondWindow);
 
         if (observedBeyondWindow.HasValue)
         {
             _logger.LogWarning(
                 "Orders import: observed lastChangeDate {Observed} is later than the run window end {WindowTo}, clamping the watermark",
                 observedBeyondWindow.Value,
-                run.WindowTo);
+                context.WindowTo);
         }
 
-        await _batchPublisher.PublishUnitAsync(run, outcome.Orders, cancellationToken);
+        await _batchPublisher.PublishUnitAsync(context, progress, outcome.Orders, cancellationToken);
 
         return outcome with
         {

@@ -146,19 +146,23 @@ public class BackfillOrdersFetcherTests
             .ReturnsAsync((Guid _, OrdersRequest request, CancellationToken _) => pageProvider(request));
     }
 
-    private OrdersImportRun BuildRun(JobRun jobRun, Connection connection, OrdersBackfillState cursor)
+    private (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+        JobRun jobRun,
+        Connection connection,
+        OrdersBackfillState cursor)
     {
-        return new OrdersImportRun(
+        OrdersImportContext context = new OrdersImportContext(
             jobRun,
             connection,
+            _ordersSource.Object,
+            cursor,
             _timeProvider.GetUtcNow().Add(TimeSpan.FromMinutes(20)),
             Now,
-            true,
-            nextBatchIndex: 0)
-        {
-            OrdersSource = _ordersSource.Object,
-            BackfillState = cursor,
-        };
+            true);
+
+        OrdersRunProgress progress = new OrdersRunProgress(0);
+
+        return (context, progress);
     }
 
     [Fact]
@@ -168,9 +172,9 @@ public class BackfillOrdersFetcherTests
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset handover = Now.AddHours(-2);
         OrdersBackfillState cursor = BuildCursor(connection.Id, isCompleted: true, handover);
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor);
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         outcome.IsBackfillCompleted.Should().BeTrue();
         outcome.HandoverWatermark.Should().Be(handover);
@@ -196,11 +200,11 @@ public class BackfillOrdersFetcherTests
             nextDayToFetch: todayStart.AddDays(-179),
             oldestDayInScope: todayStart.AddDays(-180));
 
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor);
 
         UseOrdersSource(_ => new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1") } });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         _issuedRequests.Should().NotBeEmpty();
         _issuedRequests.Should().OnlyContain(request => request.Flag == 1);
@@ -232,21 +236,20 @@ public class BackfillOrdersFetcherTests
             oldestDayInScope: todayStart.AddDays(-180));
 
         // The run is already past its deadline, so the paced source stops before issuing anything.
-        OrdersImportRun run = new OrdersImportRun(
+        OrdersBackfillState cursorForStopped = BuildCursor(connection.Id, isCompleted: false, handoverWatermark: null);
+        OrdersImportContext context = new OrdersImportContext(
             jobRun,
             connection,
+            _ordersSource.Object,
+            cursorForStopped,
             _timeProvider.GetUtcNow(),
             Now,
-            true,
-            nextBatchIndex: 0)
-        {
-            OrdersSource = _ordersSource.Object,
-            BackfillState = cursor,
-        };
+            true);
+        OrdersRunProgress progress = new OrdersRunProgress(0);
 
         UseOrdersSource(_ => new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1") } });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         outcome.IsStopped.Should().BeTrue();
         outcome.StopReason.Should().Be(StopReason.Budget);
@@ -270,11 +273,11 @@ public class BackfillOrdersFetcherTests
             nextDayToFetch: todayStart.AddDays(-179),
             oldestDayInScope: todayStart.AddDays(-180));
 
-        OrdersImportRun run = BuildRun(jobRun, connection, cursor);
+        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor);
 
         UseOrdersSource(_ => new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1") } });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(run, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         // The catch-up pass stamps the watermark from the last request it observed, minus the
         // safety overlap; a fetcher that read the cursor before the walk would report null here.
@@ -287,12 +290,20 @@ public class BackfillOrdersFetcherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        OrdersImportRun run = BuildRun(jobRun, connection, BuildCursor(connection.Id, isCompleted: true, Now));
-        run.BackfillState = null;
 
-        Func<Task> act = () => CreateFetcher().FetchAsync(run, CancellationToken.None);
+        Func<Task> act = () => CreateFetcher().FetchAsync(
+            new OrdersImportContext(
+                jobRun,
+                connection,
+                _ordersSource.Object,
+                null!,
+                _timeProvider.GetUtcNow().Add(TimeSpan.FromMinutes(20)),
+                Now,
+                true),
+            new OrdersRunProgress(0),
+            CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Fact]
@@ -300,11 +311,20 @@ public class BackfillOrdersFetcherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        OrdersImportRun run = BuildRun(jobRun, connection, BuildCursor(connection.Id, isCompleted: true, Now));
-        run.OrdersSource = null;
+        OrdersBackfillState cursor = BuildCursor(connection.Id, isCompleted: true, Now);
 
-        Func<Task> act = () => CreateFetcher().FetchAsync(run, CancellationToken.None);
+        Func<Task> act = () => CreateFetcher().FetchAsync(
+            new OrdersImportContext(
+                jobRun,
+                connection,
+                null!,
+                cursor,
+                _timeProvider.GetUtcNow().Add(TimeSpan.FromMinutes(20)),
+                Now,
+                true),
+            new OrdersRunProgress(0),
+            CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 }

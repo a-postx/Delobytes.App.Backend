@@ -67,18 +67,18 @@ public sealed class OrdersBackfillWalker
     }
 
     internal async Task<FetchOutcome> FetchBackfillDaysAsync(
-        IOrdersSource ordersSource,
-        OrdersImportRun run,
-        OrdersBackfillState state,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         CancellationToken cancellationToken)
     {
-        Guid jobRunId = run.JobRun.Id;
+        Guid jobRunId = context.JobRun.Id;
         int daysFetched = 0;
         int totalOrders = 0;
         DateTimeOffset? firstDay = null;
         DateTimeOffset? lastDay = null;
         StopReason stopReason = StopReason.Completed;
         DateTimeOffset? resumeAt = null;
+        OrdersBackfillState state = context.BackfillState;
 
         while (!state.IsCompleted)
         {
@@ -111,7 +111,7 @@ public sealed class OrdersBackfillWalker
                 Limit = 0,
             };
 
-            OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, run.Connection, request, run, cancellationToken);
+            OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(context, progress, request, cancellationToken);
 
             if (attempt.IsStopped)
             {
@@ -135,7 +135,8 @@ public sealed class OrdersBackfillWalker
             List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
 
             await _batchPublisher.PublishUnitAsync(
-                run,
+                context,
+                progress,
                 dayOrders.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(),
                 cancellationToken);
 
@@ -148,7 +149,7 @@ public sealed class OrdersBackfillWalker
             {
                 if (day >= OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow()))
                 {
-                    state.HandoverWatermark = run.LastRequestStartedAt - _safetyOverlap;
+                    state.HandoverWatermark = progress.LastRequestStartedAt - _safetyOverlap;
                     state.IsCompleted = true;
                     state.CompletedAt = _timeProvider.GetUtcNow();
                     state.CatchUpNextDay = day;
@@ -182,7 +183,7 @@ public sealed class OrdersBackfillWalker
         return new FetchOutcome
         {
             OrdersFetched = totalOrders,
-            RequestsIssued = run.RequestsIssued,
+            RequestsIssued = progress.RequestsIssued,
             StopReason = stopReason,
             ResumeAt = resumeAt,
             MaxChangedAt = null,

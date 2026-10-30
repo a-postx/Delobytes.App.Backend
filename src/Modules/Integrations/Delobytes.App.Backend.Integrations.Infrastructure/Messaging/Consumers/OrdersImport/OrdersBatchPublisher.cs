@@ -28,7 +28,8 @@ public sealed class OrdersBatchPublisher
     /// afterwards cannot lose more than the next unit.
     /// </summary>
     internal async Task PublishUnitAsync(
-        OrdersImportRun run,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         IReadOnlyList<ChannelOrderSnapshot> unitOrders,
         CancellationToken cancellationToken)
     {
@@ -41,10 +42,10 @@ public sealed class OrdersBatchPublisher
         {
             OrdersBatchImportRequestedEvent batchEvent = new OrdersBatchImportRequestedEvent
             {
-                JobRunId = run.JobRun.Id,
-                ConnectionId = run.Connection.Id,
-                ChannelId = run.Connection.ChannelId,
-                BatchId = CreateBatchId(run.JobRun.Id, run.TakeNextBatchIndex()),
+                JobRunId = context.JobRun.Id,
+                ConnectionId = context.Connection.Id,
+                ChannelId = context.Connection.ChannelId,
+                BatchId = CreateBatchId(context.JobRun.Id, progress.TakeNextBatchIndex()),
                 Orders = batch,
             };
 
@@ -53,13 +54,13 @@ public sealed class OrdersBatchPublisher
 
         OrdersImportCheckpointPayload progressPayload = new OrdersImportCheckpointPayload
         {
-            TotalBatches = run.NextBatchIndex,
-            WindowTo = run.WindowTo,
-            IsBackfill = run.IsBackfill,
+            TotalBatches = progress.NextBatchIndex,
+            WindowTo = context.WindowTo,
+            IsBackfill = context.IsBackfill,
             IsFetchCompleted = false,
         };
 
-        await _checkpointStore.SaveAsync(run.JobRun.Id, progressPayload, cancellationToken);
+        await _checkpointStore.SaveAsync(context.JobRun.Id, progressPayload, cancellationToken);
     }
 
     /// <summary>

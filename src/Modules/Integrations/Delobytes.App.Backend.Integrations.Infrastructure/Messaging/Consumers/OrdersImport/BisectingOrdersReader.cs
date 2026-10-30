@@ -37,21 +37,21 @@ public sealed class BisectingOrdersReader
     /// publishing it would advance the watermark over orders the bisection never saw.
     /// </summary>
     internal async Task<FetchOutcome> FetchAllPagesAsync(
-        IOrdersSource ordersSource,
         OrdersRequest request,
-        OrdersImportRun run,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         CancellationToken cancellationToken)
     {
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
-        OrdersAttempt attempt = await FetchWindowAsync(ordersSource, request, run, ordersByOrderKey, cancellationToken);
+        OrdersAttempt attempt = await FetchWindowAsync(request, context, progress, ordersByOrderKey, cancellationToken);
 
         if (attempt.IsStopped)
         {
             return FetchOutcome.Stopped(
                 attempt.StopReason,
                 attempt.ResumeAt,
-                run.RequestsIssued);
+                progress.RequestsIssued);
         }
 
         List<ChannelOrderSnapshot> orders = ordersByOrderKey.Values.ToList();
@@ -60,7 +60,7 @@ public sealed class BisectingOrdersReader
         {
             Orders = orders,
             OrdersFetched = orders.Count,
-            RequestsIssued = run.RequestsIssued,
+            RequestsIssued = progress.RequestsIssued,
             StopReason = StopReason.Completed,
             ResumeAt = null,
         };
@@ -78,13 +78,13 @@ public sealed class BisectingOrdersReader
     /// their lines, so the bisection can cut through a cart without losing or duplicating a unit.
     /// </summary>
     private async Task<OrdersAttempt> FetchWindowAsync(
-        IOrdersSource ordersSource,
         OrdersRequest request,
-        OrdersImportRun run,
+        OrdersImportContext context,
+        OrdersRunProgress progress,
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey,
         CancellationToken cancellationToken)
     {
-        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, run.Connection, request, run, cancellationToken);
+        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(context, progress, request, cancellationToken);
 
         if (attempt.IsStopped)
         {
@@ -102,7 +102,7 @@ public sealed class BisectingOrdersReader
             // next scheduled run retry the window once the source data is complete.
             _logger.LogError(
                 "JobRun {JobRunId}: window {From} - {To} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
-                run.JobRun.Id,
+                context.JobRun.Id,
                 request.DateFrom,
                 request.DateTo,
                 ordersPage.RowsWithoutIdentity);
@@ -161,7 +161,7 @@ public sealed class BisectingOrdersReader
             // reported as success.
             _logger.LogWarning(
                 "JobRun {JobRunId}: window {From} - {To} still returns a partial response with {Remaining} left to read at the minimum granularity of {MinWindow}, failing the run",
-                run.JobRun.Id,
+                context.JobRun.Id,
                 nextFrom,
                 request.DateTo,
                 unknownSpan,
@@ -192,19 +192,19 @@ public sealed class BisectingOrdersReader
 
         _logger.LogInformation(
             "JobRun {JobRunId}: window {From} - {To} exceeded the response cap, covered until {CoveredUntil}, splitting at {Midpoint}",
-            run.JobRun.Id,
+            context.JobRun.Id,
             request.DateFrom,
             request.DateTo,
             nextFrom,
             midpoint);
 
-        OrdersAttempt firstHalfAttempt = await FetchWindowAsync(ordersSource, firstHalf, run, ordersByOrderKey, cancellationToken);
+        OrdersAttempt firstHalfAttempt = await FetchWindowAsync(firstHalf, context, progress, ordersByOrderKey, cancellationToken);
 
         if (firstHalfAttempt.IsStopped)
         {
             return firstHalfAttempt;
         }
 
-        return await FetchWindowAsync(ordersSource, secondHalf, run, ordersByOrderKey, cancellationToken);
+        return await FetchWindowAsync(secondHalf, context, progress, ordersByOrderKey, cancellationToken);
     }
 }
