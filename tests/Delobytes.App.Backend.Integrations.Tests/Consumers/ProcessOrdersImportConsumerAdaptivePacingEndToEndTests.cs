@@ -134,7 +134,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
 
     private static int GetDayCountInScope()
     {
-        return (int)ProcessOrdersImportConsumer.BackfillWindow.TotalDays + 1;
+        return (int)OrdersImportConstants.BackfillWindow.TotalDays + 1;
     }
 
     private static OrdersBackfillState Clone(OrdersBackfillState state)
@@ -343,7 +343,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         List<string> publishedIds = PublishedOrderIds();
         publishedIds.Should().HaveCount((expectedDays + 1) * 2);
         publishedIds.Distinct().Should().HaveCount(expectedDays * 2);
-        _persistedState.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - ProcessOrdersImportConsumer.SafetyOverlap);
+        _persistedState.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - OrdersImportConstants.SafetyOverlap);
 
         OrdersImportCheckpointPayload? lastPayload = CaptureLastPayload();
         lastPayload.Should().NotBeNull();

@@ -34,14 +34,11 @@ public class OrdersImportRunTests
     }
 
     [Fact]
-    public void Constructor_StartsTheRunAsCompletedWithZeroCounters()
+    public void Constructor_StartsTheRunWithZeroCounters()
     {
         OrdersImportRun run = BuildRun(0, DateTimeOffset.UtcNow, false);
 
-        run.StopReason.Should().Be(StopReason.Completed);
-        run.ResumeAt.Should().BeNull();
         run.RequestsIssued.Should().Be(0);
-        run.RowsWithoutIdentity.Should().Be(0);
         run.InProcessWaits.Should().Be(0);
         run.TotalWaited.Should().Be(TimeSpan.Zero);
     }

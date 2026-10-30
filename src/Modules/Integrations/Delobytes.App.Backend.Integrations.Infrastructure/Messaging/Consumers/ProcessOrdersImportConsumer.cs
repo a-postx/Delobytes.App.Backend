@@ -18,9 +18,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
-    public static readonly TimeSpan SafetyOverlap = OrdersImportConstants.SafetyOverlap;
-    public static readonly TimeSpan BackfillWindow = OrdersImportConstants.BackfillWindow;
-
     private readonly IJobRunRepository _jobRunRepository;
     private readonly OrdersImportCheckpointStore _checkpointStore;
     private readonly OrdersBackfillWalker _backfillWalker;
@@ -81,11 +78,6 @@ public class ProcessOrdersImportConsumer
         }
     }
 
-    public static Guid CreateBatchId(Guid jobRunId, int batchIndex)
-    {
-        return OrdersBatchPublisher.CreateBatchId(jobRunId, batchIndex);
-    }
-
     public async Task ProcessAsync(OrdersImportRequestedEvent message, CancellationToken cancellationToken)
     {
         DateTimeOffset deadline = _timeProvider.GetUtcNow() + _backfillRunBudget;
@@ -122,7 +114,7 @@ public class ProcessOrdersImportConsumer
             return;
         }
 
-        await _jobRunLifecycle.TryStartAsync(jobRun, cancellationToken);
+        await _jobRunLifecycle.StartAsync(jobRun, cancellationToken);
 
         using (IDisposable scope = _jobRunExecutionContext.EnterScope(jobRun.Id))
         {
@@ -317,15 +309,12 @@ public class ProcessOrdersImportConsumer
 
         _logger.LogInformation(
             "JobRun {JobRunId}: completed, backfill={Backfill}, rows={Rows}, requests={Requests}, "
-            + "published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}, stopReason={StopReason}, "
-            + "inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}",
+            + "published {Batches} batches, inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}",
             run.JobRun.Id,
             run.IsBackfill,
             outcome.OrdersFetched,
             outcome.RequestsIssued,
             payload.TotalBatches,
-            outcome.RowsWithoutIdentity,
-            outcome.StopReason,
             run.InProcessWaits,
             run.TotalWaited.TotalSeconds);
     }

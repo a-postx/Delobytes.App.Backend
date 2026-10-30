@@ -32,14 +32,14 @@ public sealed class JobRunLifecycle
     }
 
     /// <summary>
-    /// Transitions a Pending job run to Running and persists it. Returns whether the write
-    /// happened; a job run that is already Running is left untouched.
+    /// Transitions a Pending job run to Running and persists it. A job run that is already
+    /// Running is left untouched, so a redelivery does not reset its start instant.
     /// </summary>
-    public async Task<bool> TryStartAsync(JobRun jobRun, CancellationToken cancellationToken)
+    public async Task StartAsync(JobRun jobRun, CancellationToken cancellationToken)
     {
         if (jobRun.Status != JobStatus.Pending)
         {
-            return false;
+            return;
         }
 
         jobRun.Status = JobStatus.Running;
@@ -47,7 +47,5 @@ public sealed class JobRunLifecycle
         jobRun.NotBefore = null;
 
         await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
-
-        return true;
     }
 }

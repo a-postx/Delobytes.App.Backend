@@ -98,7 +98,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
         DateTimeOffset today = GetMoscowDayStart(_timeProvider.GetUtcNow());
-        DateTimeOffset retentionStart = today.AddDays(-(int)ProcessOrdersImportConsumer.BackfillWindow.TotalDays);
+        DateTimeOffset retentionStart = today.AddDays(-(int)OrdersImportConstants.BackfillWindow.TotalDays);
         SetupRun(run);
         _persistedState = new OrdersBackfillState
         {
@@ -177,8 +177,8 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         batches[0].Orders.Should().HaveCount(OrdersImportConstants.BatchSize);
         batches[1].Orders.Should().HaveCount(1);
         batches.Select(b => b.BatchId).Should().Equal(
-            ProcessOrdersImportConsumer.CreateBatchId(run.Id, 7),
-            ProcessOrdersImportConsumer.CreateBatchId(run.Id, 8));
+            OrdersBatchPublisher.CreateBatchId(run.Id, 7),
+            OrdersBatchPublisher.CreateBatchId(run.Id, 8));
 
         latest.Should().NotBeNull();
         latest!.IsFetchCompleted.Should().BeFalse();
@@ -270,7 +270,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             .Callback<OrdersImportFetchCompletedEvent, CancellationToken>((completed, token) =>
             {
                 _persistedState!.IsCompleted.Should().BeTrue();
-                _persistedState.HandoverWatermark.Should().Be(requestStartedAt - ProcessOrdersImportConsumer.SafetyOverlap);
+                _persistedState.HandoverWatermark.Should().Be(requestStartedAt - OrdersImportConstants.SafetyOverlap);
                 final!.IsFetchCompleted.Should().BeTrue();
                 final.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
             }).Returns(Task.CompletedTask);
@@ -280,7 +280,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _issuedRequests.Should().HaveCount(2);
         _issuedRequests.Should().OnlyContain(q => q.Flag == 1 && q.DateFrom == today);
         _persistedState.IsCompleted.Should().BeTrue();
-        _persistedState.HandoverWatermark.Should().Be(requestStartedAt - ProcessOrdersImportConsumer.SafetyOverlap);
+        _persistedState.HandoverWatermark.Should().Be(requestStartedAt - OrdersImportConstants.SafetyOverlap);
         final!.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
         final.IsBackfillCompleted.Should().BeTrue();
     }
@@ -365,7 +365,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _persistedState.IsCompleted.Should().BeTrue();
         _persistedState.CompletedAt.Should().Be(secondRunStartedAt);
         _persistedState.HandoverWatermark.Should().Be(
-            secondRunStartedAt - ProcessOrdersImportConsumer.SafetyOverlap);
+            secondRunStartedAt - OrdersImportConstants.SafetyOverlap);
 
         secondRun.Status.Should().Be(JobStatus.Running);
 

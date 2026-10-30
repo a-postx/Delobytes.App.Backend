@@ -41,9 +41,8 @@ public class JobRunLifecycleTests
         jobRun.NotBefore = _timeProvider.GetUtcNow().AddHours(1);
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
-        bool started = await CreateLifecycle().TryStartAsync(jobRun, CancellationToken.None);
+        await CreateLifecycle().StartAsync(jobRun, CancellationToken.None);
 
-        started.Should().BeTrue();
         jobRun.Status.Should().Be(JobStatus.Running);
         jobRun.StartedAt.Should().Be(now);
         jobRun.NotBefore.Should().BeNull();
@@ -51,14 +50,13 @@ public class JobRunLifecycleTests
     }
 
     [Fact]
-    public async Task TryStartAsync_AlreadyRunningJob_ReportsNoWrite()
+    public async Task TryStartAsync_AlreadyRunningJob_LeavesItUntouched()
     {
         JobRun jobRun = BuildJobRun(JobStatus.Running);
 
-        bool started = await CreateLifecycle().TryStartAsync(jobRun, CancellationToken.None);
+        await CreateLifecycle().StartAsync(jobRun, CancellationToken.None);
 
         // A redelivered message must not reset StartedAt: the run began when it first began.
-        started.Should().BeFalse();
         jobRun.StartedAt.Should().BeNull();
         _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -67,13 +65,12 @@ public class JobRunLifecycleTests
     [InlineData(JobStatus.Success)]
     [InlineData(JobStatus.Failed)]
     [InlineData(JobStatus.Cancelled)]
-    public async Task TryStartAsync_TerminalJob_ReportsNoWrite(JobStatus status)
+    public async Task TryStartAsync_TerminalJob_LeavesItUntouched(JobStatus status)
     {
         JobRun jobRun = BuildJobRun(status);
 
-        bool started = await CreateLifecycle().TryStartAsync(jobRun, CancellationToken.None);
+        await CreateLifecycle().StartAsync(jobRun, CancellationToken.None);
 
-        started.Should().BeFalse();
         jobRun.Status.Should().Be(status);
         _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }

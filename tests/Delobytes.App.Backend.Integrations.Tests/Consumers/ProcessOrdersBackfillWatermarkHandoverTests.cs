@@ -423,10 +423,10 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         _savedCheckpoint.Should().NotBeNull();
 
         DateTimeOffset expectedWindowFrom = _savedCheckpoint!.LastChangedAt!.Value
-            .Subtract(ProcessOrdersImportConsumer.SafetyOverlap);
+            .Subtract(OrdersImportConstants.SafetyOverlap);
 
         _savedCheckpoint!.LastChangedAt.Should().Be(HandoverWatermark);
-        expectedWindowFrom.Should().Be(HandoverWatermark.Subtract(ProcessOrdersImportConsumer.SafetyOverlap));
+        expectedWindowFrom.Should().Be(HandoverWatermark.Subtract(OrdersImportConstants.SafetyOverlap));
         expectedWindowFrom.Should().BeAfter(ReferenceInstant.AddDays(-1));
     }
 }

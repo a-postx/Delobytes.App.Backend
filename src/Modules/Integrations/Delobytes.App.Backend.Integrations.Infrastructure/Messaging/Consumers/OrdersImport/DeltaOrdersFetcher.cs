@@ -70,9 +70,6 @@ public sealed class DeltaOrdersFetcher : IOrdersFetcher
         {
             // Nothing already read is published: it belongs to an unread window, so publishing it
             // would advance the watermark over orders the bisection never saw.
-            run.StopReason = outcome.StopReason;
-            run.ResumeAt = outcome.ResumeAt;
-
             return outcome;
         }
 

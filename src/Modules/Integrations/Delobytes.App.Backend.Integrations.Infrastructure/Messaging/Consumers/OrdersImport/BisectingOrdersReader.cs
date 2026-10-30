@@ -44,8 +44,6 @@ public sealed class BisectingOrdersReader
     {
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
-        run.RowsWithoutIdentity = 0;
-
         OrdersAttempt attempt = await FetchWindowAsync(ordersSource, request, run, ordersByOrderKey, cancellationToken);
 
         if (attempt.IsStopped)
@@ -53,8 +51,7 @@ public sealed class BisectingOrdersReader
             return FetchOutcome.Stopped(
                 attempt.StopReason,
                 attempt.ResumeAt,
-                run.RequestsIssued,
-                run.RowsWithoutIdentity);
+                run.RequestsIssued);
         }
 
         List<ChannelOrderSnapshot> orders = ordersByOrderKey.Values.ToList();
@@ -64,7 +61,6 @@ public sealed class BisectingOrdersReader
             Orders = orders,
             OrdersFetched = orders.Count,
             RequestsIssued = run.RequestsIssued,
-            RowsWithoutIdentity = run.RowsWithoutIdentity,
             StopReason = StopReason.Completed,
             ResumeAt = null,
         };
@@ -104,8 +100,6 @@ public sealed class BisectingOrdersReader
             // this window would hide them from every later delta run as well. Failing here reuses
             // the same fail-fast stance as the unresolvable partial response below, and lets the
             // next scheduled run retry the window once the source data is complete.
-            run.RowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
-
             _logger.LogError(
                 "JobRun {JobRunId}: window {From} - {To} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
                 run.JobRun.Id,

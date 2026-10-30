@@ -539,7 +539,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Flag.Should().Be(0);
-        capturedRequest.DateFrom.Should().Be((lastChangedAt - ProcessOrdersImportConsumer.SafetyOverlap)
+        capturedRequest.DateFrom.Should().Be((lastChangedAt - OrdersImportConstants.SafetyOverlap)
             .ToOffset(TimeSpan.FromHours(3)));
     }
 
@@ -685,28 +685,6 @@ public partial class ProcessOrdersImportConsumerTests
         persistedPayload!.MaxChangedAt.Should().Be(observedLastChangeDate.ToUniversalTime());
 
         WarningMessages().Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task CreateBatchId_IsDeterministic()
-    {
-        Guid jobRunId = Guid.NewGuid();
-
-        Guid batchId1 = ProcessOrdersImportConsumer.CreateBatchId(jobRunId, 0);
-        Guid batchId2 = ProcessOrdersImportConsumer.CreateBatchId(jobRunId, 0);
-
-        batchId1.Should().Be(batchId2);
-    }
-
-    [Fact]
-    public async Task CreateBatchId_DiffersByIndex()
-    {
-        Guid jobRunId = Guid.NewGuid();
-
-        Guid batchId0 = ProcessOrdersImportConsumer.CreateBatchId(jobRunId, 0);
-        Guid batchId1 = ProcessOrdersImportConsumer.CreateBatchId(jobRunId, 1);
-
-        batchId0.Should().NotBe(batchId1);
     }
 
     [Fact]

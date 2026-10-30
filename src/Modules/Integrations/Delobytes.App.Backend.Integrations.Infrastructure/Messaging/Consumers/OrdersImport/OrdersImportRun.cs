@@ -23,7 +23,6 @@ public sealed class OrdersImportRun
         WindowTo = windowTo;
         IsBackfill = isBackfill;
         NextBatchIndex = nextBatchIndex;
-        StopReason = StopReason.Completed;
     }
 
     public JobRun JobRun { get; }
@@ -40,19 +39,9 @@ public sealed class OrdersImportRun
 
     public int RequestsIssued { get; set; }
 
-    public int RowsWithoutIdentity { get; set; }
-
     public int InProcessWaits { get; set; }
 
     public TimeSpan TotalWaited { get; set; }
-
-    public StopReason StopReason { get; set; }
-
-    /// <summary>
-    /// Gets or sets the instant the source will accept the next request, set only when the run
-    /// stopped because of a throttle or the run budget.
-    /// </summary>
-    public DateTimeOffset? ResumeAt { get; set; }
 
     public DateTimeOffset LastRequestStartedAt { get; set; }
 

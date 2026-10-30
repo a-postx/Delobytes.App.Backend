@@ -154,7 +154,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         requests.Should().ContainSingle();
         requests[0].Flag.Should().Be(0);
-        requests[0].DateFrom.Should().Be(legacy ? oldest + ProcessOrdersImportConsumer.BackfillWindow : handover);
+        requests[0].DateFrom.Should().Be(legacy ? oldest + OrdersImportConstants.BackfillWindow : handover);
         _backfillStateRepo.Verify(r => r.UpsertAsync(It.IsAny<OrdersBackfillState>(), It.IsAny<CancellationToken>()), Times.Never);
 
         if (legacy)

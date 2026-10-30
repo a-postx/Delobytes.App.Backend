@@ -227,7 +227,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
 
     private static int GetDayCountInScope()
     {
-        return (int)ProcessOrdersImportConsumer.BackfillWindow.TotalDays + 1;
+        return (int)OrdersImportConstants.BackfillWindow.TotalDays + 1;
     }
 
     private static OrdersBackfillState Clone(OrdersBackfillState state)
@@ -455,7 +455,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         persistedPayload.IsBackfillCompleted.Should().BeTrue();
         persistedPayload.PagesFetched.Should().Be(expectedDays + 1);
 
-        persistedPayload.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - ProcessOrdersImportConsumer.SafetyOverlap);
+        persistedPayload.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - OrdersImportConstants.SafetyOverlap);
         _persistedState.CatchUpNextDay.Should().Be(newestDay);
         persistedPayload.MaxChangedAt.Should().BeNull();
     }
@@ -870,6 +870,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _issuedRequests.Should().ContainSingle();
         _issuedRequests[0].Flag.Should().Be(0);
         _issuedRequests[0].DateFrom.Should().Be(
-            lastChangedAt.Subtract(ProcessOrdersImportConsumer.SafetyOverlap).ToOffset(MoscowOffset));
+            lastChangedAt.Subtract(OrdersImportConstants.SafetyOverlap).ToOffset(MoscowOffset));
     }
 }

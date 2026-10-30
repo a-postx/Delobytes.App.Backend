@@ -64,7 +64,7 @@ public class OrdersWindowPlannerTests
         DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
             checkpoint, backfillState, out bool usedLegacyFallback);
 
-        windowFrom.Should().Be(lastChangedAt - ProcessOrdersImportConsumer.SafetyOverlap);
+        windowFrom.Should().Be(lastChangedAt - OrdersImportConstants.SafetyOverlap);
         usedLegacyFallback.Should().BeFalse();
     }
 
@@ -90,7 +90,7 @@ public class OrdersWindowPlannerTests
         DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
             null, backfillState, out bool usedLegacyFallback);
 
-        windowFrom.Should().Be(oldestDayInScope + ProcessOrdersImportConsumer.BackfillWindow);
+        windowFrom.Should().Be(oldestDayInScope + OrdersImportConstants.BackfillWindow);
         usedLegacyFallback.Should().BeTrue();
     }
 

@@ -11,8 +11,6 @@ public sealed record FetchOutcome
 {
     public required int RequestsIssued { get; init; }
 
-    public required int RowsWithoutIdentity { get; init; }
-
     /// <summary>
     /// Gets the number of orders the fetch published or read. Backfill publishes per day and
     /// returns no orders, so this cannot be derived from <see cref="Orders"/>.
@@ -57,13 +55,11 @@ public sealed record FetchOutcome
     public static FetchOutcome Stopped(
         StopReason stopReason,
         DateTimeOffset? resumeAt,
-        int requestsIssued,
-        int rowsWithoutIdentity)
+        int requestsIssued)
     {
         return new FetchOutcome
         {
             RequestsIssued = requestsIssued,
-            RowsWithoutIdentity = rowsWithoutIdentity,
             OrdersFetched = 0,
             StopReason = stopReason,
             ResumeAt = resumeAt,

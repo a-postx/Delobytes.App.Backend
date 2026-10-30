@@ -212,8 +212,6 @@ public class DeltaOrdersFetcherTests
         outcome.IsStopped.Should().BeTrue();
         outcome.Orders.Should().BeEmpty();
         outcome.MaxChangedAt.Should().BeNull();
-        run.StopReason.Should().Be(StopReason.Throttled);
-        run.ResumeAt.Should().Be(retryAt);
         _publishedBatches.Should().BeEmpty();
     }
 

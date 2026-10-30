@@ -77,6 +77,8 @@ public sealed class OrdersBackfillWalker
         int totalOrders = 0;
         DateTimeOffset? firstDay = null;
         DateTimeOffset? lastDay = null;
+        StopReason stopReason = StopReason.Completed;
+        DateTimeOffset? resumeAt = null;
 
         while (!state.IsCompleted)
         {
@@ -113,8 +115,8 @@ public sealed class OrdersBackfillWalker
 
             if (attempt.IsStopped)
             {
-                run.StopReason = attempt.StopReason;
-                run.ResumeAt = attempt.ResumeAt;
+                stopReason = attempt.StopReason;
+                resumeAt = attempt.ResumeAt;
                 break;
             }
 
@@ -173,7 +175,7 @@ public sealed class OrdersBackfillWalker
             firstDay,
             lastDay,
             totalOrders,
-            run.StopReason,
+            stopReason,
             state.NextDayToFetch,
             state.IsCompleted);
 
@@ -181,9 +183,8 @@ public sealed class OrdersBackfillWalker
         {
             OrdersFetched = totalOrders,
             RequestsIssued = run.RequestsIssued,
-            RowsWithoutIdentity = run.RowsWithoutIdentity,
-            StopReason = run.StopReason,
-            ResumeAt = run.ResumeAt,
+            StopReason = stopReason,
+            ResumeAt = resumeAt,
             MaxChangedAt = null,
         };
     }
