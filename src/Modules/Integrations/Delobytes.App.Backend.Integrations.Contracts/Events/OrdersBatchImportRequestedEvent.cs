@@ -36,9 +36,4 @@ public record OrdersBatchImportRequestedEvent
     /// Batch of order snapshots from the external marketplace.
     /// </summary>
     public List<ChannelOrderSnapshot> Orders { get; init; } = new();
-
-    /// <summary>
-    /// True if this is the last batch in the current import job.
-    /// </summary>
-    public bool IsTerminal { get; init; }
 }

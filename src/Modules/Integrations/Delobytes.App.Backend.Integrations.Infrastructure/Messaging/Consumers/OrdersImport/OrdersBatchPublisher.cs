@@ -46,7 +46,6 @@ public sealed class OrdersBatchPublisher
                 ChannelId = run.Connection.ChannelId,
                 BatchId = CreateBatchId(run.JobRun.Id, run.TakeNextBatchIndex()),
                 Orders = batch,
-                IsTerminal = false,
             };
 
             await _eventPublisher.PublishAsync(batchEvent, cancellationToken);
@@ -61,29 +60,6 @@ public sealed class OrdersBatchPublisher
         };
 
         await _checkpointStore.SaveAsync(run.JobRun.Id, progressPayload, cancellationToken);
-    }
-
-    /// <summary>
-    /// Publishes the empty terminal batch. Does not write a checkpoint: the final checkpoint write
-    /// stays with the caller, because it must happen before the terminal publish and carries
-    /// MaxChangedAt, PagesFetched and HandoverWatermark.
-    /// </summary>
-    internal async Task PublishTerminalAsync(
-        OrdersImportRun run,
-        int batchIndex,
-        CancellationToken cancellationToken)
-    {
-        OrdersBatchImportRequestedEvent terminalBatchEvent = new OrdersBatchImportRequestedEvent
-        {
-            JobRunId = run.JobRun.Id,
-            ConnectionId = run.Connection.Id,
-            ChannelId = run.Connection.ChannelId,
-            BatchId = CreateBatchId(run.JobRun.Id, batchIndex),
-            Orders = new List<ChannelOrderSnapshot>(),
-            IsTerminal = true,
-        };
-
-        await _eventPublisher.PublishAsync(terminalBatchEvent, cancellationToken);
     }
 
     /// <summary>
@@ -106,12 +82,6 @@ public sealed class OrdersBatchPublisher
         for (int i = 0; i < orders.Count; i += OrdersImportConstants.BatchSize)
         {
             batches.Add(orders.Skip(i).Take(OrdersImportConstants.BatchSize).ToList());
-        }
-
-        // An empty terminal batch still flows through Sales so the aggregator finalises the run.
-        if (batches.Count == 0)
-        {
-            batches.Add(new List<ChannelOrderSnapshot>());
         }
 
         return batches;

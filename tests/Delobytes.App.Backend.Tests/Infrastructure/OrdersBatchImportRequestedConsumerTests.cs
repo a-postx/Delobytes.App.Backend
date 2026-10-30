@@ -665,7 +665,7 @@ public class OrdersBatchImportRequestedConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_IsTerminalBatch_PropagatesBatchIdUnchanged()
+    public async Task ProcessAsync_NonEmptyBatch_PropagatesBatchIdUnchanged()
     {
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
@@ -683,7 +683,6 @@ public class OrdersBatchImportRequestedConsumerTests
             ChannelId = _channelId,
             BatchId = batchId,
             Orders = new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1") },
-            IsTerminal = true,
         };
 
         // Act
@@ -736,7 +735,6 @@ public class OrdersBatchImportRequestedConsumerTests
             ChannelId = _channelId,
             BatchId = Guid.NewGuid(),
             Orders = orders,
-            IsTerminal = true,
         };
     }
 

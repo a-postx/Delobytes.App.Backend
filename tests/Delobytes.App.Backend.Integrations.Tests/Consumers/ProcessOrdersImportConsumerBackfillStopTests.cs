@@ -26,7 +26,7 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 public partial class ProcessOrdersImportConsumerBackfillTests
 {
     [Fact]
-    public async Task ProcessAsync_ThrottledBackfill_PublishesNoTerminalBatchAndKeepsFetchIncomplete()
+    public async Task ProcessAsync_ThrottledBackfill_PublishesNoFetchCompletedEventAndKeepsFetchIncomplete()
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun jobRun = BuildJobRun(connection);
@@ -43,7 +43,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(jobRun, connection, CreateConsumer());
 
         _eventPublisher.Verify(
-            p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.IsTerminal), It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         persistedPayload.Should().NotBeNull();
@@ -71,7 +71,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         // make no progress at all on a connection that is throttled every run.
         PublishedOrderIds().Should().HaveCount(2);
         _eventPublisher.Verify(
-            p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => !b.IsTerminal), It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -135,7 +135,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     }
 
     [Fact]
-    public async Task ProcessAsync_CompletedBackfill_PublishesTerminalAndSchedulesNoContinuation()
+    public async Task ProcessAsync_CompletedBackfill_PublishesFetchCompletedAndSchedulesNoContinuation()
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun jobRun = BuildJobRun(connection);
@@ -149,7 +149,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(jobRun, connection, CreateConsumer());
 
         _eventPublisher.Verify(
-            p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.IsTerminal), It.IsAny<CancellationToken>()),
+            p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
 

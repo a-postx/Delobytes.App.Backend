@@ -181,6 +181,18 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
+    public Task<int?> GetExpectedBatchCountAsync(Guid id, CancellationToken cancellationToken)
+    {
+        // AsNoTracking for the same reason as GetStatusAsync: a tracked instance still carries the
+        // value read before the completion event was applied.
+        return _context.JobRuns
+            .AsNoTracking()
+            .Where(j => j.Id == id)
+            .Select(j => j.ExpectedBatchCount)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public Task<bool> BatchResultExistsAsync(Guid messageId, CancellationToken cancellationToken)
     {
         return _context.JobRunBatchResults.AnyAsync(r => r.MessageId == messageId, cancellationToken);

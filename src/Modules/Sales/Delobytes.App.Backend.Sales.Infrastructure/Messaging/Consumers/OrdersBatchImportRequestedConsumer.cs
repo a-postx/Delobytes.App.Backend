@@ -70,14 +70,13 @@ public class OrdersBatchImportRequestedConsumer
     public async Task ProcessAsync(OrdersBatchImportRequestedEvent message, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "OrdersBatchImportRequestedConsumer started processing batch. JobRunId={JobRunId}, BatchId={BatchId}, ConnectionId={ConnectionId}, ChannelId={ChannelId}, TenantId={TenantId}, OrdersCount={OrdersCount}, IsTerminal={IsTerminal}",
+            "OrdersBatchImportRequestedConsumer started processing batch. JobRunId={JobRunId}, BatchId={BatchId}, ConnectionId={ConnectionId}, ChannelId={ChannelId}, TenantId={TenantId}, OrdersCount={OrdersCount}",
             message.JobRunId,
             message.BatchId,
             message.ConnectionId,
             message.ChannelId,
             _tenantContext.TenantId,
-            message.Orders.Count,
-            message.IsTerminal);
+            message.Orders.Count);
 
         int created = 0;
         int updated = 0;

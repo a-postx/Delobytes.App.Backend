@@ -10,13 +10,17 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
 /// Aggregates orders batch results and finalises the JobRun only once every batch announced by
-/// the orchestrator has been recorded, using the expected batch count the orchestrator persists
-/// in <see cref="OrdersImportCheckpointPayload"/> before publishing its first batch. Finalising on
-/// the first batch result to arrive would mark a multi-batch run terminal while later batches were
-/// still in flight, freezing its counters at a fraction of the real totals and letting the next
-/// scheduled run start against a watermark this one never earned.
-/// Idempotent: duplicate deliveries are skipped via the batch's deterministic BatchId, and
-/// concurrent finalisation attempts are serialised via JobRun's xmin concurrency token.
+/// the orchestrator has been recorded, using the expected batch count the orchestrator announces
+/// via <see cref="OrdersImportFetchCompletedEvent"/>. Finalising on the first batch result to
+/// arrive would mark a multi-batch run terminal while later batches were still in flight, freezing
+/// its counters at a fraction of the real totals and letting the next scheduled run start against
+/// a watermark this one never earned.
+/// Two independent entry points can trigger finalisation, because the completion event and the
+/// batch results it describes can be delivered in either order: a batch result checks the
+/// <see cref="JobRun.ExpectedBatchCount"/> already recorded on the JobRun, and the completion
+/// event sets that same field and re-checks. Idempotent: duplicate batch deliveries are skipped
+/// via the batch's deterministic BatchId, and concurrent finalisation attempts from either entry
+/// point are serialised via JobRun's xmin concurrency token.
 /// </summary>
 public class ProcessOrdersBatchImportCompletedConsumer
 {
@@ -31,7 +35,7 @@ public class ProcessOrdersBatchImportCompletedConsumer
     /// Initializes a new instance of the <see cref="ProcessOrdersBatchImportCompletedConsumer"/> class.
     /// </summary>
     /// <param name="jobRunRepository">Job run repository.</param>
-    /// <param name="jobCheckpointRepository">Job checkpoint repository, holds the expected batch count.</param>
+    /// <param name="jobCheckpointRepository">Job checkpoint repository, holds the fetch watermark.</param>
     /// <param name="syncCheckpointRepository">Sync checkpoint repository.</param>
     /// <param name="connectionRepository">Connection repository.</param>
     /// <param name="eventPublisher">Event publisher.</param>
@@ -129,17 +133,96 @@ public class ProcessOrdersBatchImportCompletedConsumer
             message.JobRunId,
             batchId);
 
-        JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
-        OrdersImportCheckpointPayload? payload = DeserializePayload(jobRun.Id, checkpoint?.Payload);
+        await TryFinalizeAsync(jobRun, cancellationToken);
+    }
 
-        if (payload == null || payload.TotalBatches <= 0)
+    /// <summary>
+    /// Processes the OrdersImportFetchCompletedEvent message, published by the orchestrator once
+    /// it has finished fetching a run and persisted the final checkpoint.
+    /// </summary>
+    /// <param name="message">Event message.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task ProcessFetchCompletedAsync(
+        OrdersImportFetchCompletedEvent message,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "ProcessOrdersBatchImportCompletedConsumer: fetch completed for JobRunId={JobRunId}, TotalBatches={TotalBatches}",
+            message.JobRunId,
+            message.TotalBatches);
+
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(message.JobRunId, cancellationToken);
+
+        if (jobRun == null)
         {
-            // The expected batch count is unknown, so there is no way to tell whether this is the
-            // last batch of the run. Leaving the JobRun untouched keeps it eligible for the
+            _logger.LogWarning(
+                "JobRun {JobRunId} not found for fetch-completed event, skipping",
+                message.JobRunId);
+            return;
+        }
+
+        // A redelivered completion event for an already-finalised run must still nudge downstream
+        // consumers, which may have missed the original OrdersImportCompletedEvent.
+        if (IsTerminalStatus(jobRun.Status))
+        {
+            await PublishCompletedEventAsync(jobRun, cancellationToken);
+            return;
+        }
+
+        if (jobRun.ExpectedBatchCount != message.TotalBatches)
+        {
+            jobRun.ExpectedBatchCount = message.TotalBatches;
+
+            try
+            {
+                await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another writer (a concurrently processed batch result that already finalised the
+                // run, or a redelivered copy of this same event) updated the JobRun first. Reload
+                // its current state instead of overwriting whatever it wrote.
+                JobRun? reloaded = await _jobRunRepository.GetByIdAsync(message.JobRunId, cancellationToken);
+
+                if (reloaded == null)
+                {
+                    return;
+                }
+
+                if (IsTerminalStatus(reloaded.Status))
+                {
+                    await PublishCompletedEventAsync(reloaded, cancellationToken);
+                    return;
+                }
+
+                jobRun = reloaded;
+            }
+        }
+
+        await TryFinalizeAsync(jobRun, cancellationToken);
+    }
+
+    /// <summary>
+    /// Finalises the JobRun once <see cref="JobRun.ExpectedBatchCount"/> is known and every
+    /// expected batch result has been recorded. Called from both entry points, because either one
+    /// can be the delivery that brings the recorded count up to the expected total.
+    /// </summary>
+    private async Task TryFinalizeAsync(JobRun jobRun, CancellationToken cancellationToken)
+    {
+        // Re-read rather than trusting the instance loaded by the caller: the completion event can
+        // be consumed between that load and this check, so the tracked copy may not carry the
+        // threshold yet. Without the re-read the run would never reach finalisation, because no
+        // further delivery is guaranteed to arrive.
+        int? expectedBatchCount = await _jobRunRepository.GetExpectedBatchCountAsync(jobRun.Id, cancellationToken);
+
+        if (expectedBatchCount is null)
+        {
+            // The expected batch count is unknown, so there is no way to tell whether every batch
+            // of the run has arrived. Leaving the JobRun untouched keeps it eligible for the
             // watchdog (Running beyond the job type's timeout is failed), rather than declaring a
             // partial import complete.
             _logger.LogWarning(
-                "JobRun {JobRunId}: expected batch count is unavailable (checkpoint missing or unreadable), not finalising",
+                "JobRun {JobRunId}: expected batch count is unavailable (fetch-completed event not yet received), not finalising",
                 jobRun.Id);
 
             return;
@@ -147,31 +230,40 @@ public class ProcessOrdersBatchImportCompletedConsumer
 
         int recordedBatches = await _jobRunRepository.CountBatchResultsAsync(jobRun.Id, cancellationToken);
 
-        // A payload with IsFetchCompleted == null (written before this change) is treated as
-        // completed. Finalise only when the orchestrator finished fetching (IsFetchCompleted != false)
-        // and all the batches it announced have arrived (recordedBatches >= TotalBatches).
-        bool fetchCompleted = payload.IsFetchCompleted != false;
-
-        if (!fetchCompleted || recordedBatches < payload.TotalBatches)
+        if (recordedBatches < expectedBatchCount.Value)
         {
-            // Other batches are still being processed, or the orchestrator is still fetching and
-            // publishing more units. Whichever result brings the count up to TotalBatches after
-            // IsFetchCompleted becomes true finalises the job — it is not necessarily the one the
-            // orchestrator flagged as terminal, since a small trailing batch can finish before its
-            // larger siblings. Counters are deliberately not written yet: they are an aggregate over
-            // every batch, so a mid-run write would publish a partial total as if it were the final one.
+            // Other batches are still being processed. Whichever result brings the count up to
+            // ExpectedBatchCount finalises the job — it is not necessarily the last one the
+            // orchestrator published, since a small trailing batch can finish before its larger
+            // siblings. Counters are deliberately not written yet: they are an aggregate over
+            // every batch, so a mid-run write would publish a partial total as if it were final.
             _logger.LogInformation(
-                "JobRun {JobRunId}: {Recorded}/{Total} batch results recorded, IsFetchCompleted={IsFetchCompleted}, waiting for the rest",
+                "JobRun {JobRunId}: {Recorded}/{Expected} batch results recorded, waiting for the rest",
                 jobRun.Id,
                 recordedBatches,
-                payload.TotalBatches,
-                payload.IsFetchCompleted);
+                expectedBatchCount);
+
+            return;
+        }
+
+        // The instance being finalised may predate the completion event, so carry the re-read
+        // threshold onto it; the UPDATE below persists it together with the final counters.
+        jobRun.ExpectedBatchCount = expectedBatchCount;
+
+        JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
+        OrdersImportCheckpointPayload? payload = DeserializePayload(jobRun.Id, checkpoint?.Payload);
+
+        if (payload == null)
+        {
+            _logger.LogWarning(
+                "JobRun {JobRunId}: checkpoint payload is unavailable (missing or unreadable), not finalising",
+                jobRun.Id);
 
             return;
         }
 
         JobRunBatchResultTotals totals = await _jobRunRepository.GetBatchResultTotalsAsync(
-            message.JobRunId, cancellationToken);
+            jobRun.Id, cancellationToken);
 
         jobRun.RecordsCreated = totals.TotalCreated;
         jobRun.RecordsUpdated = totals.TotalUpdated;
@@ -207,12 +299,12 @@ public class ProcessOrdersBatchImportCompletedConsumer
         catch (DbUpdateConcurrencyException)
         {
             // JobRun.RowVersion (xmin) is the concurrency token: the UPDATE above carried the row
-            // version loaded at the start of this call. Zero rows were affected because another
-            // batch-completed event — processed concurrently against the same recordedBatches
-            // threshold — already finalised the job first and published OrdersImportCompletedEvent.
-            // Stepping aside here avoids a double finalisation.
+            // version loaded at the start of this call. Zero rows were affected because the other
+            // entry point — processed concurrently against the same recordedBatches threshold —
+            // already finalised the job first and published OrdersImportCompletedEvent. Stepping
+            // aside here avoids a double finalisation.
             _logger.LogInformation(
-                "JobRun {JobRunId} was already finalised by a concurrently processed batch result, skipping",
+                "JobRun {JobRunId} was already finalised concurrently, skipping",
                 jobRun.Id);
 
             return;
@@ -333,8 +425,8 @@ public class ProcessOrdersBatchImportCompletedConsumer
     /// <summary>
     /// Same decision as the orchestrator's checkpoint store, except that an unreadable payload is
     /// reported as "unknown" here instead of thrown: the aggregator's documented behaviour for an
-    /// unknown expected count is to leave the JobRun for the watchdog, and failing one batch result
-    /// would not repair the checkpoint anyway.
+    /// unknown watermark source is to leave the JobRun for the watchdog, and failing one batch
+    /// result would not repair the checkpoint anyway.
     /// </summary>
     private static OrdersImportCheckpointPayload? DeserializePayload(Guid jobRunId, string? payload)
     {

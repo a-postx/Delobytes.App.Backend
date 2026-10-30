@@ -53,6 +53,8 @@ public class JobRunConfiguration : IEntityTypeConfiguration<JobRun>
 
         builder.Property(j => j.NotBefore);
 
+        builder.Property(j => j.ExpectedBatchCount);
+
         // Worker query: pick Pending jobs for a tenant within its parallelism limit.
         builder.HasIndex(j => new { j.ConnectionId, j.JobType, j.Status })
             .HasDatabaseName("IX_JobRuns_ConnectionId_JobType_Status");

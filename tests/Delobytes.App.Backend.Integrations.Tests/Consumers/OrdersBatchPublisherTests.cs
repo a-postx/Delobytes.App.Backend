@@ -104,7 +104,6 @@ public class OrdersBatchPublisherTests
         published[0].ConnectionId.Should().Be(connection.Id);
         published[0].ChannelId.Should().Be(connection.ChannelId);
         published[0].BatchId.Should().Be(OrdersBatchPublisher.CreateBatchId(jobRun.Id, 3));
-        published[0].IsTerminal.Should().BeFalse();
         run.NextBatchIndex.Should().Be(4);
     }
 
@@ -164,30 +163,6 @@ public class OrdersBatchPublisherTests
     }
 
     [Fact]
-    public async Task PublishTerminalAsync_PublishesEmptyTerminalBatchAndWritesNoCheckpoint()
-    {
-        JobRun jobRun = BuildJobRun();
-        Connection connection = BuildConnection(jobRun);
-        OrdersBatchPublisher publisher = CreatePublisher();
-        OrdersBatchImportRequestedEvent? published = null;
-
-        _eventPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((e, _) => published = e)
-            .Returns(Task.CompletedTask);
-
-        await publisher.PublishTerminalAsync(BuildRun(jobRun, connection, 5, DateTimeOffset.UtcNow, false), 5, CancellationToken.None);
-
-        published.Should().NotBeNull();
-        published!.IsTerminal.Should().BeTrue();
-        published.Orders.Should().BeEmpty();
-        published.BatchId.Should().Be(OrdersBatchPublisher.CreateBatchId(jobRun.Id, 5));
-        _jobCheckpointRepo.Verify(
-            r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
     public void CreateBatchId_IsDeterministic()
     {
         Guid jobRunId = Guid.NewGuid();
@@ -210,12 +185,11 @@ public class OrdersBatchPublisherTests
     }
 
     [Fact]
-    public void SplitIntoBatches_EmptyOrders_ReturnsOneEmptyBatch()
+    public void SplitIntoBatches_EmptyOrders_ReturnsNoBatches()
     {
         List<List<ChannelOrderSnapshot>> batches = OrdersBatchPublisher.SplitIntoBatches(new List<ChannelOrderSnapshot>());
 
-        batches.Should().ContainSingle();
-        batches[0].Should().BeEmpty();
+        batches.Should().BeEmpty();
     }
 
     [Fact]

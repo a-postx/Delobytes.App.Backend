@@ -94,10 +94,10 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
     }
 
     /// <summary>
-    /// Arranges the orchestrator's persisted expectations (JobCheckpoint.Payload) and how many
-    /// batch results are already stored, which together decide whether the aggregator finalises
-    /// the run on this call. Defaults to a single-batch run (1 of 1) so every pre-existing test
-    /// below, written when the aggregator finalised unconditionally, keeps the same outcome.
+    /// Arranges the threshold announced by the fetch-completed event and how many batch results are
+    /// already stored, which together decide whether the aggregator finalises the run on this call.
+    /// Defaults to a single-batch run (1 of 1) so every pre-existing test below, written when the
+    /// aggregator finalised unconditionally, keeps the same outcome.
     /// </summary>
     private void SetupDefaults(JobRun jobRun, int totalBatches = 1, int recordedBatches = 1)
     {
@@ -121,10 +121,17 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        // The aggregator reads the expected batch count from the checkpoint the orchestrator
-        // persisted before publishing its first batch (see ProcessOrdersImportConsumer). Without
-        // stubbing this, GetByJobRunIdAsync resolves to null, the aggregator cannot tell whether
-        // this is the last batch, and it correctly leaves the JobRun Running.
+        // The threshold reaches the aggregator only through OrdersImportFetchCompletedEvent, so it
+        // lives on the JobRun; the checkpoint below supplies the watermark the aggregator copies to
+        // SyncCheckpoint.
+        jobRun.ExpectedBatchCount = totalBatches;
+
+        // TryFinalizeAsync re-reads the threshold instead of trusting the loaded instance, so the
+        // stub has to follow the run — including tests that deliberately null the field.
+        _jobRunRepo
+            .Setup(r => r.GetExpectedBatchCountAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => jobRun.ExpectedBatchCount);
+
         _jobCheckpointRepo
             .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JobCheckpoint
@@ -569,17 +576,15 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_CheckpointMissing_DoesNotFinaliseJobRun()
+    public async Task ProcessAsync_ExpectedBatchCountUnknown_DoesNotFinaliseJobRun()
     {
         JobRun jobRun = BuildJobRun();
 
         SetupDefaults(jobRun);
 
-        // Overrides the default stub from SetupDefaults: no checkpoint row exists at all, e.g.
-        // because the orchestrator crashed before persisting it.
-        _jobCheckpointRepo
-            .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((JobCheckpoint?)null);
+        // Overrides the threshold from SetupDefaults: the completion event has not been delivered
+        // yet, so the aggregator cannot tell whether this batch result is the last one.
+        jobRun.ExpectedBatchCount = null;
 
         ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
 
@@ -653,6 +658,12 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             PagesFetched = 1,
             IsFetchCompleted = true,
         };
+
+        jobRun.ExpectedBatchCount = 1;
+
+        _jobRunRepo
+            .Setup(r => r.GetExpectedBatchCountAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => jobRun.ExpectedBatchCount);
 
         _jobCheckpointRepo
             .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))

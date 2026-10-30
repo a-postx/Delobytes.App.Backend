@@ -166,7 +166,7 @@ public class ProcessOrdersImportConsumer
 
         if (previousPayload != null && previousPayload.IsFetchCompleted != false)
         {
-            await PublishTerminalForFinishedRunAsync(jobRun, connection, previousPayload, cancellationToken);
+            await PublishFetchCompletedForFinishedRunAsync(jobRun, connection, previousPayload, cancellationToken);
             return;
         }
 
@@ -347,7 +347,7 @@ public class ProcessOrdersImportConsumer
     {
         OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
         {
-            TotalBatches = run.NextBatchIndex + 1,
+            TotalBatches = run.NextBatchIndex,
             MaxChangedAt = outcome.MaxChangedAt,
             WindowTo = run.WindowTo,
             PagesFetched = outcome.RequestsIssued,
@@ -357,12 +357,15 @@ public class ProcessOrdersImportConsumer
             IsFetchCompleted = true,
         };
 
-        // The final count must be persisted before the terminal batch is published: the
-        // aggregator finalises on the terminal result (or on any later data result that brings
-        // the count up to TotalBatches), and it can only do that once it knows the final count.
+        // The final count must be persisted before the completion event is published: the
+        // aggregator finalises on whichever of the completion event or a batch result brings its
+        // recorded count up to the expected total, and it can only do that once it knows the
+        // final count.
         await _checkpointStore.SaveAsync(run.JobRun.Id, payload, cancellationToken);
 
-        await _batchPublisher.PublishTerminalAsync(run, run.NextBatchIndex, cancellationToken);
+        await _eventPublisher.PublishAsync(
+            BuildFetchCompletedEvent(run.JobRun.Id, run.Connection.Id, payload),
+            cancellationToken);
 
         _logger.LogInformation(
             "JobRun {JobRunId}: completed, backfill={Backfill}, rows={Rows}, requests={Requests}, "
@@ -379,20 +382,33 @@ public class ProcessOrdersImportConsumer
             run.TotalWaited.TotalSeconds);
     }
 
-    private async Task PublishTerminalForFinishedRunAsync(
+    private async Task PublishFetchCompletedForFinishedRunAsync(
         JobRun jobRun,
         Connection connection,
         OrdersImportCheckpointPayload previousPayload,
         CancellationToken cancellationToken)
     {
-        await _eventPublisher.PublishAsync(new OrdersBatchImportRequestedEvent
+        await _eventPublisher.PublishAsync(
+            BuildFetchCompletedEvent(jobRun.Id, connection.Id, previousPayload),
+            cancellationToken);
+    }
+
+    private static OrdersImportFetchCompletedEvent BuildFetchCompletedEvent(
+        Guid jobRunId,
+        Guid connectionId,
+        OrdersImportCheckpointPayload payload)
+    {
+        return new OrdersImportFetchCompletedEvent
         {
-            JobRunId = jobRun.Id,
-            ConnectionId = connection.Id,
-            ChannelId = connection.ChannelId,
-            BatchId = CreateBatchId(jobRun.Id, previousPayload.TotalBatches - 1),
-            Orders = new List<ChannelOrderSnapshot>(),
-            IsTerminal = true,
-        }, cancellationToken);
+            JobRunId = jobRunId,
+            ConnectionId = connectionId,
+            TotalBatches = payload.TotalBatches,
+            MaxChangedAt = payload.MaxChangedAt,
+            HandoverWatermark = payload.HandoverWatermark,
+            IsBackfill = payload.IsBackfill,
+            IsBackfillCompleted = payload.IsBackfillCompleted,
+            PagesFetched = payload.PagesFetched,
+            WindowTo = payload.WindowTo,
+        };
     }
 }

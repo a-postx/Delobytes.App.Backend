@@ -119,6 +119,14 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
             .Setup(r => r.CountBatchResultsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
+        // The aggregator re-reads the threshold from the database instead of the tracked instance,
+        // so the stub has to follow whatever the run carries — including tests that null it out.
+        jobRun.ExpectedBatchCount = 1;
+
+        _jobRunRepo
+            .Setup(r => r.GetExpectedBatchCountAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => jobRun.ExpectedBatchCount);
+
         _jobRunRepo
             .Setup(r => r.GetBatchResultTotalsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JobRunBatchResultTotals

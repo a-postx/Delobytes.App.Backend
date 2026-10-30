@@ -91,6 +91,15 @@ public class JobRun : ITenantScoped, IRowVersionedEntity
     public uint RowVersion { get; set; }
 
     /// <summary>
+    /// Gets or sets the number of batch results the orders aggregator must record before
+    /// finalising this run, as announced by <c>OrdersImportFetchCompletedEvent</c>. Null until
+    /// that event is processed. Durable on the JobRun itself (rather than read from
+    /// JobCheckpoint.Payload) because the event can be delivered before or after the batch
+    /// results it describes.
+    /// </summary>
+    public int? ExpectedBatchCount { get; set; }
+
+    /// <summary>
     /// Navigation property: the connection this job run belongs to.
     /// </summary>
     public Connection Connection { get; set; } = default!;

@@ -130,7 +130,7 @@ public partial class ProcessOrdersImportConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_CompletedDelta_PublishesTerminalAndSchedulesNoContinuation()
+    public async Task ProcessAsync_CompletedDelta_PublishesFetchCompletedAndSchedulesNoContinuation()
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
@@ -150,7 +150,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         _eventPublisher.Verify(
             p => p.PublishAsync(
-                It.Is<OrdersBatchImportRequestedEvent>(e => e.IsTerminal),
+                It.IsAny<OrdersImportFetchCompletedEvent>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
         _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);

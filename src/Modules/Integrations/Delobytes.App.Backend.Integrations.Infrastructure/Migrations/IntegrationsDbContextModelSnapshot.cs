@@ -131,6 +131,9 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<int?>("ExpectedBatchCount")
+                        .HasColumnType("integer");
+
                     b.Property<int>("JobType")
                         .HasColumnType("integer");
 

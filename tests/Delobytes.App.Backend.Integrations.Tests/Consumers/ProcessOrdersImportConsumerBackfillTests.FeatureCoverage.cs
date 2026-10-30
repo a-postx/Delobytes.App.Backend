@@ -166,11 +166,8 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         OrdersImportCheckpointPayload? latest = null;
         CapturePayload(payload => latest = payload);
         _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) =>
-            {
-                batch.IsTerminal.Should().BeFalse("a stopped run has not finished fetching and may not finalise the job");
-                batches.Add(batch);
-            }).Returns(Task.CompletedTask);
+            .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) => batches.Add(batch))
+            .Returns(Task.CompletedTask);
 
         await RunAsync(run, connection, CreateConsumer());
 
@@ -201,7 +198,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     }
 
     [Fact]
-    public async Task ProcessAsync_EmptyDays_PublishOnlyTerminalBatch()
+    public async Task ProcessAsync_EmptyDays_PublishesNoBatchesAndFetchCompleted()
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
@@ -213,9 +210,9 @@ public partial class ProcessOrdersImportConsumerBackfillTests
 
         await RunAsync(run, connection, CreateConsumer());
 
-        _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.IsTerminal && b.Orders.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
-        _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => !b.IsTerminal), It.IsAny<CancellationToken>()), Times.Never);
-        payloads.Last().TotalBatches.Should().Be(1);
+        _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+        _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
+        payloads.Last().TotalBatches.Should().Be(0);
         payloads.Last().IsFetchCompleted.Should().BeTrue();
     }
 
@@ -269,16 +266,13 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         });
         OrdersImportCheckpointPayload? final = null;
         CapturePayload(payload => final = payload);
-        _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) =>
+        _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<OrdersImportFetchCompletedEvent, CancellationToken>((completed, token) =>
             {
-                if (batch.IsTerminal)
-                {
-                    _persistedState!.IsCompleted.Should().BeTrue();
-                    _persistedState.HandoverWatermark.Should().Be(requestStartedAt - ProcessOrdersImportConsumer.SafetyOverlap);
-                    final!.IsFetchCompleted.Should().BeTrue();
-                    final.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
-                }
+                _persistedState!.IsCompleted.Should().BeTrue();
+                _persistedState.HandoverWatermark.Should().Be(requestStartedAt - ProcessOrdersImportConsumer.SafetyOverlap);
+                final!.IsFetchCompleted.Should().BeTrue();
+                final.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
             }).Returns(Task.CompletedTask);
 
         await RunAsync(secondRun, connection, CreateConsumer());

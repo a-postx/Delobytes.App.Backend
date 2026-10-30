@@ -101,6 +101,14 @@ public interface IJobRunRepository
     public Task<JobStatus> GetStatusAsync(Guid id, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads the expected batch count directly from the database, bypassing any tracked instance
+    /// of the job run. The aggregator needs it because
+    /// <c>OrdersImportFetchCompletedEvent</c> can be consumed between a batch result's load of the
+    /// run and its finalisation check, and a tracked instance would still report the old value.
+    /// </summary>
+    public Task<int?> GetExpectedBatchCountAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns true when a batch result with the given MessageId already exists (idempotency check).
     /// </summary>
     public Task<bool> BatchResultExistsAsync(Guid messageId, CancellationToken cancellationToken);

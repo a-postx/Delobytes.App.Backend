@@ -126,8 +126,8 @@ public partial class ProcessOrdersImportConsumerTests
         requests[1].DateTo.Should().Be(requests[0].DateTo);
         requests[1].Flag.Should().Be(0);
         run.Status.Should().NotBe(JobStatus.Failed);
-        _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => !b.IsTerminal && b.Orders.Count == 1), It.IsAny<CancellationToken>()), Times.Once);
-        _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.IsTerminal), It.IsAny<CancellationToken>()), Times.Once);
+        _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.Orders.Count == 1), It.IsAny<CancellationToken>()), Times.Once);
+        _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -225,7 +225,7 @@ public partial class ProcessOrdersImportConsumerTests
         requests[2].DateFrom.Should().Be(requests[1].DateFrom);
         requests[2].DateTo.Should().Be(requests[1].DateTo);
         run.Status.Should().NotBe(JobStatus.Failed);
-        _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.IsTerminal), It.IsAny<CancellationToken>()), Times.Once);
+        _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -243,7 +243,10 @@ public partial class ProcessOrdersImportConsumerTests
                 operations.Add($"checkpoint:{payload.TotalBatches}:{payload.IsFetchCompleted}");
             }).Returns(Task.CompletedTask);
         _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) => operations.Add(batch.IsTerminal ? "terminal" : $"data:{batch.Orders.Count}"))
+            .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) => operations.Add($"data:{batch.Orders.Count}"))
+            .Returns(Task.CompletedTask);
+        _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<OrdersImportFetchCompletedEvent, CancellationToken>((completed, token) => operations.Add($"completed:{completed.TotalBatches}"))
             .Returns(Task.CompletedTask);
 
         await CreateConsumer().ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
@@ -253,8 +256,8 @@ public partial class ProcessOrdersImportConsumerTests
             "data:30",
             "data:1",
             "checkpoint:2:False",
-            "checkpoint:3:True",
-            "terminal");
+            "checkpoint:2:True",
+            "completed:2");
     }
 
     [Fact]

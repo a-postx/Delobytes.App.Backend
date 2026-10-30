@@ -374,7 +374,7 @@ public partial class ProcessOrdersImportConsumerTests
             CancellationToken.None);
 
         // Two writes: the progress payload persisted right after the unit's batches are published
-        // (IsFetchCompleted = false), then the final payload that announces the terminal batch.
+        // (IsFetchCompleted = false), then the final payload that announces fetch completion.
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
             Times.Exactly(3));
@@ -383,23 +383,21 @@ public partial class ProcessOrdersImportConsumerTests
             p => p.PublishAsync(
                 It.Is<OrdersBatchImportRequestedEvent>(e =>
                     e.JobRunId == jobRun.Id &&
-                    e.Orders.Count == 5 &&
-                    !e.IsTerminal),
+                    e.Orders.Count == 5),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
         _eventPublisher.Verify(
             p => p.PublishAsync(
-                It.Is<OrdersBatchImportRequestedEvent>(e =>
+                It.Is<OrdersImportFetchCompletedEvent>(e =>
                     e.JobRunId == jobRun.Id &&
-                    e.Orders.Count == 0 &&
-                    e.IsTerminal),
+                    e.TotalBatches == 1),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task ProcessAsync_NoOrders_PublishesEmptyBatch()
+    public async Task ProcessAsync_NoOrders_PublishesFetchCompletedWithNoBatches()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
@@ -422,11 +420,14 @@ public partial class ProcessOrdersImportConsumerTests
             CancellationToken.None);
 
         _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _eventPublisher.Verify(
             p => p.PublishAsync(
-                It.Is<OrdersBatchImportRequestedEvent>(e =>
+                It.Is<OrdersImportFetchCompletedEvent>(e =>
                     e.JobRunId == jobRun.Id &&
-                    e.Orders.Count == 0 &&
-                    e.IsTerminal),
+                    e.TotalBatches == 0),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -455,11 +456,19 @@ public partial class ProcessOrdersImportConsumerTests
             new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // 75 orders at a batch size of 30 make three data batches, followed by the separate empty
-        // terminal batch that tells the aggregator no further units are coming.
+        // 75 orders at a batch size of 30 make exactly three data batches; the separate
+        // OrdersImportFetchCompletedEvent carries the threshold instead of an empty terminal batch.
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
-            Times.Exactly(4));
+            Times.Exactly(3));
+
+        _eventPublisher.Verify(
+            p => p.PublishAsync(
+                It.Is<OrdersImportFetchCompletedEvent>(e =>
+                    e.JobRunId == jobRun.Id &&
+                    e.TotalBatches == 3),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -848,7 +857,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         _eventPublisher.Verify(
             p => p.PublishAsync(
-                It.Is<OrdersBatchImportRequestedEvent>(e => e.IsTerminal),
+                It.IsAny<OrdersImportFetchCompletedEvent>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -1937,11 +1946,11 @@ public partial class ProcessOrdersImportConsumerTests
             maxOrdersPerResponse: 2,
             lastChangedAt: windowFrom);
 
-        // The run completed its traversal: no failure, and exactly one terminal batch published.
+        // The run completed its traversal: no failure, and exactly one fetch-completed event published.
         jobRun.Status.Should().NotBe(JobStatus.Failed);
         _eventPublisher.Verify(
             p => p.PublishAsync(
-                It.Is<OrdersBatchImportRequestedEvent>(e => e.IsTerminal),
+                It.IsAny<OrdersImportFetchCompletedEvent>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
