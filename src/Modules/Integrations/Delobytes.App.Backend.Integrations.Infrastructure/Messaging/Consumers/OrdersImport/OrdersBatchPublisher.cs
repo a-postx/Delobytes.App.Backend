@@ -4,7 +4,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Splits one fetched unit of orders into batches, publishes each as an
@@ -26,8 +26,7 @@ internal sealed class OrdersBatchPublisher
     /// <summary>
     /// Publishes one unit of work (one backfill day, or the whole delta window) as soon as it is
     /// fetched, then persists how many batches have been published so far so a crash immediately
-    /// afterwards cannot lose more than the next unit. An empty unit publishes nothing: there is
-    /// no batch to count and no progress to persist.
+    /// afterwards cannot lose more than the next unit.
     /// </summary>
     public async Task PublishUnitAsync(
         JobRun jobRun,

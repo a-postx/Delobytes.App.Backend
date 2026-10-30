@@ -13,8 +13,8 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -148,7 +148,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     }
 
     [Fact]
-    public async Task ProcessAsync_ResumedBatchNumbering_PersistsFinalCountBeforeTerminal()
+    public async Task ProcessAsync_ResumedBatchNumbering_StoppedRunPersistsProgressAndStaysUnfinalised()
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
@@ -168,24 +168,36 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) =>
             {
-                if (batch.IsTerminal)
-                {
-                    latest!.IsFetchCompleted.Should().BeTrue();
-                    latest.TotalBatches.Should().Be(10);
-                    batch.Orders.Should().BeEmpty();
-                }
-
+                batch.IsTerminal.Should().BeFalse("a stopped run has not finished fetching and may not finalise the job");
                 batches.Add(batch);
             }).Returns(Task.CompletedTask);
 
         await RunAsync(run, connection, CreateConsumer());
 
-        batches.Should().HaveCount(3);
+        // Batch numbering resumes at the persisted count, so the two data batches carry 7 and 8 and
+        // a later run continues at 9 instead of reusing BatchIds the aggregator has recorded.
+        batches.Should().HaveCount(2);
         batches[0].Orders.Should().HaveCount(ProcessOrdersImportConsumer.BatchSize);
         batches[1].Orders.Should().HaveCount(1);
-        batches[2].IsTerminal.Should().BeTrue();
-        batches.Select(b => b.BatchId).Should().Equal(ProcessOrdersImportConsumer.CreateBatchId(run.Id, 7), ProcessOrdersImportConsumer.CreateBatchId(run.Id, 8), ProcessOrdersImportConsumer.CreateBatchId(run.Id, 9));
-        _jobCheckpointRepo.Verify(r => r.UpsertAsync(It.Is<JobCheckpoint>(c => c.Payload.Contains("\"TotalBatches\":9") && c.Payload.Contains("\"IsFetchCompleted\":false")), It.IsAny<CancellationToken>()), Times.Once);
+        batches.Select(b => b.BatchId).Should().Equal(
+            ProcessOrdersImportConsumer.CreateBatchId(run.Id, 7),
+            ProcessOrdersImportConsumer.CreateBatchId(run.Id, 8));
+
+        latest.Should().NotBeNull();
+        latest!.IsFetchCompleted.Should().BeFalse();
+        latest.TotalBatches.Should().Be(9);
+        latest.IsBackfillCompleted.Should().BeFalse();
+
+        // Two writes carry this state: the progress write that follows the published unit, and the
+        // stop write that adds PagesFetched. Neither finalises the run.
+        _jobCheckpointRepo.Verify(
+            r => r.UpsertAsync(
+                It.Is<JobCheckpoint>(c => c.Payload.Contains("\"TotalBatches\":9") && c.Payload.Contains("\"IsFetchCompleted\":false")),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        run.Status.Should().NotBe(JobStatus.Failed);
+        _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

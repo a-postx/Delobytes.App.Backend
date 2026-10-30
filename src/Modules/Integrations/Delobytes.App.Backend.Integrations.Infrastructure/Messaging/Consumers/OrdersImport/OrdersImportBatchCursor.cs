@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Batch numbering cursor for one orders import run: the next batch index to assign, plus the

@@ -3,7 +3,7 @@ using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Issues one orders request against the run's deadline and request budget, and waits out a
@@ -25,7 +25,11 @@ internal sealed class PacedOrdersSource
         _maxInProcessWait = maxInProcessWait;
     }
 
-    public async Task<OrdersPage> GetOrdersAsync(
+    /// <summary>
+    /// Returns the page, or a stop value when the run's deadline or request budget ran out or the
+    /// source throttled beyond what the run can wait out.
+    /// </summary>
+    public async Task<OrdersAttempt> GetOrdersAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,
@@ -54,7 +58,7 @@ internal sealed class PacedOrdersSource
                     budgetTime = now;
                 }
 
-                throw new OrdersFetchStoppedException("Budget", budgetTime);
+                return OrdersAttempt.Stopped(StopReason.Budget, budgetTime);
             }
 
             if (state.RequestsIssued >= OrdersImportConstants.MaxRequestsPerRun)
@@ -69,7 +73,7 @@ internal sealed class PacedOrdersSource
 
             if (!page.Throttled)
             {
-                return page;
+                return OrdersAttempt.Received(page);
             }
 
             DateTimeOffset retryAt = page.RetryAt
@@ -79,7 +83,7 @@ internal sealed class PacedOrdersSource
 
             if (wait > _maxInProcessWait || retryAt >= state.Deadline)
             {
-                throw new OrdersFetchStoppedException("Throttled", retryAt);
+                return OrdersAttempt.Stopped(StopReason.Throttled, retryAt);
             }
 
             state.InProcessWaits++;

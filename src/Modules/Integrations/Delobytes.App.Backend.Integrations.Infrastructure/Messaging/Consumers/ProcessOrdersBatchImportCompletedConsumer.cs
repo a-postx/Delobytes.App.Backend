@@ -1,8 +1,8 @@
-using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -130,7 +130,7 @@ public class ProcessOrdersBatchImportCompletedConsumer
             batchId);
 
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
-        OrdersImportCheckpointPayload? payload = DeserializePayload(checkpoint?.Payload);
+        OrdersImportCheckpointPayload? payload = DeserializePayload(jobRun.Id, checkpoint?.Payload);
 
         if (payload == null || payload.TotalBatches <= 0)
         {
@@ -330,18 +330,19 @@ public class ProcessOrdersBatchImportCompletedConsumer
             || status == JobStatus.Cancelled;
     }
 
-    private static OrdersImportCheckpointPayload? DeserializePayload(string? payload)
+    /// <summary>
+    /// Same decision as the orchestrator's checkpoint store, except that an unreadable payload is
+    /// reported as "unknown" here instead of thrown: the aggregator's documented behaviour for an
+    /// unknown expected count is to leave the JobRun for the watchdog, and failing one batch result
+    /// would not repair the checkpoint anyway.
+    /// </summary>
+    private static OrdersImportCheckpointPayload? DeserializePayload(Guid jobRunId, string? payload)
     {
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            return null;
-        }
-
         try
         {
-            return JsonSerializer.Deserialize<OrdersImportCheckpointPayload>(payload);
+            return OrdersImportCheckpointStore.DeserializePayload(jobRunId, payload);
         }
-        catch (JsonException)
+        catch (InvalidOperationException)
         {
             return null;
         }

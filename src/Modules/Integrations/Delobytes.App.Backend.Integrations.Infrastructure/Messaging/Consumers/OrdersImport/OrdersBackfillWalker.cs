@@ -4,7 +4,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Per-connection backfill cursor and the day-by-day walk that advances it, publishing one unit
@@ -71,14 +71,13 @@ internal sealed class OrdersBackfillWalker
         OrdersBackfillState state,
         Guid jobRunId,
         OrdersImportRunState runState,
-        Func<List<ChannelOrderSnapshot>, CancellationToken, Task> publishUnit,
+        IOrdersImportUnitSink sink,
         CancellationToken cancellationToken)
     {
         int daysFetched = 0;
         int totalOrders = 0;
         DateTimeOffset? firstDay = null;
         DateTimeOffset? lastDay = null;
-        DateTimeOffset? resumeAt = null;
 
         while (!state.IsCompleted)
         {
@@ -111,18 +110,16 @@ internal sealed class OrdersBackfillWalker
                 Limit = 0,
             };
 
-            OrdersPage page;
+            OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
 
-            try
+            if (attempt.IsStopped)
             {
-                page = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
-            }
-            catch (OrdersFetchStoppedException ex)
-            {
-                runState.StopReason = ex.Reason;
-                resumeAt = ex.ResumeAt;
+                runState.StopReason = attempt.StopReason;
+                runState.ResumeAt = attempt.ResumeAt;
                 break;
             }
+
+            OrdersPage page = attempt.Page!;
 
             if (page.RowsWithoutIdentity > 0)
             {
@@ -136,7 +133,7 @@ internal sealed class OrdersBackfillWalker
 
             List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
 
-            await publishUnit(
+            await sink.PublishAsync(
                 dayOrders.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(),
                 cancellationToken);
 
@@ -171,12 +168,11 @@ internal sealed class OrdersBackfillWalker
         {
             TotalOrders = totalOrders,
             DaysFetched = daysFetched,
-            RowsWithoutIdentity = 0,
-            StoppedByThrottle = runState.StopReason == "Throttled",
-            StoppedByBudget = runState.StopReason == "Budget",
+            StoppedByThrottle = runState.StopReason == StopReason.Throttled,
+            StoppedByBudget = runState.StopReason == StopReason.Budget,
             FirstDay = firstDay,
             LastDay = lastDay,
-            ResumeAt = resumeAt,
+            ResumeAt = runState.ResumeAt,
         };
     }
 }

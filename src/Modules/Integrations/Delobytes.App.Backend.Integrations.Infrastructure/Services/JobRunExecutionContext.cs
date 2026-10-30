@@ -35,4 +35,39 @@ public class JobRunExecutionContext : IJobRunExecutionContext
     {
         _asyncLocalJobRunId.Value = null;
     }
+
+    /// <summary>
+    /// Sets the current JobRun id for the lifetime of the returned scope and restores the previous
+    /// value on dispose — the previous value, not null, so a nested scope cannot clobber an outer run.
+    /// </summary>
+    /// <param name="jobRunId">JobRun identifier.</param>
+    public IDisposable EnterScope(Guid jobRunId)
+    {
+        Guid? previous = _asyncLocalJobRunId.Value;
+        _asyncLocalJobRunId.Value = jobRunId;
+
+        return new Scope(previous);
+    }
+
+    private sealed class Scope : IDisposable
+    {
+        private readonly Guid? _previous;
+        private bool _disposed;
+
+        public Scope(Guid? previous)
+        {
+            _previous = previous;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _asyncLocalJobRunId.Value = _previous;
+        }
+    }
 }

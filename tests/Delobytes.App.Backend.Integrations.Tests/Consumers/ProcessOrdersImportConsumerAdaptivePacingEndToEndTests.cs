@@ -14,7 +14,6 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -25,6 +24,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
@@ -213,7 +213,9 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             NullLogger<ProcessOrdersImportConsumer>.Instance,
             rateLimiter,
             _timeProvider,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
+            new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
     }
 
     private OrdersImportCheckpointPayload? CaptureLastPayload()

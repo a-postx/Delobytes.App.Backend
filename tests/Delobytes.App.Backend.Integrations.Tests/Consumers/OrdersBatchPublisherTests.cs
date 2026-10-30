@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;

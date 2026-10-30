@@ -1,8 +1,7 @@
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
-/// Shared tuning constants for the orders import run: batch size, request budget, delta overlap,
-/// backfill retention window and the fixed Moscow offset used for day boundaries.
+/// Shared tuning constants for the orders import run.
 /// </summary>
 internal static class OrdersImportConstants
 {

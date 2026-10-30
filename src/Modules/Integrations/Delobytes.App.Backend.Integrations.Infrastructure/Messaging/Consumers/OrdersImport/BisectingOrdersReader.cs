@@ -4,7 +4,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Fetches a whole orders window, recursively bisecting it while the endpoint reports a partial
@@ -16,17 +16,19 @@ internal sealed class BisectingOrdersReader
     private readonly ILogger _logger;
     private readonly TimeSpan _minWindow;
 
-    public BisectingOrdersReader(
-        PacedOrdersSource pacedSource,
-        ILogger logger,
-        TimeSpan minWindow)
+    public BisectingOrdersReader(PacedOrdersSource pacedSource, ILogger logger, TimeSpan minWindow)
     {
         _pacedSource = pacedSource;
         _logger = logger;
         _minWindow = minWindow;
     }
 
-    public async Task<OrdersFetchResult> FetchAllPagesAsync(
+    /// <summary>
+    /// Fetches the requested window. A window stopped by the run's budget or by a throttle is
+    /// reported as a stop with no orders: anything already read belongs to an unread window, so
+    /// publishing it would advance the watermark over orders the bisection never saw.
+    /// </summary>
+    public async Task<OrdersWindowFetchResult> FetchAllPagesAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,
@@ -38,13 +40,24 @@ internal sealed class BisectingOrdersReader
 
         state.RowsWithoutIdentity = 0;
 
-        await FetchWindowAsync(ordersSource, connection, request, jobRunId, ordersByOrderKey, state, cancellationToken);
+        OrdersAttempt attempt = await FetchWindowAsync(ordersSource, connection, request, jobRunId, ordersByOrderKey, state, cancellationToken);
 
-        return new OrdersFetchResult
+        if (attempt.IsStopped)
+        {
+            return OrdersWindowFetchResult.Stopped(
+                attempt.StopReason,
+                attempt.ResumeAt,
+                state.RequestsIssued,
+                state.RowsWithoutIdentity);
+        }
+
+        return new OrdersWindowFetchResult
         {
             Orders = ordersByOrderKey.Values.ToList(),
             RequestsIssued = state.RequestsIssued,
             RowsWithoutIdentity = state.RowsWithoutIdentity,
+            StopReason = StopReason.Completed,
+            ResumeAt = null,
         };
     }
 
@@ -59,7 +72,7 @@ internal sealed class BisectingOrdersReader
     /// reported by both siblings; the dedup dictionary collapses them into one order and unions
     /// their lines, so the bisection can cut through a cart without losing or duplicating a unit.
     /// </summary>
-    private async Task FetchWindowAsync(
+    private async Task<OrdersAttempt> FetchWindowAsync(
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,
@@ -68,7 +81,14 @@ internal sealed class BisectingOrdersReader
         OrdersImportRunState state,
         CancellationToken cancellationToken)
     {
-        OrdersPage ordersPage = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, state, cancellationToken);
+        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, state, cancellationToken);
+
+        if (attempt.IsStopped)
+        {
+            return attempt;
+        }
+
+        OrdersPage ordersPage = attempt.Page!;
 
         if (ordersPage.RowsWithoutIdentity > 0)
         {
@@ -128,7 +148,7 @@ internal sealed class BisectingOrdersReader
         // before hitting the cap, in which case the rows past the window are what filled it.
         if (!ordersPage.HasMore || nextFrom >= request.DateTo)
         {
-            return;
+            return attempt;
         }
 
         TimeSpan unknownSpan = request.DateTo - nextFrom;
@@ -177,7 +197,13 @@ internal sealed class BisectingOrdersReader
             nextFrom,
             midpoint);
 
-        await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
-        await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
+        OrdersAttempt firstHalfAttempt = await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
+
+        if (firstHalfAttempt.IsStopped)
+        {
+            return firstHalfAttempt;
+        }
+
+        return await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
     }
 }

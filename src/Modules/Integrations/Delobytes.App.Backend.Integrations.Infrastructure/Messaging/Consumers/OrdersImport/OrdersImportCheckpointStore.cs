@@ -2,7 +2,7 @@ using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Reads and writes the orders import checkpoint payload for one job run.
@@ -24,7 +24,7 @@ internal sealed class OrdersImportCheckpointStore
     {
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRunId, cancellationToken);
 
-        return DeserializePayload(checkpoint?.Payload);
+        return DeserializePayload(jobRunId, checkpoint?.Payload);
     }
 
     public async Task SaveAsync(Guid jobRunId, OrdersImportCheckpointPayload payload, CancellationToken cancellationToken)
@@ -39,7 +39,13 @@ internal sealed class OrdersImportCheckpointStore
             cancellationToken);
     }
 
-    internal static OrdersImportCheckpointPayload? DeserializePayload(string? payload)
+    /// <summary>
+    /// Returns null only when there is no checkpoint yet. A checkpoint that exists but cannot be
+    /// read fails the run: treating it as absent restarts batch numbering at 0 and republishes
+    /// BatchIds the aggregator has already recorded, which deduplicates them and silently drops
+    /// the orders they carried.
+    /// </summary>
+    internal static OrdersImportCheckpointPayload? DeserializePayload(Guid jobRunId, string? payload)
     {
         if (string.IsNullOrWhiteSpace(payload))
         {
@@ -48,11 +54,15 @@ internal sealed class OrdersImportCheckpointStore
 
         try
         {
-            return JsonSerializer.Deserialize<OrdersImportCheckpointPayload>(payload);
+            return JsonSerializer.Deserialize<OrdersImportCheckpointPayload>(payload)
+                ?? throw new InvalidOperationException(
+                    $"Orders import checkpoint payload of JobRun {jobRunId} deserialised to null.");
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
-            return null;
+            throw new InvalidOperationException(
+                $"Orders import checkpoint payload of JobRun {jobRunId} is corrupt: {exception.Message}",
+                exception);
         }
     }
 }

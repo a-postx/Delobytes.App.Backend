@@ -13,8 +13,8 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -97,7 +97,9 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             _logger.Object,
             new AlwaysAllowWildberriesRateLimiter(),
             _timeProvider,
-            BuildLoggerFactory());
+            BuildLoggerFactory(),
+            new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
+            new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
     }
 
     private ILoggerFactory BuildLoggerFactory()
@@ -690,8 +692,9 @@ public partial class ProcessOrdersImportConsumerBackfillTests
 
         // A cursor that ran ahead of the published batches would lose those days silently and
         // unrecoverably; persisting last costs a re-fetch on a crash, which the idempotent upsert
-        // absorbs.
-        trace.Should().Equal("persist", "publish", "persist", "publish");
+        // absorbs. The trace stops at the second persist because a run stopped by a throttle no
+        // longer publishes a terminal batch (stage 10c).
+        trace.Should().Equal("persist", "publish", "persist");
     }
 
     [Fact]

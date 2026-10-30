@@ -13,8 +13,8 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -32,7 +32,7 @@ public partial class ProcessOrdersImportConsumerTests
     [Theory]
     [InlineData(301)]
     [InlineData(10800)]
-    public async Task ProcessAsync_ThrottledDelta_FailsWithoutPublishingOrAdvancingWatermark(int retrySeconds)
+    public async Task ProcessAsync_ThrottledDelta_StopsCleanlyAndSchedulesContinuation(int retrySeconds)
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
@@ -45,13 +45,19 @@ public partial class ProcessOrdersImportConsumerTests
 
         await CreateConsumer().ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 
-        run.Status.Should().Be(JobStatus.Failed);
-        run.Error.Should().Be($"Wildberries rate limit: next request allowed at {retryAt:O}");
+        // A delta run stopped by a throttle is a scheduling fact, not a failure: it leaves the
+        // JobRun active, keeps the watermark untouched and hands the retry to a Pending successor.
+        run.Status.Should().NotBe(JobStatus.Failed);
+        run.Error.Should().BeNull();
         checkpoint.LastChangedAt.Should().Be(previous);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
-        _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
-        _logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains("delta stopped")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+        _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next =>
+            next.ConnectionId == connection.Id
+            && next.JobType == JobType.OrdersImport
+            && next.Status == JobStatus.Pending
+            && next.NotBefore == retryAt), It.IsAny<CancellationToken>()), Times.Once);
+        _logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains("stopped")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
         _logger.Verify(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never);
     }
 
@@ -78,10 +84,11 @@ public partial class ProcessOrdersImportConsumerTests
         await CreateConsumer(maxOrdersPerResponse: 2).ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 
         calls.Should().Be(3);
-        run.Status.Should().Be(JobStatus.Failed);
+        run.Status.Should().NotBe(JobStatus.Failed);
         checkpoint.LastChangedAt.Should().Be(previous);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -179,16 +186,21 @@ public partial class ProcessOrdersImportConsumerTests
             _jobRunRepo.Object, _jobCheckpointRepo.Object, _syncCheckpointRepo.Object, _backfillStateRepo.Object,
             _clientFactory.Object, _eventPublisher.Object, _jobRunExecutionContext,
             Options.Create(new WildberriesImportOptions()), _logger.Object, limiter.Object, _timeProvider,
-            BuildLoggerFactory());
+            BuildLoggerFactory(),
+            new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
+            new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
 
         await consumer.ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 
-        run.Status.Should().Be(JobStatus.Failed);
         DateTimeOffset expected = slot > stoppedAt ? slot : stoppedAt;
-        run.Error.Should().Be($"Wildberries rate limit: next request allowed at {expected:O}");
+
+        // A budget-exhausted delta run schedules its retry for the later of "now" and the limiter's
+        // next slot, and reports no failure.
+        run.Status.Should().NotBe(JobStatus.Failed);
         _ordersSource.Verify(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
         _syncCheckpointRepo.Verify(s => s.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next => next.NotBefore == expected), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

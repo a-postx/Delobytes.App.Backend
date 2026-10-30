@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// JobCheckpoint payload shared by the orders orchestrator and aggregator.

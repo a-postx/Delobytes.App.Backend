@@ -13,8 +13,8 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -69,7 +69,9 @@ public partial class ProcessOrdersImportConsumerTests
             _logger.Object,
             new AlwaysAllowWildberriesRateLimiter(),
             _timeProvider,
-            BuildLoggerFactory());
+            BuildLoggerFactory(),
+            new JobRunLifecycle(_jobRunRepo.Object, _timeProvider),
+            new OrdersContinuationScheduler(_jobRunRepo.Object, _timeProvider));
     }
 
     private ILoggerFactory BuildLoggerFactory()

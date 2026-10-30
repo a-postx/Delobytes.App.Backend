@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
@@ -83,9 +84,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PacedOrdersSource>();
         services.AddScoped<BisectingOrdersReader>();
         services.AddScoped<OrdersBackfillWalker>();
+        services.AddScoped<OrdersContinuationScheduler>();
         services.AddScoped<ProcessOrdersImportConsumer>();
         services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
 
+        services.AddScoped<JobRunLifecycle>();
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();
 

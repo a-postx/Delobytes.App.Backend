@@ -1,6 +1,6 @@
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Merges reports of the same order into one snapshot. Used by both the delta fetch (an
