@@ -92,7 +92,7 @@ public class ProcessOrdersImportConsumer
 
     public async Task ProcessAsync(OrdersImportRequestedEvent message, CancellationToken cancellationToken)
     {
-        OrdersImportRunState state = new OrdersImportRunState(_timeProvider.GetUtcNow() + _backfillRunBudget);
+        DateTimeOffset deadline = _timeProvider.GetUtcNow() + _backfillRunBudget;
 
         _logger.LogInformation(
             "ProcessOrdersImportConsumer: JobRunId={JobRunId}, ConnectionId={ConnectionId}",
@@ -132,7 +132,7 @@ public class ProcessOrdersImportConsumer
 
         try
         {
-            await RunImportAsync(jobRun, connection, state, cancellationToken);
+            await RunImportAsync(jobRun, connection, deadline, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -148,7 +148,7 @@ public class ProcessOrdersImportConsumer
     private async Task RunImportAsync(
         JobRun jobRun,
         Connection connection,
-        OrdersImportRunState state,
+        DateTimeOffset deadline,
         CancellationToken cancellationToken)
     {
         IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
@@ -191,7 +191,7 @@ public class ProcessOrdersImportConsumer
             ? previousPayload.TotalBatches
             : 0;
 
-        OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(nextBatchIndex, windowTo, isBackfill);
+        OrdersImportRun run = new OrdersImportRun(jobRun, connection, deadline, windowTo, isBackfill, nextBatchIndex);
 
         if (previousPayload == null)
         {
@@ -200,80 +200,34 @@ public class ProcessOrdersImportConsumer
                 new OrdersImportCheckpointPayload
                 {
                     TotalBatches = 0,
-                    WindowTo = windowTo,
-                    IsBackfill = isBackfill,
+                    WindowTo = run.WindowTo,
+                    IsBackfill = run.IsBackfill,
                     IsFetchCompleted = false,
                 },
                 cancellationToken);
         }
 
-        OrdersWindowFetchResult result = isBackfill
-            ? await FetchBackfillAsync(ordersSource, connection, backfillState, jobRun, cursor, state, cancellationToken)
-            : await FetchDeltaAsync(ordersSource, connection, backfillState, jobRun, cursor, state, windowTo, cancellationToken);
+        FetchOutcome outcome = run.IsBackfill
+            ? await _backfillWalker.FetchBackfillDaysAsync(ordersSource, run, backfillState, cancellationToken)
+            : await FetchDeltaAsync(ordersSource, run, backfillState, cancellationToken);
 
-        if (state.StopReason == StopReason.Throttled || state.StopReason == StopReason.Budget)
+        if (outcome.IsStopped)
         {
-            await FinishStoppedAsync(jobRun, connection, state, cursor, windowTo, isBackfill, result, cancellationToken);
+            await FinishStoppedAsync(run, outcome, cancellationToken);
             return;
         }
 
-        await FinishCompletedAsync(jobRun, connection, state, cursor, windowTo, isBackfill, backfillState, result, cancellationToken);
+        await FinishCompletedAsync(run, backfillState, outcome, cancellationToken);
     }
 
-    private async Task<OrdersWindowFetchResult> FetchBackfillAsync(
+    private async Task<FetchOutcome> FetchDeltaAsync(
         IOrdersSource ordersSource,
-        Connection connection,
+        OrdersImportRun run,
         OrdersBackfillState backfillState,
-        JobRun jobRun,
-        OrdersImportBatchCursor cursor,
-        OrdersImportRunState state,
-        CancellationToken cancellationToken)
-    {
-        BackfillOutcome outcome = await _backfillWalker.FetchBackfillDaysAsync(
-            ordersSource,
-            jobRun,
-            connection,
-            cursor,
-            backfillState,
-            state,
-            cancellationToken);
-
-        _logger.LogInformation(
-            "JobRun {JobRunId}: branch=backfill, days fetched={DaysFetched}, first day={FirstDay}, "
-            + "last day={LastDay}, rows={Rows}, stopReason={StopReason}, "
-            + "nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
-            jobRun.Id,
-            outcome.DaysFetched,
-            outcome.FirstDay,
-            outcome.LastDay,
-            outcome.TotalOrders,
-            state.StopReason,
-            backfillState.NextDayToFetch,
-            backfillState.IsCompleted);
-
-        return new OrdersWindowFetchResult
-        {
-            Orders = new List<ChannelOrderSnapshot>(),
-            RequestsIssued = state.RequestsIssued,
-            RowsWithoutIdentity = 0,
-            StopReason = state.StopReason,
-            ResumeAt = state.ResumeAt,
-            MaxChangedAt = null,
-        };
-    }
-
-    private async Task<OrdersWindowFetchResult> FetchDeltaAsync(
-        IOrdersSource ordersSource,
-        Connection connection,
-        OrdersBackfillState backfillState,
-        JobRun jobRun,
-        OrdersImportBatchCursor cursor,
-        OrdersImportRunState state,
-        DateTimeOffset windowTo,
         CancellationToken cancellationToken)
     {
         SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
-            .GetAsync(connection.Id, JobType.OrdersImport, cancellationToken);
+            .GetAsync(run.Connection.Id, JobType.OrdersImport, cancellationToken);
 
         DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
             syncCheckpoint, backfillState, out bool usedLegacyFallback);
@@ -282,50 +236,50 @@ public class ProcessOrdersImportConsumer
         {
             _logger.LogWarning(
                 "JobRun {JobRunId}: legacy completed backfill has no handover watermark; using walk start {WindowFrom}",
-                jobRun.Id, windowFrom);
+                run.JobRun.Id, windowFrom);
         }
 
         OrdersRequest request = new OrdersRequest
         {
             DateFrom = windowFrom.ToOffset(OrdersWindowPlanner.MoscowOffset),
-            DateTo = windowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
+            DateTo = run.WindowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
             Flag = 0,
             Limit = 0,
         };
 
         _logger.LogInformation(
             "JobRun {JobRunId}: branch=delta, fetching orders from {From} to {To}",
-            jobRun.Id,
+            run.JobRun.Id,
             request.DateFrom,
             request.DateTo);
 
-        OrdersWindowFetchResult fetchResult = await _bisectingReader.FetchAllPagesAsync(
-            ordersSource, connection, request, jobRun.Id, state, cancellationToken);
+        FetchOutcome outcome = await _bisectingReader.FetchAllPagesAsync(
+            ordersSource, request, run, cancellationToken);
 
-        if (fetchResult.IsStopped)
+        if (outcome.IsStopped)
         {
             // Nothing already read is published: it belongs to an unread window, so publishing it
             // would advance the watermark over orders the bisection never saw.
-            state.StopReason = fetchResult.StopReason;
-            state.ResumeAt = fetchResult.ResumeAt;
+            run.StopReason = outcome.StopReason;
+            run.ResumeAt = outcome.ResumeAt;
 
-            return fetchResult;
+            return outcome;
         }
 
         DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(
-            fetchResult.Orders, windowTo, out DateTimeOffset? observedBeyondWindow);
+            outcome.Orders, run.WindowTo, out DateTimeOffset? observedBeyondWindow);
 
         if (observedBeyondWindow.HasValue)
         {
             _logger.LogWarning(
                 "Orders import: observed lastChangeDate {Observed} is later than the run window end {WindowTo}, clamping the watermark",
                 observedBeyondWindow.Value,
-                windowTo);
+                run.WindowTo);
         }
 
-        await _batchPublisher.PublishUnitAsync(jobRun, connection, cursor, fetchResult.Orders, cancellationToken);
+        await _batchPublisher.PublishUnitAsync(run, outcome.Orders, cancellationToken);
 
-        return fetchResult with
+        return outcome with
         {
             MaxChangedAt = maxChangedAt,
         };
@@ -338,36 +292,34 @@ public class ProcessOrdersImportConsumer
     /// operator sees the same thing in JobRun history regardless of which one stopped.
     /// </summary>
     private async Task FinishStoppedAsync(
-        JobRun jobRun,
-        Connection connection,
-        OrdersImportRunState state,
-        OrdersImportBatchCursor cursor,
-        DateTimeOffset windowTo,
-        bool isBackfill,
-        OrdersWindowFetchResult result,
+        OrdersImportRun run,
+        FetchOutcome outcome,
         CancellationToken cancellationToken)
     {
         await _checkpointStore.SaveAsync(
-            jobRun.Id,
+            run.JobRun.Id,
             new OrdersImportCheckpointPayload
             {
-                TotalBatches = cursor.NextIndex,
-                WindowTo = windowTo,
-                PagesFetched = result.RequestsIssued,
-                IsBackfill = isBackfill,
+                TotalBatches = run.NextBatchIndex,
+                WindowTo = run.WindowTo,
+                PagesFetched = outcome.RequestsIssued,
+                IsBackfill = run.IsBackfill,
                 IsFetchCompleted = false,
             },
             cancellationToken);
 
-        if (state.ResumeAt.HasValue)
+        Guid? continuationId = null;
+        DateTimeOffset? continuationNotBefore = null;
+
+        if (outcome.ResumeAt.HasValue)
         {
             JobRun? continuation = await _continuationScheduler
-                .ScheduleAsync(jobRun, state.ResumeAt.Value, cancellationToken);
+                .ScheduleAsync(run.JobRun, outcome.ResumeAt.Value, cancellationToken);
 
             if (continuation != null)
             {
-                state.ContinuationId = continuation.Id;
-                state.ContinuationNotBefore = continuation.NotBefore;
+                continuationId = continuation.Id;
+                continuationNotBefore = continuation.NotBefore;
             }
         }
 
@@ -376,63 +328,55 @@ public class ProcessOrdersImportConsumer
             + "fetched {Orders} orders, resumeAt={ResumeAt}, inProcessWaits={InProcessWaits}, "
             + "totalWaitedSeconds={TotalWaitedSeconds}, continuationId={ContinuationId}, "
             + "continuationNotBefore={ContinuationNotBefore}",
-            jobRun.Id,
-            isBackfill,
-            state.StopReason,
-            result.Orders.Count,
-            state.ResumeAt,
-            state.InProcessWaits,
-            state.TotalWaited.TotalSeconds,
-            state.ContinuationId,
-            state.ContinuationNotBefore);
+            run.JobRun.Id,
+            run.IsBackfill,
+            outcome.StopReason,
+            outcome.OrdersFetched,
+            outcome.ResumeAt,
+            run.InProcessWaits,
+            run.TotalWaited.TotalSeconds,
+            continuationId,
+            continuationNotBefore);
     }
 
     private async Task FinishCompletedAsync(
-        JobRun jobRun,
-        Connection connection,
-        OrdersImportRunState state,
-        OrdersImportBatchCursor cursor,
-        DateTimeOffset windowTo,
-        bool isBackfill,
+        OrdersImportRun run,
         OrdersBackfillState backfillState,
-        OrdersWindowFetchResult result,
+        FetchOutcome outcome,
         CancellationToken cancellationToken)
     {
         OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
         {
-            TotalBatches = cursor.NextIndex + 1,
-            MaxChangedAt = result.MaxChangedAt,
-            WindowTo = windowTo,
-            PagesFetched = result.RequestsIssued,
-            IsBackfill = isBackfill,
-            IsBackfillCompleted = isBackfill && backfillState.IsCompleted,
-            HandoverWatermark = isBackfill ? backfillState.HandoverWatermark : null,
+            TotalBatches = run.NextBatchIndex + 1,
+            MaxChangedAt = outcome.MaxChangedAt,
+            WindowTo = run.WindowTo,
+            PagesFetched = outcome.RequestsIssued,
+            IsBackfill = run.IsBackfill,
+            IsBackfillCompleted = run.IsBackfill && backfillState.IsCompleted,
+            HandoverWatermark = run.IsBackfill ? backfillState.HandoverWatermark : null,
             IsFetchCompleted = true,
         };
 
         // The final count must be persisted before the terminal batch is published: the
         // aggregator finalises on the terminal result (or on any later data result that brings
         // the count up to TotalBatches), and it can only do that once it knows the final count.
-        await _checkpointStore.SaveAsync(jobRun.Id, payload, cancellationToken);
+        await _checkpointStore.SaveAsync(run.JobRun.Id, payload, cancellationToken);
 
-        await _batchPublisher.PublishTerminalAsync(jobRun, connection, cursor.NextIndex, cancellationToken);
+        await _batchPublisher.PublishTerminalAsync(run, run.NextBatchIndex, cancellationToken);
 
         _logger.LogInformation(
             "JobRun {JobRunId}: completed, backfill={Backfill}, rows={Rows}, requests={Requests}, "
             + "published {Batches} batches, rowsWithoutIdentity={RowsWithoutIdentity}, stopReason={StopReason}, "
-            + "inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}, "
-            + "continuationId={ContinuationId}, continuationNotBefore={ContinuationNotBefore}",
-            jobRun.Id,
-            isBackfill,
-            result.Orders.Count,
-            result.RequestsIssued,
+            + "inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}",
+            run.JobRun.Id,
+            run.IsBackfill,
+            outcome.OrdersFetched,
+            outcome.RequestsIssued,
             payload.TotalBatches,
-            result.RowsWithoutIdentity,
-            state.StopReason,
-            state.InProcessWaits,
-            state.TotalWaited.TotalSeconds,
-            state.ContinuationId,
-            state.ContinuationNotBefore);
+            outcome.RowsWithoutIdentity,
+            outcome.StopReason,
+            run.InProcessWaits,
+            run.TotalWaited.TotalSeconds);
     }
 
     private async Task PublishTerminalForFinishedRunAsync(

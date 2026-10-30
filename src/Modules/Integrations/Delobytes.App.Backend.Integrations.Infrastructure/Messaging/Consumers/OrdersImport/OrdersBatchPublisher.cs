@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
@@ -29,9 +28,7 @@ public sealed class OrdersBatchPublisher
     /// afterwards cannot lose more than the next unit.
     /// </summary>
     internal async Task PublishUnitAsync(
-        JobRun jobRun,
-        Connection connection,
-        OrdersImportBatchCursor cursor,
+        OrdersImportRun run,
         IReadOnlyList<ChannelOrderSnapshot> unitOrders,
         CancellationToken cancellationToken)
     {
@@ -44,10 +41,10 @@ public sealed class OrdersBatchPublisher
         {
             OrdersBatchImportRequestedEvent batchEvent = new OrdersBatchImportRequestedEvent
             {
-                JobRunId = jobRun.Id,
-                ConnectionId = connection.Id,
-                ChannelId = connection.ChannelId,
-                BatchId = CreateBatchId(jobRun.Id, cursor.TakeNext()),
+                JobRunId = run.JobRun.Id,
+                ConnectionId = run.Connection.Id,
+                ChannelId = run.Connection.ChannelId,
+                BatchId = CreateBatchId(run.JobRun.Id, run.TakeNextBatchIndex()),
                 Orders = batch,
                 IsTerminal = false,
             };
@@ -57,13 +54,13 @@ public sealed class OrdersBatchPublisher
 
         OrdersImportCheckpointPayload progressPayload = new OrdersImportCheckpointPayload
         {
-            TotalBatches = cursor.NextIndex,
-            WindowTo = cursor.WindowTo,
-            IsBackfill = cursor.IsBackfill,
+            TotalBatches = run.NextBatchIndex,
+            WindowTo = run.WindowTo,
+            IsBackfill = run.IsBackfill,
             IsFetchCompleted = false,
         };
 
-        await _checkpointStore.SaveAsync(jobRun.Id, progressPayload, cancellationToken);
+        await _checkpointStore.SaveAsync(run.JobRun.Id, progressPayload, cancellationToken);
     }
 
     /// <summary>
@@ -72,17 +69,16 @@ public sealed class OrdersBatchPublisher
     /// MaxChangedAt, PagesFetched and HandoverWatermark.
     /// </summary>
     internal async Task PublishTerminalAsync(
-        JobRun jobRun,
-        Connection connection,
+        OrdersImportRun run,
         int batchIndex,
         CancellationToken cancellationToken)
     {
         OrdersBatchImportRequestedEvent terminalBatchEvent = new OrdersBatchImportRequestedEvent
         {
-            JobRunId = jobRun.Id,
-            ConnectionId = connection.Id,
-            ChannelId = connection.ChannelId,
-            BatchId = CreateBatchId(jobRun.Id, batchIndex),
+            JobRunId = run.JobRun.Id,
+            ConnectionId = run.Connection.Id,
+            ChannelId = run.Connection.ChannelId,
+            BatchId = CreateBatchId(run.JobRun.Id, batchIndex),
             Orders = new List<ChannelOrderSnapshot>(),
             IsTerminal = true,
         };

@@ -66,16 +66,13 @@ public sealed class OrdersBackfillWalker
         return state;
     }
 
-    internal async Task<BackfillOutcome> FetchBackfillDaysAsync(
+    internal async Task<FetchOutcome> FetchBackfillDaysAsync(
         IOrdersSource ordersSource,
-        JobRun jobRun,
-        Connection connection,
-        OrdersImportBatchCursor cursor,
+        OrdersImportRun run,
         OrdersBackfillState state,
-        OrdersImportRunState runState,
         CancellationToken cancellationToken)
     {
-        Guid jobRunId = jobRun.Id;
+        Guid jobRunId = run.JobRun.Id;
         int daysFetched = 0;
         int totalOrders = 0;
         DateTimeOffset? firstDay = null;
@@ -112,12 +109,12 @@ public sealed class OrdersBackfillWalker
                 Limit = 0,
             };
 
-            OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, runState, cancellationToken);
+            OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, run.Connection, request, run, cancellationToken);
 
             if (attempt.IsStopped)
             {
-                runState.StopReason = attempt.StopReason;
-                runState.ResumeAt = attempt.ResumeAt;
+                run.StopReason = attempt.StopReason;
+                run.ResumeAt = attempt.ResumeAt;
                 break;
             }
 
@@ -136,9 +133,7 @@ public sealed class OrdersBackfillWalker
             List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
 
             await _batchPublisher.PublishUnitAsync(
-                jobRun,
-                connection,
-                cursor,
+                run,
                 dayOrders.OrderBy(order => order.ExternalOrderId, StringComparer.Ordinal).ToList(),
                 cancellationToken);
 
@@ -151,7 +146,7 @@ public sealed class OrdersBackfillWalker
             {
                 if (day >= OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow()))
                 {
-                    state.HandoverWatermark = runState.LastRequestStartedAt - _safetyOverlap;
+                    state.HandoverWatermark = run.LastRequestStartedAt - _safetyOverlap;
                     state.IsCompleted = true;
                     state.CompletedAt = _timeProvider.GetUtcNow();
                     state.CatchUpNextDay = day;
@@ -169,12 +164,27 @@ public sealed class OrdersBackfillWalker
             await _backfillStateRepository.UpsertAsync(state, cancellationToken);
         }
 
-        return new BackfillOutcome
+        _logger.LogInformation(
+            "JobRun {JobRunId}: branch=backfill, days fetched={DaysFetched}, first day={FirstDay}, "
+            + "last day={LastDay}, rows={Rows}, stopReason={StopReason}, "
+            + "nextDayToFetch={NextDayToFetch}, isCompleted={IsCompleted}",
+            jobRunId,
+            daysFetched,
+            firstDay,
+            lastDay,
+            totalOrders,
+            run.StopReason,
+            state.NextDayToFetch,
+            state.IsCompleted);
+
+        return new FetchOutcome
         {
-            TotalOrders = totalOrders,
-            DaysFetched = daysFetched,
-            FirstDay = firstDay,
-            LastDay = lastDay,
+            OrdersFetched = totalOrders,
+            RequestsIssued = run.RequestsIssued,
+            RowsWithoutIdentity = run.RowsWithoutIdentity,
+            StopReason = run.StopReason,
+            ResumeAt = run.ResumeAt,
+            MaxChangedAt = null,
         };
     }
 }

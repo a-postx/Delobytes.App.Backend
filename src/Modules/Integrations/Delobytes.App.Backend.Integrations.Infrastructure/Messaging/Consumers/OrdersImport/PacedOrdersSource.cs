@@ -39,7 +39,7 @@ public sealed class PacedOrdersSource
         IOrdersSource ordersSource,
         Connection connection,
         OrdersRequest request,
-        OrdersImportRunState state,
+        OrdersImportRun run,
         CancellationToken cancellationToken)
     {
         while (true)
@@ -48,7 +48,7 @@ public sealed class PacedOrdersSource
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
 
-            if (now >= state.Deadline)
+            if (now >= run.Deadline)
             {
                 DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
                     connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
@@ -67,13 +67,13 @@ public sealed class PacedOrdersSource
                 return OrdersAttempt.Stopped(StopReason.Budget, budgetTime);
             }
 
-            if (state.RequestsIssued >= OrdersImportConstants.MaxRequestsPerRun)
+            if (run.RequestsIssued >= OrdersImportConstants.MaxRequestsPerRun)
             {
                 throw new InvalidOperationException($"Orders fetch exceeded the per-run request budget of {OrdersImportConstants.MaxRequestsPerRun}.");
             }
 
-            state.LastRequestStartedAt = now;
-            state.RequestsIssued++;
+            run.LastRequestStartedAt = now;
+            run.RequestsIssued++;
 
             OrdersPage page = await ordersSource.GetOrdersAsync(connection.Id, request, cancellationToken);
 
@@ -87,17 +87,17 @@ public sealed class PacedOrdersSource
             now = _timeProvider.GetUtcNow();
             TimeSpan wait = retryAt > now ? retryAt - now : TimeSpan.Zero;
 
-            if (wait > _maxInProcessWait || retryAt >= state.Deadline)
+            if (wait > _maxInProcessWait || retryAt >= run.Deadline)
             {
                 return OrdersAttempt.Stopped(StopReason.Throttled, retryAt);
             }
 
-            state.InProcessWaits++;
+            run.InProcessWaits++;
             DateTimeOffset waitStartedAt = _timeProvider.GetUtcNow();
 
             await Task.Delay(wait, _timeProvider, cancellationToken);
 
-            state.TotalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
+            run.TotalWaited += _timeProvider.GetUtcNow() - waitStartedAt;
         }
     }
 }

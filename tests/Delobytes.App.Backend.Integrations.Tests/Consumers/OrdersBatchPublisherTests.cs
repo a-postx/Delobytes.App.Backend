@@ -28,6 +28,22 @@ public class OrdersBatchPublisherTests
         return new JobRun { Id = Guid.NewGuid(), ConnectionId = Guid.NewGuid() };
     }
 
+    private static OrdersImportRun BuildRun(
+        JobRun jobRun,
+        Connection connection,
+        int nextBatchIndex,
+        DateTimeOffset windowTo,
+        bool isBackfill)
+    {
+        return new OrdersImportRun(
+            jobRun,
+            connection,
+            DateTimeOffset.UtcNow.AddMinutes(10),
+            windowTo,
+            isBackfill,
+            nextBatchIndex);
+    }
+
     private static Connection BuildConnection(JobRun jobRun)
     {
         return new Connection { Id = jobRun.ConnectionId, ChannelId = Guid.NewGuid() };
@@ -50,10 +66,10 @@ public class OrdersBatchPublisherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(0, DateTimeOffset.UtcNow, false);
+        OrdersImportRun run = BuildRun(jobRun, connection, 0, DateTimeOffset.UtcNow, false);
         OrdersBatchPublisher publisher = CreatePublisher();
 
-        await publisher.PublishUnitAsync(jobRun, connection, cursor, new List<ChannelOrderSnapshot>(), CancellationToken.None);
+        await publisher.PublishUnitAsync(run, new List<ChannelOrderSnapshot>(), CancellationToken.None);
 
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
@@ -61,7 +77,7 @@ public class OrdersBatchPublisherTests
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
             Times.Never);
-        cursor.NextIndex.Should().Be(0);
+        run.NextBatchIndex.Should().Be(0);
     }
 
     [Fact]
@@ -70,7 +86,7 @@ public class OrdersBatchPublisherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset windowTo = DateTimeOffset.UtcNow;
-        OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(3, windowTo, true);
+        OrdersImportRun run = BuildRun(jobRun, connection, 3, windowTo, true);
         OrdersBatchPublisher publisher = CreatePublisher();
         List<OrdersBatchImportRequestedEvent> published = new List<OrdersBatchImportRequestedEvent>();
 
@@ -81,7 +97,7 @@ public class OrdersBatchPublisherTests
 
         List<ChannelOrderSnapshot> unit = new List<ChannelOrderSnapshot> { BuildOrder("ORDER-1") };
 
-        await publisher.PublishUnitAsync(jobRun, connection, cursor, unit, CancellationToken.None);
+        await publisher.PublishUnitAsync(run, unit, CancellationToken.None);
 
         published.Should().ContainSingle();
         published[0].JobRunId.Should().Be(jobRun.Id);
@@ -89,7 +105,7 @@ public class OrdersBatchPublisherTests
         published[0].ChannelId.Should().Be(connection.ChannelId);
         published[0].BatchId.Should().Be(OrdersBatchPublisher.CreateBatchId(jobRun.Id, 3));
         published[0].IsTerminal.Should().BeFalse();
-        cursor.NextIndex.Should().Be(4);
+        run.NextBatchIndex.Should().Be(4);
     }
 
     [Fact]
@@ -98,7 +114,7 @@ public class OrdersBatchPublisherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset windowTo = DateTimeOffset.UtcNow;
-        OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(0, windowTo, true);
+        OrdersImportRun run = BuildRun(jobRun, connection, 0, windowTo, true);
         OrdersBatchPublisher publisher = CreatePublisher();
         JobCheckpoint? savedCheckpoint = null;
 
@@ -109,7 +125,7 @@ public class OrdersBatchPublisherTests
 
         List<ChannelOrderSnapshot> unit = new List<ChannelOrderSnapshot> { BuildOrder("ORDER-1") };
 
-        await publisher.PublishUnitAsync(jobRun, connection, cursor, unit, CancellationToken.None);
+        await publisher.PublishUnitAsync(run, unit, CancellationToken.None);
 
         savedCheckpoint.Should().NotBeNull();
         savedCheckpoint!.Payload.Should().Contain("\"TotalBatches\":1");
@@ -122,7 +138,7 @@ public class OrdersBatchPublisherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        OrdersImportBatchCursor cursor = new OrdersImportBatchCursor(0, DateTimeOffset.UtcNow, false);
+        OrdersImportRun run = BuildRun(jobRun, connection, 0, DateTimeOffset.UtcNow, false);
         OrdersBatchPublisher publisher = CreatePublisher();
         List<OrdersBatchImportRequestedEvent> published = new List<OrdersBatchImportRequestedEvent>();
 
@@ -136,7 +152,7 @@ public class OrdersBatchPublisherTests
             .Select(i => BuildOrder($"ORDER-{i}"))
             .ToList();
 
-        await publisher.PublishUnitAsync(jobRun, connection, cursor, unit, CancellationToken.None);
+        await publisher.PublishUnitAsync(run, unit, CancellationToken.None);
 
         published.Should().HaveCount(2);
         published[0].Orders.Should().HaveCount(OrdersImportConstants.BatchSize);
@@ -144,7 +160,7 @@ public class OrdersBatchPublisherTests
         published.Select(p => p.BatchId).Should().Equal(
             OrdersBatchPublisher.CreateBatchId(jobRun.Id, 0),
             OrdersBatchPublisher.CreateBatchId(jobRun.Id, 1));
-        cursor.NextIndex.Should().Be(2);
+        run.NextBatchIndex.Should().Be(2);
     }
 
     [Fact]
@@ -160,7 +176,7 @@ public class OrdersBatchPublisherTests
             .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((e, _) => published = e)
             .Returns(Task.CompletedTask);
 
-        await publisher.PublishTerminalAsync(jobRun, connection, 5, CancellationToken.None);
+        await publisher.PublishTerminalAsync(BuildRun(jobRun, connection, 5, DateTimeOffset.UtcNow, false), 5, CancellationToken.None);
 
         published.Should().NotBeNull();
         published!.IsTerminal.Should().BeTrue();

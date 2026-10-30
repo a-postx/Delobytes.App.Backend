@@ -2,7 +2,6 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -37,34 +36,35 @@ public sealed class BisectingOrdersReader
     /// reported as a stop with no orders: anything already read belongs to an unread window, so
     /// publishing it would advance the watermark over orders the bisection never saw.
     /// </summary>
-    internal async Task<OrdersWindowFetchResult> FetchAllPagesAsync(
+    internal async Task<FetchOutcome> FetchAllPagesAsync(
         IOrdersSource ordersSource,
-        Connection connection,
         OrdersRequest request,
-        Guid jobRunId,
-        OrdersImportRunState state,
+        OrdersImportRun run,
         CancellationToken cancellationToken)
     {
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 
-        state.RowsWithoutIdentity = 0;
+        run.RowsWithoutIdentity = 0;
 
-        OrdersAttempt attempt = await FetchWindowAsync(ordersSource, connection, request, jobRunId, ordersByOrderKey, state, cancellationToken);
+        OrdersAttempt attempt = await FetchWindowAsync(ordersSource, request, run, ordersByOrderKey, cancellationToken);
 
         if (attempt.IsStopped)
         {
-            return OrdersWindowFetchResult.Stopped(
+            return FetchOutcome.Stopped(
                 attempt.StopReason,
                 attempt.ResumeAt,
-                state.RequestsIssued,
-                state.RowsWithoutIdentity);
+                run.RequestsIssued,
+                run.RowsWithoutIdentity);
         }
 
-        return new OrdersWindowFetchResult
+        List<ChannelOrderSnapshot> orders = ordersByOrderKey.Values.ToList();
+
+        return new FetchOutcome
         {
-            Orders = ordersByOrderKey.Values.ToList(),
-            RequestsIssued = state.RequestsIssued,
-            RowsWithoutIdentity = state.RowsWithoutIdentity,
+            Orders = orders,
+            OrdersFetched = orders.Count,
+            RequestsIssued = run.RequestsIssued,
+            RowsWithoutIdentity = run.RowsWithoutIdentity,
             StopReason = StopReason.Completed,
             ResumeAt = null,
         };
@@ -83,14 +83,12 @@ public sealed class BisectingOrdersReader
     /// </summary>
     private async Task<OrdersAttempt> FetchWindowAsync(
         IOrdersSource ordersSource,
-        Connection connection,
         OrdersRequest request,
-        Guid jobRunId,
+        OrdersImportRun run,
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey,
-        OrdersImportRunState state,
         CancellationToken cancellationToken)
     {
-        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, connection, request, state, cancellationToken);
+        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(ordersSource, run.Connection, request, run, cancellationToken);
 
         if (attempt.IsStopped)
         {
@@ -106,11 +104,11 @@ public sealed class BisectingOrdersReader
             // this window would hide them from every later delta run as well. Failing here reuses
             // the same fail-fast stance as the unresolvable partial response below, and lets the
             // next scheduled run retry the window once the source data is complete.
-            state.RowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
+            run.RowsWithoutIdentity += ordersPage.RowsWithoutIdentity;
 
             _logger.LogError(
                 "JobRun {JobRunId}: window {From} - {To} returned {RowsWithoutIdentity} row(s) without a usable order identity, failing the run",
-                jobRunId,
+                run.JobRun.Id,
                 request.DateFrom,
                 request.DateTo,
                 ordersPage.RowsWithoutIdentity);
@@ -169,7 +167,7 @@ public sealed class BisectingOrdersReader
             // reported as success.
             _logger.LogWarning(
                 "JobRun {JobRunId}: window {From} - {To} still returns a partial response with {Remaining} left to read at the minimum granularity of {MinWindow}, failing the run",
-                jobRunId,
+                run.JobRun.Id,
                 nextFrom,
                 request.DateTo,
                 unknownSpan,
@@ -200,19 +198,19 @@ public sealed class BisectingOrdersReader
 
         _logger.LogInformation(
             "JobRun {JobRunId}: window {From} - {To} exceeded the response cap, covered until {CoveredUntil}, splitting at {Midpoint}",
-            jobRunId,
+            run.JobRun.Id,
             request.DateFrom,
             request.DateTo,
             nextFrom,
             midpoint);
 
-        OrdersAttempt firstHalfAttempt = await FetchWindowAsync(ordersSource, connection, firstHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
+        OrdersAttempt firstHalfAttempt = await FetchWindowAsync(ordersSource, firstHalf, run, ordersByOrderKey, cancellationToken);
 
         if (firstHalfAttempt.IsStopped)
         {
             return firstHalfAttempt;
         }
 
-        return await FetchWindowAsync(ordersSource, connection, secondHalf, jobRunId, ordersByOrderKey, state, cancellationToken);
+        return await FetchWindowAsync(ordersSource, secondHalf, run, ordersByOrderKey, cancellationToken);
     }
 }
