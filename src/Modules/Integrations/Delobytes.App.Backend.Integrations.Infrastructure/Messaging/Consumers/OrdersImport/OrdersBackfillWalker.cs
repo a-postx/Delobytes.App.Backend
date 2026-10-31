@@ -107,7 +107,7 @@ public sealed class OrdersBackfillWalker
             {
                 DateFrom = day,
                 DateTo = day.AddDays(1).AddSeconds(-1),
-                Flag = 1,
+                Selection = OrdersSelectionMode.Placed,
                 Limit = 0,
             };
 

@@ -304,7 +304,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         FakeRateLimitedOrdersSource source = new FakeRateLimitedOrdersSource(
             rateLimiter,
             ApiKey,
-            request => request.Flag == 1 ? BuildOrdersForDay(request.DateFrom) : new List<ChannelOrderSnapshot>());
+            request => request.Selection == OrdersSelectionMode.Placed ? BuildOrdersForDay(request.DateFrom) : new List<ChannelOrderSnapshot>());
 
         // --- run #1: only the first day clears the gate; the second is throttled mid-loop ---
         JobRun firstRun = BuildJobRun(connection);

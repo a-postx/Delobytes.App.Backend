@@ -189,7 +189,7 @@ public class DeltaOrdersFetcherTests
 
         outcome.StopReason.Should().Be(StopReason.Completed);
         _issuedRequests.Should().ContainSingle();
-        _issuedRequests[0].Flag.Should().Be(0);
+        _issuedRequests[0].Selection.Should().Be(OrdersSelectionMode.LastChanged);
         _issuedRequests[0].DateFrom.Should().Be(handover.ToOffset(OrdersWindowPlanner.MoscowOffset));
         _issuedRequests[0].DateTo.Should().Be(Now.ToOffset(OrdersWindowPlanner.MoscowOffset));
     }

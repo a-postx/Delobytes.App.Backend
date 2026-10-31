@@ -178,7 +178,7 @@ public sealed class BisectingOrdersReader
         {
             DateFrom = nextFrom,
             DateTo = midpoint,
-            Flag = request.Flag,
+            Selection = request.Selection,
             Limit = request.Limit,
         };
 
@@ -186,7 +186,7 @@ public sealed class BisectingOrdersReader
         {
             DateFrom = midpoint,
             DateTo = request.DateTo,
-            Flag = request.Flag,
+            Selection = request.Selection,
             Limit = request.Limit,
         };
 

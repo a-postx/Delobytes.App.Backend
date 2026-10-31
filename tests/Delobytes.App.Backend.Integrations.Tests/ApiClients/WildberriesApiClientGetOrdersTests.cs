@@ -109,7 +109,7 @@ public class WildberriesApiClientGetOrdersTests
         {
             DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
-            Flag = 0,
+            Selection = OrdersSelectionMode.LastChanged,
             Limit = 100
         };
 
@@ -532,7 +532,7 @@ public class WildberriesApiClientGetOrdersTests
         {
             DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
-            Flag = 0,
+            Selection = OrdersSelectionMode.LastChanged,
             Limit = 1
         };
 
@@ -566,7 +566,7 @@ public class WildberriesApiClientGetOrdersTests
         {
             DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.FromHours(3)),
             DateTo = new DateTimeOffset(2024, 1, 1, 23, 59, 59, TimeSpan.FromHours(3)),
-            Flag = 1,
+            Selection = OrdersSelectionMode.Placed,
             Limit = 100
         };
 
@@ -590,7 +590,7 @@ public class WildberriesApiClientGetOrdersTests
         {
             DateFrom = DateTimeOffset.UtcNow.AddDays(-1),
             DateTo = DateTimeOffset.UtcNow,
-            Flag = 0,
+            Selection = OrdersSelectionMode.LastChanged,
             Limit = 100
         };
 
@@ -617,7 +617,7 @@ public class WildberriesApiClientGetOrdersTests
 
         Func<Task> act = async () => await ordersSource.GetOrdersAsync(
             Guid.NewGuid(),
-            new OrdersRequest { DateFrom = DateTimeOffset.UtcNow, DateTo = DateTimeOffset.UtcNow, Flag = 0, Limit = 10 },
+            new OrdersRequest { DateFrom = DateTimeOffset.UtcNow, DateTo = DateTimeOffset.UtcNow, Selection = OrdersSelectionMode.LastChanged, Limit = 10 },
             CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -1070,7 +1070,7 @@ public class WildberriesApiClientGetOrdersTests
         {
             DateFrom = new DateTimeOffset(2024, 1, 10, 0, 0, 0, TimeSpan.FromHours(3)),
             DateTo = new DateTimeOffset(2024, 1, 10, 23, 59, 59, TimeSpan.FromHours(3)),
-            Flag = 1,
+            Selection = OrdersSelectionMode.Placed,
             Limit = 100
         };
 
@@ -1090,7 +1090,7 @@ public class WildberriesApiClientGetOrdersTests
         {
             DateFrom = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             DateTo = new DateTimeOffset(2024, 1, 31, 0, 0, 0, TimeSpan.Zero),
-            Flag = 0,
+            Selection = OrdersSelectionMode.LastChanged,
             Limit = 100
         };
     }

@@ -87,7 +87,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         {
             DateFrom = day,
             DateTo = day.AddDays(1).AddSeconds(-1),
-            Flag = 1,
+            Selection = OrdersSelectionMode.Placed,
             Limit = 0,
         };
     }
@@ -321,7 +321,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         {
             DateFrom = new DateTimeOffset(2024, 1, 10, 0, 0, 0, TimeSpan.FromHours(3)),
             DateTo = new DateTimeOffset(2024, 1, 11, 23, 59, 59, TimeSpan.FromHours(3)),
-            Flag = 1,
+            Selection = OrdersSelectionMode.Placed,
             Limit = 0,
         };
 

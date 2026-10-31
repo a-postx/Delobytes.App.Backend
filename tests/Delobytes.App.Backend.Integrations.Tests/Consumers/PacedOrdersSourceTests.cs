@@ -39,7 +39,7 @@ public class PacedOrdersSourceTests
     {
         DateTimeOffset from = new DateTimeOffset(2026, 10, 20, 0, 0, 0, TimeSpan.FromHours(3));
 
-        return new OrdersRequest { DateFrom = from, DateTo = from.AddDays(1).AddSeconds(-1), Flag = 1, Limit = 0 };
+        return new OrdersRequest { DateFrom = from, DateTo = from.AddDays(1).AddSeconds(-1), Selection = OrdersSelectionMode.Placed, Limit = 0 };
     }
 
     private static JobRun BuildJobRun(Connection connection)

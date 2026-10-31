@@ -111,6 +111,34 @@ public class OrderSnapshotMergerTests
     }
 
     [Fact]
+    public void Merge_ChannelReportsHeaderStatus_MergedSnapshotKeepsReportedStatusAndUnionsLines()
+    {
+        DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);
+        DateTimeOffset later = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        ChannelOrderSnapshot existing = BuildCart(
+            "ORDER-1", earlier, earlier, BuildLine("POSTING-1", statusChangedAt: earlier)) with
+        {
+            ExternalStatus = "awaiting_packaging",
+            ReportsHeaderStatus = true,
+        };
+
+        ChannelOrderSnapshot incoming = BuildCart(
+            "ORDER-1", earlier, later, BuildLine("POSTING-2", statusChangedAt: later)) with
+        {
+            ExternalStatus = "awaiting_deliver",
+            ReportsHeaderStatus = true,
+        };
+
+        ChannelOrderSnapshot merged = OrderSnapshotMerger.Merge(existing, incoming);
+
+        merged.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "POSTING-1", "POSTING-2" });
+        merged.ReportsHeaderStatus.Should().BeTrue();
+        merged.ExternalStatus.Should().Be("awaiting_deliver");
+        merged.CancelReason.Should().BeNull();
+    }
+
+    [Fact]
     public void Merge_BothUnitsCancelled_HeaderReportsCancelled()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;

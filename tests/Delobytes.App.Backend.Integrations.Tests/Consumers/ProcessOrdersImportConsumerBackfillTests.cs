@@ -379,7 +379,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         // selects one calendar day out of the whole span. The walk has to start at today, not at
         // now - 90 days, so recent orders land first.
         _issuedRequests.Should().NotBeEmpty();
-        _issuedRequests[0].Flag.Should().Be(1);
+        _issuedRequests[0].Selection.Should().Be(OrdersSelectionMode.Placed);
         _issuedRequests[0].DateFrom.Should().Be(expectedToday);
     }
 
@@ -409,7 +409,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             // flag=1 is a single-day selector, not a range filter: a window straddling midnight
             // would make the client throw, and a window that looked served while covering several
             // days would claim coverage it never fetched.
-            request.Flag.Should().Be(1);
+            request.Selection.Should().Be(OrdersSelectionMode.Placed);
             request.DateTo.Should().Be(request.DateFrom.AddDays(1).AddSeconds(-1));
             request.DateFrom.Should().Be(i < expectedDays ? _issuedRequests[0].DateFrom.AddDays(-i) : _issuedRequests[0].DateFrom);
             request.Limit.Should().Be(0);
@@ -868,7 +868,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(jobRun, connection, consumer);
 
         _issuedRequests.Should().ContainSingle();
-        _issuedRequests[0].Flag.Should().Be(0);
+        _issuedRequests[0].Selection.Should().Be(OrdersSelectionMode.LastChanged);
         _issuedRequests[0].DateFrom.Should().Be(
             lastChangedAt.Subtract(OrdersImportConstants.SafetyOverlap).ToOffset(MoscowOffset));
     }

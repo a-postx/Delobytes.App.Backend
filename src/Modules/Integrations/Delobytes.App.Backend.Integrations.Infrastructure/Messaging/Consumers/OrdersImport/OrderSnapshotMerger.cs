@@ -49,10 +49,14 @@ internal static class OrderSnapshotMerger
         // either half may hold the only cancelled unit of a cart, or the only live one, and the
         // winning report's own header describes the units it happened to carry. The placement
         // instant goes through the same reduction, so the merged cart keeps the earliest instant
-        // any half reported.
+        // any half reported. The reported header status/reason are taken from the winning report
+        // only when it is a channel that actually reports one; otherwise the reduction falls back
+        // to the line-derived active/cancelled rule, unchanged for Wildberries.
         ChannelOrderHeaderFacts mergedHeader = ChannelOrderHeaderFacts.Reduce(
             mergedLines,
-            new[] { existing.OrderDate, incoming.OrderDate });
+            new[] { existing.OrderDate, incoming.OrderDate },
+            headerSource.ReportsHeaderStatus ? headerSource.ExternalStatus : null,
+            headerSource.ReportsHeaderStatus ? headerSource.CancelReason : null);
 
         return headerSource with
         {
@@ -62,6 +66,7 @@ internal static class OrderSnapshotMerger
             OrderDate = mergedHeader.OrderDate,
             StatusChangedAt = mergedHeader.StatusChangedAt,
             ChannelReportedTotal = mergedHeader.ChannelReportedTotal,
+            ReportsHeaderStatus = headerSource.ReportsHeaderStatus,
         };
     }
 

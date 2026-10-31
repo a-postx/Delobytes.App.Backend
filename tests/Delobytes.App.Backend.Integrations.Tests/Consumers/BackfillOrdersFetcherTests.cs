@@ -207,7 +207,7 @@ public class BackfillOrdersFetcherTests
         FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
 
         _issuedRequests.Should().NotBeEmpty();
-        _issuedRequests.Should().OnlyContain(request => request.Flag == 1);
+        _issuedRequests.Should().OnlyContain(request => request.Selection == OrdersSelectionMode.Placed);
         _issuedRequests[0].DateFrom.Should().Be(todayStart.AddDays(-179));
         _issuedRequests[0].DateTo.Should().Be(todayStart.AddDays(-179).AddDays(1).AddSeconds(-1));
         _issuedRequests[1].DateFrom.Should().Be(todayStart.AddDays(-180));

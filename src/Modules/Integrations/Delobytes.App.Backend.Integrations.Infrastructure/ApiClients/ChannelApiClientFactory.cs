@@ -43,7 +43,13 @@ public class ChannelApiClientFactory : IChannelApiClientFactory
                 return wildberriesClient;
 
             case "ozon":
-                return _serviceProvider.GetRequiredService<OzonApiClient>();
+                OzonApiClient ozonClient = _serviceProvider.GetRequiredService<OzonApiClient>();
+
+                // OzonApiClient резолвит адрес API по шаблону, поэтому клиент конфигурируется
+                // здесь, а не вызывающим кодом.
+                ozonClient.SetTemplate(template);
+
+                return ozonClient;
 
             case "yandex.kit":
                 return _serviceProvider.GetRequiredService<YandexKitApiClient>();

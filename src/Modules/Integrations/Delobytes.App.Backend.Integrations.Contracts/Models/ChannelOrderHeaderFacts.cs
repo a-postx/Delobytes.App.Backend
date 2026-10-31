@@ -42,10 +42,20 @@ public sealed record ChannelOrderHeaderFacts
     /// Kept separate from <paramref name="lines"/> because the line snapshot does not carry the
     /// placement time.
     /// </param>
+    /// <param name="reportedHeaderStatus">
+    /// The channel's own order-level status, used only when it reports one (see
+    /// <see cref="ChannelOrderSnapshot.ReportsHeaderStatus"/>) and not every line is cancelled.
+    /// </param>
+    /// <param name="reportedCancelReason">
+    /// The channel's own cancel reason, used when every line is cancelled; falls back to
+    /// <c>"cancel"</c> when the channel does not report one.
+    /// </param>
     /// <returns>The reduced cart-level fields.</returns>
     public static ChannelOrderHeaderFacts Reduce(
         IReadOnlyCollection<ChannelOrderLineSnapshot> lines,
-        IEnumerable<DateTimeOffset> rowOrderDates)
+        IEnumerable<DateTimeOffset> rowOrderDates,
+        string? reportedHeaderStatus = null,
+        string? reportedCancelReason = null)
     {
         ArgumentNullException.ThrowIfNull(lines);
         ArgumentNullException.ThrowIfNull(rowOrderDates);
@@ -99,10 +109,29 @@ public sealed record ChannelOrderHeaderFacts
                 "Cannot reduce cart-level fields: no report of this cart carried a parseable order date.");
         }
 
+        string externalStatus;
+        string? cancelReason;
+
+        if (allCancelled)
+        {
+            externalStatus = "cancelled";
+            cancelReason = reportedCancelReason ?? "cancel";
+        }
+        else if (!string.IsNullOrWhiteSpace(reportedHeaderStatus))
+        {
+            externalStatus = reportedHeaderStatus;
+            cancelReason = null;
+        }
+        else
+        {
+            externalStatus = "active";
+            cancelReason = null;
+        }
+
         return new ChannelOrderHeaderFacts
         {
-            ExternalStatus = allCancelled ? "cancelled" : "active",
-            CancelReason = allCancelled ? "cancel" : null,
+            ExternalStatus = externalStatus,
+            CancelReason = cancelReason,
             OrderDate = orderDate.Value,
             StatusChangedAt = statusChangedAt,
             ChannelReportedTotal = channelReportedTotal

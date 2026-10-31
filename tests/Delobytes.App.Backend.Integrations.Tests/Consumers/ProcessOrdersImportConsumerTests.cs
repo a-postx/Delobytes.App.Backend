@@ -538,7 +538,7 @@ public partial class ProcessOrdersImportConsumerTests
             CancellationToken.None);
 
         capturedRequest.Should().NotBeNull();
-        capturedRequest!.Flag.Should().Be(0);
+        capturedRequest!.Selection.Should().Be(OrdersSelectionMode.LastChanged);
         capturedRequest.DateFrom.Should().Be((lastChangedAt - OrdersImportConstants.SafetyOverlap)
             .ToOffset(TimeSpan.FromHours(3)));
     }

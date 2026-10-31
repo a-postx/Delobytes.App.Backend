@@ -113,7 +113,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(run, connection, CreateConsumer());
 
         _issuedRequests.Should().NotBeEmpty();
-        _issuedRequests.Should().OnlyContain(q => q.DateFrom >= retentionStart && q.Flag == 1);
+        _issuedRequests.Should().OnlyContain(q => q.DateFrom >= retentionStart && q.Selection == OrdersSelectionMode.Placed);
         _issuedRequests[0].DateFrom.Should().Be(today.AddDays(-overshootDays));
         _persistedState!.IsCompleted.Should().BeTrue();
         _backfillWalkerLogger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains($"skipped {overshootDays} backfill day(s) outside retention")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
@@ -278,7 +278,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(secondRun, connection, CreateConsumer());
 
         _issuedRequests.Should().HaveCount(2);
-        _issuedRequests.Should().OnlyContain(q => q.Flag == 1 && q.DateFrom == today);
+        _issuedRequests.Should().OnlyContain(q => q.Selection == OrdersSelectionMode.Placed && q.DateFrom == today);
         _persistedState.IsCompleted.Should().BeTrue();
         _persistedState.HandoverWatermark.Should().Be(requestStartedAt - OrdersImportConstants.SafetyOverlap);
         final!.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
@@ -359,7 +359,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _issuedRequests.Select(q => q.DateFrom)
             .Should().Equal(today.AddDays(-1), today, today.AddDays(1));
 
-        _issuedRequests.Should().OnlyContain(q => q.Flag == 1);
+        _issuedRequests.Should().OnlyContain(q => q.Selection == OrdersSelectionMode.Placed);
 
         _persistedState!.CatchUpNextDay.Should().Be(today.AddDays(1));
         _persistedState.IsCompleted.Should().BeTrue();

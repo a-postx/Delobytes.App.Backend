@@ -449,12 +449,19 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
         }
 
+        if (request.Schema != null)
+        {
+            throw new ArgumentException(
+                "Wildberries does not support OrdersRequest.Schema; it is an Ozon-specific concept.",
+                nameof(request));
+        }
+
         DateTimeOffset dateFromMsk = request.DateFrom.ToOffset(MoscowOffset);
         DateTimeOffset dateToMsk = request.DateTo.ToOffset(MoscowOffset);
 
         // Rejected before the pacing slot is taken: a rejected request must not consume one of the
         // scarce calls, and a silently partial day is the defect this guard exists to prevent.
-        if (request.Flag == 1 && dateFromMsk.Date != dateToMsk.Date)
+        if (request.Selection == OrdersSelectionMode.Placed && dateFromMsk.Date != dateToMsk.Date)
         {
             throw new ArgumentException(
                 $"flag=1 selects orders of a single calendar day, but the requested window spans " +
@@ -489,7 +496,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         string dateFromParameter = Uri.EscapeDataString(
             dateFromMsk.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture));
 
-        string requestUrl = $"{baseUrl}/api/v1/supplier/orders?dateFrom={dateFromParameter}&flag={request.Flag}";
+        string requestUrl = $"{baseUrl}/api/v1/supplier/orders?dateFrom={dateFromParameter}&flag={(int)request.Selection}";
 
         using HttpRequestMessage httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUrl);
         httpRequest.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, connectionId);
@@ -546,7 +553,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         foreach (WildberriesOrderDto order in orders)
         {
-            DateTimeOffset? selectionInstant = GetSelectionInstant(order, request.Flag);
+            DateTimeOffset? selectionInstant = GetSelectionInstant(order, request.Selection);
 
             if (selectionInstant != null)
             {
@@ -563,7 +570,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 }
             }
 
-            if (!IsWithinRequestedWindow(order, request.Flag, dateToMsk))
+            if (!IsWithinRequestedWindow(order, request.Selection, dateToMsk))
             {
                 continue;
             }
@@ -645,7 +652,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         _logger.LogInformation(
             "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}, coveredUntil={CoveredUntil}, rowsWithoutIdentity={RowsWithoutIdentity}).",
             snapshots.Count,
-            request.Flag,
+            (int)request.Selection,
             dateFromMsk,
             hasMore,
             coveredUntil,
@@ -779,16 +786,17 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         return responseBody.Substring(0, ResponseBodyLogLimit);
     }
 
-    private static DateTimeOffset? GetSelectionInstant(WildberriesOrderDto dto, int flag)
+    private static DateTimeOffset? GetSelectionInstant(WildberriesOrderDto dto, OrdersSelectionMode selection)
     {
-        return flag == 0
+        return selection == OrdersSelectionMode.LastChanged
             ? ParseMoscowTimestamp(dto.LastChangeDate) ?? ParseMoscowTimestamp(dto.Date)
             : ParseMoscowTimestamp(dto.Date);
     }
 
-    private static bool IsWithinRequestedWindow(WildberriesOrderDto dto, int flag, DateTimeOffset dateToMsk)
+    private static bool IsWithinRequestedWindow(
+        WildberriesOrderDto dto, OrdersSelectionMode selection, DateTimeOffset dateToMsk)
     {
-        DateTimeOffset? reference = GetSelectionInstant(dto, flag);
+        DateTimeOffset? reference = GetSelectionInstant(dto, selection);
 
         return reference is null || reference.Value <= dateToMsk;
     }

@@ -48,7 +48,7 @@ public sealed class DeltaOrdersFetcher : IOrdersFetcher
         {
             DateFrom = windowFrom.ToOffset(OrdersWindowPlanner.MoscowOffset),
             DateTo = context.WindowTo.ToOffset(OrdersWindowPlanner.MoscowOffset),
-            Flag = 0,
+            Selection = OrdersSelectionMode.LastChanged,
             Limit = 0,
         };
 

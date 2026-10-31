@@ -54,4 +54,10 @@ public class OrdersPage
     /// <see cref="Throttled"/> is <c>false</c>.
     /// </summary>
     public DateTimeOffset? RetryAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the channel's opaque pointer to the next page. Null when the channel
+    /// paginates by date window alone (e.g. Wildberries) instead of a cursor.
+    /// </summary>
+    public string? NextCursor { get; set; }
 }

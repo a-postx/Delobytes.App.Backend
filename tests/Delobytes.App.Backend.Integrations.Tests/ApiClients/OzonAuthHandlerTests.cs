@@ -7,6 +7,8 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
@@ -48,9 +50,12 @@ public class OzonAuthHandlerTests
 
     private static HttpClient BuildHttpClientWithHandler(
         Mock<IConnectionResolver> resolverMock,
-        MockHttpMessageHandler innerHandler)
+        MockHttpMessageHandler innerHandler,
+        ILogger<OzonAuthHandler>? logger = null)
     {
-        OzonAuthHandler authHandler = new OzonAuthHandler(resolverMock.Object)
+        OzonAuthHandler authHandler = new OzonAuthHandler(
+            resolverMock.Object,
+            logger ?? NullLogger<OzonAuthHandler>.Instance)
         {
             InnerHandler = innerHandler,
         };
@@ -189,5 +194,85 @@ public class OzonAuthHandlerTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*ozon*");
+    }
+
+    [Fact]
+    public async Task SendAsync_ConnectionIdOptionSet_UsesThatConnectionNotTheFirstActiveOne()
+    {
+        Connection firstActive = BuildConnection("first-key", "11111111");
+        Connection requested = BuildConnection("requested-key", "22222222");
+
+        Mock<IConnectionResolver> resolver = new Mock<IConnectionResolver>();
+
+        resolver
+            .Setup(r => r.ResolveAsync("ozon", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstActive);
+
+        resolver
+            .Setup(r => r.ResolveByIdAsync(requested.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(requested);
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, "https://example.com/api")
+            .WithHeaders("Client-Id", "22222222")
+            .WithHeaders("Api-Key", "requested-key")
+            .Respond(HttpStatusCode.OK);
+
+        mockHttp
+            .When(HttpMethod.Get, "https://example.com/api")
+            .WithHeaders("Client-Id", "11111111")
+            .Respond(HttpStatusCode.Unauthorized);
+
+        HttpClient client = BuildHttpClientWithHandler(resolver, mockHttp);
+
+        using HttpRequestMessage request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://example.com/api");
+
+        request.Options.Set(OzonAuthHandler.ConnectionIdOptionKey, requested.Id);
+
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        resolver.Verify(r => r.ResolveByIdAsync(requested.Id, It.IsAny<CancellationToken>()), Times.Once);
+        resolver.Verify(r => r.ResolveAsync("ozon", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendAsync_NoConnectionIdOption_FallsBackToFirstActiveConnectionAndLogsWarning()
+    {
+        Connection firstActive = BuildConnection("fallback-key", "33333333");
+
+        Mock<IConnectionResolver> resolver = new Mock<IConnectionResolver>();
+        resolver
+            .Setup(r => r.ResolveAsync("ozon", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstActive);
+
+        Mock<ILogger<OzonAuthHandler>> logger = new Mock<ILogger<OzonAuthHandler>>();
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Get, "https://example.com/api")
+            .WithHeaders("Client-Id", "33333333")
+            .WithHeaders("Api-Key", "fallback-key")
+            .Respond(HttpStatusCode.OK);
+
+        HttpClient client = BuildHttpClientWithHandler(resolver, mockHttp, logger.Object);
+
+        HttpResponseMessage response = await client.GetAsync("https://example.com/api");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        resolver.Verify(r => r.ResolveAsync("ozon", It.IsAny<CancellationToken>()), Times.Once);
+        resolver.Verify(r => r.ResolveByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        logger.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 }

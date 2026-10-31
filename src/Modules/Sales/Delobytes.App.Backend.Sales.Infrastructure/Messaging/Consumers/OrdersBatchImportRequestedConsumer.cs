@@ -387,7 +387,11 @@ public class OrdersBatchImportRequestedConsumer
             ? new List<DateTimeOffset> { snapshot.OrderDate }
             : new List<DateTimeOffset> { previouslyImportedOrderDate, snapshot.OrderDate };
 
-        ChannelOrderHeaderFacts header = ChannelOrderHeaderFacts.Reduce(persistedLines, rowOrderDates);
+        ChannelOrderHeaderFacts header = ChannelOrderHeaderFacts.Reduce(
+            persistedLines,
+            rowOrderDates,
+            snapshot.ReportsHeaderStatus ? snapshot.ExternalStatus : null,
+            snapshot.ReportsHeaderStatus ? snapshot.CancelReason : null);
 
         order.ExternalStatus = header.ExternalStatus;
         order.Status = MapStatus(header.ExternalStatus);

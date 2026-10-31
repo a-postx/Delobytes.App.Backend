@@ -20,14 +20,14 @@ namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 
 public class ChannelApiClientFactoryTests
 {
-    private static SystemChannelTemplate BuildTemplate(string code)
+    private static SystemChannelTemplate BuildTemplate(string code, string? apiBaseUrl = "https://example.com")
     {
         return new SystemChannelTemplate
         {
             Id = Guid.NewGuid(),
             Code = code,
             DisplayName = code,
-            ApiBaseUrl = "https://example.com",
+            ApiBaseUrl = apiBaseUrl,
             ApiVersion = "v1",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -167,6 +167,34 @@ public class ChannelApiClientFactoryTests
         IChannelApiClient client = factory.Create(template);
 
         client.Should().BeOfType<OzonApiClient>();
+    }
+
+    [Fact]
+    public void Create_OzonTemplate_ReturnsClientBoundToThatTemplate()
+    {
+        SystemChannelTemplate template = BuildTemplate("ozon", "https://ozon-seller.example.com");
+
+        using ServiceProvider provider = BuildProvider(new MockHttpMessageHandler());
+        IChannelApiClientFactory factory = provider.GetRequiredService<IChannelApiClientFactory>();
+
+        IChannelApiClient client = factory.Create(template);
+
+        OzonApiClient ozonClient = client.Should().BeOfType<OzonApiClient>().Subject;
+        ozonClient.BaseUrl.Should().Be("https://ozon-seller.example.com");
+    }
+
+    [Fact]
+    public void Create_OzonTemplateWithoutApiBaseUrl_FallsBackToPublicEndpoint()
+    {
+        SystemChannelTemplate template = BuildTemplate("ozon", null);
+
+        using ServiceProvider provider = BuildProvider(new MockHttpMessageHandler());
+        IChannelApiClientFactory factory = provider.GetRequiredService<IChannelApiClientFactory>();
+
+        IChannelApiClient client = factory.Create(template);
+
+        OzonApiClient ozonClient = client.Should().BeOfType<OzonApiClient>().Subject;
+        ozonClient.BaseUrl.Should().Be("https://api-seller.ozon.ru");
     }
 
     [Fact]

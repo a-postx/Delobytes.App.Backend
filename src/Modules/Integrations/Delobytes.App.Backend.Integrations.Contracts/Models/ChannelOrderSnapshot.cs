@@ -95,4 +95,11 @@ public record ChannelOrderSnapshot
     /// Gets the order lines.
     /// </summary>
     public List<ChannelOrderLineSnapshot> Lines { get; init; } = new();
+
+    /// <summary>
+    /// Gets a value indicating whether the channel reports a meaningful order-level status; the
+    /// reduction must not replace it. Defaults to <c>false</c>, which keeps Wildberries behaviour
+    /// unchanged: its header status is always derived from per-line cancellation flags.
+    /// </summary>
+    public bool ReportsHeaderStatus { get; init; }
 }

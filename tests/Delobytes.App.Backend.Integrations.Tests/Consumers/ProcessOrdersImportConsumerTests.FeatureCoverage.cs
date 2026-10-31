@@ -124,7 +124,7 @@ public partial class ProcessOrdersImportConsumerTests
         requests.Should().HaveCount(2);
         requests[1].DateFrom.Should().Be(requests[0].DateFrom);
         requests[1].DateTo.Should().Be(requests[0].DateTo);
-        requests[1].Flag.Should().Be(0);
+        requests[1].Selection.Should().Be(OrdersSelectionMode.LastChanged);
         run.Status.Should().NotBe(JobStatus.Failed);
         _eventPublisher.Verify(p => p.PublishAsync(It.Is<OrdersBatchImportRequestedEvent>(b => b.Orders.Count == 1), It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -153,7 +153,7 @@ public partial class ProcessOrdersImportConsumerTests
         await CreateConsumer().ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 
         requests.Should().ContainSingle();
-        requests[0].Flag.Should().Be(0);
+        requests[0].Selection.Should().Be(OrdersSelectionMode.LastChanged);
         requests[0].DateFrom.Should().Be(legacy ? oldest + OrdersImportConstants.BackfillWindow : handover);
         _backfillStateRepo.Verify(r => r.UpsertAsync(It.IsAny<OrdersBackfillState>(), It.IsAny<CancellationToken>()), Times.Never);
 

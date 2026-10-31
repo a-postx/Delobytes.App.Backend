@@ -16,13 +16,31 @@ public class OrdersRequest
     public DateTimeOffset DateTo { get; set; }
 
     /// <summary>
-    /// Gets or sets the Wildberries-style selection mode: 0 selects orders by last change date
-    /// (delta sync), 1 selects orders by order date (backfill/reconciliation).
+    /// Gets or sets the channel-neutral selection mode. Wildberries maps this to its own
+    /// <c>flag</c> query parameter; other channels may ignore it.
     /// </summary>
-    public int Flag { get; set; }
+    public OrdersSelectionMode Selection { get; set; }
 
     /// <summary>
     /// Gets or sets the maximum number of orders to return.
     /// </summary>
     public int Limit { get; set; }
+
+    /// <summary>
+    /// Gets or sets an opaque pagination cursor from a previous <see cref="OrdersPage"/>.
+    /// Channel-specific; may be ignored by channels that paginate by date window alone.
+    /// </summary>
+    public string? Cursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the set of channel-specific status codes to filter by.
+    /// Channel-specific; may be ignored by channels with no server-side status filter.
+    /// </summary>
+    public IReadOnlyList<string>? Statuses { get; set; }
+
+    /// <summary>
+    /// Gets or sets the channel-specific order schema (e.g. FBO vs FBS) to request.
+    /// Channel-specific; may be ignored by channels with a single schema.
+    /// </summary>
+    public OrdersSchema? Schema { get; set; }
 }
