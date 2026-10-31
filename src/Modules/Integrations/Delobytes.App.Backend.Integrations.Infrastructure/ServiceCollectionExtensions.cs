@@ -45,14 +45,13 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("Connection string is not configured.");
         }
 
-        services.Configure<WildberriesImportOptions>(
-            configuration?.GetSection("WildberriesImport") ?? new ConfigurationBuilder().Build().GetSection("WildberriesImport"));
+        services.AddOptions<WildberriesImportOptions>()
+            .Bind(configuration?.GetSection("WildberriesImport") ?? new ConfigurationBuilder().Build().GetSection("WildberriesImport"))
+            .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<WildberriesImportOptions>, WildberriesImportOptionsValidator>();
 
-        services.ValidateOptions<WildberriesImportOptions>();
-
-        services.Configure<WildberriesRateLimitOptions>(
+        services.AddOptions().Configure<WildberriesRateLimitOptions>(
             configuration?.GetSection("WildberriesRateLimit") ?? new ConfigurationBuilder().Build().GetSection("WildberriesRateLimit"));
 
         services.Configure<BackgroundJobsOptions>(
@@ -182,25 +181,5 @@ public static class ServiceCollectionExtensions
     public static void AddIntegrationsConsumers(this IBusRegistrationConfigurator configurator)
     {
         configurator.AddConsumers(Assembly.GetExecutingAssembly());
-    }
-
-    /// <summary>
-    /// Проверяет настройки модуля до старта приложения.
-    /// </summary>
-    private static IServiceCollection ValidateOptions<TOptions>(this IServiceCollection services) where TOptions : class
-    {
-        try
-        {
-            ServiceProvider provider = services.BuildServiceProvider();
-
-            TOptions? options = provider.GetService<IOptions<TOptions>>()?.Value;
-        }
-        catch (OptionsValidationException ex)
-        {
-            Console.WriteLine($"Error validating {ex.OptionsType.FullName}: {string.Join(", ", ex.Failures)}");
-            throw;
-        }
-
-        return services;
     }
 }
