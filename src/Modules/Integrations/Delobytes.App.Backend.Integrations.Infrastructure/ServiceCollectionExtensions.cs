@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
@@ -80,6 +81,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrdersBackfillStateRepository, OrdersBackfillStateRepository>();
         services.AddScoped<IWildberriesMethodThrottleRepository, WildberriesMethodThrottleRepository>();
         services.AddScoped<IWildberriesRateLimiter, WildberriesRateLimiter>();
+        services.AddScoped<WildberriesOrdersRateLimiterAdapter>();
+        services.AddSingleton<OzonRateLimiter>();
+        services.AddScoped<IOrdersRateLimiter, OrdersRateLimiterRouter>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
