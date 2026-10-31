@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Constants;
+using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Infrastructure.Health;
 using Delobytes.App.Backend.Infrastructure.Health.System;
@@ -37,18 +38,19 @@ internal static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Configures the settings by binding the contents of the appsettings.json file to the specified Plain Old CLR
+    /// Configures the settings by binding the sources to the specified Plain Old CLR
     /// Objects (POCO) and adding <see cref="IOptions{T}"/> objects to the services collection.
     /// </summary>
     public static IServiceCollection AddCustomOptions(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton<IValidateOptions<AppSecrets>, AppSecretsValidator>();
 
+        // binds to Yandex Lockbox configuration source
         services
             .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false);
 
-        services.Configure<Delobytes.App.Backend.Identity.Application.Options.MultitenancyOptions>(
-            configuration.GetSection("Multitenancy"),
+        services.Configure<MultitenancyOptions>(
+            configuration.GetSection(nameof(MultitenancyOptions)),
             o => o.BindNonPublicProperties = false);
 
         // JWT token validator — stateless, singleton-safe
@@ -58,18 +60,15 @@ internal static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Создаёт экземпляры всех настроек и проверяет значения до старта приложения.
-    /// Используем вместо встроенного процесса валидации ValidateOnStart
-    /// т.к. последний проверяет только в процессе запуска и обращения к объектам, что может привести к проблемам.
+    /// Создаёт экземпляры настроек, чтобы запустились валидаторы и проверили значения.
+    /// Используем вместо встроенного процесса валидации ValidateOnStart т.к. он вызывается и
+    /// проверяет только в процессе RunAsync.
     /// </summary>
-    public static IServiceCollection AddOptionsValidationOnStartup(this IServiceCollection services)
+    public static IServiceCollection ValidateRemoteSecrets(this IServiceCollection services)
     {
         try
         {
             ServiceProvider provider = services.BuildServiceProvider();
-
-            AppSettings? applicationOptions = provider.GetService<IOptions<AppSettings>>()?.Value;
-
             AppSecrets? appSecrets = provider.GetService<IOptions<AppSecrets>>()?.Value;
         }
         catch (OptionsValidationException ex)

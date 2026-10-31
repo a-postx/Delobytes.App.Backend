@@ -31,7 +31,6 @@ public class ProcessOrdersImportConsumer
     private readonly ILogger<ProcessOrdersImportConsumer> _logger;
     private readonly TimeSpan _backfillRunBudget;
     private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _maxInProcessWait;
 
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
@@ -48,8 +47,6 @@ public class ProcessOrdersImportConsumer
         JobRunLifecycle jobRunLifecycle,
         OrdersContinuationScheduler continuationScheduler)
     {
-        WildberriesImportOptions importOptions = options.Value;
-
         _jobRunRepository = jobRunRepository;
         _checkpointStore = checkpointStore;
         _backfillWalker = backfillWalker;
@@ -63,19 +60,12 @@ public class ProcessOrdersImportConsumer
         _logger = logger;
         _timeProvider = timeProvider;
 
+        WildberriesImportOptions importOptions = options.Value;
+
         _backfillRunBudget = TimeSpan.FromSeconds(
             importOptions.BackfillRunBudgetSeconds > 0
                 ? importOptions.BackfillRunBudgetSeconds
                 : WildberriesImportOptions.DefaultBackfillRunBudgetSeconds);
-
-        _maxInProcessWait = TimeSpan.FromSeconds(importOptions.MaxInProcessWaitSeconds >= 0
-            ? importOptions.MaxInProcessWaitSeconds
-            : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds);
-
-        if (_backfillRunBudget + _maxInProcessWait >= TimeSpan.FromMinutes(30))
-        {
-            throw new ArgumentOutOfRangeException(nameof(options), "Run budget plus maximum wait must be below 30 minutes.");
-        }
     }
 
     public async Task ProcessAsync(OrdersImportRequestedEvent message, CancellationToken cancellationToken)

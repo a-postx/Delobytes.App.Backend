@@ -10,6 +10,7 @@ using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Identity.Api;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Integrations.Api;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;

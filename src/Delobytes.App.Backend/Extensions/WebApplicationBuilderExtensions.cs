@@ -24,7 +24,7 @@ internal static class WebApplicationBuilderExtensions
     {
         builder.Services
             .AddCustomOptions(builder.Configuration)
-            .AddOptionsValidationOnStartup();
+            .ValidateRemoteSecrets();
 
         AppSecrets? secrets = builder.Configuration.GetSection(nameof(AppSecrets)).Get<AppSecrets>();
 

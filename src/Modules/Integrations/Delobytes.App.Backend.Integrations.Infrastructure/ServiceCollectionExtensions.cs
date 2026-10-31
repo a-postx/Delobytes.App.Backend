@@ -6,16 +6,19 @@ using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Infrastructure.Options.Validators;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using MassTransit;
+using MassTransit.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Polly;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure;
@@ -30,6 +33,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <param name="connectionString">Connection string.</param>
+    /// <param name="configuration">Configuration.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddIntegrationsInfrastructure(
         this IServiceCollection services,
@@ -43,6 +47,10 @@ public static class ServiceCollectionExtensions
 
         services.Configure<WildberriesImportOptions>(
             configuration?.GetSection("WildberriesImport") ?? new ConfigurationBuilder().Build().GetSection("WildberriesImport"));
+
+        services.AddSingleton<IValidateOptions<WildberriesImportOptions>, WildberriesImportOptionsValidator>();
+
+        services.ValidateOptions<WildberriesImportOptions>();
 
         services.Configure<WildberriesRateLimitOptions>(
             configuration?.GetSection("WildberriesRateLimit") ?? new ConfigurationBuilder().Build().GetSection("WildberriesRateLimit"));
@@ -174,5 +182,25 @@ public static class ServiceCollectionExtensions
     public static void AddIntegrationsConsumers(this IBusRegistrationConfigurator configurator)
     {
         configurator.AddConsumers(Assembly.GetExecutingAssembly());
+    }
+
+    /// <summary>
+    /// Проверяет настройки модуля до старта приложения.
+    /// </summary>
+    private static IServiceCollection ValidateOptions<TOptions>(this IServiceCollection services) where TOptions : class
+    {
+        try
+        {
+            ServiceProvider provider = services.BuildServiceProvider();
+
+            TOptions? options = provider.GetService<IOptions<TOptions>>()?.Value;
+        }
+        catch (OptionsValidationException ex)
+        {
+            Console.WriteLine($"Error validating {ex.OptionsType.FullName}: {string.Join(", ", ex.Failures)}");
+            throw;
+        }
+
+        return services;
     }
 }
