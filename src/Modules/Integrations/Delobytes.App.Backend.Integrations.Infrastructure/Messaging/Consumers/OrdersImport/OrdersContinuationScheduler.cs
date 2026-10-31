@@ -26,7 +26,7 @@ public sealed class OrdersContinuationScheduler
     public async Task<JobRun?> ScheduleAsync(JobRun current, DateTimeOffset resumeAt, CancellationToken cancellationToken)
     {
         bool hasPending = await _jobRunRepository
-            .HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, cancellationToken);
+            .HasPendingJobAsync(current.ConnectionId, current.JobType, current.Id, cancellationToken);
 
         if (hasPending)
         {
@@ -37,7 +37,7 @@ public sealed class OrdersContinuationScheduler
         {
             Id = Guid.NewGuid(),
             ConnectionId = current.ConnectionId,
-            JobType = JobType.OrdersImport,
+            JobType = current.JobType,
             Status = JobStatus.Pending,
             CreatedAt = _timeProvider.GetUtcNow(),
             NotBefore = resumeAt,

@@ -92,11 +92,12 @@ public partial class JobRunRepositoryTests
             OrdersBackfillStateRepository repository = new OrdersBackfillStateRepository(context);
             OrdersBackfillState state = new OrdersBackfillState
             {
-                ConnectionId = connection.Id, OldestDayInScope = now.AddDays(-90), NextDayToFetch = now,
+                ConnectionId = connection.Id, JobType = JobType.OrdersImport,
+                OldestDayInScope = now.AddDays(-90), NextDayToFetch = now,
             };
             await repository.UpsertAsync(state, default);
             context.ChangeTracker.Clear();
-            OrdersBackfillState initial = (await repository.GetAsync(connection.Id, default))!;
+            OrdersBackfillState initial = (await repository.GetAsync(connection.Id, JobType.OrdersImport, default))!;
             initial.CatchUpNextDay.Should().BeNull();
             initial.HandoverWatermark.Should().BeNull();
             initial.CatchUpNextDay = now;
@@ -105,7 +106,7 @@ public partial class JobRunRepositoryTests
             initial.CompletedAt = now;
             await repository.UpsertAsync(initial, default);
             context.ChangeTracker.Clear();
-            OrdersBackfillState completed = (await repository.GetAsync(connection.Id, default))!;
+            OrdersBackfillState completed = (await repository.GetAsync(connection.Id, JobType.OrdersImport, default))!;
             completed.CatchUpNextDay.Should().Be(now);
             completed.HandoverWatermark.Should().Be(now.AddMinutes(-30));
             completed.IsCompleted.Should().BeTrue();

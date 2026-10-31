@@ -254,7 +254,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
     private void UseStateStore()
     {
         _backfillStateRepo
-            .Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<JobType>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => _persistedState == null ? null : Clone(_persistedState));
 
         _backfillStateRepo

@@ -24,7 +24,11 @@ public class UnsupportedProductsSourceTests
             .Returns(new MockHttpMessageHandler().ToHttpClient());
 
         OzonApiClient client = new OzonApiClient(
-            new HttpClient(), httpClientFactory.Object, NullLogger<OzonApiClient>.Instance);
+            new HttpClient(),
+            httpClientFactory.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowOrdersRateLimiter(),
+            NullLogger<OzonApiClient>.Instance);
 
         IProductsSource productsSource = client;
 

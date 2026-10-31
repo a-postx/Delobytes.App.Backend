@@ -320,6 +320,9 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("JobType")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("NextDayToFetch")
                         .HasColumnType("timestamp with time zone");
 
@@ -331,11 +334,11 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ConnectionId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_OrdersBackfillStates_ConnectionId");
-
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("ConnectionId", "JobType")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OrdersBackfillStates_ConnectionId_JobType");
 
                     b.ToTable("OrdersBackfillStates", "integrations");
                 });

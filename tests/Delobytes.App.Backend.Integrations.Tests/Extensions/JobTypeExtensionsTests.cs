@@ -12,6 +12,8 @@ public class JobTypeExtensionsTests
     [InlineData(JobType.ProductsImport, "products-import")]
     [InlineData(JobType.OrdersImport, "orders-import")]
     [InlineData(JobType.OrdersSync, "orders-sync")]
+    [InlineData(JobType.OrdersImportFbo, "orders-import-fbo")]
+    [InlineData(JobType.OrdersImportFbs, "orders-import-fbs")]
     public void ToStringCamelCase_ReturnsStableApiToken(JobType jobType, string expected)
     {
         // The token is the public route segment: it must not follow a rename of the enum member.
@@ -30,6 +32,8 @@ public class JobTypeExtensionsTests
     [InlineData("products-import", JobType.ProductsImport)]
     [InlineData("orders-import", JobType.OrdersImport)]
     [InlineData("orders-sync", JobType.OrdersSync)]
+    [InlineData("orders-import-fbo", JobType.OrdersImportFbo)]
+    [InlineData("orders-import-fbs", JobType.OrdersImportFbs)]
     [InlineData("Products-Import", JobType.ProductsImport)]
     [InlineData("ORDERS-IMPORT", JobType.OrdersImport)]
     [InlineData("  products-import  ", JobType.ProductsImport)]
@@ -57,6 +61,8 @@ public class JobTypeExtensionsTests
     [InlineData(JobType.ProductsImport, true)]
     [InlineData(JobType.OrdersImport, false)]
     [InlineData(JobType.OrdersSync, false)]
+    [InlineData(JobType.OrdersImportFbo, false)]
+    [InlineData(JobType.OrdersImportFbs, false)]
     public void IsCancellable_OnlyForUserInitiatedJobs(JobType jobType, bool expected)
     {
         jobType.IsCancellable().Should().Be(expected);
@@ -66,6 +72,8 @@ public class JobTypeExtensionsTests
     [InlineData(JobType.ProductsImport, true)]
     [InlineData(JobType.OrdersImport, false)]
     [InlineData(JobType.OrdersSync, false)]
+    [InlineData(JobType.OrdersImportFbo, false)]
+    [InlineData(JobType.OrdersImportFbs, false)]
     public void IsManuallyStartable_OnlyForUserInitiatedJobs(JobType jobType, bool expected)
     {
         jobType.IsManuallyStartable().Should().Be(expected);

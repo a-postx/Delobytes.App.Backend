@@ -19,6 +19,9 @@ public class OrdersBackfillStateConfiguration : IEntityTypeConfiguration<OrdersB
         builder.Property(s => s.ConnectionId)
             .IsRequired();
 
+        builder.Property(s => s.JobType)
+            .IsRequired();
+
         builder.Property(s => s.NextDayToFetch)
             .IsRequired();
 
@@ -34,10 +37,11 @@ public class OrdersBackfillStateConfiguration : IEntityTypeConfiguration<OrdersB
 
         builder.Property(s => s.HandoverWatermark);
 
-        // One backfill cursor per connection.
-        builder.HasIndex(s => s.ConnectionId)
+        // One backfill cursor per connection and job type: several orders job types can run
+        // against the same connection without colliding on a shared cursor.
+        builder.HasIndex(s => new { s.ConnectionId, s.JobType })
             .IsUnique()
-            .HasDatabaseName("IX_OrdersBackfillStates_ConnectionId");
+            .HasDatabaseName("IX_OrdersBackfillStates_ConnectionId_JobType");
 
         builder.HasOne(s => s.Connection)
             .WithMany()

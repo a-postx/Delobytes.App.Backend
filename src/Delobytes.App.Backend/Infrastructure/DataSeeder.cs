@@ -338,6 +338,18 @@ public static class DataSeeder
                 TimeoutMinutes = 30,
                 BatchSize = 100,
             },
+            new JobTypeConfiguration
+            {
+                JobType = JobType.OrdersImportFbo,
+                TimeoutMinutes = 30,
+                BatchSize = 100,
+            },
+            new JobTypeConfiguration
+            {
+                JobType = JobType.OrdersImportFbs,
+                TimeoutMinutes = 30,
+                BatchSize = 100,
+            },
         };
 
         int seededCount = 0;

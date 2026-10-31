@@ -95,6 +95,7 @@ public class DeltaOrdersFetcherTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
+            JobType = JobType.OrdersImport,
             Status = JobStatus.Running,
         };
 

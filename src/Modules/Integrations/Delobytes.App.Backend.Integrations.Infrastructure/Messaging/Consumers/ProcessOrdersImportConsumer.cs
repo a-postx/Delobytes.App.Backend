@@ -180,7 +180,8 @@ public class ProcessOrdersImportConsumer
         // the aggregator would no longer match what is being republished.
         DateTimeOffset windowTo = previousPayload?.WindowTo ?? _timeProvider.GetUtcNow();
 
-        OrdersBackfillState backfillState = await _backfillWalker.GetOrCreateAsync(connection.Id, cancellationToken);
+        OrdersBackfillState backfillState = await _backfillWalker
+            .GetOrCreateAsync(connection.Id, jobRun.JobType, cancellationToken);
 
         // The walk decides the branch, not the watermark. A connection that was syncing under
         // the old single-request backfill has an incomplete history precisely because that

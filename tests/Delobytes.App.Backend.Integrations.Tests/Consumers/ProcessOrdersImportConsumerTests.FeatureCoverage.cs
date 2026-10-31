@@ -140,7 +140,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
         DateTimeOffset oldest = _timeProvider.GetUtcNow().AddDays(-120);
         DateTimeOffset handover = _timeProvider.GetUtcNow().AddDays(-2);
-        _backfillStateRepo.Setup(r => r.GetAsync(connection.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersBackfillState
+        _backfillStateRepo.Setup(r => r.GetAsync(connection.Id, It.IsAny<JobType>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersBackfillState
         {
             ConnectionId = connection.Id, IsCompleted = true, OldestDayInScope = oldest,
             HandoverWatermark = legacy ? null : handover,

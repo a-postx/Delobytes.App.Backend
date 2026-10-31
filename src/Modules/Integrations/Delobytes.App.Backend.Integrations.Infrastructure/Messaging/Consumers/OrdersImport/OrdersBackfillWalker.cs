@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
@@ -37,13 +38,14 @@ public sealed class OrdersBackfillWalker
     }
 
     /// <summary>
-    /// Loads the per-connection backfill cursor, creating it on first contact. A fresh cursor starts
-    /// at today 00:00 MSK and walks backwards to today - <see cref="_backfillWindow"/>, which is the
-    /// scope the single-request backfill used to cover.
+    /// Loads the per-connection, per-job-type backfill cursor, creating it on first contact. A
+    /// fresh cursor starts at today 00:00 MSK and walks backwards to today - <see cref="_backfillWindow"/>,
+    /// which is the scope the single-request backfill used to cover.
     /// </summary>
-    public async Task<OrdersBackfillState> GetOrCreateAsync(Guid connectionId, CancellationToken cancellationToken)
+    public async Task<OrdersBackfillState> GetOrCreateAsync(
+        Guid connectionId, JobType jobType, CancellationToken cancellationToken)
     {
-        OrdersBackfillState? state = await _backfillStateRepository.GetAsync(connectionId, cancellationToken);
+        OrdersBackfillState? state = await _backfillStateRepository.GetAsync(connectionId, jobType, cancellationToken);
 
         if (state != null)
         {
@@ -56,6 +58,7 @@ public sealed class OrdersBackfillWalker
         {
             Id = Guid.NewGuid(),
             ConnectionId = connectionId,
+            JobType = jobType,
             NextDayToFetch = todayStart,
             OldestDayInScope = todayStart - _backfillWindow,
             IsCompleted = false,

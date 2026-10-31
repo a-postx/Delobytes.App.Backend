@@ -242,7 +242,7 @@ public partial class ProcessOrdersImportConsumerTests
             .Returns(Task.CompletedTask);
 
         _backfillStateRepo
-            .Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<JobType>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OrdersBackfillState
             {
                 Id = Guid.NewGuid(),

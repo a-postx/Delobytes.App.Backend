@@ -324,7 +324,7 @@ public class ProcessOrdersBatchImportCompletedConsumer
             DateTimeOffset? watermark = ResolveWatermark(payload);
 
             SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository.GetAsync(
-                jobRun.ConnectionId, JobType.OrdersImport, cancellationToken);
+                jobRun.ConnectionId, jobRun.JobType, cancellationToken);
 
             if (syncCheckpoint == null)
             {
@@ -336,7 +336,7 @@ public class ProcessOrdersBatchImportCompletedConsumer
                 {
                     Id = Guid.NewGuid(),
                     ConnectionId = jobRun.ConnectionId,
-                    JobType = JobType.OrdersImport,
+                    JobType = jobRun.JobType,
                     LastChangedAt = watermark,
                     LastSuccessAt = DateTimeOffset.UtcNow,
                     LastJobRunId = jobRun.Id
@@ -366,7 +366,7 @@ public class ProcessOrdersBatchImportCompletedConsumer
             _logger.LogInformation(
                 "Updated SyncCheckpoint for ConnectionId={ConnectionId}, JobType={JobType}, IsBackfill={IsBackfill}, LastChangedAt={LastChangedAt}, WatermarkWritten={WatermarkWritten}",
                 jobRun.ConnectionId,
-                JobType.OrdersImport,
+                jobRun.JobType,
                 payload.IsBackfill,
                 watermark,
                 watermark != null);

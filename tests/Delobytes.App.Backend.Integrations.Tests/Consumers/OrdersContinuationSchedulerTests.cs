@@ -81,6 +81,32 @@ public class OrdersContinuationSchedulerTests
     }
 
     [Fact]
+    public async Task ScheduleAsync_OrdersImportFboCurrentRun_CreatesContinuationWithSameJobTypeAndDoesNotBlockOrdersImport()
+    {
+        JobRun current = BuildCurrentRun();
+        current.JobType = JobType.OrdersImportFbo;
+        DateTimeOffset resumeAt = _timeProvider.GetUtcNow().AddHours(1);
+
+        _jobRunRepo
+            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImportFbo, current.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _jobRunRepo
+            .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobRun created, CancellationToken _) => created);
+
+        JobRun? continuation = await CreateScheduler().ScheduleAsync(current, resumeAt, CancellationToken.None);
+
+        continuation.Should().NotBeNull();
+        continuation!.JobType.Should().Be(JobType.OrdersImportFbo);
+
+        // The pending check is scoped to the FBO job type, so it never consults (and is never
+        // blocked by) a pending OrdersImport run on the same connection.
+        _jobRunRepo.Verify(
+            r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ScheduleAsync_ExcludesCurrentRunFromThePendingCheck()
     {
         JobRun current = BuildCurrentRun();

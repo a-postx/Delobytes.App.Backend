@@ -1,9 +1,10 @@
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 
 /// <summary>
-/// Per-connection progress cursor for the day-by-day Wildberries orders backfill. Tracks the
+/// Per-connection, per-job-type progress cursor for the day-by-day orders backfill. Tracks the
 /// backwards and catch-up cursors across pod restarts and throttled runs. Seeds <see cref="SyncCheckpoint"/> once the backfill completes.
 /// </summary>
 public class OrdersBackfillState : ITenantScoped
@@ -22,6 +23,14 @@ public class OrdersBackfillState : ITenantScoped
     /// Gets or sets the connection identifier this backfill belongs to.
     /// </summary>
     public Guid ConnectionId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the orders job type this cursor belongs to. Together with
+    /// <see cref="ConnectionId"/> it uniquely identifies the cursor, so several orders job types
+    /// (e.g. Wildberries <see cref="JobType.OrdersImport"/> and Ozon
+    /// <see cref="JobType.OrdersImportFbo"/>) can run against the same connection independently.
+    /// </summary>
+    public JobType JobType { get; set; }
 
     /// <summary>
     /// Gets or sets the next calendar day (MSK, 00:00) still to be fetched, walking backwards.

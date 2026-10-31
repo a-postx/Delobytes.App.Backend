@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
@@ -20,17 +21,21 @@ public class OrdersBackfillStateRepository : IOrdersBackfillStateRepository
     }
 
     /// <inheritdoc/>
-    public Task<OrdersBackfillState?> GetAsync(Guid connectionId, CancellationToken cancellationToken)
+    public Task<OrdersBackfillState?> GetAsync(
+        Guid connectionId, JobType jobType, CancellationToken cancellationToken)
     {
         return _context.OrdersBackfillStates
-            .FirstOrDefaultAsync(s => s.ConnectionId == connectionId, cancellationToken);
+            .FirstOrDefaultAsync(
+                s => s.ConnectionId == connectionId && s.JobType == jobType, cancellationToken);
     }
 
     /// <inheritdoc/>
     public async Task UpsertAsync(OrdersBackfillState state, CancellationToken cancellationToken)
     {
         OrdersBackfillState? existing = await _context.OrdersBackfillStates
-            .FirstOrDefaultAsync(s => s.ConnectionId == state.ConnectionId, cancellationToken);
+            .FirstOrDefaultAsync(
+                s => s.ConnectionId == state.ConnectionId && s.JobType == state.JobType,
+                cancellationToken);
 
         if (existing is null)
         {

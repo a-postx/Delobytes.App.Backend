@@ -25,6 +25,16 @@ public static class JobTypeExtensions
     public const string OrdersSync = "orders-sync";
 
     /// <summary>
+    /// API type token for <see cref="JobType.OrdersImportFbo"/>.
+    /// </summary>
+    public const string OrdersImportFbo = "orders-import-fbo";
+
+    /// <summary>
+    /// API type token for <see cref="JobType.OrdersImportFbs"/>.
+    /// </summary>
+    public const string OrdersImportFbs = "orders-import-fbs";
+
+    /// <summary>
     /// Returns the API type token for the given job type.
     /// </summary>
     public static string ToStringCamelCase(this JobType jobType)
@@ -34,6 +44,8 @@ public static class JobTypeExtensions
             JobType.ProductsImport => ProductsImport,
             JobType.OrdersImport => OrdersImport,
             JobType.OrdersSync => OrdersSync,
+            JobType.OrdersImportFbo => OrdersImportFbo,
+            JobType.OrdersImportFbs => OrdersImportFbs,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(jobType),
                 jobType,

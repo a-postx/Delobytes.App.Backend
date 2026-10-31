@@ -1,7 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
@@ -32,7 +31,7 @@ public sealed class DeltaOrdersFetcher : IOrdersFetcher
     public async Task<FetchOutcome> FetchAsync(OrdersImportContext context, OrdersRunProgress progress, CancellationToken cancellationToken)
     {
         SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository
-            .GetAsync(context.Connection.Id, JobType.OrdersImport, cancellationToken);
+            .GetAsync(context.Connection.Id, context.JobType, cancellationToken);
 
         DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
             syncCheckpoint, context.BackfillState, out bool usedLegacyFallback);

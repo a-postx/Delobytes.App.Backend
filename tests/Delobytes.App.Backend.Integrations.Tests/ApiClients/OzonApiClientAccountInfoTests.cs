@@ -29,6 +29,8 @@ public class OzonApiClientAccountInfoTests
         return new OzonApiClient(
             typedClient,
             factory.Object,
+            new FixedConnectionResolver(),
+            new AlwaysAllowOrdersRateLimiter(),
             NullLogger<OzonApiClient>.Instance);
     }
 
