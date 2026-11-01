@@ -1,5 +1,7 @@
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -17,22 +19,20 @@ namespace Delobytes.App.Backend.BackgroundServices;
 /// </summary>
 public class SchedulerHostedService : BackgroundService
 {
-    /// <summary>
-    /// SystemChannelTemplate.Code for Wildberries connections, compared case-insensitively.
-    /// </summary>
-    private const string WildberriesChannelCode = "wildberries";
-
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BackgroundJobsOptions _options;
+    private readonly bool _enableOzonFbs;
     private readonly ILogger<SchedulerHostedService> _logger;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<BackgroundJobsOptions> options,
+        IOptions<OzonImportOptions> ozonImportOptions,
         ILogger<SchedulerHostedService> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
+        _enableOzonFbs = ozonImportOptions.Value.EnableFbs;
         _logger = logger;
     }
 
@@ -119,6 +119,25 @@ public class SchedulerHostedService : BackgroundService
                 return;
             }
 
+            string? channelCode = connection.SystemChannelTemplate?.Code;
+
+            // A schedule left over from a previous channel mapping (e.g. an OrdersImport schedule
+            // on an Ozon connection) would make every tick create a job the consumer cannot run.
+            if (OrdersJobTypeMap.IsScheduledOrdersJobType(schedule.JobType)
+                && !OrdersJobTypeMap.GetOrdersJobTypes(channelCode, _enableOzonFbs).Contains(schedule.JobType))
+            {
+                // NextRunAt is deliberately not advanced: the schedule stays visible as due, so an
+                // operator (or the seeder, which disables it) sees that it is wrong.
+                _logger.LogDebug(
+                    "SchedulerHostedService: schedule {ScheduleId} skipped, job type {JobType} does not " +
+                    "belong to connection {ConnectionId} of channel '{ChannelCode}'.",
+                    schedule.Id,
+                    schedule.JobType,
+                    schedule.ConnectionId,
+                    channelCode);
+                return;
+            }
+
             bool hasActiveJob = await jobRunRepository.HasActiveJobAsync(schedule.ConnectionId, schedule.JobType, cancellationToken);
 
             if (hasActiveJob)
@@ -132,25 +151,11 @@ public class SchedulerHostedService : BackgroundService
                 return;
             }
 
-            if (schedule.JobType == JobType.OrdersImport
-                && string.Equals(connection.SystemChannelTemplate?.Code, WildberriesChannelCode, StringComparison.OrdinalIgnoreCase))
+            bool hasSlot = await HasRateLimitSlotAsync(scope, schedule, connection, channelCode, now, cancellationToken);
+
+            if (!hasSlot)
             {
-                IWildberriesRateLimiter rateLimiter = scope.ServiceProvider.GetRequiredService<IWildberriesRateLimiter>();
-
-                DateTimeOffset? nextAllowedAt = await rateLimiter.GetNextRequestAllowedAtAsync(
-                    connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
-
-                if (nextAllowedAt is not null && nextAllowedAt > now)
-                {
-                    // Ждём, не пишем в базу каждый тик, когда очевидно что джоба будет завалена лимитером
-                    _logger.LogDebug(
-                        "SchedulerHostedService: schedule {ScheduleId} skipped, Wildberries rate " +
-                        "limiter slot for connection {ConnectionId} is not available until {NextAllowedAt:O}.",
-                        schedule.Id,
-                        schedule.ConnectionId,
-                        nextAllowedAt);
-                    return;
-                }
+                return;
             }
 
             JobRun jobRun = new JobRun
@@ -171,6 +176,13 @@ public class SchedulerHostedService : BackgroundService
                     await jobRunRepository.CreateProductsImportJobAsync(
                         new ProductsImportJob { JobRunId = jobRun.Id },
                         cancellationToken);
+                    break;
+
+                // Orders import keeps its cursor in OrdersBackfillState/SyncCheckpoint rather than
+                // in a type-specific JobRun row, so nothing is created here on purpose.
+                case JobType.OrdersImport:
+                case JobType.OrdersImportFbo:
+                case JobType.OrdersImportFbs:
                     break;
 
                 default:
@@ -195,6 +207,52 @@ public class SchedulerHostedService : BackgroundService
         {
             tenantContext.Clear();
         }
+    }
+
+    /// <summary>
+    /// Pre-check that keeps an obviously throttled job from being created at all: the worker would
+    /// dispatch it, the fetcher would hit the limiter on its first request and the run would fail
+    /// or stop immediately. Returns <c>false</c> when the tick must be skipped, leaving NextRunAt
+    /// untouched so the schedule is retried on the next tick.
+    /// </summary>
+    private async Task<bool> HasRateLimitSlotAsync(
+        IServiceScope scope,
+        JobSchedule schedule,
+        Connection connection,
+        string? channelCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        string? method = OrdersJobTypeMap.GetRateLimitMethod(channelCode, schedule.JobType);
+
+        if (method == null)
+        {
+            return true;
+        }
+
+        IOrdersRateLimiter rateLimiter = scope.ServiceProvider.GetRequiredService<IOrdersRateLimiter>();
+
+        RateLimitScope rateLimitScope = new RateLimitScope(
+            channelCode!.ToLowerInvariant(),
+            connection.ApiKey,
+            method);
+
+        DateTimeOffset? nextAllowedAt = await rateLimiter.GetNextRequestAllowedAtAsync(rateLimitScope, cancellationToken);
+
+        if (nextAllowedAt is not null && nextAllowedAt > now)
+        {
+            // Ждём, не пишем в базу каждый тик, когда очевидно что джоба будет завалена лимитером
+            _logger.LogDebug(
+                "SchedulerHostedService: schedule {ScheduleId} skipped, rate limiter slot for channel " +
+                "'{ChannelCode}' and connection {ConnectionId} is not available until {NextAllowedAt:O}.",
+                schedule.Id,
+                channelCode,
+                schedule.ConnectionId,
+                nextAllowedAt);
+            return false;
+        }
+
+        return true;
     }
 
     private async Task AdvanceScheduleAsync(

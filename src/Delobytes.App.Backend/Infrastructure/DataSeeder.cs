@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -231,88 +232,164 @@ public static class DataSeeder
     }
 
     /// <summary>
-    /// Seeds a JobSchedule for OrdersImport (hourly by default) for every active Connection
-    /// that does not already have one (Stage 11, decision "Seed initial schedules"). Bypasses
-    /// the tenant query filter via IgnoreQueryFilters because this runs at startup with no
-    /// ambient tenant; writes switch the ambient TenantId per connection so IntegrationsDbContext's
-    /// SetTenantId guard can stamp the new row instead of throwing.
+    /// Seeds the orders JobSchedule matching each active Connection's channel (hourly by default)
+    /// when it does not already have one, and disables a stale OrdersImport schedule left on a
+    /// non-Wildberries connection by earlier versions of this seeder. Bypasses the tenant query
+    /// filter via IgnoreQueryFilters because this runs at startup with no ambient tenant; writes
+    /// switch the ambient TenantId per connection so IntegrationsDbContext's SetTenantId guard can
+    /// stamp the new row instead of throwing.
     /// </summary>
     /// <param name="context">Integrations DbContext.</param>
     /// <param name="tenantContext">Message-based tenant context, set per connection before each save.</param>
     /// <param name="options">Background jobs options (default cron expression).</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="enableOzonFbs">
+    /// Whether the reserved Ozon FBS job type is scheduled (<c>OzonImport:EnableFbs</c>).
+    /// </param>
     public static async Task SeedJobSchedulesAsync(
         IntegrationsDbContext context,
         MessageTenantContext tenantContext,
         BackgroundJobsOptions options,
-        ILogger logger)
+        ILogger logger,
+        bool enableOzonFbs = false)
     {
         List<Connection> activeConnections = await context.Connections
             .IgnoreQueryFilters()
+            .Include(c => c.SystemChannelTemplate)
             .Where(c => c.IsActive)
             .ToListAsync();
 
-        HashSet<Guid> connectionsWithOrdersSchedule = (await context.JobSchedules
+        List<JobSchedule> existingSchedules = await context.JobSchedules
             .IgnoreQueryFilters()
-            .Where(s => s.JobType == JobType.OrdersImport)
-            .Select(s => s.ConnectionId)
-            .ToListAsync())
-            .ToHashSet();
+            .ToListAsync();
+
+        await DisableStaleOrdersSchedulesAsync(
+            context,
+            tenantContext,
+            activeConnections,
+            existingSchedules,
+            logger);
 
         int seededCount = 0;
 
+        // Approximate: computed directly against UTC instead of the tenant's time zone.
+        // SchedulerHostedService recomputes NextRunAt in the tenant's time zone the first
+        // time this schedule actually fires, so the error only affects the very first run.
+        CrontabSchedule parsedSchedule = CrontabSchedule.Parse(options.DefaultOrdersImportCronExpression);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset defaultNextRunAt = new DateTimeOffset(
+            DateTime.SpecifyKind(parsedSchedule.GetNextOccurrence(now.UtcDateTime), DateTimeKind.Utc),
+            TimeSpan.Zero);
+
         foreach (Connection connection in activeConnections)
         {
-            if (connectionsWithOrdersSchedule.Contains(connection.Id))
+            string? channelCode = connection.SystemChannelTemplate?.Code;
+
+            foreach (JobType jobType in OrdersJobTypeMap.GetOrdersJobTypes(channelCode, enableOzonFbs))
             {
-                continue;
-            }
+                if (existingSchedules.Exists(s => s.ConnectionId == connection.Id && s.JobType == jobType))
+                {
+                    continue;
+                }
 
-            Guid tenantId = (Guid)context.Entry(connection).Property("TenantId").CurrentValue!;
+                Guid tenantId = (Guid)context.Entry(connection).Property("TenantId").CurrentValue!;
 
-            // Approximate: computed directly against UTC instead of the tenant's time zone.
-            // SchedulerHostedService recomputes NextRunAt in the tenant's time zone the first
-            // time this schedule actually fires, so the error only affects the very first run.
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            CrontabSchedule parsedSchedule = CrontabSchedule.Parse(options.DefaultOrdersImportCronExpression);
-            DateTimeOffset nextRunAt = new DateTimeOffset(
-                DateTime.SpecifyKind(parsedSchedule.GetNextOccurrence(now.UtcDateTime), DateTimeKind.Utc),
-                TimeSpan.Zero);
+                JobSchedule schedule = new JobSchedule
+                {
+                    Id = Guid.NewGuid(),
+                    ConnectionId = connection.Id,
+                    JobType = jobType,
+                    CronExpression = options.DefaultOrdersImportCronExpression,
+                    IsEnabled = true,
+                    LastRunAt = null,
+                    NextRunAt = defaultNextRunAt,
+                };
 
-            JobSchedule schedule = new JobSchedule
-            {
-                Id = Guid.NewGuid(),
-                ConnectionId = connection.Id,
-                JobType = JobType.OrdersImport,
-                CronExpression = options.DefaultOrdersImportCronExpression,
-                IsEnabled = true,
-                LastRunAt = null,
-                NextRunAt = nextRunAt,
-            };
+                tenantContext.SetTenantId(tenantId);
 
-            tenantContext.SetTenantId(tenantId);
+                try
+                {
+                    context.JobSchedules.Add(schedule);
+                    await context.SaveChangesAsync();
+                    seededCount++;
+                    existingSchedules.Add(schedule);
 
-            try
-            {
-                context.JobSchedules.Add(schedule);
-                await context.SaveChangesAsync();
-                seededCount++;
-
-                logger.LogInformation(
-                    "Seeded JobSchedule for Connection {ConnectionId} (tenant {TenantId}), NextRunAt={NextRunAt}.",
-                    connection.Id,
-                    tenantId,
-                    nextRunAt);
-            }
-            finally
-            {
-                tenantContext.Clear();
+                    logger.LogInformation(
+                        "Seeded JobSchedule {JobType} for Connection {ConnectionId} (tenant {TenantId}), NextRunAt={NextRunAt}.",
+                        jobType,
+                        connection.Id,
+                        tenantId,
+                        defaultNextRunAt);
+                }
+                finally
+                {
+                    tenantContext.Clear();
+                }
             }
         }
 
         if (seededCount > 0)
         {
             logger.LogInformation("Seeded {Count} JobSchedule(s).", seededCount);
+        }
+    }
+
+    /// <summary>
+    /// Disables an enabled <see cref="JobType.OrdersImport"/> schedule found on a connection whose
+    /// channel no longer maps to that job type (e.g. Ozon, after earlier versions of this seeder
+    /// created it for every channel indiscriminately). Leaves the row in place, disabled, so an
+    /// operator can see what happened instead of having it silently disappear.
+    /// </summary>
+    private static async Task DisableStaleOrdersSchedulesAsync(
+        IntegrationsDbContext context,
+        MessageTenantContext tenantContext,
+        List<Connection> activeConnections,
+        List<JobSchedule> existingSchedules,
+        ILogger logger)
+    {
+        Dictionary<Guid, string?> channelCodeByConnectionId = activeConnections
+            .ToDictionary(c => c.Id, c => c.SystemChannelTemplate?.Code);
+
+        foreach (JobSchedule schedule in existingSchedules)
+        {
+            if (schedule.JobType != JobType.OrdersImport || !schedule.IsEnabled)
+            {
+                continue;
+            }
+
+            if (!channelCodeByConnectionId.TryGetValue(schedule.ConnectionId, out string? channelCode))
+            {
+                continue;
+            }
+
+            bool stillBelongsHere = OrdersJobTypeMap
+                .GetOrdersJobTypes(channelCode, enableOzonFbs: false)
+                .Contains(JobType.OrdersImport);
+
+            if (stillBelongsHere)
+            {
+                continue;
+            }
+
+            schedule.IsEnabled = false;
+
+            tenantContext.SetTenantId(schedule.TenantId);
+
+            try
+            {
+                await context.SaveChangesAsync();
+
+                logger.LogWarning(
+                    "DataSeeder: disabled stale OrdersImport schedule {ScheduleId} for connection " +
+                    "{ConnectionId} (channel '{ChannelCode}'); that channel no longer runs OrdersImport.",
+                    schedule.Id,
+                    schedule.ConnectionId,
+                    channelCode);
+            }
+            finally
+            {
+                tenantContext.Clear();
+            }
         }
     }
 

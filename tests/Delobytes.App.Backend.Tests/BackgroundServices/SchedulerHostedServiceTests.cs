@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -150,7 +151,113 @@ public partial class SchedulerHostedServiceTests
             Times.Never);
     }
 
-    // ── Tick: one active job per (ConnectionId, JobType) ─────────────────────────────
+    // ── Tick: channel → orders job type mapping ────────────────────────────────────────
+
+    [Fact]
+    public async Task Tick_OzonConnection_CreatesOrdersImportFboJobRun_NeverOrdersImport()
+    {
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+
+        JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
+        SetupDueSchedules(schedule);
+
+        List<JobRun> createdRuns = new List<JobRun>();
+        _jobRunRepositoryMock
+            .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .Callback((JobRun jobRun, CancellationToken _) => createdRuns.Add(jobRun))
+            .ReturnsAsync((JobRun jobRun, CancellationToken _) => jobRun);
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        createdRuns.Should().HaveCount(1);
+        createdRuns[0].JobType.Should().Be(JobType.OrdersImportFbo);
+        createdRuns.Should().NotContain(r => r.JobType == JobType.OrdersImport);
+    }
+
+    [Fact]
+    public async Task Tick_WildberriesConnection_StillCreatesOrdersImportJobRun()
+    {
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.WildberriesChannelCode));
+
+        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        SetupDueSchedules(schedule);
+
+        List<JobRun> createdRuns = new List<JobRun>();
+        _jobRunRepositoryMock
+            .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .Callback((JobRun jobRun, CancellationToken _) => createdRuns.Add(jobRun))
+            .ReturnsAsync((JobRun jobRun, CancellationToken _) => jobRun);
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        createdRuns.Should().ContainSingle(r => r.JobType == JobType.OrdersImport);
+    }
+
+    [Fact]
+    public async Task Tick_UnknownChannelConnection_OrdersScheduleProducesNoJobRunAndDoesNotAdvance()
+    {
+        // A channel with no entry in OrdersJobTypeMap must never get an orders job, and the
+        // schedule is left due (not advanced) so a stale/misconfigured mapping stays visible.
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection("yandex.kit"));
+
+        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        SetupDueSchedules(schedule);
+
+        DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _scheduleRepositoryMock.Verify(
+            r => r.UpdateAsync(It.IsAny<JobSchedule>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        schedule.NextRunAt.Should().Be(nextRunAtBeforeTick);
+    }
+
+    // ── Tick: rate limiter pre-check ────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(OrdersJobTypeMap.WildberriesChannelCode, JobType.OrdersImport)]
+    [InlineData(OrdersJobTypeMap.OzonChannelCode, JobType.OrdersImportFbo)]
+    public async Task Tick_RateLimiterRefusesSlot_SkipsScheduleAndDoesNotAdvanceNextRunAt(
+        string channelCode, JobType jobType)
+    {
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(channelCode));
+
+        JobSchedule schedule = BuildSchedule(jobType);
+        SetupDueSchedules(schedule);
+
+        DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
+        Mock<IOrdersRateLimiter> refusingLimiter = BuildOrdersRateLimiter(DateTimeOffset.UtcNow.AddMinutes(5));
+        SchedulerHostedService scheduler = BuildScheduler(ordersRateLimiter: refusingLimiter.Object);
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _scheduleRepositoryMock.Verify(
+            r => r.UpdateAsync(It.IsAny<JobSchedule>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        schedule.NextRunAt.Should().Be(nextRunAtBeforeTick, "NextRunAt must stay untouched when the limiter refuses the slot");
+    }
+
+    // ── Tick: one active job per (ConnectionId, JobType) ──────────────────────────────
 
     [Fact]
     public async Task Tick_WhenActiveJobExists_SkipsScheduleAndDoesNotAdvanceNextRunAt()
@@ -421,7 +528,10 @@ public partial class SchedulerHostedServiceTests
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────
 
-    private SchedulerHostedService BuildScheduler(int tickIntervalSeconds = 3600)
+    private SchedulerHostedService BuildScheduler(
+        int tickIntervalSeconds = 3600,
+        IOrdersRateLimiter? ordersRateLimiter = null,
+        bool enableOzonFbs = false)
     {
         ServiceCollection services = new ServiceCollection();
         services.AddSingleton(_scheduleRepositoryMock.Object);
@@ -429,13 +539,29 @@ public partial class SchedulerHostedServiceTests
         services.AddSingleton(_connectionRepositoryMock.Object);
         services.AddSingleton(_tenantSettingsProviderMock.Object);
         services.AddSingleton(_tenantContext);
+        services.AddSingleton(ordersRateLimiter ?? BuildOrdersRateLimiter().Object);
 
         ServiceProvider provider = services.BuildServiceProvider();
 
         return new SchedulerHostedService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new BackgroundJobsOptions { SchedulerTickIntervalSeconds = tickIntervalSeconds }),
+            Microsoft.Extensions.Options.Options.Create(new OzonImportOptions { EnableFbs = enableOzonFbs }),
             NullLogger<SchedulerHostedService>.Instance);
+    }
+
+    /// <summary>
+    /// Limiter double that never refuses the tick: the scheduler only asks for the next allowed
+    /// instant, and a refusal would silently change what these tests assert.
+    /// </summary>
+    private static Mock<IOrdersRateLimiter> BuildOrdersRateLimiter(DateTimeOffset? nextAllowedAt = null)
+    {
+        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>();
+        limiter
+            .Setup(l => l.GetNextRequestAllowedAtAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(nextAllowedAt);
+
+        return limiter;
     }
 
     private void SetupDueSchedules(params JobSchedule[] schedules)
@@ -460,17 +586,27 @@ public partial class SchedulerHostedServiceTests
         };
     }
 
-    private Connection BuildConnection()
+    private Connection BuildConnection(string channelCode = OrdersJobTypeMap.WildberriesChannelCode)
     {
+        Guid templateId = Guid.NewGuid();
+
         return new Connection
         {
             Id = _connectionId,
             ChannelId = Guid.NewGuid(),
-            SystemChannelTemplateId = Guid.NewGuid(),
+            SystemChannelTemplateId = templateId,
             Name = "Test connection",
             ApiKey = "test-key",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
+            SystemChannelTemplate = new SystemChannelTemplate
+            {
+                Id = templateId,
+                Code = channelCode,
+                DisplayName = channelCode,
+                ApiBaseUrl = "https://example.test",
+                ApiVersion = "v3",
+            },
         };
     }
 

@@ -6,7 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -17,7 +19,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
-
 
 namespace Delobytes.App.Backend.Tests.BackgroundServices;
 
@@ -34,8 +35,8 @@ public partial class SchedulerHostedServiceTests
         DateTimeOffset? originalNextRunAt = schedule.NextRunAt;
         SetupDueSchedules(schedule);
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
-        Mock<IWildberriesRateLimiter> limiter = new Mock<IWildberriesRateLimiter>();
-        limiter.SetupSequence(r => r.GetNextRequestAllowedAtAsync(connection.ApiKey, WildberriesApiMethod.SupplierOrders, It.IsAny<CancellationToken>()))
+        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>();
+        limiter.SetupSequence(r => r.GetNextRequestAllowedAtAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(DateTimeOffset.UtcNow.AddHours(3))
             .ReturnsAsync(DateTimeOffset.MinValue);
         SchedulerHostedService scheduler = BuildGateScheduler(limiter);
@@ -53,20 +54,71 @@ public partial class SchedulerHostedServiceTests
         schedule.NextRunAt!.Value.Should().BeAfter(originalNextRunAt!.Value);
     }
 
-    [Theory]
-    [InlineData(JobType.ProductsImport, "wildberries")]
-    [InlineData(JobType.OrdersImport, "ozon")]
-    public async Task Tick_OutsideWildberriesOrders_DoesNotConsultLimiter(JobType type, string code)
+    [Fact]
+    public async Task Tick_FutureWildberriesSlot_UsesWildberriesSupplierOrdersScope()
     {
+        // The channel-neutral limiter must still be asked about the Wildberries orders bucket,
+        // otherwise a fresh Ozon bucket (always empty) would let every tick through.
+        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        Connection connection = BuildConnection(OrdersJobTypeMap.WildberriesChannelCode);
+        SetupDueSchedules(schedule);
+        _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
+        Mock<IOrdersRateLimiter> limiter = BuildOrdersRateLimiter();
+        SchedulerHostedService scheduler = BuildGateScheduler(limiter);
+
+        await RunSingleTickAsync(scheduler);
+
+        limiter.Verify(
+            l => l.GetNextRequestAllowedAtAsync(
+                It.Is<RateLimitScope>(s =>
+                    s.ChannelCode == OrdersJobTypeMap.WildberriesChannelCode
+                    && s.ApiKey == connection.ApiKey
+                    && s.Method == OrdersRateLimiterMethods.WildberriesSupplierOrders),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Tick_OzonOrdersImportFbo_UsesOzonPostingFboListScope()
+    {
+        JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
+        Connection connection = BuildConnection(OrdersJobTypeMap.OzonChannelCode);
+        SetupDueSchedules(schedule);
+        _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
+        Mock<IOrdersRateLimiter> limiter = BuildOrdersRateLimiter();
+        SchedulerHostedService scheduler = BuildGateScheduler(limiter);
+
+        await RunSingleTickAsync(scheduler);
+
+        limiter.Verify(
+            l => l.GetNextRequestAllowedAtAsync(
+                It.Is<RateLimitScope>(s =>
+                    s.ChannelCode == OrdersJobTypeMap.OzonChannelCode
+                    && s.ApiKey == connection.ApiKey
+                    && s.Method == OrdersRateLimiterMethods.OzonPostingFboList),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.Is<JobRun>(j => j.JobType == JobType.OrdersImportFbo), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(JobType.ProductsImport, OrdersJobTypeMap.WildberriesChannelCode)]
+    [InlineData(JobType.OrdersImport, "yandex.kit")]
+    [InlineData(JobType.OrdersImport, "")]
+    public async Task Tick_JobTypeNotMappedToChannel_DoesNotConsultLimiter(JobType type, string code)
+    {
+        // ProductsImport is paced by nothing here; an orders type on a channel without an orders
+        // entry (or with no channel at all) is skipped before the limiter is ever resolved.
         Connection connection = BuildConnection();
         connection.SystemChannelTemplate = new SystemChannelTemplate { Id = connection.SystemChannelTemplateId, Code = code, DisplayName = code, ApiBaseUrl = "https://example.test", ApiVersion = "v3" };
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
         SetupDueSchedules(BuildSchedule(type));
-        Mock<IWildberriesRateLimiter> limiter = new Mock<IWildberriesRateLimiter>(MockBehavior.Strict);
+        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>(MockBehavior.Strict);
 
         await RunSingleTickAsync(BuildGateScheduler(limiter));
 
-        _jobRunRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Once);
         limiter.VerifyNoOtherCalls();
     }
 
@@ -75,7 +127,7 @@ public partial class SchedulerHostedServiceTests
     {
         SetupDueSchedules(BuildSchedule(JobType.OrdersImport));
         _jobRunRepositoryMock.Setup(r => r.HasActiveJobAsync(_connectionId, JobType.OrdersImport, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        Mock<IWildberriesRateLimiter> limiter = new Mock<IWildberriesRateLimiter>(MockBehavior.Strict);
+        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>(MockBehavior.Strict);
 
         await RunSingleTickAsync(BuildGateScheduler(limiter));
 
@@ -83,16 +135,8 @@ public partial class SchedulerHostedServiceTests
         _jobRunRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private SchedulerHostedService BuildGateScheduler(Mock<IWildberriesRateLimiter> limiter)
+    private SchedulerHostedService BuildGateScheduler(Mock<IOrdersRateLimiter> limiter)
     {
-        ServiceCollection services = new ServiceCollection();
-        services.AddSingleton(_scheduleRepositoryMock.Object);
-        services.AddSingleton(_jobRunRepositoryMock.Object);
-        services.AddSingleton(_connectionRepositoryMock.Object);
-        services.AddSingleton(_tenantSettingsProviderMock.Object);
-        services.AddSingleton(_tenantContext);
-        services.AddSingleton(limiter.Object);
-        ServiceProvider provider = services.BuildServiceProvider();
-        return new SchedulerHostedService(provider.GetRequiredService<IServiceScopeFactory>(), Microsoft.Extensions.Options.Options.Create(new BackgroundJobsOptions()), NullLogger<SchedulerHostedService>.Instance);
+        return BuildScheduler(ordersRateLimiter: limiter.Object);
     }
 }

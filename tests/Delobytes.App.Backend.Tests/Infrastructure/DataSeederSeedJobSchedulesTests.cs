@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -9,15 +10,17 @@ using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Delobytes.App.Backend.Tests.Infrastructure;
 
 /// <summary>
-/// Tests DataSeeder.SeedJobSchedulesAsync: every active connection must get exactly one
-/// OrdersImport schedule (idempotently), so orders import starts running for connections
-/// that existed before Stage 11 shipped.
+/// Tests DataSeeder.SeedJobSchedulesAsync: each active connection must get exactly one enabled
+/// orders schedule of the job type its channel maps to (idempotently), and a stale
+/// <see cref="JobType.OrdersImport"/> schedule left on a non-Wildberries connection by earlier
+/// versions of the seeder must be disabled rather than deleted.
 ///
 /// The DbContext and the MessageTenantContext are always the same instance here, exactly as
 /// production wires them (ITenantContext is built on top of MessageTenantContext), because the
@@ -34,18 +37,24 @@ public class DataSeederSeedJobSchedulesTests
 
     private static MessageTenantContext BuildTenantContext() => new MessageTenantContext();
 
-    private static SystemChannelTemplate BuildTemplate()
+    private static SystemChannelTemplate BuildTemplate(
+        string code = "wildberries", string displayName = "Wildberries", string apiBaseUrl = "https://suppliers-api.wildberries.ru")
     {
         return new SystemChannelTemplate
         {
             Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
+            Code = code,
+            DisplayName = displayName,
+            ApiBaseUrl = apiBaseUrl,
             ApiVersion = "v3",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+    }
+
+    private static SystemChannelTemplate BuildOzonTemplate()
+    {
+        return BuildTemplate("ozon", "Ozon", "https://api-seller.ozon.ru");
     }
 
     private static Connection BuildConnection(Guid templateId, bool isActive = true)
@@ -91,7 +100,9 @@ public class DataSeederSeedJobSchedulesTests
     /// </summary>
     private static async Task RunSeederAsync(
         DbContextOptions<IntegrationsDbContext> options,
-        BackgroundJobsOptions? backgroundJobsOptions = null)
+        BackgroundJobsOptions? backgroundJobsOptions = null,
+        bool enableOzonFbs = false,
+        ILogger? logger = null)
     {
         MessageTenantContext tenantContext = BuildTenantContext();
         using IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantContext);
@@ -100,7 +111,8 @@ public class DataSeederSeedJobSchedulesTests
             ctx,
             tenantContext,
             backgroundJobsOptions ?? new BackgroundJobsOptions(),
-            NullLogger.Instance);
+            logger ?? NullLogger.Instance,
+            enableOzonFbs);
     }
 
     private static async Task<List<JobSchedule>> ReadSchedulesAsync(DbContextOptions<IntegrationsDbContext> options)
@@ -345,5 +357,283 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
         schedules.Should().BeEmpty();
+    }
+
+    // ── Channel → orders job type ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_OzonConnection_SeedsOrdersImportFboOnly()
+    {
+        // Ozon connections must never get the Wildberries job type: that job resolves the
+        // Wildberries fetchers, which cannot talk to api-seller.ozon.ru at all.
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildOzonTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+
+        await RunSeederAsync(options);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().ContainSingle();
+        schedules[0].ConnectionId.Should().Be(connection.Id);
+        schedules[0].JobType.Should().Be(JobType.OrdersImportFbo);
+        schedules[0].IsEnabled.Should().BeTrue();
+        schedules[0].CronExpression.Should().Be("0 * * * *");
+        schedules[0].TenantId.Should().Be(tenantId);
+        schedules.Should().NotContain(s => s.JobType == JobType.OrdersImport);
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_OzonConnection_WithFbsEnabled_SeedsBothOzonOrdersTypes()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildOzonTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+
+        await RunSeederAsync(options, enableOzonFbs: true);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().HaveCount(2);
+        schedules.Select(s => s.JobType).Should().BeEquivalentTo(
+            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+        schedules.Should().OnlyContain(s => s.IsEnabled);
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_WildberriesConnection_SeedsOrdersImportOnly()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+
+        await RunSeederAsync(options, enableOzonFbs: true);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().ContainSingle();
+        schedules[0].JobType.Should().Be(JobType.OrdersImport);
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_UnknownChannelConnection_SeedsNoOrdersSchedule()
+    {
+        // A channel with no mapping is not an error at startup: it simply has no orders
+        // pipeline yet, and the scheduler must not be handed a job it cannot dispatch.
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildTemplate("yandex.kit", "Yandex Kit", "https://api.kit.yandex.net");
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+
+        await RunSeederAsync(options);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_MixedChannels_SeedsEachConnectionItsOwnType()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid wildberriesTenantId = Guid.NewGuid();
+        Guid ozonTenantId = Guid.NewGuid();
+        SystemChannelTemplate wildberriesTemplate = BuildTemplate();
+        SystemChannelTemplate ozonTemplate = BuildOzonTemplate();
+        Connection wildberriesConnection = BuildConnection(wildberriesTemplate.Id);
+        Connection ozonConnection = BuildConnection(ozonTemplate.Id);
+
+        await SeedConnectionAsync(options, wildberriesTenantId, wildberriesConnection, wildberriesTemplate);
+        await SeedConnectionAsync(options, ozonTenantId, ozonConnection, ozonTemplate);
+
+        await RunSeederAsync(options);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().HaveCount(2);
+        schedules.Single(s => s.ConnectionId == wildberriesConnection.Id).JobType.Should().Be(JobType.OrdersImport);
+        schedules.Single(s => s.ConnectionId == ozonConnection.Id).JobType.Should().Be(JobType.OrdersImportFbo);
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_OzonConnectionRunTwice_IsIdempotent()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildOzonTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+
+        await RunSeederAsync(options);
+        await RunSeederAsync(options);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().ContainSingle();
+        schedules[0].JobType.Should().Be(JobType.OrdersImportFbo);
+        schedules[0].IsEnabled.Should().BeTrue();
+    }
+
+    // ── Cleanup of what earlier versions of the seeder created ──────────────────────────────────
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_StaleOrdersImportOnOzonConnection_IsDisabledAndLoggedAsWarning()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildOzonTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.OrdersImport));
+
+        RecordingLogger logger = new RecordingLogger();
+
+        await RunSeederAsync(options, logger: logger);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        JobSchedule stale = schedules.Single(s => s.JobType == JobType.OrdersImport);
+        stale.IsEnabled.Should().BeFalse("the Ozon connection runs OrdersImportFbo, not the Wildberries job");
+        schedules.Should().Contain(s => s.JobType == JobType.OrdersImportFbo && s.IsEnabled);
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Warning
+            && e.Message.Contains(stale.Id.ToString())
+            && e.Message.Contains(connection.Id.ToString()));
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_SecondRunAfterStaleCleanup_DoesNotWarnAgain()
+    {
+        // The cleanup must be idempotent on its own: once the stale row is disabled it is out of
+        // scope, so operators do not get the same warning on every boot.
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildOzonTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.OrdersImport));
+
+        await RunSeederAsync(options);
+
+        RecordingLogger secondRunLogger = new RecordingLogger();
+        await RunSeederAsync(options, logger: secondRunLogger);
+
+        secondRunLogger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_OrdersImportOnWildberriesConnection_IsLeftEnabled()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.OrdersImport));
+
+        RecordingLogger logger = new RecordingLogger();
+
+        await RunSeederAsync(options, logger: logger);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().ContainSingle();
+        schedules[0].JobType.Should().Be(JobType.OrdersImport);
+        schedules[0].IsEnabled.Should().BeTrue();
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task SeedJobSchedulesAsync_WhenFbsTurnsOff_ExistingFbsScheduleIsNotDeleted()
+    {
+        // Turning a flag off is not a cleanup instruction: the row stays untouched, disabled or
+        // not, exactly as an operator configured it. The scheduler refuses to fire it instead.
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        SystemChannelTemplate template = BuildOzonTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        await SeedConnectionAsync(options, tenantId, connection, template);
+
+        await RunSeederAsync(options, enableOzonFbs: true);
+        await RunSeederAsync(options, enableOzonFbs: false);
+
+        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
+
+        schedules.Should().HaveCount(2);
+        schedules.Should().Contain(s => s.JobType == JobType.OrdersImportFbs);
+    }
+
+    private static JobSchedule BuildSchedule(Guid connectionId, JobType jobType)
+    {
+        return new JobSchedule
+        {
+            Id = Guid.NewGuid(),
+            ConnectionId = connectionId,
+            JobType = jobType,
+            CronExpression = "0 * * * *",
+            IsEnabled = true,
+            LastRunAt = null,
+            NextRunAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+        };
+    }
+
+    private static async Task AddScheduleAsync(
+        DbContextOptions<IntegrationsDbContext> options, Guid tenantId, JobSchedule schedule)
+    {
+        MessageTenantContext tenantContext = BuildTenantContext();
+        using IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantContext);
+        tenantContext.SetTenantId(tenantId);
+
+        ctx.JobSchedules.Add(schedule);
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Keeps every formatted log entry so the cleanup can be asserted on the warning itself,
+    /// not only on the resulting row.
+    /// </summary>
+    private sealed class RecordingLogger : ILogger
+    {
+        private readonly List<(LogLevel Level, string Message)> _entries = new List<(LogLevel Level, string Message)>();
+
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _entries.Add((logLevel, formatter(state, exception)));
+        }
     }
 }

@@ -136,6 +136,10 @@ public class WorkerHostedService : BackgroundService
                     break;
 
                 case JobType.OrdersImport:
+                case JobType.OrdersImportFbo:
+                case JobType.OrdersImportFbs:
+                    // One event type for every orders import flavour: the consumer reads the job
+                    // type (and therefore the channel fetchers) from the JobRun itself.
                     await eventPublisher.PublishAsync(
                         new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
                         cancellationToken);
