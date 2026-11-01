@@ -226,15 +226,15 @@ internal static class OzonOrderMapper
                 ProductName = product.Name,
                 Vat = null,
                 Quantity = product.Quantity,
-                UnitPrice = ParseDecimal(product.Price?.Amount),
-                BuyerUnitPrice = ParseDecimal(financialProduct?.CustomerPrice?.Amount),
-                UnitPriceBeforeDiscount = ParseDecimal(financialProduct?.OldPrice),
+                UnitPrice = product.Price?.Amount,
+                BuyerUnitPrice = financialProduct?.CustomerPrice?.Amount,
+                UnitPriceBeforeDiscount = financialProduct?.OldPrice,
                 Currency = product.Price?.Currency ?? string.Empty,
                 IsCancelled = IsCancelledPosting(posting),
                 StatusChangedAt = posting.InProcessAt ?? posting.CreatedAt,
                 ChannelReportedTotal = null,
-                ChannelReportedCommission = ParseDecimal(financialProduct?.Commission?.Amount),
-                ChannelReportedPayout = ParseDecimal(financialProduct?.Payout)
+                ChannelReportedCommission = financialProduct?.Commission?.Amount,
+                ChannelReportedPayout = financialProduct?.Payout
             });
         }
 
@@ -346,18 +346,6 @@ internal static class OzonOrderMapper
         }
 
         return null;
-    }
-
-    private static decimal? ParseDecimal(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        return decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal value)
-            ? value
-            : null;
     }
 
     private static void EnsureIdentityLength(string identity, string name)

@@ -19,7 +19,7 @@ public class OzonOrderMapperTests
 
     private static OzonPostingProduct Product(
         long sku, string offerId = "offer-1", string name = "Product", int quantity = 1,
-        string amount = "100.00", string currency = "RUB")
+        decimal amount = 100.00m, string currency = "RUB")
     {
         return new OzonPostingProduct
         {
@@ -62,7 +62,7 @@ public class OzonOrderMapperTests
     public void Map_SingleProductPosting_LineKeyIsPostingNumberAndEveryFieldMapped()
     {
         OzonPosting posting = Posting(
-            "post-1", "order-1", new List<OzonPostingProduct> { Product(111, "off-1", "Name 1", 2, "150.50", "RUB") });
+            "post-1", "order-1", new List<OzonPostingProduct> { Product(111, "off-1", "Name 1", 2, 150.50m, "RUB") });
 
         List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
 
@@ -196,10 +196,11 @@ public class OzonOrderMapperTests
                 new OzonPostingFinancialProduct
                 {
                     ProductId = 111,
-                    OldPrice = "199.99",
-                    Payout = "90.00",
-                    Commission = new OzonCommission { Amount = "10.00", Percent = 10, Currency = "RUB" },
-                    CustomerPrice = new OzonMoney { Amount = "150.50", Currency = "RUB" }
+                    OldPrice = 199.99m,
+                    Price = 150.50m,
+                    Payout = 90.00m,
+                    Commission = new OzonCommission { Amount = 10.00m, Percent = 10m, Currency = "RUB" },
+                    CustomerPrice = new OzonMoney { Amount = 150.50m, Currency = "RUB" }
                 }
             }
         };
@@ -223,7 +224,7 @@ public class OzonOrderMapperTests
         {
             Products = new List<OzonPostingFinancialProduct>
             {
-                new OzonPostingFinancialProduct { ProductId = 999, OldPrice = "199.99" }
+                new OzonPostingFinancialProduct { ProductId = 999, OldPrice = 199.99m }
             }
         };
 
@@ -289,5 +290,66 @@ public class OzonOrderMapperTests
         Action act = () => OzonOrderMapper.Map(new[] { posting }, out _);
 
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Map_PageDeserializedFromRealOzonResponse_CarriesEverySettlementAmount()
+    {
+        const string body = """
+        {
+            "has_next": true,
+            "cursor": "9tyWrg0AAAAAAICpk4ABAAAAAACQs8PB+AIAAAAA",
+            "postings": [
+                {
+                    "posting_number": "0208203071-0097-1",
+                    "order_id": 40519223391,
+                    "order_number": "0208203071-0097",
+                    "status": "delivering",
+                    "substatus": "posting_in_pickup_point",
+                    "products": [
+                        {
+                            "offer_id": "свч-77",
+                            "name": "Свечи восковые натуральные цветные набор 77",
+                            "sku": 5918369809,
+                            "quantity": 1,
+                            "price": { "amount": "880", "currency": "RUB" }
+                        }
+                    ],
+                    "financial_data": {
+                        "products": [
+                            {
+                                "product_id": 5918369809,
+                                "old_price": 1200.50,
+                                "price": 880.00,
+                                "payout": 792.32,
+                                "commission": { "amount": 87.68, "percent": 9.96, "currency": "RUB" },
+                                "customer_price": { "amount": 880.00, "currency": "RUB" }
+                            }
+                        ]
+                    },
+                    "created_at": "2026-10-29T01:54:31.722576Z",
+                    "in_process_at": "2026-10-29T01:54:44.241023Z"
+                }
+            ]
+        }
+        """;
+
+        OzonPostingListResponse? page = System.Text.Json.JsonSerializer.Deserialize<OzonPostingListResponse>(
+            body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        page.Should().NotBeNull();
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(page!.Postings!, out int rowsWithoutIdentity);
+
+        rowsWithoutIdentity.Should().Be(0);
+        result.Should().HaveCount(1);
+
+        ChannelOrderLineSnapshot line = result[0].Lines[0];
+        line.LineKey.Should().Be("0208203071-0097-1");
+        line.UnitPrice.Should().Be(880m);
+        line.BuyerUnitPrice.Should().Be(880.00m);
+        line.UnitPriceBeforeDiscount.Should().Be(1200.50m);
+        line.ChannelReportedCommission.Should().Be(87.68m);
+        line.ChannelReportedPayout.Should().Be(792.32m);
+        line.Currency.Should().Be("RUB");
     }
 }

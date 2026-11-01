@@ -7,6 +7,11 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon.Dtos
 /// Matched to <see cref="OzonPostingProduct"/> rows by <see cref="OzonPostingFinancialProduct.ProductId"/>
 /// == <c>sku</c>; a product with no match keeps its financial fields null rather than zero.
 /// </summary>
+/// <remarks>
+/// Every money member here is a bare JSON number on the wire, while the same fields under
+/// <c>products[]</c> come as numeric strings. The lenient converter accepts both, so the import does
+/// not depend on which of the two shapes the endpoint currently sends.
+/// </remarks>
 public sealed class OzonPostingFinancialData
 {
     [JsonPropertyName("products")]
@@ -22,13 +27,16 @@ public sealed class OzonPostingFinancialProduct
     public long? ProductId { get; init; }
 
     [JsonPropertyName("old_price")]
-    public string? OldPrice { get; init; }
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
+    public decimal? OldPrice { get; init; }
 
     [JsonPropertyName("price")]
-    public string? Price { get; init; }
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
+    public decimal? Price { get; init; }
 
     [JsonPropertyName("payout")]
-    public string? Payout { get; init; }
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
+    public decimal? Payout { get; init; }
 
     [JsonPropertyName("commission")]
     public OzonCommission? Commission { get; init; }
@@ -48,9 +56,11 @@ public sealed class OzonPostingFinancialProduct
 public sealed class OzonCommission
 {
     [JsonPropertyName("amount")]
-    public string? Amount { get; init; }
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
+    public decimal? Amount { get; init; }
 
     [JsonPropertyName("percent")]
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
     public decimal? Percent { get; init; }
 
     [JsonPropertyName("currency")]
