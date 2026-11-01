@@ -68,9 +68,8 @@ public class DeltaOrdersFetcherTests
             checkpointStore);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowWildberriesRateLimiter(),
-            _timeProvider,
-            wrappedOptions);
+            new AlwaysAllowOrdersRateLimiter(),
+            _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
@@ -111,6 +110,7 @@ public class DeltaOrdersFetcherTests
             ApiKey = "api-key",
             Name = "Connection",
             IsActive = true,
+            SystemChannelTemplate = new SystemChannelTemplate { Code = "wildberries" },
         };
     }
 

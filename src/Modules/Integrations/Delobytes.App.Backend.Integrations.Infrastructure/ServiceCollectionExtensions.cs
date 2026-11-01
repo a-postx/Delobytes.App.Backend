@@ -1,6 +1,7 @@
 using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
@@ -94,8 +95,20 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<PacedOrdersSource>();
         services.AddScoped<BisectingOrdersReader>();
+        services.AddScoped(sp =>
+        {
+            int waitSeconds = sp.GetRequiredService<IOptions<WildberriesImportOptions>>().Value.MaxInProcessWaitSeconds;
+
+            return new SinglePageOrdersReader(
+                sp.GetRequiredService<PacedOrdersSource>(),
+                sp.GetRequiredService<ILogger<SinglePageOrdersReader>>(),
+                OrdersRateLimiterMethods.WildberriesSupplierOrders,
+                TimeSpan.FromSeconds(waitSeconds >= 0 ? waitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
+        });
         services.AddScoped<OrdersBackfillWalker>();
-        services.AddScoped<BackfillOrdersFetcher>();
+        services.AddScoped(sp => new BackfillOrdersFetcher(
+            sp.GetRequiredService<OrdersBackfillWalker>(),
+            sp.GetRequiredService<SinglePageOrdersReader>()));
         services.AddScoped<DeltaOrdersFetcher>();
         services.AddScoped<OrdersContinuationScheduler>();
         services.AddScoped<ProcessOrdersImportConsumer>();

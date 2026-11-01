@@ -13,7 +13,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// </summary>
 public sealed class OrdersBackfillWalker
 {
-    private readonly PacedOrdersSource _pacedSource;
     private readonly IOrdersBackfillStateRepository _backfillStateRepository;
     private readonly OrdersBatchPublisher _batchPublisher;
     private readonly ILogger<OrdersBackfillWalker> _logger;
@@ -22,13 +21,11 @@ public sealed class OrdersBackfillWalker
     private readonly TimeSpan _safetyOverlap;
 
     public OrdersBackfillWalker(
-        PacedOrdersSource pacedSource,
         IOrdersBackfillStateRepository backfillStateRepository,
         OrdersBatchPublisher batchPublisher,
         ILogger<OrdersBackfillWalker> logger,
         TimeProvider timeProvider)
     {
-        _pacedSource = pacedSource;
         _backfillStateRepository = backfillStateRepository;
         _batchPublisher = batchPublisher;
         _logger = logger;
@@ -72,6 +69,7 @@ public sealed class OrdersBackfillWalker
     internal async Task<FetchOutcome> FetchBackfillDaysAsync(
         OrdersImportContext context,
         OrdersRunProgress progress,
+        IOrdersWindowReader windowReader,
         CancellationToken cancellationToken)
     {
         Guid jobRunId = context.JobRun.Id;
@@ -114,28 +112,16 @@ public sealed class OrdersBackfillWalker
                 Limit = 0,
             };
 
-            OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(context, progress, request, cancellationToken);
+            FetchOutcome windowOutcome = await windowReader.ReadWindowAsync(request, context, progress, cancellationToken);
 
-            if (attempt.IsStopped)
+            if (windowOutcome.IsStopped)
             {
-                stopReason = attempt.StopReason;
-                resumeAt = attempt.ResumeAt;
+                stopReason = windowOutcome.StopReason;
+                resumeAt = windowOutcome.ResumeAt;
                 break;
             }
 
-            OrdersPage page = attempt.Page!;
-
-            if (page.RowsWithoutIdentity > 0)
-            {
-                throw new InvalidOperationException($"Orders backfill received {page.RowsWithoutIdentity} row(s) without a usable order identity for day {day:yyyy-MM-dd} MSK.");
-            }
-
-            if (page.HasMore)
-            {
-                throw new InvalidOperationException($"Orders backfill received a partial response for day {day:yyyy-MM-dd} MSK; flag=1 cannot be split below one day.");
-            }
-
-            List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(page.Orders);
+            List<ChannelOrderSnapshot> dayOrders = OrderSnapshotMerger.MergeByExternalOrderId(windowOutcome.Orders);
 
             await _batchPublisher.PublishUnitAsync(
                 context,

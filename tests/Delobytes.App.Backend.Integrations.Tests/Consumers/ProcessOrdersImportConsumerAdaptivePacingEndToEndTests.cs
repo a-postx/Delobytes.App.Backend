@@ -17,6 +17,7 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Delobytes.App.Backend.Integrations.Tests.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -212,9 +213,8 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            rateLimiter,
-            _timeProvider,
-            wrappedOptions);
+            new WildberriesOrdersRateLimiterAdapter(rateLimiter),
+            _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
@@ -222,7 +222,6 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             wrappedOptions);
 
         OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
-            pacedSource,
             _backfillStateRepo.Object,
             batchPublisher,
             NullLogger<OrdersBackfillWalker>.Instance,
@@ -232,7 +231,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
-            new BackfillOrdersFetcher(backfillWalker),
+            new BackfillOrdersFetcher(backfillWalker, bisectingReader),
             new DeltaOrdersFetcher(
                 bisectingReader,
                 _syncCheckpointRepo.Object,

@@ -9,13 +9,15 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 
 /// <summary>
 /// Fetches a whole orders window, recursively bisecting it while the endpoint reports a partial
-/// (capped) response.
+/// (capped) response. Wildberries-specific: paces against <c>supplier/orders</c> and derives its
+/// in-process wait tolerance from <see cref="WildberriesImportOptions"/>.
 /// </summary>
-public sealed class BisectingOrdersReader
+public sealed class BisectingOrdersReader : IOrdersWindowReader
 {
     private readonly PacedOrdersSource _pacedSource;
     private readonly ILogger<BisectingOrdersReader> _logger;
     private readonly TimeSpan _minWindow;
+    private readonly TimeSpan _maxInProcessWait;
 
     public BisectingOrdersReader(
         PacedOrdersSource pacedSource,
@@ -29,6 +31,9 @@ public sealed class BisectingOrdersReader
         _minWindow = importOptions.MinOrdersWindow > TimeSpan.Zero
             ? importOptions.MinOrdersWindow
             : TimeSpan.FromHours(1);
+        _maxInProcessWait = TimeSpan.FromSeconds(importOptions.MaxInProcessWaitSeconds >= 0
+            ? importOptions.MaxInProcessWaitSeconds
+            : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds);
     }
 
     /// <summary>
@@ -36,7 +41,7 @@ public sealed class BisectingOrdersReader
     /// reported as a stop with no orders: anything already read belongs to an unread window, so
     /// publishing it would advance the watermark over orders the bisection never saw.
     /// </summary>
-    internal async Task<FetchOutcome> FetchAllPagesAsync(
+    public async Task<FetchOutcome> ReadWindowAsync(
         OrdersRequest request,
         OrdersImportContext context,
         OrdersRunProgress progress,
@@ -84,7 +89,8 @@ public sealed class BisectingOrdersReader
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey,
         CancellationToken cancellationToken)
     {
-        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(context, progress, request, cancellationToken);
+        OrdersAttempt attempt = await _pacedSource.GetOrdersAsync(
+            context, progress, request, OrdersRateLimiterMethods.WildberriesSupplierOrders, _maxInProcessWait, cancellationToken);
 
         if (attempt.IsStopped)
         {

@@ -57,7 +57,7 @@ public sealed class DeltaOrdersFetcher : IOrdersFetcher
             request.DateFrom,
             request.DateTo);
 
-        FetchOutcome outcome = await _bisectingReader.FetchAllPagesAsync(
+        FetchOutcome outcome = await _bisectingReader.ReadWindowAsync(
             request, context, progress, cancellationToken);
 
         if (outcome.IsStopped)

@@ -63,12 +63,16 @@ public class BackfillOrdersFetcherTests
             checkpointStore);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowWildberriesRateLimiter(),
-            _timeProvider,
-            wrappedOptions);
+            new AlwaysAllowOrdersRateLimiter(),
+            _timeProvider);
+
+        SinglePageOrdersReader windowReader = new SinglePageOrdersReader(
+            pacedSource,
+            new Mock<ILogger<SinglePageOrdersReader>>().Object,
+            OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            TimeSpan.FromSeconds(wrappedOptions.Value.MaxInProcessWaitSeconds >= 0 ? wrappedOptions.Value.MaxInProcessWaitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
 
         OrdersBackfillWalker walker = new OrdersBackfillWalker(
-            pacedSource,
             _backfillStateRepo.Object,
             batchPublisher,
             _walkerLogger.Object,
@@ -79,7 +83,7 @@ public class BackfillOrdersFetcherTests
             .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((e, _) => _publishedBatches.Add(e))
             .Returns(Task.CompletedTask);
 
-        return new BackfillOrdersFetcher(walker);
+        return new BackfillOrdersFetcher(walker, windowReader);
     }
 
     private static JobRun BuildJobRun()
@@ -101,6 +105,7 @@ public class BackfillOrdersFetcherTests
             ApiKey = "api-key",
             Name = "Connection",
             IsActive = true,
+            SystemChannelTemplate = new SystemChannelTemplate { Code = "wildberries" },
         };
     }
 

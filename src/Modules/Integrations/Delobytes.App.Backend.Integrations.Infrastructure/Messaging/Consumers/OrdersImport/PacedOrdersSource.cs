@@ -1,45 +1,48 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
-using Delobytes.App.Backend.Integrations.Application.Options;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Issues one orders request against the run's deadline and request budget, and waits out a
-/// throttled response in-process when the wait fits within the run's tolerance.
+/// throttled response in-process when the wait fits within the caller's tolerance. Channel-neutral:
+/// the caller supplies the rate limiter method and the in-process wait tolerance per call, since
+/// different channels (and even different windows of the same channel) pace differently.
 /// </summary>
 public sealed class PacedOrdersSource
 {
-    private readonly IWildberriesRateLimiter _rateLimiter;
+    private readonly IOrdersRateLimiter _rateLimiter;
     private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _maxInProcessWait;
 
-    public PacedOrdersSource(
-        IWildberriesRateLimiter rateLimiter,
-        TimeProvider timeProvider,
-        IOptions<WildberriesImportOptions> options)
+    public PacedOrdersSource(IOrdersRateLimiter rateLimiter, TimeProvider timeProvider)
     {
-        WildberriesImportOptions importOptions = options.Value;
-
         _rateLimiter = rateLimiter;
         _timeProvider = timeProvider;
-        _maxInProcessWait = TimeSpan.FromSeconds(importOptions.MaxInProcessWaitSeconds >= 0
-            ? importOptions.MaxInProcessWaitSeconds
-            : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds);
     }
 
     /// <summary>
     /// Returns the page, or a stop value when the run's deadline or request budget ran out or the
-    /// source throttled beyond what the run can wait out.
+    /// source throttled beyond <paramref name="maxInProcessWait"/>.
     /// </summary>
+    /// <param name="methodName">
+    /// The orders API method being paced, see <see cref="OrdersRateLimiterMethods"/>. Combined with
+    /// the connection's channel code and API key into the <see cref="RateLimitScope"/> the limiter
+    /// paces against.
+    /// </param>
+    /// <param name="maxInProcessWait">
+    /// Longest throttle the caller tolerates waiting out in-process before reporting a stop instead.
+    /// </param>
     internal async Task<OrdersAttempt> GetOrdersAsync(
         OrdersImportContext context,
         OrdersRunProgress progress,
         OrdersRequest request,
+        string methodName,
+        TimeSpan maxInProcessWait,
         CancellationToken cancellationToken)
     {
+        RateLimitScope scope = new RateLimitScope(
+            context.Connection.SystemChannelTemplate.Code, context.Connection.ApiKey, methodName);
+
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -48,8 +51,7 @@ public sealed class PacedOrdersSource
 
             if (now >= context.Deadline)
             {
-                DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(
-                    context.Connection.ApiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
+                DateTimeOffset? nextAllowedAt = await _rateLimiter.GetNextRequestAllowedAtAsync(scope, cancellationToken);
 
                 DateTimeOffset budgetTime;
 
@@ -85,7 +87,7 @@ public sealed class PacedOrdersSource
             now = _timeProvider.GetUtcNow();
             TimeSpan wait = retryAt > now ? retryAt - now : TimeSpan.Zero;
 
-            if (wait > _maxInProcessWait || retryAt >= context.Deadline)
+            if (wait > maxInProcessWait || retryAt >= context.Deadline)
             {
                 return OrdersAttempt.Stopped(StopReason.Throttled, retryAt);
             }

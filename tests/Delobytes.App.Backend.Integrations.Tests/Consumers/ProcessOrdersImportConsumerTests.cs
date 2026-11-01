@@ -13,6 +13,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
@@ -70,17 +71,21 @@ public partial class ProcessOrdersImportConsumerTests
         IWildberriesRateLimiter effectiveRateLimiter = rateLimiter ?? new AlwaysAllowWildberriesRateLimiter();
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            effectiveRateLimiter,
-            _timeProvider,
-            wrappedOptions);
+            new WildberriesOrdersRateLimiterAdapter(effectiveRateLimiter),
+            _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
             new Mock<ILogger<BisectingOrdersReader>>().Object,
             wrappedOptions);
 
-        OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
+        SinglePageOrdersReader singlePageReader = new SinglePageOrdersReader(
             pacedSource,
+            new Mock<ILogger<SinglePageOrdersReader>>().Object,
+            OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            TimeSpan.FromSeconds(wrappedOptions.Value.MaxInProcessWaitSeconds >= 0 ? wrappedOptions.Value.MaxInProcessWaitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
+
+        OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
             _backfillStateRepo.Object,
             batchPublisher,
             new Mock<ILogger<OrdersBackfillWalker>>().Object,
@@ -90,7 +95,7 @@ public partial class ProcessOrdersImportConsumerTests
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
-            new BackfillOrdersFetcher(backfillWalker),
+            new BackfillOrdersFetcher(backfillWalker, singlePageReader),
             new DeltaOrdersFetcher(
                 bisectingReader,
                 _syncCheckpointRepo.Object,

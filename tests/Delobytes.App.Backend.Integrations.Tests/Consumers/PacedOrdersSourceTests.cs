@@ -8,8 +8,6 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
-using Delobytes.App.Backend.Integrations.Application.Options;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
@@ -32,6 +30,7 @@ public class PacedOrdersSourceTests
             ApiKey = "test-key",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
+            SystemChannelTemplate = new SystemChannelTemplate { Code = "wildberries" },
         };
     }
 
@@ -64,18 +63,9 @@ public class PacedOrdersSourceTests
         return (context, progress);
     }
 
-    private PacedOrdersSource CreateSource(TimeSpan? maxInProcessWait = null)
+    private PacedOrdersSource CreateSource()
     {
-        TimeSpan wait = maxInProcessWait ?? TimeSpan.Zero;
-        WildberriesImportOptions options = new WildberriesImportOptions
-        {
-            MaxInProcessWaitSeconds = (int)wait.TotalSeconds,
-        };
-
-        return new PacedOrdersSource(
-            new AlwaysAllowWildberriesRateLimiter(),
-            _timeProvider,
-            Options.Create(options));
+        return new PacedOrdersSource(new AlwaysAllowOrdersRateLimiter(), _timeProvider);
     }
 
     [Fact]
@@ -91,7 +81,7 @@ public class PacedOrdersSourceTests
         (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddMinutes(10));
         OrdersAttempt attempt = await CreateSource().GetOrdersAsync(
-            context, progress, BuildRequest(), CancellationToken.None);
+            context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.Zero, CancellationToken.None);
 
         attempt.IsStopped.Should().BeFalse();
         attempt.Page.Should().NotBeNull();
@@ -111,7 +101,7 @@ public class PacedOrdersSourceTests
             jobRun, connection, _timeProvider.GetUtcNow().AddSeconds(-1));
 
         OrdersAttempt attempt = await CreateSource().GetOrdersAsync(
-            context, progress, BuildRequest(), CancellationToken.None);
+            context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.Zero, CancellationToken.None);
 
         // A stop is a value, not an exception: the caller decides whether to continue, finalise or
         // schedule a continuation, and an exception would skip that decision entirely.
@@ -139,7 +129,7 @@ public class PacedOrdersSourceTests
         (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddMinutes(10));
         OrdersAttempt attempt = await CreateSource().GetOrdersAsync(
-            context, progress, BuildRequest(), CancellationToken.None);
+            context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.Zero, CancellationToken.None);
 
         attempt.IsStopped.Should().BeTrue();
         attempt.StopReason.Should().Be(StopReason.Throttled);
@@ -168,8 +158,8 @@ public class PacedOrdersSourceTests
 
         (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddMinutes(10));
-        Task<OrdersAttempt> pending = CreateSource(maxInProcessWait: TimeSpan.FromMinutes(1))
-            .GetOrdersAsync(context, progress, BuildRequest(), CancellationToken.None);
+        Task<OrdersAttempt> pending = CreateSource()
+            .GetOrdersAsync(context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.FromMinutes(1), CancellationToken.None);
 
         pending.IsCompleted.Should().BeFalse();
 

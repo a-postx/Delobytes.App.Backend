@@ -3,14 +3,11 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
-using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
@@ -31,18 +28,6 @@ public class OrdersBackfillWalkerTests
 
     private OrdersBackfillWalker CreateWalker()
     {
-        WildberriesImportOptions options = new WildberriesImportOptions
-        {
-            MaxOrdersPerResponse = 80000,
-            MinOrdersWindow = TimeSpan.FromHours(1),
-            BackfillRunBudgetSeconds = 1200,
-        };
-
-        PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowWildberriesRateLimiter(),
-            _timeProvider,
-            Options.Create(options));
-
         OrdersImportCheckpointStore checkpointStore = new OrdersImportCheckpointStore(
             Mock.Of<IJobCheckpointRepository>(),
             _timeProvider);
@@ -65,7 +50,6 @@ public class OrdersBackfillWalkerTests
             });
 
         return new OrdersBackfillWalker(
-            pacedSource,
             _backfillStateRepo.Object,
             batchPublisher,
             Mock.Of<ILogger<OrdersBackfillWalker>>(),

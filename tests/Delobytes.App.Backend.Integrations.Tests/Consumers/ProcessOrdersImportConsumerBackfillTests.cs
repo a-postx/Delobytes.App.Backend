@@ -89,21 +89,24 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             _eventPublisher.Object,
             checkpointStore);
 
-        AlwaysAllowWildberriesRateLimiter rateLimiter = new AlwaysAllowWildberriesRateLimiter();
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            rateLimiter,
-            _timeProvider,
-            wrappedOptions);
+            new AlwaysAllowOrdersRateLimiter(),
+            _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
             _bisectingReaderLogger.Object,
             wrappedOptions);
 
-        OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
+        SinglePageOrdersReader singlePageReader = new SinglePageOrdersReader(
             pacedSource,
+            new Mock<ILogger<SinglePageOrdersReader>>().Object,
+            OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            TimeSpan.FromSeconds(options.MaxInProcessWaitSeconds >= 0 ? options.MaxInProcessWaitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
+
+        OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
             _backfillStateRepo.Object,
             batchPublisher,
             _backfillWalkerLogger.Object,
@@ -113,7 +116,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
-            new BackfillOrdersFetcher(backfillWalker),
+            new BackfillOrdersFetcher(backfillWalker, singlePageReader),
             new DeltaOrdersFetcher(
                 bisectingReader,
                 _syncCheckpointRepo.Object,
