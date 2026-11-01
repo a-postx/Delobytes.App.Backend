@@ -467,12 +467,15 @@ public class OrdersBatchImportRequestedConsumer
 
     /// <summary>
     /// Reduces the verbatim channel status to the canonical, channel-independent projection.
-    /// Only Wildberries' orders feed is wired up so far, which reports isCancel/active only
-    /// (see WildberriesApiClient.MapToOrderSnapshot) &#8212; recognised synonyms from other
-    /// channels are included so the mapping does not need to change the moment a second
-    /// channel starts publishing orders.
+    /// Serves both wired channels: Wildberries (which reports isCancel/active only, see
+    /// WildberriesApiClient.MapToOrderSnapshot) and Ozon (which reports its own posting statuses,
+    /// enabled by ChannelOrderSnapshot.ReportsHeaderStatus). The verbatim status is preserved in
+    /// Order.ExternalStatus and is only projected here, so this projection stays re-derivable from
+    /// the entity; an unrecognised status degrades to Unknown rather than failing the batch.
     /// </summary>
-    private static OrderStatus MapStatus(string externalStatus)
+    /// <param name="externalStatus">Verbatim channel status, matched case-insensitively.</param>
+    /// <returns>The projected order status.</returns>
+    internal static OrderStatus MapStatus(string externalStatus)
     {
         if (string.IsNullOrWhiteSpace(externalStatus))
         {
@@ -481,6 +484,9 @@ public class OrdersBatchImportRequestedConsumer
 
         return externalStatus.Trim().ToLowerInvariant() switch
         {
+            // Wildberries synonyms and the channel-neutral spellings. The Ozon statuses that are
+            // literally identical to these ("delivered", "cancelled") are folded into these arms
+            // rather than repeated below, since a switch rejects duplicate constant arms.
             "active" => OrderStatus.Processing,
             "created" or "new" => OrderStatus.Created,
             "processing" or "confirm" or "assembling" => OrderStatus.Processing,
@@ -490,6 +496,20 @@ public class OrdersBatchImportRequestedConsumer
             "returned" or "return" => OrderStatus.Returned,
             "partiallyreturned" or "partially_returned" => OrderStatus.PartiallyReturned,
             "unresolved" or "dispute" => OrderStatus.Unresolved,
+
+            // Ozon-only statuses: rejected by Wildberries' feed, so they cannot collide above.
+            // "arbitration"/"not_accepted" mean operator attention, not that the posting shipped.
+            "awaiting_registration" => OrderStatus.Created,
+            "awaiting_approve" => OrderStatus.Processing,
+            "awaiting_packaging" => OrderStatus.Processing,
+            "acceptance_in_progress" => OrderStatus.Processing,
+            "awaiting_deliver" => OrderStatus.Processing,
+            "driver_pickup" => OrderStatus.Shipped,
+            "sent_by_seller" => OrderStatus.Shipped,
+            "delivering" => OrderStatus.Shipped,
+            "arbitration" => OrderStatus.Unresolved,
+            "client_arbitration" => OrderStatus.Unresolved,
+            "not_accepted" => OrderStatus.Unresolved,
             _ => OrderStatus.Unknown,
         };
     }
