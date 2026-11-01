@@ -157,6 +157,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProcessOrdersImportConsumer>();
         services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
 
+        // Creates the orders JobSchedule for a connection added while the application is running.
+        // The MassTransit adapter (ConnectionCreatedEventMassTransitConsumer) is registered by
+        // AddIntegrationsConsumers, which scans this assembly.
+        services.AddScoped<ConnectionCreatedEventConsumer>();
+
         services.AddScoped<JobRunLifecycle>();
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();

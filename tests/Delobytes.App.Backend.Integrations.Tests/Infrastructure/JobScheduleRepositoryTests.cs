@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -284,6 +284,208 @@ public class JobScheduleRepositoryTests
             stampedTenantId.Should().Be(
                 tenantId,
                 "JobSchedule declares a real TenantId, so the SetTenantId guard must stamp it like any shadow property");
+        }
+    }
+
+    [Fact]
+    public async Task GetScheduledJobTypesAsync_ReturnsOnlyTheJobTypesOfThatConnection()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        Guid targetConnectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            Connection target = await SeedConnectionAsync(ctx, template);
+            Connection other = SeedConnectionWithoutTemplate(ctx, template);
+
+            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.OrdersImport));
+            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.ProductsImport));
+            ctx.JobSchedules.Add(BuildSchedule(other.Id, nextRunAt, jobType: JobType.OrdersSync));
+            await ctx.SaveChangesAsync();
+
+            targetConnectionId = target.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            List<JobType> jobTypes = await repository.GetScheduledJobTypesAsync(targetConnectionId, CancellationToken.None);
+
+            jobTypes.Should().BeEquivalentTo(new[] { JobType.OrdersImport, JobType.ProductsImport });
+            jobTypes.Should().NotContain(JobType.OrdersSync, "the other connection's schedule must not leak in");
+        }
+    }
+
+    [Fact]
+    public async Task GetScheduledJobTypesAsync_DoesNotSeeSchedulesOfAnotherTenant()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantAId = Guid.NewGuid();
+        Guid tenantBId = Guid.NewGuid();
+        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
+        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        Guid foreignConnectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
+        {
+            await SeedConnectionAsync(ctx, template);
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantBMock.Object))
+        {
+            Connection foreign = SeedConnectionWithoutTemplate(ctx, template);
+            ctx.JobSchedules.Add(BuildSchedule(foreign.Id, nextRunAt));
+            await ctx.SaveChangesAsync();
+
+            foreignConnectionId = foreign.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            List<JobType> jobTypes = await repository.GetScheduledJobTypesAsync(foreignConnectionId, CancellationToken.None);
+
+            jobTypes.Should().BeEmpty("the query runs under the tenant filter, unlike GetDueSchedulesAsync");
+        }
+    }
+
+    [Fact]
+    public async Task AddMissingAsync_CreatesOnlyTheMissingJobTypes()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow;
+
+        Guid connectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            Connection connection = await SeedConnectionAsync(ctx, template);
+            ctx.JobSchedules.Add(BuildSchedule(connection.Id, nextRunAt, jobType: JobType.OrdersImportFbo));
+            await ctx.SaveChangesAsync();
+
+            connectionId = connection.Id;
+        }
+
+        List<JobSchedule> candidates = new List<JobSchedule>
+        {
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbo),
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbs),
+        };
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            int createdCount = await repository.AddMissingAsync(connectionId, candidates, CancellationToken.None);
+
+            createdCount.Should().Be(1);
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            List<JobType> jobTypes = await ctx.JobSchedules
+                .Where(s => s.ConnectionId == connectionId)
+                .Select(s => s.JobType)
+                .ToListAsync();
+
+            jobTypes.Should().BeEquivalentTo(new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+        }
+    }
+
+    [Fact]
+    public async Task AddMissingAsync_PersistsSchedulesStampedWithTheAmbientTenant()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow;
+
+        Guid connectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            Connection connection = await SeedConnectionAsync(ctx, template);
+            connectionId = connection.Id;
+        }
+
+        List<JobSchedule> candidates = new List<JobSchedule>
+        {
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbo),
+        };
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            int createdCount = await repository.AddMissingAsync(connectionId, candidates, CancellationToken.None);
+
+            createdCount.Should().Be(1);
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            List<JobSchedule> persisted = await ctx.JobSchedules.ToListAsync();
+
+            persisted.Should().ContainSingle();
+            persisted[0].TenantId.Should().Be(tenantId);
+            persisted[0].NextRunAt.Should().Be(nextRunAt);
+            persisted[0].IsEnabled.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task AddMissingAsync_WhenEveryJobTypeAlreadyExists_CreatesNothing()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow;
+
+        Guid connectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            Connection connection = await SeedConnectionAsync(ctx, template);
+            ctx.JobSchedules.Add(BuildSchedule(connection.Id, nextRunAt, jobType: JobType.OrdersImportFbo));
+            await ctx.SaveChangesAsync();
+
+            connectionId = connection.Id;
+        }
+
+        List<JobSchedule> candidates = new List<JobSchedule>
+        {
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbo),
+        };
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            int createdCount = await repository.AddMissingAsync(connectionId, candidates, CancellationToken.None);
+
+            createdCount.Should().Be(0);
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            int count = await ctx.JobSchedules.CountAsync();
+
+            count.Should().Be(1);
         }
     }
 

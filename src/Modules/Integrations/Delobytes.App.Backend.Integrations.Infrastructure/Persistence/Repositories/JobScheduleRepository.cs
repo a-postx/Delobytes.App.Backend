@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
@@ -14,6 +15,7 @@ public class JobScheduleRepository : IJobScheduleRepository
     /// <summary>
     /// Initializes a new instance of the <see cref="JobScheduleRepository"/> class.
     /// </summary>
+    /// <param name="context">Database context.</param>
     public JobScheduleRepository(IntegrationsDbContext context)
     {
         _context = context;
@@ -35,5 +37,43 @@ public class JobScheduleRepository : IJobScheduleRepository
     {
         _context.JobSchedules.Update(schedule);
         return _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<List<JobType>> GetScheduledJobTypesAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        return await _context.JobSchedules
+            .Where(s => s.ConnectionId == connectionId)
+            .Select(s => s.JobType)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> AddMissingAsync(
+        Guid connectionId,
+        IReadOnlyList<JobSchedule> schedules,
+        CancellationToken cancellationToken)
+    {
+        List<JobType> existing = await GetScheduledJobTypesAsync(connectionId, cancellationToken);
+        int createdCount = 0;
+
+        foreach (JobSchedule schedule in schedules)
+        {
+            if (existing.Contains(schedule.JobType))
+            {
+                continue;
+            }
+
+            _context.JobSchedules.Add(schedule);
+            createdCount++;
+        }
+
+        if (createdCount == 0)
+        {
+            return 0;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return createdCount;
     }
 }
