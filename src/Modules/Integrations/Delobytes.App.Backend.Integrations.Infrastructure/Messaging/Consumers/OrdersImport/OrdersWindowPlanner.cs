@@ -86,4 +86,39 @@ internal static class OrdersWindowPlanner
         observedBeyondWindow = null;
         return max?.ToUniversalTime();
     }
+
+    /// <summary>
+    /// Derives the next delta watermark for a channel that selects on the placement instant
+    /// (<c>created_at</c>, carried as <see cref="ChannelOrderSnapshot.OrderDate"/>). Using the
+    /// change instant here would let the watermark jump past postings the window never returned:
+    /// the channel would then never ask for them again. <paramref name="observedBeyondWindow"/>
+    /// carries the clamped value when the newest placement is later than the run window end, so the
+    /// caller can log it.
+    /// </summary>
+    public static DateTimeOffset? GetMaxCreatedAt(
+        IEnumerable<ChannelOrderSnapshot> orders,
+        DateTimeOffset windowTo,
+        out DateTimeOffset? observedBeyondWindow)
+    {
+        DateTimeOffset? max = null;
+
+        foreach (ChannelOrderSnapshot order in orders)
+        {
+            DateTimeOffset value = order.OrderDate;
+
+            if (max == null || value > max.Value)
+            {
+                max = value;
+            }
+        }
+
+        if (max.HasValue && max.Value > windowTo)
+        {
+            observedBeyondWindow = max.Value;
+            return windowTo.ToUniversalTime();
+        }
+
+        observedBeyondWindow = null;
+        return max?.ToUniversalTime();
+    }
 }

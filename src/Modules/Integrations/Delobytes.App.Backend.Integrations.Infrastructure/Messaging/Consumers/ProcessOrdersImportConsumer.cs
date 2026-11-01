@@ -1,47 +1,43 @@
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
-/// Orchestrates an orders import run: picks the fetcher for the run, awaits it once, and turns its
-/// outcome into a checkpoint, a continuation or a failure. Which fetch algorithm runs, and what a
-/// stop means for it, belongs to the fetcher.
+/// Orchestrates an orders import run: resolves the fetchers for the connection's channel and the
+/// job run's job type, picks the backfill or delta branch, awaits it once, and turns its outcome
+/// into a checkpoint, a continuation or a failure. Which fetch algorithm runs, what it costs and
+/// what a stop means for it belong to the resolved <see cref="IOrdersFetchers"/>.
 /// </summary>
 public class ProcessOrdersImportConsumer
 {
     private readonly IJobRunRepository _jobRunRepository;
     private readonly OrdersImportCheckpointStore _checkpointStore;
     private readonly OrdersBackfillWalker _backfillWalker;
-    private readonly IOrdersFetcher _backfillFetcher;
-    private readonly IOrdersFetcher _deltaFetcher;
+    private readonly IOrdersFetcherResolver _fetcherResolver;
     private readonly JobRunLifecycle _jobRunLifecycle;
     private readonly OrdersContinuationScheduler _continuationScheduler;
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
     private readonly JobRunExecutionContext _jobRunExecutionContext;
     private readonly ILogger<ProcessOrdersImportConsumer> _logger;
-    private readonly TimeSpan _backfillRunBudget;
     private readonly TimeProvider _timeProvider;
 
     public ProcessOrdersImportConsumer(
         IJobRunRepository jobRunRepository,
         OrdersImportCheckpointStore checkpointStore,
         OrdersBackfillWalker backfillWalker,
-        BackfillOrdersFetcher backfillFetcher,
-        DeltaOrdersFetcher deltaFetcher,
+        IOrdersFetcherResolver fetcherResolver,
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
         JobRunExecutionContext jobRunExecutionContext,
-        IOptions<WildberriesImportOptions> options,
         ILogger<ProcessOrdersImportConsumer> logger,
         TimeProvider timeProvider,
         JobRunLifecycle jobRunLifecycle,
@@ -50,8 +46,7 @@ public class ProcessOrdersImportConsumer
         _jobRunRepository = jobRunRepository;
         _checkpointStore = checkpointStore;
         _backfillWalker = backfillWalker;
-        _backfillFetcher = backfillFetcher;
-        _deltaFetcher = deltaFetcher;
+        _fetcherResolver = fetcherResolver;
         _jobRunLifecycle = jobRunLifecycle;
         _continuationScheduler = continuationScheduler;
         _clientFactory = clientFactory;
@@ -59,19 +54,10 @@ public class ProcessOrdersImportConsumer
         _jobRunExecutionContext = jobRunExecutionContext;
         _logger = logger;
         _timeProvider = timeProvider;
-
-        WildberriesImportOptions importOptions = options.Value;
-
-        _backfillRunBudget = TimeSpan.FromSeconds(
-            importOptions.BackfillRunBudgetSeconds > 0
-                ? importOptions.BackfillRunBudgetSeconds
-                : WildberriesImportOptions.DefaultBackfillRunBudgetSeconds);
     }
 
     public async Task ProcessAsync(OrdersImportRequestedEvent message, CancellationToken cancellationToken)
     {
-        DateTimeOffset deadline = _timeProvider.GetUtcNow() + _backfillRunBudget;
-
         _logger.LogInformation(
             "ProcessOrdersImportConsumer: JobRunId={JobRunId}, ConnectionId={ConnectionId}",
             message.JobRunId,
@@ -104,13 +90,29 @@ public class ProcessOrdersImportConsumer
             return;
         }
 
+        // Resolution happens before the run is marked Running: a combination it cannot serve is a
+        // configuration error that fails the run outright, not a run that starts and then stops.
+        string channelCode = connection.SystemChannelTemplate.Code;
+
+        if (!_fetcherResolver.TryResolve(channelCode, jobRun.JobType, out IOrdersFetchers? fetchers) || fetchers == null)
+        {
+            string error = $"Channel '{channelCode}' does not support orders import for job type '{jobRun.JobType}'";
+            _logger.LogError("JobRun {JobRunId}: {Error}", jobRun.Id, error);
+            await _jobRunLifecycle.FailAsync(jobRun, error, cancellationToken);
+            return;
+        }
+
+        // The budget comes from the resolved channel: Ozon paces a cursor walk where Wildberries
+        // paces a bisection, so one shared constant would be wrong for at least one of them.
+        DateTimeOffset deadline = _timeProvider.GetUtcNow() + fetchers.RunBudget;
+
         await _jobRunLifecycle.StartAsync(jobRun, cancellationToken);
 
         using (IDisposable scope = _jobRunExecutionContext.EnterScope(jobRun.Id))
         {
             try
             {
-                await RunImportAsync(jobRun, connection, deadline, cancellationToken);
+                await RunImportAsync(jobRun, connection, fetchers, deadline, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -128,6 +130,7 @@ public class ProcessOrdersImportConsumer
     private async Task RunImportAsync(
         JobRun jobRun,
         Connection connection,
+        IOrdersFetchers fetchers,
         DateTimeOffset deadline,
         CancellationToken cancellationToken)
     {
@@ -151,11 +154,11 @@ public class ProcessOrdersImportConsumer
         }
 
         (OrdersImportContext context, int nextBatchIndex) = await CreateContextAsync(
-            jobRun, connection, deadline, ordersSource, previousPayload, cancellationToken);
+            jobRun, connection, deadline, ordersSource, fetchers, previousPayload, cancellationToken);
 
         OrdersRunProgress progress = new OrdersRunProgress(nextBatchIndex);
 
-        IOrdersFetcher fetcher = context.IsBackfill ? _backfillFetcher : _deltaFetcher;
+        IOrdersFetcher fetcher = context.IsBackfill ? fetchers.Backfill : fetchers.Delta;
 
         FetchOutcome outcome = await fetcher.FetchAsync(context, progress, cancellationToken);
 
@@ -173,6 +176,7 @@ public class ProcessOrdersImportConsumer
         Connection connection,
         DateTimeOffset deadline,
         IOrdersSource ordersSource,
+        IOrdersFetchers fetchers,
         OrdersImportCheckpointPayload? previousPayload,
         CancellationToken cancellationToken)
     {
@@ -199,7 +203,15 @@ public class ProcessOrdersImportConsumer
             : 0;
 
         OrdersImportContext context = new OrdersImportContext(
-            jobRun, connection, ordersSource, backfillState, deadline, windowTo, isBackfill);
+            jobRun,
+            connection,
+            ordersSource,
+            backfillState,
+            deadline,
+            windowTo,
+            isBackfill,
+            ResolveSchema(jobRun.JobType),
+            fetchers.MaxRequestsPerRun);
 
         if (previousPayload == null)
         {
@@ -216,6 +228,20 @@ public class ProcessOrdersImportConsumer
         }
 
         return (context, nextBatchIndex);
+    }
+
+    /// <summary>
+    /// Maps the job type to the orders schema the channel must request, so a schema a channel does
+    /// not implement fails at the API boundary instead of being read as its default schema.
+    /// </summary>
+    private static OrdersSchema? ResolveSchema(JobType jobType)
+    {
+        return jobType switch
+        {
+            JobType.OrdersImportFbo => OrdersSchema.Fbo,
+            JobType.OrdersImportFbs => OrdersSchema.Fbs,
+            _ => null,
+        };
     }
 
     /// <summary>

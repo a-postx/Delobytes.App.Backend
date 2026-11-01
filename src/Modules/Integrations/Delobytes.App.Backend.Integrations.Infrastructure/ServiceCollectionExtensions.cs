@@ -53,6 +53,12 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IValidateOptions<WildberriesImportOptions>, WildberriesImportOptionsValidator>();
 
+        services.AddOptions<OzonImportOptions>()
+            .Bind(configuration?.GetSection("OzonImport") ?? new ConfigurationBuilder().Build().GetSection("OzonImport"))
+            .ValidateOnStart();
+
+        services.AddSingleton<IValidateOptions<OzonImportOptions>, OzonImportOptionsValidator>();
+
         services.AddOptions().Configure<WildberriesRateLimitOptions>(
             configuration?.GetSection("WildberriesRateLimit") ?? new ConfigurationBuilder().Build().GetSection("WildberriesRateLimit"));
 
@@ -110,6 +116,43 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<OrdersBackfillWalker>(),
             sp.GetRequiredService<SinglePageOrdersReader>()));
         services.AddScoped<DeltaOrdersFetcher>();
+
+        // The Ozon pager is bound to one method and one wait tolerance at construction, so it is
+        // built here rather than resolved by interface: registering it as IOrdersWindowReader
+        // would collide with BisectingOrdersReader, the other implementation of that interface.
+        services.AddScoped(sp =>
+        {
+            OzonImportOptions ozonOptions = sp.GetRequiredService<IOptions<OzonImportOptions>>().Value;
+
+            return new CursorPagedOrdersReader(
+                sp.GetRequiredService<PacedOrdersSource>(),
+                sp.GetRequiredService<ILogger<CursorPagedOrdersReader>>(),
+                TimeSpan.FromSeconds(ozonOptions.MaxInProcessWaitSeconds >= 0
+                    ? ozonOptions.MaxInProcessWaitSeconds
+                    : OzonImportOptions.DefaultMaxInProcessWaitSeconds),
+                OrdersRateLimiterMethods.OzonPostingFboList);
+        });
+        services.AddScoped(sp => new OzonBackfillOrdersFetcher(
+            sp.GetRequiredService<OrdersBackfillWalker>(),
+            sp.GetRequiredService<CursorPagedOrdersReader>()));
+        services.AddScoped(sp => new OzonDeltaOrdersFetcher(
+            sp.GetRequiredService<CursorPagedOrdersReader>(),
+            sp.GetRequiredService<ISyncCheckpointRepository>(),
+            sp.GetRequiredService<OrdersBatchPublisher>(),
+            sp.GetRequiredService<ILogger<OzonDeltaOrdersFetcher>>(),
+            sp.GetRequiredService<IOptions<OzonImportOptions>>()));
+        services.AddScoped(sp => new OzonOrdersFetchers(
+            sp.GetRequiredService<OzonBackfillOrdersFetcher>(),
+            sp.GetRequiredService<OzonDeltaOrdersFetcher>(),
+            sp.GetRequiredService<CursorPagedOrdersReader>(),
+            sp.GetRequiredService<IOptions<OzonImportOptions>>()));
+        services.AddScoped(sp => new WildberriesOrdersFetchers(
+            sp.GetRequiredService<BackfillOrdersFetcher>(),
+            sp.GetRequiredService<DeltaOrdersFetcher>(),
+            sp.GetRequiredService<BisectingOrdersReader>(),
+            sp.GetRequiredService<IOptions<WildberriesImportOptions>>()));
+        services.AddScoped<IOrdersFetcherResolver, OrdersFetcherResolver>();
+
         services.AddScoped<OrdersContinuationScheduler>();
         services.AddScoped<ProcessOrdersImportConsumer>();
         services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
@@ -182,11 +225,10 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IApiKeyValidatorFactory, ApiKeyValidatorFactory>();
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 
-        // Wildberries is currently the only channel with orders/products capability. Resolved
-        // directly for now; to be replaced by a per-ChannelCode factory once a second channel
-        // implements either capability (mirrors IChannelApiClientFactory).
+        // Products sync is still Wildberries-only. Orders are NOT registered this way: an orders
+        // run must reach the client of its own connection's channel, and it gets one through
+        // IChannelApiClientFactory (see ProcessOrdersImportConsumer).
         services.AddScoped<IProductsSource>(sp => sp.GetRequiredService<WildberriesApiClient>());
-        services.AddScoped<IOrdersSource>(sp => sp.GetRequiredService<WildberriesApiClient>());
 
         return services;
     }

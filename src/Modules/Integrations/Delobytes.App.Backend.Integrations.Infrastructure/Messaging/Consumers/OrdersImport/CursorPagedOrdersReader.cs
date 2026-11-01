@@ -10,7 +10,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.
 /// <c>posting/fbo/list</c>). Bound to one rate-limited API method and one in-process wait
 /// tolerance at construction, so one instance paces exactly the method it was built for.
 /// </summary>
-internal sealed class CursorPagedOrdersReader : IOrdersWindowReader
+public sealed class CursorPagedOrdersReader : IOrdersWindowReader
 {
     private readonly PacedOrdersSource _pacedSource;
     private readonly ILogger<CursorPagedOrdersReader> _logger;

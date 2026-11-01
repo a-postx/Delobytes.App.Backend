@@ -21,7 +21,8 @@ public sealed class OrdersImportContext
         DateTimeOffset deadline,
         DateTimeOffset windowTo,
         bool isBackfill,
-        OrdersSchema? schema = null)
+        OrdersSchema? schema = null,
+        int maxRequestsPerRun = OrdersImportConstants.MaxRequestsPerRun)
     {
         JobRun = jobRun ?? throw new ArgumentNullException(nameof(jobRun));
         Connection = connection ?? throw new ArgumentNullException(nameof(connection));
@@ -32,6 +33,7 @@ public sealed class OrdersImportContext
         IsBackfill = isBackfill;
         JobType = jobRun.JobType;
         Schema = schema;
+        MaxRequestsPerRun = maxRequestsPerRun > 0 ? maxRequestsPerRun : OrdersImportConstants.MaxRequestsPerRun;
     }
 
     public JobRun JobRun { get; }
@@ -59,4 +61,10 @@ public sealed class OrdersImportContext
     /// null for channels that do not distinguish one.
     /// </summary>
     public OrdersSchema? Schema { get; }
+
+    /// <summary>
+    /// Gets the per-run request budget resolved from the channel's own <see cref="IOrdersFetchers"/>,
+    /// so <see cref="PacedOrdersSource"/> does not have to assume a single shared value across channels.
+    /// </summary>
+    public int MaxRequestsPerRun { get; }
 }

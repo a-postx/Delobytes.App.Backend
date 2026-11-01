@@ -67,9 +67,9 @@ public sealed class PacedOrdersSource
                 return OrdersAttempt.Stopped(StopReason.Budget, budgetTime);
             }
 
-            if (progress.RequestsIssued >= OrdersImportConstants.MaxRequestsPerRun)
+            if (progress.RequestsIssued >= context.MaxRequestsPerRun)
             {
-                throw new InvalidOperationException($"Orders fetch exceeded the per-run request budget of {OrdersImportConstants.MaxRequestsPerRun}.");
+                throw new InvalidOperationException($"Orders fetch exceeded the per-run request budget of {context.MaxRequestsPerRun}.");
             }
 
             progress.LastRequestStartedAt = now;
