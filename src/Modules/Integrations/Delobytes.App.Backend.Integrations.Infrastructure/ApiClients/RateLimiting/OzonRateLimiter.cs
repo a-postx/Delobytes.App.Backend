@@ -20,13 +20,20 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
 
     private readonly ConcurrentDictionary<string, Bucket> _buckets = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _minimumRequestInterval;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OzonRateLimiter"/> class.
     /// </summary>
-    public OzonRateLimiter(TimeProvider timeProvider)
+    /// <param name="timeProvider">Clock abstraction for testability.</param>
+    /// <param name="minimumRequestInterval">
+    /// Minimum interval enforced between consecutive requests on the same API key, across every
+    /// job type (FBO and FBS). <see cref="TimeSpan.Zero"/> disables the throttle.
+    /// </param>
+    public OzonRateLimiter(TimeProvider timeProvider, TimeSpan minimumRequestInterval)
     {
         _timeProvider = timeProvider;
+        _minimumRequestInterval = minimumRequestInterval;
     }
 
     /// <inheritdoc/>
@@ -46,11 +53,26 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
                 });
             }
 
+            if (_minimumRequestInterval > TimeSpan.Zero && bucket.LastRequestAt is DateTimeOffset lastRequestAt)
+            {
+                DateTimeOffset earliestNext = lastRequestAt + _minimumRequestInterval;
+
+                if (earliestNext > now)
+                {
+                    return Task.FromResult(new RateLimitAcquireResult
+                    {
+                        Acquired = false,
+                        NextRequestAllowedAt = earliestNext
+                    });
+                }
+            }
+
             Refill(bucket, now);
 
             if (bucket.Tokens >= 1.0)
             {
                 bucket.Tokens -= 1.0;
+                bucket.LastRequestAt = now;
 
                 return Task.FromResult(new RateLimitAcquireResult
                 {
@@ -131,6 +153,16 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
                 return Task.FromResult((DateTimeOffset?)penaltyUntil);
             }
 
+            if (_minimumRequestInterval > TimeSpan.Zero && bucket.LastRequestAt is DateTimeOffset lastRequestAt)
+            {
+                DateTimeOffset earliestNext = lastRequestAt + _minimumRequestInterval;
+
+                if (earliestNext > now)
+                {
+                    return Task.FromResult((DateTimeOffset?)earliestNext);
+                }
+            }
+
             Refill(bucket, now);
 
             if (bucket.Tokens >= 1.0)
@@ -190,5 +222,7 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
         public DateTimeOffset LastRefillAt { get; set; }
 
         public DateTimeOffset? PenaltyUntil { get; set; }
+
+        public DateTimeOffset? LastRequestAt { get; set; }
     }
 }

@@ -17,6 +17,8 @@ public class OzonImportOptions
 
     public const int DefaultSafetyOverlapMinutes = 30;
 
+    public const int DefaultMinimumRequestIntervalSeconds = 15;
+
     /// <summary>
     /// Number of postings requested per <c>posting/fbo/list</c> page. Must be between 1 and 100.
     /// </summary>
@@ -49,6 +51,13 @@ public class OzonImportOptions
     /// start, to tolerate clock skew and late-arriving status changes.
     /// </summary>
     public int SafetyOverlapMinutes { get; set; } = DefaultSafetyOverlapMinutes;
+
+    /// <summary>
+    /// Minimum interval between consecutive Ozon API requests, in seconds. Enforced globally per
+    /// API key across all job types (FBO and FBS) to spread backfill load over time. Default:
+    /// 15 seconds. Set to 0 to disable.
+    /// </summary>
+    public int MinimumRequestIntervalSeconds { get; set; } = DefaultMinimumRequestIntervalSeconds;
 
     /// <summary>
     /// Gets or sets a value indicating whether Ozon FBS orders import is enabled. FBS is not

@@ -48,8 +48,23 @@ public partial class SchedulerHostedServiceTests
             .Setup(p => p.GetAccountingSettingsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
 
+        // The scheduler now refuses to create a JobRun once the tenant's parallelism limit is
+        // reached; these tests exercise the tick itself, so give every tenant room to run.
+        _tenantSettingsProviderMock
+            .Setup(p => p.GetMaxBackgroundJobsParallelismAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(4);
+
+        _jobRunRepositoryMock
+            .Setup(r => r.CountRunningJobsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+
         _jobRunRepositoryMock
             .Setup(r => r.HasActiveJobAsync(It.IsAny<Guid>(), It.IsAny<JobType>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Ozon FBO/FBS schedules are gated by the cross-type check instead of HasActiveJobAsync.
+        _jobRunRepositoryMock
+            .Setup(r => r.HasActiveOzonOrdersJobAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _jobRunRepositoryMock

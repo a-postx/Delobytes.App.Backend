@@ -89,7 +89,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWildberriesMethodThrottleRepository, WildberriesMethodThrottleRepository>();
         services.AddScoped<IWildberriesRateLimiter, WildberriesRateLimiter>();
         services.AddScoped<WildberriesOrdersRateLimiterAdapter>();
-        services.AddSingleton<OzonRateLimiter>();
+        services.AddSingleton<OzonRateLimiter>(sp =>
+        {
+            OzonImportOptions ozonImportOptions = sp.GetRequiredService<IOptions<OzonImportOptions>>().Value;
+            TimeSpan minimumRequestInterval = TimeSpan.FromSeconds(ozonImportOptions.MinimumRequestIntervalSeconds);
+            return new OzonRateLimiter(sp.GetRequiredService<TimeProvider>(), minimumRequestInterval);
+        });
         services.AddScoped<IOrdersRateLimiter, OrdersRateLimiterRouter>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();

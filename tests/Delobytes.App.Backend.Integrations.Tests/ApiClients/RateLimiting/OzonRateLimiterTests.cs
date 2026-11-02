@@ -25,11 +25,18 @@ public class OzonRateLimiterTests
         return new RateLimitScope("ozon", apiKey, Method);
     }
 
+    // These tests cover the token bucket and the penalty window, so the minimum-interval
+    // throttle is disabled: TimeSpan.Zero means "no minimum interval" in OzonRateLimiter.
+    private static OzonRateLimiter CreateLimiter(TimeProvider timeProvider)
+    {
+        return new OzonRateLimiter(timeProvider, TimeSpan.Zero);
+    }
+
     [Fact]
     public async Task TryAcquireAsync_FiftyAcquisitionsInOneSecond_SucceedAndTheFiftyFirstIsRefusedWithAFutureInstant()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
         RateLimitScope scope = Scope("key-a");
 
         for (int i = 0; i < 50; i++)
@@ -48,7 +55,7 @@ public class OzonRateLimiterTests
     public async Task TryAcquireAsync_AfterSecondBoundary_BucketRefillsAndAcquisitionsSucceedAgain()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
         RateLimitScope scope = Scope("key-a");
 
         for (int i = 0; i < 50; i++)
@@ -71,7 +78,7 @@ public class OzonRateLimiterTests
     public async Task ReportRateLimitedAsync_WithRetryAfter_BlocksAcquisitionsForThatManySeconds()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
         RateLimitScope scope = Scope("key-a");
 
         DateTimeOffset penaltyUntil = await limiter.ReportRateLimitedAsync(
@@ -93,7 +100,7 @@ public class OzonRateLimiterTests
     {
         DateTimeOffset start = new DateTimeOffset(2024, 1, 1, 10, 0, 0, 250, TimeSpan.Zero);
         FakeTimeProvider timeProvider = new FakeTimeProvider(start);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
         RateLimitScope scope = Scope("key-a");
 
         await limiter.ReportSuccessAsync(
@@ -112,7 +119,7 @@ public class OzonRateLimiterTests
     public async Task TryAcquireAsync_TwoDifferentApiKeys_HaveIndependentBuckets()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
 
         for (int i = 0; i < 50; i++)
         {
@@ -128,7 +135,7 @@ public class OzonRateLimiterTests
     public async Task TryAcquireAsync_OneHundredParallelCallers_NeverAcquireMoreThanFiftyInOneSecond()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
         RateLimitScope scope = Scope("key-a");
 
         IEnumerable<Task<RateLimitAcquireResult>> tasks = Enumerable.Range(0, 100)

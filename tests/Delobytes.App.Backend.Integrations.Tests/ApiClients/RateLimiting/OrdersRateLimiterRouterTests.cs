@@ -28,7 +28,9 @@ public class OrdersRateLimiterRouterTests
 
         WildberriesOrdersRateLimiterAdapter wildberriesAdapter =
             new WildberriesOrdersRateLimiterAdapter(wildberriesRateLimiter);
-        OzonRateLimiter ozonRateLimiter = new OzonRateLimiter(new FakeTimeProvider(DateTimeOffset.UtcNow));
+        // TimeSpan.Zero disables the minimum-interval throttle, so this test exercises routing only.
+        OzonRateLimiter ozonRateLimiter =
+            new OzonRateLimiter(new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.Zero);
 
         return new OrdersRateLimiterRouter(wildberriesAdapter, ozonRateLimiter);
     }

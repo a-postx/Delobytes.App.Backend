@@ -49,6 +49,13 @@ public interface IJobRunRepository
     public Task<bool> HasActiveJobAsync(Guid connectionId, JobType jobType, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns true when a Pending or Running orders job (any schema: FBO or FBS) exists for the
+    /// given Ozon connection. Used by the scheduler to enforce sequential execution of Ozon
+    /// orders jobs (FBO and FBS never run concurrently on the same connection).
+    /// </summary>
+    public Task<bool> HasActiveOzonOrdersJobAsync(Guid connectionId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns up to <paramref name="limit"/> Pending job runs for the given tenant that are
     /// due (<c>NotBefore == null || NotBefore &lt;= now</c>), ordered by creation date
     /// ascending, for the worker to pick up.

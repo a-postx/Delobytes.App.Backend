@@ -34,6 +34,24 @@ public class OzonImportOptionsValidator : IValidateOptions<OzonImportOptions>
                 $"{MaximumAllowedTotal.TotalMinutes:F0} minutes, but got {total.TotalSeconds:F0}s.");
         }
 
+        TimeSpan minimumRequestInterval = TimeSpan.FromSeconds(options.MinimumRequestIntervalSeconds >= 0
+            ? options.MinimumRequestIntervalSeconds
+            : OzonImportOptions.DefaultMinimumRequestIntervalSeconds);
+
+        // Only meaningful when an in-process wait is actually allowed: with MaxInProcessWaitSeconds = 0
+        // the fetcher never waits, it stops the run and continues later, so a minimum interval above
+        // zero does not stall the run.
+        if (maxInProcessWait > TimeSpan.Zero
+            && minimumRequestInterval > TimeSpan.Zero
+            && minimumRequestInterval >= maxInProcessWait)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{nameof(OzonImportOptions)}.{nameof(OzonImportOptions.MinimumRequestIntervalSeconds)} " +
+                $"({minimumRequestInterval.TotalSeconds:F0}s) must be less than " +
+                $"{nameof(OzonImportOptions.MaxInProcessWaitSeconds)} ({maxInProcessWait.TotalSeconds:F0}s), " +
+                "otherwise every request would be throttled by the minimum interval and the run would stop.");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

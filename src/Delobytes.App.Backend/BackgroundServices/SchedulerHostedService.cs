@@ -138,17 +138,58 @@ public class SchedulerHostedService : BackgroundService
                 return;
             }
 
-            bool hasActiveJob = await jobRunRepository.HasActiveJobAsync(schedule.ConnectionId, schedule.JobType, cancellationToken);
+            // Tenant-wide parallelism is enforced here (not only at dispatch time): creating a
+            // Pending JobRun while the tenant's slot is already full would just sit in the table
+            // until WorkerHostedService's own check lets it through, masking why the schedule
+            // "did not fire" from an operator's point of view.
+            int parallelism = await tenantSettingsProvider.GetMaxBackgroundJobsParallelismAsync(schedule.TenantId, cancellationToken);
+            int runningCount = await jobRunRepository.CountRunningJobsAsync(schedule.TenantId, cancellationToken);
 
-            if (hasActiveJob)
+            if (runningCount >= parallelism)
             {
-                // NextRunAt is deliberately left untouched: the schedule stays due and is
-                // re-evaluated on every subsequent tick until the in-flight job frees the slot.
                 _logger.LogDebug(
-                    "SchedulerHostedService: schedule {ScheduleId} skipped, an active job already exists for connection {ConnectionId}.",
+                    "SchedulerHostedService: schedule {ScheduleId} skipped, tenant {TenantId} parallelism " +
+                    "limit ({Parallelism}) reached, {RunningCount} job(s) already running.",
                     schedule.Id,
-                    schedule.ConnectionId);
+                    schedule.TenantId,
+                    parallelism,
+                    runningCount);
                 return;
+            }
+
+            bool hasActiveJob;
+
+            if (IsOzonOrdersJob(channelCode, schedule.JobType))
+            {
+                // FBO and FBS share one connection and must never run concurrently: they fetch
+                // overlapping order_number ranges and write to the same Order row.
+                hasActiveJob = await jobRunRepository.HasActiveOzonOrdersJobAsync(schedule.ConnectionId, cancellationToken);
+
+                if (hasActiveJob)
+                {
+                    _logger.LogDebug(
+                        "SchedulerHostedService: schedule {ScheduleId} (JobType {JobType}) skipped, another Ozon orders job " +
+                        "is already active on connection {ConnectionId} (sequential execution enforced).",
+                        schedule.Id,
+                        schedule.JobType,
+                        schedule.ConnectionId);
+                    return;
+                }
+            }
+            else
+            {
+                hasActiveJob = await jobRunRepository.HasActiveJobAsync(schedule.ConnectionId, schedule.JobType, cancellationToken);
+
+                if (hasActiveJob)
+                {
+                    // NextRunAt is deliberately left untouched: the schedule stays due and is
+                    // re-evaluated on every subsequent tick until the in-flight job frees the slot.
+                    _logger.LogDebug(
+                        "SchedulerHostedService: schedule {ScheduleId} skipped, an active job already exists for connection {ConnectionId}.",
+                        schedule.Id,
+                        schedule.ConnectionId);
+                    return;
+                }
             }
 
             bool hasSlot = await HasRateLimitSlotAsync(scope, schedule, connection, channelCode, now, cancellationToken);
@@ -207,6 +248,16 @@ public class SchedulerHostedService : BackgroundService
         {
             tenantContext.Clear();
         }
+    }
+
+    /// <summary>
+    /// True when the schedule belongs to an Ozon connection and drives either of the two orders
+    /// job types (FBO or FBS) that must never run concurrently on the same connection.
+    /// </summary>
+    private static bool IsOzonOrdersJob(string? channelCode, JobType jobType)
+    {
+        return string.Equals(channelCode, OrdersJobTypeMap.OzonChannelCode, StringComparison.OrdinalIgnoreCase)
+            && (jobType == JobType.OrdersImportFbo || jobType == JobType.OrdersImportFbs);
     }
 
     /// <summary>

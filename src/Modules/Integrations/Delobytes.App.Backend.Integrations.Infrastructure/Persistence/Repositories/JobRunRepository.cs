@@ -102,6 +102,16 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
+    public Task<bool> HasActiveOzonOrdersJobAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        return _context.JobRuns.AnyAsync(
+            j => j.ConnectionId == connectionId
+                && (j.JobType == JobType.OrdersImportFbo || j.JobType == JobType.OrdersImportFbs)
+                && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
+            cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public Task<List<JobRun>> GetPendingJobsAsync(
         Guid tenantId, int limit, DateTimeOffset now, CancellationToken cancellationToken)
     {
