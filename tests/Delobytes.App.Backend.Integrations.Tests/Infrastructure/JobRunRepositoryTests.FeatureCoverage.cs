@@ -153,4 +153,111 @@ public partial class JobRunRepositoryTests
             (await repository.GetPendingJobsAsync(tenantId, 1, now.AddHours(3), default)).Should().ContainSingle();
         }
     }
+
+    // ── HasActiveOzonOrdersJobAsync: the cross-schema gate the scheduler serialises on ─────────
+
+    [Theory]
+    [InlineData(JobType.OrdersImportFbo, JobStatus.Running)]
+    [InlineData(JobType.OrdersImportFbo, JobStatus.Pending)]
+    [InlineData(JobType.OrdersImportFbs, JobStatus.Running)]
+    [InlineData(JobType.OrdersImportFbs, JobStatus.Pending)]
+    public async Task HasActiveOzonOrdersJobAsync_ReturnsTrue_ForEitherSchemaInEitherActiveStatus(
+        JobType existingJobType, JobStatus existingStatus)
+    {
+        Guid tenantId = Guid.NewGuid();
+        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        {
+            Connection connection = BuildConnection(Guid.NewGuid());
+            context.Connections.Add(connection);
+            context.JobRuns.Add(BuildJobRun(connection.Id, existingJobType, existingStatus, DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+            JobRunRepository repository = new JobRunRepository(context);
+
+            (await repository.HasActiveOzonOrdersJobAsync(connection.Id, default)).Should().BeTrue(
+                "an active FBO job must block FBS and vice versa");
+        }
+    }
+
+    [Fact]
+    public async Task HasActiveOzonOrdersJobAsync_ReturnsTrue_WhenFboIsRunningAndTheFbsScheduleIsChecked()
+    {
+        // The exact case the scheduler relies on: FBO occupies the connection, so the FBS schedule
+        // has to be skipped rather than creating a second JobRun on the same rate-limiter bucket.
+        Guid tenantId = Guid.NewGuid();
+        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        {
+            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection otherConnection = BuildConnection(Guid.NewGuid());
+            context.Connections.AddRange(connection, otherConnection);
+            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImportFbo, JobStatus.Running, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(BuildJobRun(otherConnection.Id, JobType.OrdersImportFbs, JobStatus.Running, DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+            JobRunRepository repository = new JobRunRepository(context);
+
+            (await repository.HasActiveOzonOrdersJobAsync(connection.Id, default)).Should().BeTrue();
+            (await repository.HasActiveJobAsync(connection.Id, JobType.OrdersImportFbs, default)).Should().BeFalse(
+                "the per-type check is what misses the collision; the cross-schema one is what catches it");
+        }
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Success)]
+    [InlineData(JobStatus.Failed)]
+    [InlineData(JobStatus.Cancelled)]
+    public async Task HasActiveOzonOrdersJobAsync_ReturnsFalse_ForTerminalStatuses(JobStatus status)
+    {
+        Guid tenantId = Guid.NewGuid();
+        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        {
+            Connection connection = BuildConnection(Guid.NewGuid());
+            context.Connections.Add(connection);
+            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImportFbo, status, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImportFbs, status, DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+            JobRunRepository repository = new JobRunRepository(context);
+
+            (await repository.HasActiveOzonOrdersJobAsync(connection.Id, default)).Should().BeFalse(
+                "a finished run must not keep the connection locked");
+        }
+    }
+
+    [Theory]
+    [InlineData(JobType.OrdersImport)]
+    [InlineData(JobType.ProductsImport)]
+    [InlineData(JobType.OrdersSync)]
+    public async Task HasActiveOzonOrdersJobAsync_IgnoresOtherJobTypes(JobType jobType)
+    {
+        Guid tenantId = Guid.NewGuid();
+        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        {
+            Connection connection = BuildConnection(Guid.NewGuid());
+            context.Connections.Add(connection);
+            context.JobRuns.Add(BuildJobRun(connection.Id, jobType, JobStatus.Running, DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+            JobRunRepository repository = new JobRunRepository(context);
+
+            (await repository.HasActiveOzonOrdersJobAsync(connection.Id, default)).Should().BeFalse(
+                "only the two Ozon orders schemas share the FBO/FBS collision this gate exists for");
+            (await repository.HasActiveJobAsync(connection.Id, jobType, default)).Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task HasActiveOzonOrdersJobAsync_IsScopedToOneConnection()
+    {
+        Guid tenantId = Guid.NewGuid();
+        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        {
+            Connection busy = BuildConnection(Guid.NewGuid());
+            Connection idle = BuildConnection(Guid.NewGuid());
+            context.Connections.AddRange(busy, idle);
+            context.JobRuns.Add(BuildJobRun(busy.Id, JobType.OrdersImportFbs, JobStatus.Running, DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+            JobRunRepository repository = new JobRunRepository(context);
+
+            (await repository.HasActiveOzonOrdersJobAsync(idle.Id, default)).Should().BeFalse(
+                "sequential execution is enforced per connection, not across a tenant's Ozon connections");
+            (await repository.HasActiveOzonOrdersJobAsync(Guid.NewGuid(), default)).Should().BeFalse();
+        }
+    }
 }

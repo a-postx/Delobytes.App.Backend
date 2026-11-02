@@ -58,6 +58,22 @@ internal sealed class StubOrdersFetcherResolver : IOrdersFetcherResolver
     }
 
     /// <summary>
+    /// Builds the Ozon FBS fetchers from already-constructed parts, for tests that exercise the
+    /// seller-fulfilled schema through the same orchestrator.
+    /// </summary>
+    public static StubOrdersFetcherResolver ForOzonFbs(
+        OzonFbsBackfillOrdersFetcher backfill,
+        OzonFbsDeltaOrdersFetcher delta,
+        OzonFbsOrdersReader windowReader,
+        OzonImportOptions options)
+    {
+        return new StubOrdersFetcherResolver(
+            "ozon",
+            JobType.OrdersImportFbs,
+            new OzonFbsOrdersFetchers(backfill, delta, windowReader, Options.Create(options)));
+    }
+
+    /// <summary>
     /// A resolver that supports nothing, for asserting the unsupported-combination failure.
     /// </summary>
     public static StubOrdersFetcherResolver Unsupported()

@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Npgsql;
 using Xunit;
 
 namespace Delobytes.App.Backend.Tests.Infrastructure;
@@ -696,6 +697,213 @@ public class OrdersBatchImportRequestedConsumerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task ProcessAsync_ConcurrentInsertConflict_RetriesAndSucceedsOnASubsequentAttempt()
+    {
+        // Defense-in-depth for the rare case where MassTransit dispatches the FBO and FBS batches
+        // concurrently: the second writer loses the unique (ChannelId, ExternalOrderId) race and
+        // must retry rather than report the order as failed.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(
+            _tenantId, databaseName, uniqueViolationsBeforeSuccess: 1);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await consumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-RACE", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Created == 1 && e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "a unique violation inside the retry budget is retried, not counted as a failure");
+
+        SalesDbContext verificationContext = BuildSalesDbContext(_tenantId, databaseName);
+        List<Order> orders = await verificationContext.Orders.IgnoreQueryFilters().ToListAsync();
+        orders.Should().ContainSingle();
+        orders[0].ExternalOrderId.Should().Be("ORDER-RACE");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UniqueViolationsBeyondTheRetryBudget_CountsTheOrderAsFailed()
+    {
+        // The budget is three attempts; a conflict that never clears must surface as a failure
+        // instead of retrying forever.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(
+            _tenantId, databaseName, uniqueViolationsBeforeSuccess: 10);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await consumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-RACE", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Failed == 1 && e.Created == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NonRetryableFailure_IsNotRetried()
+    {
+        // Only a unique/concurrency violation is retryable; any other failure would fail the same way
+        // three times and merely delay the batch.
+        string databaseName = Guid.NewGuid().ToString();
+        FailingSalesDbContext consumerContext = (FailingSalesDbContext)BuildSalesDbContext(
+            _tenantId, databaseName, failOnSaveCall: 1);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await consumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-FAIL", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        consumerContext.SaveCalls.Should().Be(1, "a non-retryable failure must not be attempted again");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FbsSnapshot_PersistsFulfillmentSchemaOnTheLine()
+    {
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot snapshot = BuildOrderSnapshot("ORDER-FBS", "nm-100", "SRID-1");
+        snapshot = snapshot with
+        {
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                snapshot.Lines[0] with { FulfillmentSchema = "rfbs" },
+            },
+        };
+
+        await consumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        OrderLine? line = await consumerContext.OrderLines
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.LineKey == "SRID-1");
+
+        line.Should().NotBeNull();
+        line!.FulfillmentSchema.Should().Be("rfbs");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MixedFboAndFbsLinesWithinOneSnapshot_LeaveIsSellerWarehouseNull()
+    {
+        // One order_number split into an FBO posting and an FBS posting is one order that is neither
+        // wholly Ozon-fulfilled nor wholly seller-fulfilled.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot fboLine = BuildOrderSnapshot("ORDER-MIXED", "nm-100", "SRID-FBO");
+        ChannelOrderSnapshot fbsLine = BuildOrderSnapshot("ORDER-MIXED", "nm-200", "SRID-FBS");
+        ChannelOrderSnapshot snapshot = fboLine with
+        {
+            IsSellerWarehouse = null,
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                fboLine.Lines[0] with { FulfillmentSchema = "fbo" },
+                fbsLine.Lines[0] with { FulfillmentSchema = "fbs" },
+            },
+        };
+
+        await consumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        Order? order = await consumerContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-MIXED");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.IsSellerWarehouse.Should().BeNull();
+        order.Lines.Select(l => l.FulfillmentSchema).Should().BeEquivalentTo(new[] { "fbo", "fbs" });
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MixedCartReportedInTwoRuns_RecomputesIsSellerWarehouseFromPersistedLines()
+    {
+        // The FBO half arrives first and would publish "false" for the whole cart on its own; the FBS
+        // half then has to move the order to the mixed value, which only the persisted set decides.
+        string databaseName = Guid.NewGuid().ToString();
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+
+        ChannelOrderSnapshot fboHalf = BuildOrderSnapshot("ORDER-SPLIT", "nm-100", "SRID-FBO");
+        ChannelOrderSnapshot fboSnapshot = fboHalf with
+        {
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                fboHalf.Lines[0] with { FulfillmentSchema = "fbo" },
+            },
+        };
+
+        SalesDbContext fboContext = BuildSalesDbContext(_tenantId, databaseName);
+        await BuildConsumer(fboContext, publishEndpointMock.Object, _tenantId)
+            .ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { fboSnapshot }), CancellationToken.None);
+
+        SalesDbContext afterFbo = BuildSalesDbContext(_tenantId, databaseName);
+        Order? orderAfterFbo = await afterFbo.Orders.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-SPLIT");
+
+        orderAfterFbo.Should().NotBeNull();
+        orderAfterFbo!.IsSellerWarehouse.Should().BeFalse("every line seen so far is Ozon-fulfilled");
+
+        ChannelOrderSnapshot fbsHalf = BuildOrderSnapshot("ORDER-SPLIT", "nm-200", "SRID-FBS");
+        ChannelOrderSnapshot fbsSnapshot = fbsHalf with
+        {
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                fbsHalf.Lines[0] with { FulfillmentSchema = "fbs" },
+            },
+        };
+
+        SalesDbContext fbsContext = BuildSalesDbContext(_tenantId, databaseName);
+        await BuildConsumer(fbsContext, publishEndpointMock.Object, _tenantId)
+            .ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { fbsSnapshot }), CancellationToken.None);
+
+        SalesDbContext verificationContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? order = await verificationContext.Orders.IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-SPLIT");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2, "both postings belong to one order");
+        order.IsSellerWarehouse.Should().BeNull("the cart is now mixed");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_LinesWithoutSchema_KeepTheReportedIsSellerWarehouse()
+    {
+        // Wildberries reports the flag itself and never sets a schema, so the reduction must not
+        // overwrite a reported fact with a value derived from data the channel does not publish.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImportRequestedConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await consumer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-WB", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        Order? order = await consumerContext.Orders.IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-WB");
+
+        order.Should().NotBeNull();
+        order!.IsSellerWarehouse.Should().BeTrue();
+        order.Lines.Should().OnlyContain(l => l.FulfillmentSchema == null);
+    }
+
     private OrdersBatchImportRequestedConsumer BuildConsumer(
         SalesDbContext context,
         IPublishEndpoint publishEndpoint,
@@ -708,7 +916,8 @@ public class OrdersBatchImportRequestedConsumerTests
         return new OrdersBatchImportRequestedConsumer(context, publishEndpoint, tenantContextMock.Object, loggerMock.Object);
     }
 
-    private SalesDbContext BuildSalesDbContext(Guid tenantId, string databaseName, int failOnSaveCall = 0)
+    private SalesDbContext BuildSalesDbContext(
+        Guid tenantId, string databaseName, int failOnSaveCall = 0, int uniqueViolationsBeforeSuccess = 0)
     {
         DbContextOptions<SalesDbContext> options = new DbContextOptionsBuilder<SalesDbContext>()
             .UseInMemoryDatabase(databaseName: databaseName)
@@ -717,6 +926,11 @@ public class OrdersBatchImportRequestedConsumerTests
 
         Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
         tenantContextMock.Setup(tc => tc.TenantId).Returns(tenantId);
+
+        if (uniqueViolationsBeforeSuccess > 0)
+        {
+            return new UniqueViolatingSalesDbContext(options, tenantContextMock.Object, uniqueViolationsBeforeSuccess);
+        }
 
         if (failOnSaveCall > 0)
         {
@@ -877,6 +1091,8 @@ public class OrdersBatchImportRequestedConsumerTests
             _failOnCall = failOnCall;
         }
 
+        public int SaveCalls => _saveCalls;
+
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             _saveCalls++;
@@ -884,6 +1100,47 @@ public class OrdersBatchImportRequestedConsumerTests
             if (_saveCalls == _failOnCall)
             {
                 throw new InvalidOperationException("Simulated persistence failure for a single order.");
+            }
+
+            return base.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Makes the first N SaveChangesAsync calls fail the way a concurrent insert of the same order
+    /// does: a <see cref="DbUpdateException"/> wrapping a Postgres unique violation. The InMemory
+    /// provider enforces no unique constraints, so the collision has to be simulated to exercise the
+    /// consumer's retry path at all.
+    /// </summary>
+    private sealed class UniqueViolatingSalesDbContext : SalesDbContext
+    {
+        private const string UniqueViolationSqlState = "23505";
+
+        private readonly int _violationsBeforeSuccess;
+        private int _saveCalls;
+
+        public UniqueViolatingSalesDbContext(
+            DbContextOptions<SalesDbContext> options,
+            ITenantContext tenantContext,
+            int violationsBeforeSuccess)
+            : base(options, tenantContext)
+        {
+            _violationsBeforeSuccess = violationsBeforeSuccess;
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            _saveCalls++;
+
+            if (_saveCalls <= _violationsBeforeSuccess)
+            {
+                throw new DbUpdateException(
+                    "duplicate key value violates unique constraint",
+                    new PostgresException(
+                        "duplicate key value violates unique constraint \"IX_Orders_ChannelId_ExternalOrderId\"",
+                        "ERROR",
+                        "ERROR",
+                        UniqueViolationSqlState));
             }
 
             return base.SaveChangesAsync(cancellationToken);

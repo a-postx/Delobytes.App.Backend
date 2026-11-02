@@ -352,4 +352,253 @@ public class OzonOrderMapperTests
         line.ChannelReportedPayout.Should().Be(792.32m);
         line.Currency.Should().Be("RUB");
     }
+
+    // ── FBS postings ────────────────────────────────────────────────────────────────────────────
+
+    private static OzonPosting FbsPosting(
+        string postingNumber,
+        string orderNumber,
+        string? schema = "fbs",
+        DateTimeOffset? createdAt = null,
+        DateTimeOffset? inProcessAt = null,
+        OzonPostingAnalyticsData? analyticsData = null,
+        OzonPostingFinancialData? financialData = null,
+        OzonDeliveryMethod? deliveryMethod = null,
+        List<OzonPostingProduct>? products = null)
+    {
+        return new OzonPosting
+        {
+            PostingNumber = postingNumber,
+            OrderNumber = orderNumber,
+            OrderId = 1,
+            Status = "awaiting_packaging",
+            Products = products ?? new List<OzonPostingProduct> { Product(111) },
+            CreatedAt = createdAt,
+            InProcessAt = inProcessAt,
+            AnalyticsData = analyticsData,
+            FinancialData = financialData,
+            DeliveryMethod = deliveryMethod,
+            DeliverySchema = schema,
+        };
+    }
+
+    [Fact]
+    public void Map_FbsPostingWithoutCreatedAt_FallsBackToInProcessAtAsOrderDate()
+    {
+        // FBS responses may omit created_at entirely; the placement instant then has to come from
+        // in_process_at rather than being invented or dropped.
+        DateTimeOffset inProcessAt = CreatedAt.AddMinutes(7);
+        OzonPosting posting = FbsPosting("post-1", "order-1", createdAt: null, inProcessAt: inProcessAt);
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+
+        rowsWithoutIdentity.Should().Be(0);
+        result.Should().HaveCount(1);
+        result[0].OrderDate.Should().Be(inProcessAt);
+        result[0].StatusChangedAt.Should().Be(inProcessAt);
+    }
+
+    [Fact]
+    public void Map_PostingWithBothInstants_PrefersCreatedAtForTheOrderDate()
+    {
+        // Preferring created_at keeps an FBO-shaped response mapped exactly as before, even when the
+        // endpoint also reports in_process_at.
+        OzonPosting posting = FbsPosting(
+            "post-1", "order-1", createdAt: CreatedAt, inProcessAt: CreatedAt.AddMinutes(7));
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+
+        result[0].OrderDate.Should().Be(CreatedAt);
+        result[0].StatusChangedAt.Should().Be(CreatedAt.AddMinutes(7), "the change instant is in_process_at");
+    }
+
+    [Fact]
+    public void Map_PostingWithNeitherCreatedAtNorInProcessAt_Throws()
+    {
+        OzonPosting posting = FbsPosting("post-1", "order-1", createdAt: null, inProcessAt: null);
+
+        Action act = () => OzonOrderMapper.Map(new[] { posting }, out _);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*no created_at or in_process_at*");
+    }
+
+    [Fact]
+    public void Map_FbsPostingWithNullAnalyticsData_ReadsCityFromClusterToAndWarehouseFromDeliveryMethod()
+    {
+        OzonPostingFinancialData financialData = new OzonPostingFinancialData
+        {
+            ClusterFrom = "Хоругвино",
+            ClusterTo = "Москва",
+            Products = new List<OzonPostingFinancialProduct>(),
+        };
+
+        OzonPosting posting = FbsPosting(
+            "post-1",
+            "order-1",
+            inProcessAt: CreatedAt,
+            analyticsData: null,
+            financialData: financialData,
+            deliveryMethod: new OzonDeliveryMethod { Warehouse = "Склад продавца", WarehouseId = 42 });
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+
+        ChannelOrderSnapshot snapshot = result[0];
+        snapshot.DeliveryCity.Should().Be("Москва");
+        snapshot.DeliveryRegion.Should().Be("Хоругвино");
+        snapshot.WarehouseName.Should().Be("Склад продавца");
+        snapshot.IsB2b.Should().BeNull("a posting without analytics_data reports no legal-entity flag");
+    }
+
+    [Fact]
+    public void Map_PostingWithAnalyticsData_PrefersItOverTheFinancialClusters()
+    {
+        OzonPosting posting = FbsPosting(
+            "post-1",
+            "order-1",
+            inProcessAt: CreatedAt,
+            analyticsData: new OzonPostingAnalyticsData
+            {
+                City = "Санкт-Петербург",
+                Region = "Ленинградская область",
+                WarehouseName = "Склад Ozon",
+                IsLegal = true,
+            },
+            financialData: new OzonPostingFinancialData { ClusterTo = "Москва", ClusterFrom = "Хоругвино" },
+            deliveryMethod: new OzonDeliveryMethod { Warehouse = "Склад продавца" });
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+
+        ChannelOrderSnapshot snapshot = result[0];
+        snapshot.DeliveryCity.Should().Be("Санкт-Петербург");
+        snapshot.DeliveryRegion.Should().Be("Ленинградская область");
+        snapshot.WarehouseName.Should().Be("Склад Ozon");
+        snapshot.IsB2b.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("fbs", true)]
+    [InlineData("FBS", true)]
+    [InlineData("rfbs", true)]
+    [InlineData("fbo", false)]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    public void Map_SinglePosting_ReducesDeliverySchemaToIsSellerWarehouse(string? schema, bool? expected)
+    {
+        OzonPosting posting = FbsPosting("post-1", "order-1", schema: schema, inProcessAt: CreatedAt);
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+
+        result[0].IsSellerWarehouse.Should().Be(expected);
+        result[0].Lines[0].FulfillmentSchema.Should().Be(schema);
+    }
+
+    [Fact]
+    public void Map_MixedFboAndFbsPostings_IsSellerWarehouseIsNullAndEachLineKeepsItsSchema()
+    {
+        // One order_number split into an FBO posting and an FBS posting is one order that is neither
+        // wholly Ozon-fulfilled nor wholly seller-fulfilled.
+        OzonPosting fboPosting = FbsPosting("post-1", "order-1", schema: "fbo", inProcessAt: CreatedAt);
+        OzonPosting fbsPosting = FbsPosting(
+            "post-2",
+            "order-1",
+            schema: "fbs",
+            inProcessAt: CreatedAt,
+            products: new List<OzonPostingProduct> { Product(222) });
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { fboPosting, fbsPosting }, out _);
+
+        result.Should().HaveCount(1);
+        ChannelOrderSnapshot snapshot = result[0];
+        snapshot.IsSellerWarehouse.Should().BeNull();
+        snapshot.Lines.Should().HaveCount(2);
+        snapshot.Lines.Single(l => l.ExternalLineId == "post-1").FulfillmentSchema.Should().Be("fbo");
+        snapshot.Lines.Single(l => l.ExternalLineId == "post-2").FulfillmentSchema.Should().Be("fbs");
+    }
+
+    [Fact]
+    public void Map_AllFboPostings_IsSellerWarehouseIsFalse()
+    {
+        OzonPosting first = FbsPosting("post-1", "order-1", schema: "fbo", inProcessAt: CreatedAt);
+        OzonPosting second = FbsPosting(
+            "post-2",
+            "order-1",
+            schema: "fbo",
+            inProcessAt: CreatedAt,
+            products: new List<OzonPostingProduct> { Product(222) });
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { first, second }, out _);
+
+        result[0].IsSellerWarehouse.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Map_FbsPageDeserializedFromRealOzonResponse_IsMappedFromInProcessAtAndSchema()
+    {
+        const string body = """
+        {
+            "has_next": false,
+            "postings": [
+                {
+                    "posting_number": "93849103-0021-1",
+                    "order_id": 5091287231,
+                    "order_number": "93849103-0021",
+                    "status": "awaiting_deliver",
+                    "substatus": "posting_awaiting_passport_data",
+                    "delivery_schema": "fbs",
+                    "products": [
+                        {
+                            "offer_id": "свч-77",
+                            "name": "Свечи восковые натуральные набор 77",
+                            "sku": 5918369809,
+                            "quantity": 1,
+                            "price": { "amount": "880", "currency": "RUB" }
+                        }
+                    ],
+                    "financial_data": {
+                        "cluster_from": "Хоругвино",
+                        "cluster_to": "Москва",
+                        "products": []
+                    },
+                    "delivery_method": {
+                        "id": 21321684811000,
+                        "name": "Доставка продавца",
+                        "warehouse_id": 21321684811000,
+                        "warehouse": "Склад продавца",
+                        "tpl_provider_id": 0,
+                        "tpl_provider": ""
+                    },
+                    "analytics_data": null,
+                    "in_process_at": "2026-10-29T01:54:44.241023Z"
+                }
+            ]
+        }
+        """;
+
+        OzonPostingListResponse? page = System.Text.Json.JsonSerializer.Deserialize<OzonPostingListResponse>(
+            body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        page.Should().NotBeNull();
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(page!.Postings!, out int rowsWithoutIdentity);
+
+        rowsWithoutIdentity.Should().Be(0);
+        result.Should().HaveCount(1);
+
+        ChannelOrderSnapshot snapshot = result[0];
+        snapshot.ExternalOrderId.Should().Be("93849103-0021");
+        snapshot.ExternalStatus.Should().Be("awaiting_deliver");
+        snapshot.ExternalSubstatus.Should().Be("posting_awaiting_passport_data");
+        snapshot.OrderDate.Should().Be(page.Postings![0].InProcessAt!.Value);
+        snapshot.StatusChangedAt.Should().Be(page.Postings![0].InProcessAt!.Value);
+        snapshot.DeliveryCity.Should().Be("Москва");
+        snapshot.WarehouseName.Should().Be("Склад продавца");
+        snapshot.IsSellerWarehouse.Should().BeTrue();
+
+        ChannelOrderLineSnapshot line = snapshot.Lines[0];
+        line.LineKey.Should().Be("93849103-0021-1");
+        line.FulfillmentSchema.Should().Be("fbs");
+        line.UnitPrice.Should().Be(880m);
+        line.Currency.Should().Be("RUB");
+    }
 }

@@ -139,4 +139,163 @@ public partial class SchedulerHostedServiceTests
     {
         return BuildScheduler(ordersRateLimiter: limiter.Object);
     }
+
+    // ── Sequential Ozon execution and tenant parallelism ────────────────────────────────────────
+
+    [Theory]
+    [InlineData(JobType.OrdersImportFbs)]
+    [InlineData(JobType.OrdersImportFbo)]
+    public async Task Tick_AnotherOzonOrdersJobIsActive_SkipsScheduleAndDoesNotAdvanceNextRunAt(JobType scheduleJobType)
+    {
+        // FBO and FBS share one connection and one rate-limiter bucket: whichever fires second has to
+        // wait, and its schedule must stay due so the next tick picks it up once the first finishes.
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+
+        JobSchedule schedule = BuildSchedule(scheduleJobType);
+        SetupDueSchedules(schedule);
+        DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
+
+        _jobRunRepositoryMock
+            .Setup(r => r.HasActiveOzonOrdersJobAsync(_connectionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _scheduleRepositoryMock.Verify(
+            r => r.UpdateAsync(It.IsAny<JobSchedule>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        schedule.NextRunAt.Should().Be(nextRunAtBeforeTick, "a skipped tick must leave the schedule due");
+        schedule.LastRunAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Tick_OzonSchedule_UsesTheCrossSchemaGate_NotThePerTypeOne()
+    {
+        // Regression guard: falling back to HasActiveJobAsync would let FBS start while FBO runs,
+        // because each type only ever sees its own active row.
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+
+        SetupDueSchedules(BuildSchedule(JobType.OrdersImportFbs));
+
+        _jobRunRepositoryMock
+            .Setup(r => r.HasActiveJobAsync(It.IsAny<Guid>(), It.IsAny<JobType>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.HasActiveOzonOrdersJobAsync(_connectionId, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.Is<JobRun>(j => j.JobType == JobType.OrdersImportFbs), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Tick_WildberriesSchedule_DoesNotConsultTheOzonCrossSchemaGate()
+    {
+        SetupDueSchedules(BuildSchedule(JobType.OrdersImport));
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.HasActiveOzonOrdersJobAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _jobRunRepositoryMock.Verify(
+            r => r.HasActiveJobAsync(_connectionId, JobType.OrdersImport, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Tick_TenantParallelismLimitReached_SkipsScheduleAndDoesNotAdvanceNextRunAt(int parallelism)
+    {
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+
+        JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
+        SetupDueSchedules(schedule);
+        DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
+
+        _tenantSettingsProviderMock
+            .Setup(p => p.GetMaxBackgroundJobsParallelismAsync(_tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(parallelism);
+        _jobRunRepositoryMock
+            .Setup(r => r.CountRunningJobsAsync(_tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(parallelism);
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "creating a Pending run while the tenant slot is full only hides why the schedule did not fire");
+        _scheduleRepositoryMock.Verify(
+            r => r.UpdateAsync(It.IsAny<JobSchedule>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        schedule.NextRunAt.Should().Be(nextRunAtBeforeTick);
+    }
+
+    [Fact]
+    public async Task Tick_TenantParallelismLimitReached_SkipsBeforeConsultingTheRateLimiter()
+    {
+        // The tenant-wide gate is cheaper and stricter than the rate-limiter pre-check, so a full
+        // tenant must not even reach the limiter.
+        SetupDueSchedules(BuildSchedule(JobType.OrdersImport));
+
+        _tenantSettingsProviderMock
+            .Setup(p => p.GetMaxBackgroundJobsParallelismAsync(_tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _jobRunRepositoryMock
+            .Setup(r => r.CountRunningJobsAsync(_tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>(MockBehavior.Strict);
+
+        await RunSingleTickAsync(BuildGateScheduler(limiter));
+
+        limiter.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Tick_RunningCountBelowLimit_CreatesTheJobRun()
+    {
+        _connectionRepositoryMock
+            .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+
+        SetupDueSchedules(BuildSchedule(JobType.OrdersImportFbo));
+
+        _tenantSettingsProviderMock
+            .Setup(p => p.GetMaxBackgroundJobsParallelismAsync(_tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
+        _jobRunRepositoryMock
+            .Setup(r => r.CountRunningJobsAsync(_tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        SchedulerHostedService scheduler = BuildScheduler();
+
+        await RunSingleTickAsync(scheduler);
+
+        _jobRunRepositoryMock.Verify(
+            r => r.CreateAsync(It.Is<JobRun>(j => j.JobType == JobType.OrdersImportFbo), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }
