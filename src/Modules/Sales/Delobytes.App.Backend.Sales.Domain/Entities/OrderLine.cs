@@ -93,6 +93,13 @@ public class OrderLine : ITenantScoped
     public DateTimeOffset? StatusChangedAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the fulfilment schema as reported by the channel (Ozon: <c>"fbo"</c>,
+    /// <c>"fbs"</c>, <c>"rfbs"</c>). Null for channels that do not split orders by fulfilment
+    /// model, and for Ozon postings that omit the field.
+    /// </summary>
+    public string? FulfillmentSchema { get; set; }
+
+    /// <summary>
     /// Gets or sets the resolved link to the catalogue channel product. Nullable by design:
     /// orders can arrive before the catalogue import created the matching entry.
     /// </summary>

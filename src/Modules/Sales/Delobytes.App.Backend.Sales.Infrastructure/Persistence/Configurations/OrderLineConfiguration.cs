@@ -66,6 +66,10 @@ public class OrderLineConfiguration : IEntityTypeConfiguration<OrderLine>
 
         builder.Property(l => l.StatusChangedAt);
 
+        builder.Property(l => l.FulfillmentSchema)
+            .HasMaxLength(50)
+            .IsRequired(false);
+
         builder.Property(l => l.CreatedAt)
             .IsRequired();
 

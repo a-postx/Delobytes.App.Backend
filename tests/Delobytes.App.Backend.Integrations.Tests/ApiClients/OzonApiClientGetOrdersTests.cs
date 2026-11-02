@@ -28,6 +28,8 @@ public class OzonApiClientGetOrdersTests
     private const string ApiBaseUrl = "https://api-seller.ozon.ru";
     private const string FboListPath = "/v3/posting/fbo/list";
     private const string FboListUrl = ApiBaseUrl + FboListPath;
+    private const string FbsListPath = "/v4/posting/fbs/list";
+    private const string FbsListUrl = ApiBaseUrl + FbsListPath;
 
     private static readonly DateTimeOffset WindowFrom = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset WindowTo = new DateTimeOffset(2024, 3, 1, 23, 59, 59, TimeSpan.Zero);
@@ -121,6 +123,23 @@ public class OzonApiClientGetOrdersTests
             has_next = hasNext,
             cursor,
             postings = Array.Empty<object>(),
+        });
+    }
+
+    /// <summary>
+    /// An empty <c>v4/posting/fbs/list</c> page. The page is wrapped in <c>result</c> because that is
+    /// the shape the endpoint documents, and the client is expected to unwrap it.
+    /// </summary>
+    private static string BuildFbsEmptyPageBody(bool hasNext = false, string? cursor = null)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            result = new
+            {
+                has_next = hasNext,
+                cursor,
+                postings = Array.Empty<object>(),
+            },
         });
     }
 
@@ -627,7 +646,100 @@ public class OzonApiClientGetOrdersTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_FbsSchema_ThrowsNotSupportedAndIssuesNoRequest()
+    public async Task GetOrdersAsync_FbsSchema_IssuesOneFbsPostAndReadsTheWrappedPage()
+    {
+        int fbsCallCount = 0;
+        int fboCallCount = 0;
+        string? capturedBody = null;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+
+        mockHttp
+            .When(HttpMethod.Post, FbsListUrl)
+            .Respond(request =>
+            {
+                fbsCallCount++;
+                capturedBody = request.Content == null
+                    ? string.Empty
+                    : request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(BuildFbsEmptyPageBody(), Encoding.UTF8, "application/json"),
+                };
+            });
+
+        mockHttp
+            .When(HttpMethod.Post, FboListUrl)
+            .Respond(_ =>
+            {
+                fboCallCount++;
+
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            });
+
+        Guid connectionId = Guid.NewGuid();
+        Mock<IConnectionResolver> resolver =
+            BuildResolver(BuildConnection(connectionId, "key-of-this-connection", "seller-1"));
+
+        Mock<IOrdersRateLimiter> rateLimiter = new Mock<IOrdersRateLimiter>();
+        rateLimiter
+            .Setup(r => r.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RateLimitAcquireResult
+            {
+                Acquired = true,
+                NextRequestAllowedAt = DateTimeOffset.UtcNow,
+            });
+
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, rateLimiter.Object);
+
+        OrdersRequest request = BuildRequest();
+        request.Schema = OrdersSchema.Fbs;
+
+        OrdersPage page = await client.GetOrdersAsync(connectionId, request, CancellationToken.None);
+
+        fbsCallCount.Should().Be(1);
+        fboCallCount.Should().Be(0);
+        page.Orders.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+
+        // The rate limiter must be scoped to the FBS method: both schemas share one connection and
+        // Ozon meters them separately, so a wrong method would let the two windows fight over a
+        // slot that belongs to the other endpoint.
+        rateLimiter.Verify(
+            r => r.TryAcquireAsync(
+                It.Is<RateLimitScope>(scope =>
+                    scope.ChannelCode == "ozon"
+                    && scope.ApiKey == "key-of-this-connection"
+                    && scope.Method == OrdersRateLimiterMethods.OzonPostingFbsList),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        using JsonDocument document = JsonDocument.Parse(capturedBody!);
+        JsonElement filter = document.RootElement.GetProperty("filter");
+
+        filter.GetProperty("since").GetString().Should().Be("2024-03-01T00:00:00Z");
+        filter.GetProperty("to").GetString().Should().Be("2024-03-01T23:59:59Z");
+
+        // FBS-only statuses: a delta window that carried the FBO five would be asking the FBS
+        // endpoint for states it never reports, and Ozon would answer with an empty page.
+        IEnumerable<string?> statuses = filter.GetProperty("statuses")
+            .EnumerateArray()
+            .Select(status => status.GetString());
+
+        List<string?> statusList = statuses.ToList();
+
+        statusList.Should().Contain("awaiting_registration");
+        statusList.Should().Contain("acceptance_in_progress");
+        statusList.Should().Contain("sent_by_seller");
+
+        // The FBO five are a strict subset of the FBS list, so their absence proves nothing; the
+        // FBS-only states above are what tells the two default sets apart.
+        statusList.Should().HaveCountGreaterThan(5);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_UnknownSchema_ThrowsNotSupportedAndIssuesNoRequest()
     {
         int httpCallCount = 0;
 
@@ -648,14 +760,14 @@ public class OzonApiClientGetOrdersTests
         OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
 
         OrdersRequest request = BuildRequest();
-        request.Schema = OrdersSchema.Fbs;
+        request.Schema = (OrdersSchema)99;
 
         Func<Task> act = async () => await client.GetOrdersAsync(connectionId, request, CancellationToken.None);
 
         NotSupportedException exception =
             (await act.Should().ThrowAsync<NotSupportedException>()).Which;
 
-        exception.Message.Should().Contain("FBS");
+        exception.Message.Should().Contain("99");
         httpCallCount.Should().Be(0);
     }
 

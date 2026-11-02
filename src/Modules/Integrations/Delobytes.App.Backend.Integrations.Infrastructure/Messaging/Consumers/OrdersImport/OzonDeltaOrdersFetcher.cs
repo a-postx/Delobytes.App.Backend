@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -65,7 +66,7 @@ public sealed class OzonDeltaOrdersFetcher : IOrdersFetcher
             Schema = context.Schema ?? OrdersSchema.Fbo,
             Limit = _pageSize,
             Cursor = null,
-            Statuses = OzonOrdersImportConstants.AllFboStatuses,
+            Statuses = OzonPostingStatuses.FboStatuses,
         };
 
         _logger.LogInformation(

@@ -8,6 +8,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
 
@@ -19,6 +20,27 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class OrdersBatchImportRequestedConsumer
 {
+    /// <summary>
+    /// Postgres SQLSTATE for a unique constraint violation. Used to tell a concurrent-insert
+    /// conflict (retryable) apart from a real failure (not).
+    /// </summary>
+    private const string UniqueViolationSqlState = "23505";
+
+    /// <summary>
+    /// Upper bound on retry attempts for a single order upsert. Defense-in-depth only: with
+    /// sequential FBO/FBS execution enforced at the scheduler, a concurrent conflict on the same
+    /// order is rare.
+    /// </summary>
+    private const int MaxUpsertAttempts = 3;
+
+    private const int UpsertRetryBaseDelayMilliseconds = 100;
+
+    /// <summary>
+    /// Depth limit when walking an exception chain. A cycle is not possible in practice; the bound
+    /// only keeps a pathological chain from turning into an unbounded loop while handling a failure.
+    /// </summary>
+    private const int MaxExceptionDepth = 5;
+
     /// <summary>
     /// Bookkeeping properties excluded from change detection. They describe the import itself
     /// rather than the imported facts, so a re-import carrying identical channel data must still
@@ -90,18 +112,14 @@ public class OrdersBatchImportRequestedConsumer
 
         foreach (ChannelOrderSnapshot orderSnapshot in message.Orders)
         {
-            HashSet<object> trackedBefore = _context.ChangeTracker.Entries().Select(e => e.Entity).ToHashSet();
-
             try
             {
-                OrderUpsertStatus status = await UpsertOrderAsync(
+                OrderUpsertStatus status = await UpsertOrderWithRetryAsync(
                     message.ChannelId,
                     message.ConnectionId,
                     orderSnapshot,
                     channelProductIdsByExternalProductId,
                     cancellationToken);
-
-                await _context.SaveChangesAsync(cancellationToken);
 
                 switch (status)
                 {
@@ -118,18 +136,6 @@ public class OrdersBatchImportRequestedConsumer
             }
             catch (Exception ex)
             {
-                // No explicit transaction spans the batch, so a failed SaveChanges rolls back
-                // only this order's implicit transaction. The change tracker, however, keeps
-                // whatever entries were added for it, so they must be detached before the next
-                // order is processed, otherwise that order's SaveChanges would try to flush them too.
-                foreach (EntityEntry entry in _context.ChangeTracker.Entries().ToList())
-                {
-                    if (!trackedBefore.Contains(entry.Entity))
-                    {
-                        entry.State = EntityState.Detached;
-                    }
-                }
-
                 failed++;
                 _logger.LogError(
                     ex,
@@ -159,6 +165,110 @@ public class OrdersBatchImportRequestedConsumer
             updated,
             skipped,
             failed);
+    }
+
+    /// <summary>
+    /// Runs <see cref="UpsertOrderAsync"/> and saves it, retrying with exponential backoff when the
+    /// save fails on a concurrent-insert conflict. Defense-in-depth: with FBO and FBS execution
+    /// serialized at the scheduler, two writers racing on the same order is expected to be rare, not
+    /// the common case this retry is designed to absorb silently.
+    /// </summary>
+    private async Task<OrderUpsertStatus> UpsertOrderWithRetryAsync(
+        Guid channelId,
+        Guid connectionId,
+        ChannelOrderSnapshot orderSnapshot,
+        Dictionary<string, Guid> channelProductIdsByExternalProductId,
+        CancellationToken cancellationToken)
+    {
+        int attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+
+            HashSet<object> trackedBefore = _context.ChangeTracker.Entries().Select(e => e.Entity).ToHashSet();
+
+            try
+            {
+                OrderUpsertStatus status = await UpsertOrderAsync(
+                    channelId,
+                    connectionId,
+                    orderSnapshot,
+                    channelProductIdsByExternalProductId,
+                    cancellationToken);
+
+                await _context.SaveChangesAsync(cancellationToken);
+
+                return status;
+            }
+            catch (DbUpdateException ex) when (
+                attempt < MaxUpsertAttempts && (IsUniqueViolation(ex) || IsConcurrencyViolation(ex)))
+            {
+                // No explicit transaction spans the batch, so a failed SaveChanges rolls back only
+                // this order's implicit transaction. The change tracker, however, keeps whatever
+                // entries were added for it, so they must be detached before the retry, otherwise
+                // the retry's SaveChanges would try to flush the same (now stale) entries again.
+                foreach (EntityEntry entry in _context.ChangeTracker.Entries().ToList())
+                {
+                    if (!trackedBefore.Contains(entry.Entity))
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+                }
+
+                _logger.LogWarning(
+                    ex,
+                    "Concurrent upsert conflict for order ExternalOrderId={ExternalOrderId}, attempt {Attempt}/{MaxAttempts}, retrying...",
+                    orderSnapshot.ExternalOrderId,
+                    attempt,
+                    MaxUpsertAttempts);
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(UpsertRetryBaseDelayMilliseconds * Math.Pow(2, attempt - 1)),
+                    cancellationToken);
+            }
+            catch (Exception)
+            {
+                // Same detach as above, but for the path that rethrows: the caller's own catch
+                // logs and moves on to the next order, and must not inherit this order's leftovers.
+                foreach (EntityEntry entry in _context.ChangeTracker.Entries().ToList())
+                {
+                    if (!trackedBefore.Contains(entry.Entity))
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+                }
+
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Looks for a unique violation anywhere in the exception chain. EF wraps the provider exception,
+    /// and a multi-statement batch can nest it deeper, so checking only the first inner exception
+    /// would treat a retryable conflict as a permanent failure.
+    /// </summary>
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        int depth = 0;
+
+        for (Exception? current = ex; current != null && depth < MaxExceptionDepth; depth++)
+        {
+            if (current is PostgresException postgres && postgres.SqlState == UniqueViolationSqlState)
+            {
+                return true;
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
+    }
+
+    private static bool IsConcurrencyViolation(DbUpdateException ex)
+    {
+        return ex is DbUpdateConcurrencyException;
     }
 
     private async Task<Dictionary<string, Guid>> LoadChannelProductIdsAsync(
@@ -366,7 +476,8 @@ public class OrdersBatchImportRequestedConsumer
                 LineKey = line.LineKey,
                 IsCancelled = line.IsCancelled,
                 StatusChangedAt = line.StatusChangedAt,
-                ChannelReportedTotal = channelReportedTotal
+                ChannelReportedTotal = channelReportedTotal,
+                FulfillmentSchema = line.FulfillmentSchema
             });
         }
 
@@ -399,6 +510,75 @@ public class OrdersBatchImportRequestedConsumer
         order.OrderDate = header.OrderDate;
         order.StatusChangedAt = header.StatusChangedAt;
         order.ChannelReportedTotal = header.ChannelReportedTotal;
+
+        // Recomputed from the persisted line set rather than left as whatever ApplyOrderSnapshot
+        // copied from this run's own snapshot: a mixed cart (FBO and FBS postings under one
+        // order_number) is written by two separate runs, so a single run only ever sees its own
+        // half of the fulfilment schema mix and would otherwise publish that half as the answer
+        // for the whole cart.
+        //
+        // Only when the persisted set actually carries schemas. Wildberries reports the flag
+        // itself and never sets one, so reducing its lines would replace a reported fact with a
+        // value derived from data the channel does not publish.
+        if (TryReduceFulfillmentSchema(persistedLines, out bool? isSellerWarehouse))
+        {
+            order.IsSellerWarehouse = isSellerWarehouse;
+        }
+    }
+
+    /// <summary>
+    /// Reduces the persisted lines' fulfilment schemas to the order-level flag: true when every line
+    /// carrying a schema is seller-fulfilled (fbs/rfbs), false when they are all Ozon-fulfilled, null
+    /// when the cart mixes both. Ozon only.
+    /// </summary>
+    /// <param name="lines">The whole persisted line set of the cart.</param>
+    /// <param name="isSellerWarehouse">The reduced flag, meaningless when the method returns false.</param>
+    /// <returns>
+    /// False when no line carries a schema, which means the reduction has no input and the caller
+    /// must keep whatever the channel reported. Lines without a schema are skipped rather than
+    /// counted as Ozon-fulfilled: after the FBO half of a mixed cart has been imported and the FBS
+    /// half has not, that would report a confident "Ozon warehouse" for a cart that is neither.
+    /// </returns>
+    private static bool TryReduceFulfillmentSchema(
+        List<ChannelOrderLineSnapshot> lines, out bool? isSellerWarehouse)
+    {
+        bool hasOzonFulfilled = false;
+        bool hasSellerFulfilled = false;
+        bool hasSchema = false;
+
+        foreach (ChannelOrderLineSnapshot line in lines)
+        {
+            string? schema = line.FulfillmentSchema;
+
+            if (string.IsNullOrEmpty(schema))
+            {
+                continue;
+            }
+
+            hasSchema = true;
+
+            if (string.Equals(schema, "fbs", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(schema, "rfbs", StringComparison.OrdinalIgnoreCase))
+            {
+                hasSellerFulfilled = true;
+            }
+            else
+            {
+                hasOzonFulfilled = true;
+            }
+        }
+
+        if (!hasSchema)
+        {
+            isSellerWarehouse = null;
+            return false;
+        }
+
+        isSellerWarehouse = hasSellerFulfilled && hasOzonFulfilled
+            ? null
+            : hasSellerFulfilled;
+
+        return true;
     }
 
     /// <summary>
@@ -462,6 +642,7 @@ public class OrdersBatchImportRequestedConsumer
         line.Currency = snapshot.Currency;
         line.IsCancelled = snapshot.IsCancelled;
         line.StatusChangedAt = snapshot.StatusChangedAt;
+        line.FulfillmentSchema = snapshot.FulfillmentSchema;
         line.ChannelProductId = channelProductId;
     }
 

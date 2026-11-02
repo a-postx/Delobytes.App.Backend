@@ -16,31 +16,20 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
 /// <summary>
-/// Ozon marketplace API client. Reads FBO orders; product cards and FBS orders are not supported yet.
+/// Ozon marketplace API client. Reads FBO and FBS orders; product cards are not supported yet.
 /// </summary>
 public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
 {
     private const string DefaultApiBaseUrl = "https://api-seller.ozon.ru";
     private const string OzonChannelCode = "ozon";
     private const string FboListPath = "/v3/posting/fbo/list";
-    private const int FboListPageSizeMinimum = 1;
-    private const int FboListPageSizeMaximum = 100;
-    private const int FboListDefaultPageSize = 100;
-    private const int ResponseBodyLogLimit = 500;
+    private const string FbsListPath = "/v4/posting/fbs/list";
 
-    /// <summary>
-    /// The five FBO posting statuses, sent when the request does not narrow them. Ozon requires an
-    /// explicit list to return anything, so an empty filter would read as "no orders" rather than
-    /// "no filter".
-    /// </summary>
-    private static readonly IReadOnlyList<string> AllFboStatuses = new List<string>
-    {
-        "awaiting_packaging",
-        "awaiting_deliver",
-        "delivering",
-        "delivered",
-        "cancelled",
-    };
+    // Both posting list endpoints share the same page size envelope.
+    private const int PostingListPageSizeMinimum = 1;
+    private const int PostingListPageSizeMaximum = 100;
+    private const int PostingListDefaultPageSize = 100;
+    private const int ResponseBodyLogLimit = 500;
 
     private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
@@ -169,24 +158,26 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
     /// <inheritdoc cref="IOrdersSource.GetOrdersAsync"/>
     ///
     /// <remarks>
-    /// Issues exactly one <c>POST /v3/posting/fbo/list</c> and returns the page the response
-    /// describes: pagination is the caller's, driven by <see cref="OrdersPage.NextCursor"/>.
-    /// FBO filters on <c>created_at</c> only, so this method never turns into a status refresh of
-    /// postings created earlier. <see cref="OrdersRequest.Selection"/> is ignored: Ozon has no
-    /// last-change filter on this schema.
+    /// Issues exactly one posting list call for the requested schema and returns the page the
+    /// response describes: pagination is the caller's, driven by <see cref="OrdersPage.NextCursor"/>.
+    /// A null schema reads as FBO. Both schemas window on a single time range (FBO on
+    /// <c>created_at</c>, FBS on <c>in_process_at</c> through the required <c>since</c>/<c>to</c>
+    /// pair), so neither turns into a status refresh of postings imported earlier.
+    /// <see cref="OrdersRequest.Selection"/> is ignored: Ozon has no last-change filter on these
+    /// schemas that could replace the required window bounds.
     /// </remarks>
-    public async Task<OrdersPage> GetOrdersAsync(
+    public Task<OrdersPage> GetOrdersAsync(
         Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // A null schema reads as FBO: this is the only schema the channel implements, and a caller
-        // that does not care which one it gets means the default one.
-        if (request.Schema != null && request.Schema != OrdersSchema.Fbo)
+        // A null schema reads as FBO: that is what a caller written before FBS existed, and one
+        // that genuinely does not care which schema it gets, both mean.
+        OrdersSchema effectiveSchema = request.Schema ?? OrdersSchema.Fbo;
+
+        if (effectiveSchema != OrdersSchema.Fbo && effectiveSchema != OrdersSchema.Fbs)
         {
-            throw new NotSupportedException(
-                $"Ozon schema '{request.Schema}' is not implemented yet; only FBO is supported. " +
-                "FBS import is a separate delivery.");
+            throw new NotSupportedException($"Ozon schema '{effectiveSchema}' is not supported.");
         }
 
         if (request.DateFrom >= request.DateTo)
@@ -202,12 +193,101 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
                 "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
         }
 
-        int limit = ClampLimit(request.Limit);
+        return effectiveSchema == OrdersSchema.Fbs
+            ? GetFbsOrdersAsync(connectionId, request, cancellationToken)
+            : GetFboOrdersAsync(connectionId, request, cancellationToken);
+    }
 
+    /// <summary>
+    /// Reads a page of the flat <c>v3/posting/fbo/list</c> shape, where the page members sit at the
+    /// top level of the body.
+    /// </summary>
+    private static Task<OzonPostingListResponse?> ReadFlatPageAsync(
+        HttpContent content, CancellationToken cancellationToken)
+    {
+        return content.ReadFromJsonAsync<OzonPostingListResponse>(cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads a page of the <c>v4/posting/fbs/list</c> body. Ozon documents the page wrapped in a
+    /// <c>result</c> object while FBO returns it flat, and reading one shape as the other yields an
+    /// empty page without raising - an import that silently finds no orders. Both shapes are
+    /// therefore accepted, decided by the presence of <c>result</c> rather than by trying one and
+    /// falling back, because a missing <c>postings</c> member is indistinguishable from a genuinely
+    /// empty page.
+    /// </summary>
+    private static async Task<OzonPostingListResponse?> ReadFbsPageAsync(
+        HttpContent content, CancellationToken cancellationToken)
+    {
+        string body = await content.ReadAsStringAsync(cancellationToken);
+
+        using JsonDocument document = JsonDocument.Parse(body);
+
+        JsonElement root = document.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("result", out JsonElement result)
+            && result.ValueKind == JsonValueKind.Object)
+        {
+            return result.Deserialize<OzonPostingListResponse>(SerializerOptions);
+        }
+
+        return root.Deserialize<OzonPostingListResponse>(SerializerOptions);
+    }
+
+    /// <summary>
+    /// Issues exactly one <c>POST /v3/posting/fbo/list</c>.
+    /// </summary>
+    private Task<OrdersPage> GetFboOrdersAsync(
+        Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
+    {
+        OzonPostingListRequest body = BuildRequestBody(request, ClampLimit(request.Limit));
+
+        return FetchPostingListPageAsync(
+            connectionId,
+            FboListPath,
+            OrdersRateLimiterMethods.OzonPostingFboList,
+            body,
+            ReadFlatPageAsync,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Issues exactly one <c>POST /v4/posting/fbs/list</c>.
+    /// </summary>
+    private Task<OrdersPage> GetFbsOrdersAsync(
+        Guid connectionId, OrdersRequest request, CancellationToken cancellationToken)
+    {
+        OzonFbsPostingListRequest body = BuildFbsRequestBody(request, ClampLimit(request.Limit));
+
+        return FetchPostingListPageAsync(
+            connectionId,
+            FbsListPath,
+            OrdersRateLimiterMethods.OzonPostingFbsList,
+            body,
+            ReadFbsPageAsync,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs one posting list call end to end: rate limiter admission, the single POST, throttling and
+    /// failure handling, then mapping. Shared by both schemas because the only differences between
+    /// them are the path, the limiter method and the request body shape - all of which the caller
+    /// supplies, plus the reader for the response shape, which v3 and v4 disagree on. Keeping one
+    /// implementation is what stops the two schemas from drifting apart in how they report throttling
+    /// or turn a page into orders.
+    /// </summary>
+    private async Task<OrdersPage> FetchPostingListPageAsync<TBody>(
+        Guid connectionId,
+        string path,
+        string rateLimiterMethod,
+        TBody body,
+        Func<HttpContent, CancellationToken, Task<OzonPostingListResponse?>> readPage,
+        CancellationToken cancellationToken)
+    {
         Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
 
-        RateLimitScope scope = new RateLimitScope(
-            OzonChannelCode, connection.ApiKey, OrdersRateLimiterMethods.OzonPostingFboList);
+        RateLimitScope scope = new RateLimitScope(OzonChannelCode, connection.ApiKey, rateLimiterMethod);
 
         RateLimitAcquireResult acquireResult = await _ordersRateLimiter.TryAcquireAsync(scope, cancellationToken);
 
@@ -223,10 +303,8 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
             return CreateThrottledPage(acquireResult.NextRequestAllowedAt);
         }
 
-        OzonPostingListRequest body = BuildRequestBody(request, limit);
-
         using HttpRequestMessage httpRequest = new HttpRequestMessage(
-            HttpMethod.Post, $"{BaseUrl}{FboListPath}")
+            HttpMethod.Post, $"{BaseUrl}{path}")
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(body, SerializerOptions), Encoding.UTF8, "application/json"),
@@ -264,8 +342,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
             _logger.LogWarning(
-                "Ozon orders API returned {StatusCode} (x-request-id {RequestId}). Response: {Response}",
+                "Ozon orders API returned {StatusCode} for method {Method} (x-request-id {RequestId}). " +
+                "Response: {Response}",
                 (int)response.StatusCode,
+                scope.Method,
                 rateLimitSignal.RequestId,
                 TruncateForLog(responseBody));
 
@@ -279,12 +359,21 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
         // fails to deserialize must not cost the limiter its only feedback on the real allowance.
         await _ordersRateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
 
-        OzonPostingListResponse? page =
-            await response.Content.ReadFromJsonAsync<OzonPostingListResponse>(cancellationToken);
+        OzonPostingListResponse? page = await readPage(response.Content, cancellationToken);
 
         List<OzonPosting> postings = page?.Postings ?? new List<OzonPosting>();
 
         List<ChannelOrderSnapshot> orders = OzonOrderMapper.Map(postings, _logger, out int rowsWithoutIdentity);
+
+        if (rowsWithoutIdentity > 0)
+        {
+            // Not thrown: the rest of the page is importable, and a whole run must not fail on rows
+            // the channel itself sent without identity.
+            _logger.LogWarning(
+                "Ozon response for method {Method} contained {Count} posting(s) without identity.",
+                scope.Method,
+                rowsWithoutIdentity);
+        }
 
         return new OrdersPage
         {
@@ -314,10 +403,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
     {
         if (limit <= 0)
         {
-            return FboListDefaultPageSize;
+            return PostingListDefaultPageSize;
         }
 
-        return Math.Clamp(limit, FboListPageSizeMinimum, FboListPageSizeMaximum);
+        return Math.Clamp(limit, PostingListPageSizeMinimum, PostingListPageSizeMaximum);
     }
 
     private static OzonPostingListRequest BuildRequestBody(OrdersRequest request, int limit)
@@ -331,7 +420,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
                 To = FormatUtc(request.DateTo),
                 Statuses = request.Statuses is { Count: > 0 }
                     ? new List<string>(request.Statuses)
-                    : new List<string>(AllFboStatuses),
+                    : new List<string>(OzonPostingStatuses.FboStatuses),
             },
             Limit = limit,
             SortDir = "ASC",
@@ -341,6 +430,37 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
                 AnalyticsData = true,
                 FinancialData = true,
                 LegalInfo = false,
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds the FBS <c>posting/fbs/list</c> body. Separate from <see cref="BuildRequestBody"/>
+    /// because the endpoint takes a different DTO: its filter carries the required
+    /// <c>since</c>/<c>to</c> pair and its <c>with</c> block has no analytics section.
+    /// </summary>
+    private static OzonFbsPostingListRequest BuildFbsRequestBody(OrdersRequest request, int limit)
+    {
+        return new OzonFbsPostingListRequest
+        {
+            Cursor = request.Cursor ?? string.Empty,
+            Filter = new OzonFbsPostingListFilter
+            {
+                Since = FormatUtc(request.DateFrom),
+                To = FormatUtc(request.DateTo),
+
+                // The full set is sent rather than null: the filter member is declared nullable, so a
+                // null would serialize as an explicit "statuses": null instead of being omitted, and
+                // the endpoint is only documented to drop the filter when the member is absent.
+                Statuses = request.Statuses is { Count: > 0 }
+                    ? new List<string>(request.Statuses)
+                    : new List<string>(OzonPostingStatuses.FbsStatuses),
+            },
+            Limit = limit,
+            SortDir = "asc",
+            With = new OzonFbsPostingListWith
+            {
+                FinancialData = true,
             },
         };
     }
