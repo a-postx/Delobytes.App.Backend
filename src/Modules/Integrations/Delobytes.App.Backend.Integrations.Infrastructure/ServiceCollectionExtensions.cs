@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
@@ -122,34 +123,42 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<SinglePageOrdersReader>()));
         services.AddScoped<DeltaOrdersFetcher>();
 
-        // The Ozon pager is bound to one method and one wait tolerance at construction, so it is
-        // built here rather than resolved by interface: registering it as IOrdersWindowReader
-        // would collide with BisectingOrdersReader, the other implementation of that interface.
-        services.AddScoped(sp =>
-        {
-            OzonImportOptions ozonOptions = sp.GetRequiredService<IOptions<OzonImportOptions>>().Value;
+        // The Ozon pagers are bound to one API method and one wait tolerance at construction, so
+        // each schema gets its own concrete reader here rather than a registration of
+        // IOrdersWindowReader, which would collide with BisectingOrdersReader - and with the other
+        // schema's reader - the other implementations of that interface.
+        services.AddScoped<OzonFboOrdersReader>();
+        services.AddScoped<OzonFbsOrdersReader>();
 
-            return new CursorPagedOrdersReader(
-                sp.GetRequiredService<PacedOrdersSource>(),
-                sp.GetRequiredService<ILogger<CursorPagedOrdersReader>>(),
-                TimeSpan.FromSeconds(ozonOptions.MaxInProcessWaitSeconds >= 0
-                    ? ozonOptions.MaxInProcessWaitSeconds
-                    : OzonImportOptions.DefaultMaxInProcessWaitSeconds),
-                OrdersRateLimiterMethods.OzonPostingFboList);
-        });
         services.AddScoped(sp => new OzonBackfillOrdersFetcher(
             sp.GetRequiredService<OrdersBackfillWalker>(),
-            sp.GetRequiredService<CursorPagedOrdersReader>()));
+            sp.GetRequiredService<OzonFboOrdersReader>()));
         services.AddScoped(sp => new OzonDeltaOrdersFetcher(
-            sp.GetRequiredService<CursorPagedOrdersReader>(),
+            sp.GetRequiredService<OzonFboOrdersReader>(),
+            sp.GetRequiredService<ISyncCheckpointRepository>(),
+            sp.GetRequiredService<OrdersBatchPublisher>(),
+            sp.GetRequiredService<ILogger<OzonDeltaOrdersFetcher>>(),
+            sp.GetRequiredService<IOptions<OzonImportOptions>>(),
+            OrdersSchema.Fbo,
+            OzonPostingStatuses.FboStatuses));
+        services.AddScoped(sp => new OzonOrdersFetchers(
+            sp.GetRequiredService<OzonBackfillOrdersFetcher>(),
+            sp.GetRequiredService<OzonDeltaOrdersFetcher>(),
+            sp.GetRequiredService<OzonFboOrdersReader>(),
+            sp.GetRequiredService<IOptions<OzonImportOptions>>()));
+        services.AddScoped(sp => new OzonFbsBackfillOrdersFetcher(
+            sp.GetRequiredService<OrdersBackfillWalker>(),
+            sp.GetRequiredService<OzonFbsOrdersReader>()));
+        services.AddScoped(sp => new OzonFbsDeltaOrdersFetcher(
+            sp.GetRequiredService<OzonFbsOrdersReader>(),
             sp.GetRequiredService<ISyncCheckpointRepository>(),
             sp.GetRequiredService<OrdersBatchPublisher>(),
             sp.GetRequiredService<ILogger<OzonDeltaOrdersFetcher>>(),
             sp.GetRequiredService<IOptions<OzonImportOptions>>()));
-        services.AddScoped(sp => new OzonOrdersFetchers(
-            sp.GetRequiredService<OzonBackfillOrdersFetcher>(),
-            sp.GetRequiredService<OzonDeltaOrdersFetcher>(),
-            sp.GetRequiredService<CursorPagedOrdersReader>(),
+        services.AddScoped(sp => new OzonFbsOrdersFetchers(
+            sp.GetRequiredService<OzonFbsBackfillOrdersFetcher>(),
+            sp.GetRequiredService<OzonFbsDeltaOrdersFetcher>(),
+            sp.GetRequiredService<OzonFbsOrdersReader>(),
             sp.GetRequiredService<IOptions<OzonImportOptions>>()));
         services.AddScoped(sp => new WildberriesOrdersFetchers(
             sp.GetRequiredService<BackfillOrdersFetcher>(),

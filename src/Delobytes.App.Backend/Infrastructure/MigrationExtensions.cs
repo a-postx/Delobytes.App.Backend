@@ -129,10 +129,8 @@ public static class MigrationExtensions
 
             MessageTenantContext tenantContext = scope.ServiceProvider.GetRequiredService<MessageTenantContext>();
             BackgroundJobsOptions backgroundJobsOptions = scope.ServiceProvider.GetRequiredService<IOptions<BackgroundJobsOptions>>().Value;
-            OzonImportOptions ozonImportOptions = scope.ServiceProvider.GetRequiredService<IOptions<OzonImportOptions>>().Value;
 
-            await DataSeeder.SeedJobSchedulesAsync(
-                context, tenantContext, backgroundJobsOptions, logger, ozonImportOptions.EnableFbs);
+            await DataSeeder.SeedJobSchedulesAsync(context, tenantContext, backgroundJobsOptions, logger);
         }
         catch (Exception ex)
         {

@@ -110,6 +110,7 @@ public sealed class OrdersBackfillWalker
                 DateTo = day.AddDays(1).AddSeconds(-1),
                 Selection = OrdersSelectionMode.Placed,
                 Limit = 0,
+                Schema = context.Schema,
             };
 
             FetchOutcome windowOutcome = await windowReader.ReadWindowAsync(request, context, progress, cancellationToken);

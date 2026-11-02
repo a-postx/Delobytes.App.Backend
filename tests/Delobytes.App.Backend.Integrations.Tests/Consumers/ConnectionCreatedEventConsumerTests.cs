@@ -42,16 +42,13 @@ public class ConnectionCreatedEventConsumerTests
         _tenantContext.TenantId = _tenantId;
     }
 
-    private ConnectionCreatedEventConsumer CreateConsumer(
-        bool enableOzonFbs = false,
-        string cronExpression = "0 * * * *")
+    private ConnectionCreatedEventConsumer CreateConsumer(string cronExpression = "0 * * * *")
     {
         return new ConnectionCreatedEventConsumer(
             _connectionRepo.Object,
             _scheduleRepo.Object,
             _tenantContext,
             Options.Create(new BackgroundJobsOptions { DefaultOrdersImportCronExpression = cronExpression }),
-            Options.Create(new OzonImportOptions { EnableFbs = enableOzonFbs }),
             NullLogger<ConnectionCreatedEventConsumer>.Instance,
             _timeProvider);
     }
@@ -141,7 +138,7 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_OzonConnection_CreatesOnlyFboScheduleDueImmediately()
+    public async Task ProcessAsync_OzonConnection_CreatesFboAndFbsSchedulesDueImmediately()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
@@ -149,28 +146,16 @@ public class ConnectionCreatedEventConsumerTests
 
         await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
 
-        proposed.Should().ContainSingle("FBS import is off by default, so only the FBO job type is scheduled");
-        proposed[0].JobType.Should().Be(JobType.OrdersImportFbo);
-        proposed[0].ConnectionId.Should().Be(connection.Id);
-        proposed[0].CronExpression.Should().Be("0 * * * *");
-        proposed[0].IsEnabled.Should().BeTrue();
-        proposed[0].LastRunAt.Should().BeNull();
-        proposed[0].NextRunAt.Should().Be(
-            _timeProvider.GetUtcNow(),
-            "the first import must start on the next scheduler tick, not at the top of the next hour");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_OzonConnectionWithFbsEnabled_CreatesFboAndFbsSchedules()
-    {
-        Connection connection = BuildConnection("ozon");
-        SetupConnection(connection);
-        List<JobSchedule> proposed = CaptureProposedSchedules();
-
-        await CreateConsumer(enableOzonFbs: true).ProcessAsync(BuildEvent(connection), CancellationToken.None);
-
         proposed.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs },
+            "both schemas share one connection and are always scheduled; sequencing is enforced by the scheduler");
+        proposed.Should().OnlyContain(s => s.ConnectionId == connection.Id);
+        proposed.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
+        proposed.Should().OnlyContain(s => s.IsEnabled);
+        proposed.Should().OnlyContain(s => s.LastRunAt == null);
+        proposed.Should().OnlyContain(
+            s => s.NextRunAt == _timeProvider.GetUtcNow(),
+            "the first import must start on the next scheduler tick, not at the top of the next hour");
     }
 
     [Fact]
@@ -220,7 +205,7 @@ public class ConnectionCreatedEventConsumerTests
         SetupConnection(connection);
         List<JobSchedule> proposed = CaptureProposedSchedules();
 
-        await CreateConsumer(enableOzonFbs: true).ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
 
         proposed.Select(s => s.JobType).Should().OnlyHaveUniqueItems(
             "the unique (ConnectionId, JobType) index would reject a duplicate inside a single save");

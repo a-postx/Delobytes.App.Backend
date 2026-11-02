@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
-/// Configuration options for Ozon orders import (FBO; FBS is reserved).
+/// Configuration options for Ozon orders import (both FBO and FBS).
 /// </summary>
 public class OzonImportOptions
 {
@@ -58,11 +58,4 @@ public class OzonImportOptions
     /// 15 seconds. Set to 0 to disable.
     /// </summary>
     public int MinimumRequestIntervalSeconds { get; set; } = DefaultMinimumRequestIntervalSeconds;
-
-    /// <summary>
-    /// Gets or sets a value indicating whether Ozon FBS orders import is enabled. FBS is not
-    /// implemented yet; this flag only controls whether <see cref="Domain.Enums.JobType.OrdersImportFbs"/>
-    /// resolves to a fetcher at all.
-    /// </summary>
-    public bool EnableFbs { get; set; } = false;
 }

@@ -18,7 +18,8 @@ namespace Delobytes.App.Backend.Tests.Infrastructure;
 
 /// <summary>
 /// Tests DataSeeder.SeedJobSchedulesAsync: each active connection must get exactly one enabled
-/// orders schedule of the job type its channel maps to (idempotently), and a stale
+/// orders schedule per job type its channel maps to (idempotently) - one for Wildberries, FBO plus
+/// FBS for Ozon - and a stale
 /// <see cref="JobType.OrdersImport"/> schedule left on a non-Wildberries connection by earlier
 /// versions of the seeder must be disabled rather than deleted.
 ///
@@ -101,7 +102,6 @@ public class DataSeederSeedJobSchedulesTests
     private static async Task RunSeederAsync(
         DbContextOptions<IntegrationsDbContext> options,
         BackgroundJobsOptions? backgroundJobsOptions = null,
-        bool enableOzonFbs = false,
         ILogger? logger = null)
     {
         MessageTenantContext tenantContext = BuildTenantContext();
@@ -111,8 +111,7 @@ public class DataSeederSeedJobSchedulesTests
             ctx,
             tenantContext,
             backgroundJobsOptions ?? new BackgroundJobsOptions(),
-            logger ?? NullLogger.Instance,
-            enableOzonFbs);
+            logger ?? NullLogger.Instance);
     }
 
     private static async Task<List<JobSchedule>> ReadSchedulesAsync(DbContextOptions<IntegrationsDbContext> options)
@@ -362,10 +361,10 @@ public class DataSeederSeedJobSchedulesTests
     // ── Channel → orders job type ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task SeedJobSchedulesAsync_OzonConnection_SeedsOrdersImportFboOnly()
+    public async Task SeedJobSchedulesAsync_OzonConnection_SeedsBothOzonOrdersTypes()
     {
-        // Ozon connections must never get the Wildberries job type: that job resolves the
-        // Wildberries fetchers, which cannot talk to api-seller.ozon.ru at all.
+        // Both schemas share one connection and are always scheduled; sequential execution is
+        // enforced by the scheduler, not by a configuration flag deciding which exists.
         DbContextOptions<IntegrationsDbContext> options = BuildOptions();
         Guid tenantId = Guid.NewGuid();
         SystemChannelTemplate template = BuildOzonTemplate();
@@ -377,33 +376,14 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().ContainSingle();
-        schedules[0].ConnectionId.Should().Be(connection.Id);
-        schedules[0].JobType.Should().Be(JobType.OrdersImportFbo);
-        schedules[0].IsEnabled.Should().BeTrue();
-        schedules[0].CronExpression.Should().Be("0 * * * *");
-        schedules[0].TenantId.Should().Be(tenantId);
-        schedules.Should().NotContain(s => s.JobType == JobType.OrdersImport);
-    }
-
-    [Fact]
-    public async Task SeedJobSchedulesAsync_OzonConnection_WithFbsEnabled_SeedsBothOzonOrdersTypes()
-    {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildOzonTemplate();
-        Connection connection = BuildConnection(template.Id);
-
-        await SeedConnectionAsync(options, tenantId, connection, template);
-
-        await RunSeederAsync(options, enableOzonFbs: true);
-
-        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
-
         schedules.Should().HaveCount(2);
         schedules.Select(s => s.JobType).Should().BeEquivalentTo(
             new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
         schedules.Should().OnlyContain(s => s.IsEnabled);
+        schedules.Should().OnlyContain(s => s.ConnectionId == connection.Id);
+        schedules.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
+        schedules.Should().OnlyContain(s => s.TenantId == tenantId);
+        schedules.Should().NotContain(s => s.JobType == JobType.OrdersImport);
     }
 
     [Fact]
@@ -416,7 +396,7 @@ public class DataSeederSeedJobSchedulesTests
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 
-        await RunSeederAsync(options, enableOzonFbs: true);
+        await RunSeederAsync(options);
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
@@ -461,9 +441,16 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(2);
-        schedules.Single(s => s.ConnectionId == wildberriesConnection.Id).JobType.Should().Be(JobType.OrdersImport);
-        schedules.Single(s => s.ConnectionId == ozonConnection.Id).JobType.Should().Be(JobType.OrdersImportFbo);
+        // One schedule per job type: Wildberries maps to OrdersImport alone, Ozon always maps to
+        // both schemas, which the scheduler then serialises on the shared connection.
+        schedules.Should().HaveCount(3);
+        schedules.Where(s => s.ConnectionId == wildberriesConnection.Id)
+            .Select(s => s.JobType)
+            .Should().BeEquivalentTo(new[] { JobType.OrdersImport });
+        schedules.Where(s => s.ConnectionId == ozonConnection.Id)
+            .Select(s => s.JobType)
+            .Should().BeEquivalentTo(new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+        schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
     [Fact]
@@ -481,9 +468,10 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().ContainSingle();
-        schedules[0].JobType.Should().Be(JobType.OrdersImportFbo);
-        schedules[0].IsEnabled.Should().BeTrue();
+        schedules.Should().HaveCount(2);
+        schedules.Select(s => s.JobType).Should().BeEquivalentTo(
+            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+        schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
     // ── Cleanup of what earlier versions of the seeder created ──────────────────────────────────
@@ -557,27 +545,6 @@ public class DataSeederSeedJobSchedulesTests
         schedules[0].JobType.Should().Be(JobType.OrdersImport);
         schedules[0].IsEnabled.Should().BeTrue();
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
-    }
-
-    [Fact]
-    public async Task SeedJobSchedulesAsync_WhenFbsTurnsOff_ExistingFbsScheduleIsNotDeleted()
-    {
-        // Turning a flag off is not a cleanup instruction: the row stays untouched, disabled or
-        // not, exactly as an operator configured it. The scheduler refuses to fire it instead.
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildOzonTemplate();
-        Connection connection = BuildConnection(template.Id);
-
-        await SeedConnectionAsync(options, tenantId, connection, template);
-
-        await RunSeederAsync(options, enableOzonFbs: true);
-        await RunSeederAsync(options, enableOzonFbs: false);
-
-        List<JobSchedule> schedules = await ReadSchedulesAsync(options);
-
-        schedules.Should().HaveCount(2);
-        schedules.Should().Contain(s => s.JobType == JobType.OrdersImportFbs);
     }
 
     private static JobSchedule BuildSchedule(Guid connectionId, JobType jobType)

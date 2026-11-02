@@ -20,8 +20,9 @@ public enum JobType
     OrdersImportFbo = 4,
 
     /// <summary>
-    /// Reserved for Ozon FBS orders import. Not scheduled or dispatched yet; disabled until its
-    /// own delivery.
+    /// Scheduled Ozon FBS orders delta/backfill import. Scheduled alongside
+    /// <see cref="OrdersImportFbo"/> on the same connection; the scheduler serialises the two so a
+    /// connection never runs them concurrently, and each keeps its own backfill and sync cursors.
     /// </summary>
     OrdersImportFbs = 5
 }

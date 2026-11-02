@@ -25,10 +25,7 @@ public static class OrdersJobTypeMap
     /// channel code yields an empty list: such a connection gets no orders schedule at all.
     /// </summary>
     /// <param name="channelCode">The connection's <c>SystemChannelTemplate.Code</c>.</param>
-    /// <param name="enableOzonFbs">
-    /// Whether the reserved Ozon FBS job type is enabled (<c>OzonImport:EnableFbs</c>).
-    /// </param>
-    public static IReadOnlyList<JobType> GetOrdersJobTypes(string? channelCode, bool enableOzonFbs)
+    public static IReadOnlyList<JobType> GetOrdersJobTypes(string? channelCode)
     {
         if (string.IsNullOrWhiteSpace(channelCode))
         {
@@ -42,9 +39,9 @@ public static class OrdersJobTypeMap
 
         if (IsOzon(channelCode))
         {
-            return enableOzonFbs
-                ? new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs }
-                : new[] { JobType.OrdersImportFbo };
+            // Both schemas are always scheduled: they share one connection and one rate limiter, so
+            // the scheduler serialises them rather than a configuration flag deciding which exists.
+            return new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs };
         }
 
         return Array.Empty<JobType>();

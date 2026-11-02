@@ -9,10 +9,11 @@ using Microsoft.Extensions.Options;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
-/// The Ozon FBO delta branch: reads the window since the last watermark by following the
-/// endpoint's own cursor, then publishes the merged result as one unit. Ozon's
-/// <c>posting/fbo/list</c> filters on <c>created_at</c> only, so the watermark this branch reports
-/// is the newest posting the window returned, not a last-change instant.
+/// The Ozon delta branch, per schema: reads the window since the last watermark by following the
+/// endpoint's own cursor, then publishes the merged result as one unit. Ozon's posting list
+/// endpoints filter on <c>created_at</c> only, so the watermark this branch reports is the newest
+/// posting the window returned, not a last-change instant. The schema is a constructor argument
+/// because the statuses differ between FBO and FBS and must match the endpoint being called.
 /// </summary>
 public sealed class OzonDeltaOrdersFetcher : IOrdersFetcher
 {
@@ -20,6 +21,8 @@ public sealed class OzonDeltaOrdersFetcher : IOrdersFetcher
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly OrdersBatchPublisher _batchPublisher;
     private readonly ILogger<OzonDeltaOrdersFetcher> _logger;
+    private readonly OrdersSchema _schema;
+    private readonly IReadOnlyList<string> _statuses;
     private readonly TimeSpan _safetyOverlap;
     private readonly TimeSpan _backfillWindow;
     private readonly int _pageSize;
@@ -29,7 +32,9 @@ public sealed class OzonDeltaOrdersFetcher : IOrdersFetcher
         ISyncCheckpointRepository syncCheckpointRepository,
         OrdersBatchPublisher batchPublisher,
         ILogger<OzonDeltaOrdersFetcher> logger,
-        IOptions<OzonImportOptions> options)
+        IOptions<OzonImportOptions> options,
+        OrdersSchema schema,
+        IReadOnlyList<string> statuses)
     {
         OzonImportOptions importOptions = options.Value;
 
@@ -37,6 +42,8 @@ public sealed class OzonDeltaOrdersFetcher : IOrdersFetcher
         _syncCheckpointRepository = syncCheckpointRepository;
         _batchPublisher = batchPublisher;
         _logger = logger;
+        _schema = schema;
+        _statuses = statuses;
 
         _safetyOverlap = TimeSpan.FromMinutes(importOptions.SafetyOverlapMinutes >= 0
             ? importOptions.SafetyOverlapMinutes
@@ -63,15 +70,16 @@ public sealed class OzonDeltaOrdersFetcher : IOrdersFetcher
             DateFrom = windowFrom,
             DateTo = context.WindowTo,
             Selection = OrdersSelectionMode.LastChanged,
-            Schema = context.Schema ?? OrdersSchema.Fbo,
+            Schema = _schema,
             Limit = _pageSize,
             Cursor = null,
-            Statuses = OzonPostingStatuses.FboStatuses,
+            Statuses = _statuses,
         };
 
         _logger.LogInformation(
-            "JobRun {JobRunId}: branch=delta, fetching Ozon FBO orders from {From} to {To}",
+            "JobRun {JobRunId}: branch=delta, fetching Ozon {Schema} orders from {From} to {To}",
             context.JobRun.Id,
+            _schema,
             request.DateFrom,
             request.DateTo);
 

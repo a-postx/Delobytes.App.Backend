@@ -21,18 +21,15 @@ public class SchedulerHostedService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BackgroundJobsOptions _options;
-    private readonly bool _enableOzonFbs;
     private readonly ILogger<SchedulerHostedService> _logger;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<BackgroundJobsOptions> options,
-        IOptions<OzonImportOptions> ozonImportOptions,
         ILogger<SchedulerHostedService> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
-        _enableOzonFbs = ozonImportOptions.Value.EnableFbs;
         _logger = logger;
     }
 
@@ -124,7 +121,7 @@ public class SchedulerHostedService : BackgroundService
             // A schedule left over from a previous channel mapping (e.g. an OrdersImport schedule
             // on an Ozon connection) would make every tick create a job the consumer cannot run.
             if (OrdersJobTypeMap.IsScheduledOrdersJobType(schedule.JobType)
-                && !OrdersJobTypeMap.GetOrdersJobTypes(channelCode, _enableOzonFbs).Contains(schedule.JobType))
+                && !OrdersJobTypeMap.GetOrdersJobTypes(channelCode).Contains(schedule.JobType))
             {
                 // NextRunAt is deliberately not advanced: the schedule stays visible as due, so an
                 // operator (or the seeder, which disables it) sees that it is wrong.

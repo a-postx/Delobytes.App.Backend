@@ -24,7 +24,6 @@ public class ConnectionCreatedEventConsumer
     private readonly IJobScheduleRepository _scheduleRepository;
     private readonly ITenantContext _tenantContext;
     private readonly BackgroundJobsOptions _backgroundJobsOptions;
-    private readonly OzonImportOptions _ozonImportOptions;
     private readonly ILogger<ConnectionCreatedEventConsumer> _logger;
     private readonly TimeProvider _timeProvider;
 
@@ -33,7 +32,6 @@ public class ConnectionCreatedEventConsumer
         IJobScheduleRepository scheduleRepository,
         ITenantContext tenantContext,
         IOptions<BackgroundJobsOptions> backgroundJobsOptions,
-        IOptions<OzonImportOptions> ozonImportOptions,
         ILogger<ConnectionCreatedEventConsumer> logger,
         TimeProvider timeProvider)
     {
@@ -41,7 +39,6 @@ public class ConnectionCreatedEventConsumer
         _scheduleRepository = scheduleRepository;
         _tenantContext = tenantContext;
         _backgroundJobsOptions = backgroundJobsOptions.Value;
-        _ozonImportOptions = ozonImportOptions.Value;
         _logger = logger;
         _timeProvider = timeProvider;
     }
@@ -68,7 +65,7 @@ public class ConnectionCreatedEventConsumer
         }
 
         string? channelCode = connection.SystemChannelTemplate?.Code;
-        IReadOnlyList<JobType> jobTypes = OrdersJobTypeMap.GetOrdersJobTypes(channelCode, _ozonImportOptions.EnableFbs);
+        IReadOnlyList<JobType> jobTypes = OrdersJobTypeMap.GetOrdersJobTypes(channelCode);
 
         if (jobTypes.Count == 0)
         {

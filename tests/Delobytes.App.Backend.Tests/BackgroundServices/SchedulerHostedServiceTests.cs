@@ -545,8 +545,7 @@ public partial class SchedulerHostedServiceTests
 
     private SchedulerHostedService BuildScheduler(
         int tickIntervalSeconds = 3600,
-        IOrdersRateLimiter? ordersRateLimiter = null,
-        bool enableOzonFbs = false)
+        IOrdersRateLimiter? ordersRateLimiter = null)
     {
         ServiceCollection services = new ServiceCollection();
         services.AddSingleton(_scheduleRepositoryMock.Object);
@@ -561,7 +560,6 @@ public partial class SchedulerHostedServiceTests
         return new SchedulerHostedService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new BackgroundJobsOptions { SchedulerTickIntervalSeconds = tickIntervalSeconds }),
-            Microsoft.Extensions.Options.Options.Create(new OzonImportOptions { EnableFbs = enableOzonFbs }),
             NullLogger<SchedulerHostedService>.Instance);
     }
 

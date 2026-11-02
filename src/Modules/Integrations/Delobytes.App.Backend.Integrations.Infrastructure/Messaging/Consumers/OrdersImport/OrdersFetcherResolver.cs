@@ -1,13 +1,11 @@
-using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 
 /// <summary>
 /// Default <see cref="IOrdersFetcherResolver"/>: Wildberries supports <see cref="JobType.OrdersImport"/>,
-/// Ozon supports <see cref="JobType.OrdersImportFbo"/> always and <see cref="JobType.OrdersImportFbs"/>
-/// only while <see cref="OzonImportOptions.EnableFbs"/> is set. Any other combination is unsupported.
+/// Ozon supports <see cref="JobType.OrdersImportFbo"/> and <see cref="JobType.OrdersImportFbs"/>, each
+/// against its own fetcher set. Any other combination is unsupported.
 /// </summary>
 public sealed class OrdersFetcherResolver : IOrdersFetcherResolver
 {
@@ -15,17 +13,17 @@ public sealed class OrdersFetcherResolver : IOrdersFetcherResolver
     private const string OzonChannelCode = "ozon";
 
     private readonly WildberriesOrdersFetchers _wildberries;
-    private readonly OzonOrdersFetchers _ozon;
-    private readonly IOptions<OzonImportOptions> _ozonOptions;
+    private readonly OzonOrdersFetchers _ozonFbo;
+    private readonly OzonFbsOrdersFetchers _ozonFbs;
 
     public OrdersFetcherResolver(
         WildberriesOrdersFetchers wildberries,
-        OzonOrdersFetchers ozon,
-        IOptions<OzonImportOptions> ozonOptions)
+        OzonOrdersFetchers ozonFbo,
+        OzonFbsOrdersFetchers ozonFbs)
     {
         _wildberries = wildberries;
-        _ozon = ozon;
-        _ozonOptions = ozonOptions;
+        _ozonFbo = ozonFbo;
+        _ozonFbs = ozonFbs;
     }
 
     /// <inheritdoc/>
@@ -42,13 +40,13 @@ public sealed class OrdersFetcherResolver : IOrdersFetcherResolver
         {
             if (jobType == JobType.OrdersImportFbo)
             {
-                fetchers = _ozon;
+                fetchers = _ozonFbo;
                 return true;
             }
 
-            if (jobType == JobType.OrdersImportFbs && _ozonOptions.Value.EnableFbs)
+            if (jobType == JobType.OrdersImportFbs)
             {
-                fetchers = _ozon;
+                fetchers = _ozonFbs;
                 return true;
             }
         }

@@ -13,6 +13,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
@@ -99,7 +100,9 @@ public class OzonOrdersImportEndToEndTests
                     _syncCheckpointRepo.Object,
                     batchPublisher,
                     new Mock<ILogger<OzonDeltaOrdersFetcher>>().Object,
-                    Options.Create(options)),
+                    Options.Create(options),
+                    OrdersSchema.Fbo,
+                    OzonPostingStatuses.FboStatuses),
                 cursorReader,
                 options),
             _clientFactory.Object,

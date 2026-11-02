@@ -243,15 +243,11 @@ public static class DataSeeder
     /// <param name="tenantContext">Message-based tenant context, set per connection before each save.</param>
     /// <param name="options">Background jobs options (default cron expression).</param>
     /// <param name="logger">Logger instance.</param>
-    /// <param name="enableOzonFbs">
-    /// Whether the reserved Ozon FBS job type is scheduled (<c>OzonImport:EnableFbs</c>).
-    /// </param>
     public static async Task SeedJobSchedulesAsync(
         IntegrationsDbContext context,
         MessageTenantContext tenantContext,
         BackgroundJobsOptions options,
-        ILogger logger,
-        bool enableOzonFbs = false)
+        ILogger logger)
     {
         List<Connection> activeConnections = await context.Connections
             .IgnoreQueryFilters()
@@ -285,7 +281,7 @@ public static class DataSeeder
         {
             string? channelCode = connection.SystemChannelTemplate?.Code;
 
-            foreach (JobType jobType in OrdersJobTypeMap.GetOrdersJobTypes(channelCode, enableOzonFbs))
+            foreach (JobType jobType in OrdersJobTypeMap.GetOrdersJobTypes(channelCode))
             {
                 if (existingSchedules.Exists(s => s.ConnectionId == connection.Id && s.JobType == jobType))
                 {
@@ -363,7 +359,7 @@ public static class DataSeeder
             }
 
             bool stillBelongsHere = OrdersJobTypeMap
-                .GetOrdersJobTypes(channelCode, enableOzonFbs: false)
+                .GetOrdersJobTypes(channelCode)
                 .Contains(JobType.OrdersImport);
 
             if (stillBelongsHere)
