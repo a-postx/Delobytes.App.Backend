@@ -101,4 +101,9 @@ public record ChannelOrderLineSnapshot
     /// settlement fact, null everywhere else. Never computed here.
     /// </summary>
     public decimal? ChannelReportedPayout { get; init; }
+
+    /// <summary>
+    /// Gets the fulfilment schema for this line (e.g., "fbo", "fbs", "rfbs"). Ozon only.
+    /// </summary>
+    public string? FulfillmentSchema { get; init; }
 }

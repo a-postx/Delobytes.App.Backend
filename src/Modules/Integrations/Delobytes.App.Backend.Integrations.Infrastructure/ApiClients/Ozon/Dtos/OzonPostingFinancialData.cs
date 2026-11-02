@@ -16,6 +16,20 @@ public sealed class OzonPostingFinancialData
 {
     [JsonPropertyName("products")]
     public List<OzonPostingFinancialProduct>? Products { get; init; }
+
+    /// <summary>
+    /// The cluster the goods ship from. Not every posting carries it; the mapper uses it as a
+    /// fallback for the delivery region when <c>analytics_data</c> is absent.
+    /// </summary>
+    [JsonPropertyName("cluster_from")]
+    public string? ClusterFrom { get; init; }
+
+    /// <summary>
+    /// The cluster the goods ship to. Fallback for the delivery city when <c>analytics_data</c> is
+    /// absent.
+    /// </summary>
+    [JsonPropertyName("cluster_to")]
+    public string? ClusterTo { get; init; }
 }
 
 /// <summary>

@@ -6,8 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 
 /// <summary>
-/// Maps one page of Ozon FBO <c>posting/fbo/list</c> rows into <see cref="ChannelOrderSnapshot"/>.
-/// Pure mapping: no HTTP, no orchestration, no DI.
+/// Maps one page of Ozon posting list rows (<c>posting/fbo/list</c> or <c>posting/fbs/list</c>)
+/// into <see cref="ChannelOrderSnapshot"/>. Pure mapping: no HTTP, no orchestration, no DI.
 /// </summary>
 internal static class OzonOrderMapper
 {
@@ -125,9 +125,11 @@ internal static class OzonOrderMapper
 
         foreach (OzonPosting posting in orderPostings)
         {
-            if (posting.CreatedAt is DateTimeOffset createdAt)
+            DateTimeOffset? dateCandidate = posting.CreatedAt ?? posting.InProcessAt;
+
+            if (dateCandidate.HasValue)
             {
-                rowOrderDates.Add(createdAt);
+                rowOrderDates.Add(dateCandidate.Value);
             }
 
             foreach (ChannelOrderLineSnapshot line in MapPostingLines(posting))
@@ -139,7 +141,7 @@ internal static class OzonOrderMapper
         if (rowOrderDates.Count == 0)
         {
             throw new InvalidOperationException(
-                $"Ozon order '{orderKey}' reports no posting with a created_at; " +
+                $"Ozon order '{orderKey}' has no created_at or in_process_at; " +
                 "the order carries no placement instant and one cannot be invented.");
         }
 
@@ -181,10 +183,10 @@ internal static class OzonOrderMapper
             ExternalSubstatus = determiningPosting.Substatus,
             CancelReason = header.CancelReason,
             Currency = currency,
-            DeliveryCity = firstPosting.AnalyticsData?.City,
-            DeliveryRegion = firstPosting.AnalyticsData?.Region,
-            WarehouseName = firstPosting.AnalyticsData?.WarehouseName,
-            IsSellerWarehouse = false,
+            DeliveryCity = firstPosting.AnalyticsData?.City ?? firstPosting.FinancialData?.ClusterTo,
+            DeliveryRegion = firstPosting.AnalyticsData?.Region ?? firstPosting.FinancialData?.ClusterFrom,
+            WarehouseName = firstPosting.AnalyticsData?.WarehouseName ?? firstPosting.DeliveryMethod?.Warehouse,
+            IsSellerWarehouse = IsSellerWarehouseFromSchema(orderPostings),
             IsB2b = firstPosting.AnalyticsData?.IsLegal,
             IsTestOrder = null,
             ChannelReportedTotal = header.ChannelReportedTotal,
@@ -234,7 +236,8 @@ internal static class OzonOrderMapper
                 StatusChangedAt = posting.InProcessAt ?? posting.CreatedAt,
                 ChannelReportedTotal = null,
                 ChannelReportedCommission = financialProduct?.Commission?.Amount,
-                ChannelReportedPayout = financialProduct?.Payout
+                ChannelReportedPayout = financialProduct?.Payout,
+                FulfillmentSchema = posting.DeliverySchema
             });
         }
 
@@ -346,6 +349,44 @@ internal static class OzonOrderMapper
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Reduces the postings' <c>delivery_schema</c> values to the order-level flag. Returns null
+    /// when the postings disagree, and also when no posting reports a known schema: a page that
+    /// says nothing about fulfilment must not be read as proof of Ozon fulfilment.
+    /// </summary>
+    private static bool? IsSellerWarehouseFromSchema(List<OzonPosting> postings)
+    {
+        bool hasSellerFulfilled = false;
+        bool hasOzonFulfilled = false;
+
+        foreach (OzonPosting posting in postings)
+        {
+            string? schema = posting.DeliverySchema;
+
+            if (string.Equals(schema, "fbs", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(schema, "rfbs", StringComparison.OrdinalIgnoreCase))
+            {
+                hasSellerFulfilled = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(schema))
+            {
+                hasOzonFulfilled = true;
+            }
+        }
+
+        if (hasSellerFulfilled && hasOzonFulfilled)
+        {
+            return null;
+        }
+
+        if (hasSellerFulfilled)
+        {
+            return true;
+        }
+
+        return hasOzonFulfilled ? false : null;
     }
 
     private static void EnsureIdentityLength(string identity, string name)
