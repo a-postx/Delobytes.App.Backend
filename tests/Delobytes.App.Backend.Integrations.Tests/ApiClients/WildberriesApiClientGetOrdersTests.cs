@@ -143,6 +143,45 @@ public class WildberriesApiClientGetOrdersTests
         line.BuyerUnitPrice.Should().Be(950);
         line.UnitPriceBeforeDiscount.Should().Be(1200);
         line.Currency.Should().Be("RUB");
+
+        // `subject` is the product's category, not its card title: WB reports the title only in the
+        // content API. Copying the category here published a wrong fact that no consumer could tell
+        // apart from a real name, so the field stays null until the catalogue link fills it.
+        line.ProductName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_SubjectIsNotMappedToProductName()
+    {
+        string json = """
+        [
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 111,
+                "subject": "Кресло",
+                "gNumber": "G-1",
+                "srid": "SRID-A"
+            },
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "nmId": 222,
+                "subject": "Кресло",
+                "gNumber": "G-1",
+                "srid": "SRID-B"
+            }
+        ]
+        """;
+
+        WildberriesApiClient client = BuildClientRespondingWith(json);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        // Two different articles of one category must not end up sharing one "product name".
+        ChannelOrderSnapshot order = page.Orders.Single();
+        order.Lines.Should().HaveCount(2);
+        order.Lines.Should().OnlyContain(line => line.ProductName == null);
     }
 
     [Fact]
