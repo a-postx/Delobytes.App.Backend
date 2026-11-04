@@ -79,13 +79,10 @@ public class ProductOrdersCheckCompletedConsumer
                 }
             }
 
+            // The card keeps existing in the channel after a soft product delete; ChannelProduct.IsActive
+            // describes the channel listing, not whether we still show the product.
             product.Status = ProductStatus.Deleted;
             product.DeletedAt = DateTimeOffset.UtcNow;
-
-            foreach (ChannelProduct cp in product.ChannelProducts)
-            {
-                cp.IsActive = false;
-            }
 
             _logger.LogInformation("Product {ProductId} deleted successfully", product.Id);
         }

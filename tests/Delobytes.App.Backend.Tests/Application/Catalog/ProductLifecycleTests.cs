@@ -61,7 +61,12 @@ public class ProductLifecycleTests
         product.Status.Should().Be(ProductStatus.Archived);
         product.ArchivedAt.Should().NotBeNull();
         product.ArchivedAt!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
-        product.ChannelProducts.Should().OnlyContain(cp => !cp.IsActive);
+
+        // Archiving records the user's decision on the product only. IsActive reports whether the
+        // card is still listed in the channel, which a catalogue-side archive does not change.
+        product.ChannelProducts.Should().OnlyContain(
+            cp => cp.IsActive,
+            "the cards stay listed in the channel after the product is archived");
 
         repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -107,7 +112,6 @@ public class ProductLifecycleTests
         response.Accepted.Should().BeTrue();
         product.Status.Should().Be(ProductStatus.Active);
         product.ArchivedAt.Should().BeNull();
-        product.ChannelProducts.Should().OnlyContain(cp => cp.IsActive);
 
         repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -379,7 +383,9 @@ public class ProductLifecycleTests
         reloaded!.Status.Should().Be(ProductStatus.Deleted);
         reloaded.DeletedAt.Should().NotBeNull();
         reloaded.DeletionRequestedAt.Should().NotBeNull("the timestamp is kept as an audit trail of the request");
-        reloaded.ChannelProducts.Should().OnlyContain(cp => !cp.IsActive);
+        reloaded.ChannelProducts.Should().OnlyContain(
+            cp => cp.IsActive,
+            "a soft product delete does not remove the card from the channel");
     }
 
     [Fact]
@@ -471,7 +477,9 @@ public class ProductLifecycleTests
         // Assert
         product.Status.Should().Be(ProductStatus.Deleted);
         product.DeletedAt.Should().NotBeNull();
-        product.ChannelProducts.Should().OnlyContain(cp => !cp.IsActive);
+        product.ChannelProducts.Should().OnlyContain(
+            cp => cp.IsActive,
+            "a soft product delete does not remove the card from the channel");
         repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -945,7 +953,9 @@ public class ProductLifecycleTests
                 ChannelId = channelId,
                 Channel = channel,
                 ExternalProductId = "EXT-" + Guid.NewGuid().ToString("N").Substring(0, 8),
-                IsActive = status == ProductStatus.Active,
+
+                // The card is listed in the channel regardless of the product's catalogue status.
+                IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
             });
         }

@@ -41,14 +41,11 @@ public class RestoreProductCommandHandler : IRequestHandler<RestoreProductComman
             return new RestoreProductResponse { Found = true, Accepted = false };
         }
 
+        // Only the product state is restored. ChannelProduct.IsActive is a channel-reported fact and
+        // is not something a user action can assert: it stays whatever the last import observed.
         product.Status = ProductStatus.Active;
         product.ArchivedAt = null;
         product.DeletionRequestedAt = null;
-
-        foreach (ChannelProduct cp in product.ChannelProducts)
-        {
-            cp.IsActive = true;
-        }
 
         await _repository.SaveChangesAsync(cancellationToken);
 

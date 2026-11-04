@@ -38,13 +38,12 @@ public class ArchiveProductCommandHandler : IRequestHandler<ArchiveProductComman
             return new ArchiveProductResponse { Found = false };
         }
 
+        // The decision is recorded on the product only. ChannelProduct.IsActive reports whether the
+        // card is still listed in the channel, which archiving does not change, and the import sets
+        // it back to true on the next sync regardless -- writing it here only produced a flag that
+        // flipped twice per day and stated nothing about the actual channel listing.
         product.Status = ProductStatus.Archived;
         product.ArchivedAt = DateTimeOffset.UtcNow;
-
-        foreach (ChannelProduct cp in product.ChannelProducts)
-        {
-            cp.IsActive = false;
-        }
 
         await _repository.SaveChangesAsync(cancellationToken);
 

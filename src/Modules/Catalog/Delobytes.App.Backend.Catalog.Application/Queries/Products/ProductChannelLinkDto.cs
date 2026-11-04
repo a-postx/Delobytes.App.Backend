@@ -26,5 +26,10 @@ public class ProductChannelLinkDto
     /// <summary>External SKU if it differs from Product.Sku (e.g. vendorCode for WB).</summary>
     public string? ExternalSku { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the card was present in the channel listing at the
+    /// last import — a channel-reported fact, not the user's decision to hide the product. That
+    /// decision is <c>ProductItem.Status</c>.
+    /// </summary>
     public bool IsActive { get; set; }
 }

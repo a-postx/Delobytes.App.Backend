@@ -38,8 +38,15 @@ public class ChannelProduct : ITenantScoped
     public string? ChannelSpecificData { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the channel product link is active.
+    /// Gets or sets a value indicating whether the card is still present in the channel's
+    /// listing, as the last import observed it. Technical, channel-owned state: it is written only
+    /// by the import and never reflects a user decision, which lives in <see cref="Product.Status"/>.
     /// </summary>
+    /// <remarks>
+    /// Not a product visibility flag. Archiving a product deliberately leaves this alone: the card
+    /// remains listed in the channel after the user hides the product in the catalogue, and
+    /// deactivating it here would conflate the two.
+    /// </remarks>
     public bool IsActive { get; set; }
 
     /// <summary>
