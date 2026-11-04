@@ -1067,7 +1067,6 @@ public class OrdersBatchImportRequestedConsumerTests
             ExternalProductId = externalProductId,
             ExternalSku = "SKU-" + externalProductId,
             ProductName = "Test Product",
-            IsActive = true,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
     }

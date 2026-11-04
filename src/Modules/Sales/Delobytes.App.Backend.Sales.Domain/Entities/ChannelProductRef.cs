@@ -10,6 +10,13 @@ namespace Delobytes.App.Backend.Sales.Domain.Entities;
 /// <c>(ChannelId, ExternalProductId) → ChannelProductId</c> mapping lives in another module and
 /// another database, and synchronous cross-module calls are forbidden. This projection is the
 /// local copy that makes resolution a lookup instead of a call.
+/// <para>
+/// Deliberately carries no "still active" flag. A row here means the mapping exists, and a mapping
+/// that disappears is a mapping whose lines can no longer be resolved — the projection has nothing
+/// useful to say about it. Catalogue-side activity (<c>ChannelProduct.IsActive</c>) is a display
+/// concern that also flips back on the next card import, so copying it would invite a filter on
+/// resolution that retroactively orphans historical order lines.
+/// </para>
 /// </remarks>
 public class ChannelProductRef : ITenantScoped
 {
@@ -54,11 +61,6 @@ public class ChannelProductRef : ITenantScoped
     /// Gets or sets the product photo URL snapshot.
     /// </summary>
     public string? PhotoUrl { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the link is still active in the catalogue.
-    /// </summary>
-    public bool IsActive { get; set; }
 
     /// <summary>
     /// Gets or sets the time of the last projection update.

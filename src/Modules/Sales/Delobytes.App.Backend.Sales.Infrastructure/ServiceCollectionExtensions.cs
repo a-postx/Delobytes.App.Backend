@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<OrdersBatchImportRequestedConsumer>();
         services.AddScoped<ProductDeletionRequestedConsumer>();
+        services.AddScoped<ChannelProductLinkedConsumer>();
         services.AddScoped<IOrderStatsRepository, OrderStatsRepository>();
 
         // Registered independently of Integrations' own TryAddSingleton call: Sales must not

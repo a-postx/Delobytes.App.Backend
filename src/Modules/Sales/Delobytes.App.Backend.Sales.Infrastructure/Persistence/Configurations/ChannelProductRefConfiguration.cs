@@ -39,9 +39,6 @@ public class ChannelProductRefConfiguration : IEntityTypeConfiguration<ChannelPr
         builder.Property(r => r.PhotoUrl)
             .HasMaxLength(1000);
 
-        builder.Property(r => r.IsActive)
-            .IsRequired();
-
         builder.Property(r => r.UpdatedAt)
             .IsRequired();
 

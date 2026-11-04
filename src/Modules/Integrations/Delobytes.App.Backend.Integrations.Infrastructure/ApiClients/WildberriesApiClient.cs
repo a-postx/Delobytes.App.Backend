@@ -892,7 +892,11 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             ExternalProductId = dto.NmId.ToString(CultureInfo.InvariantCulture),
             OfferId = dto.SupplierArticle,
             ExternalSizeId = dto.TechSize,
-            ProductName = dto.Subject,
+
+            // supplier/orders reports only `subject`, the product's category, never its card title.
+            // Writing the category here would publish a wrong fact that no consumer can tell apart
+            // from a real name; the name is resolved on read from ChannelProductRef instead.
+            ProductName = null,
             Quantity = 1,
             UnitPrice = dto.PriceWithDisc,
             BuyerUnitPrice = dto.FinishedPrice,

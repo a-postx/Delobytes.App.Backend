@@ -41,9 +41,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("PhotoUrl")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
