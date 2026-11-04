@@ -239,6 +239,91 @@ public class ProcessProductImportBatchCompletedConsumer
         }
 
         await PublishCompletedEventAsync(jobRun, cancellationToken);
+
+        await PublishFullSetReconciliationAsync(jobRun, connection, cancellationToken);
+    }
+
+    /// <summary>
+    /// Asks Catalog to reconcile <c>ChannelProduct.IsActive</c> against the listing this run walked.
+    /// </summary>
+    /// <remarks>
+    /// Fired from here and nowhere else, because this method runs only once every batch of the run
+    /// has been recorded — and a batch result reaches the aggregator strictly after that batch
+    /// committed in Catalog. That ordering is the entire point: the sweep compares each link's
+    /// <c>LastSyncedAt</c> against the run's start, which only answers correctly once every sibling's
+    /// stamps are visible. Issued from the batch consumer instead, it read its siblings' uncommitted
+    /// rows as dropped cards and deactivated them.
+    /// <para>
+    /// Only a fully successful run reconciles. A run with any failed record leaves cards unstamped,
+    /// and an unstamped card is indistinguishable from one the channel no longer lists; a cancelled
+    /// run ends in <see cref="JobStatus.Cancelled"/> and never walked the whole listing. The same
+    /// condition covers a missing <c>StartedAt</c>: without a boundary the sweep would deactivate
+    /// every link of the channel.
+    /// </para>
+    /// <para>
+    /// Failures are logged and swallowed: the import itself succeeded, and a missed reconciliation
+    /// only leaves the flag behind until the next successful run, which reconciles again.
+    /// </para>
+    /// </remarks>
+    /// <param name="jobRun">The finalised job run.</param>
+    /// <param name="connection">The connection the run imported through, when it could be resolved.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task PublishFullSetReconciliationAsync(
+        JobRun jobRun,
+        Connection? connection,
+        CancellationToken cancellationToken)
+    {
+        if (jobRun.Status != JobStatus.Success)
+        {
+            return;
+        }
+
+        if (jobRun.StartedAt == null)
+        {
+            _logger.LogWarning(
+                "JobRun {JobRunId} succeeded but has no StartedAt; skipping full-set reconciliation, " +
+                "since there is no boundary to compare the imported cards against.",
+                jobRun.Id);
+
+            return;
+        }
+
+        if (connection == null)
+        {
+            _logger.LogWarning(
+                "JobRun {JobRunId}: connection {ConnectionId} not found; skipping full-set reconciliation.",
+                jobRun.Id,
+                jobRun.ConnectionId);
+
+            return;
+        }
+
+        try
+        {
+            ChannelProductFullSetReconciliationRequestedEvent reconciliationEvent =
+                new ChannelProductFullSetReconciliationRequestedEvent
+                {
+                    JobRunId = jobRun.Id,
+                    ConnectionId = connection.Id,
+                    ChannelId = connection.ChannelId,
+                    RunStartedAt = jobRun.StartedAt.Value,
+                };
+
+            await _eventPublisher.PublishAsync(reconciliationEvent, cancellationToken);
+
+            _logger.LogInformation(
+                "Published ChannelProductFullSetReconciliationRequestedEvent for JobRun {JobRunId}, ChannelId={ChannelId}, RunStartedAt={RunStartedAt}",
+                jobRun.Id,
+                connection.ChannelId,
+                jobRun.StartedAt.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to publish ChannelProductFullSetReconciliationRequestedEvent for JobRun {JobRunId}",
+                jobRun.Id);
+        }
     }
 
     private async Task PublishCompletedEventAsync(JobRun jobRun, CancellationToken cancellationToken)

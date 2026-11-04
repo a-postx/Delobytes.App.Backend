@@ -770,4 +770,229 @@ public class ProcessProductImportBatchCompletedConsumerTests
             Times.Never,
             "проигравший не должен продолжать постобработку (SyncCheckpoint/Connection.LastSyncAt) после конфликта");
     }
+
+    // -----------------------------------------------------------------------
+    // Full-set reconciliation barrier
+    //
+    // This consumer is the only place that knows every batch of the run has been recorded, and a
+    // batch result reaches it strictly after that batch committed in Catalog. The sweep of
+    // ChannelProduct.IsActive is therefore requested from here and nowhere else: issued from the
+    // batch consumer, it read its siblings' uncommitted rows as dropped cards and deactivated them.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_SuccessfulFinalisation_RequestsFullSetReconciliation()
+    {
+        Guid channelId = Guid.NewGuid();
+        JobRun jobRun = BuildJobRun();
+        ProductsImportJob importJob = BuildImportJob(jobRun);
+        Guid messageId = Guid.NewGuid();
+
+        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
+        SetupResolvableConnection(jobRun, channelId);
+
+        DateTimeOffset startedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        jobRun.StartedAt = startedAt;
+
+        List<ChannelProductFullSetReconciliationRequestedEvent> published =
+            CaptureReconciliationEvents();
+
+        ProcessProductImportBatchCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(BuildEvent(jobRun.Id, isLastBatch: true), messageId, CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Success);
+
+        published.Should().ContainSingle(
+            "a clean run is the only one whose listing the sweep may describe");
+
+        published[0].JobRunId.Should().Be(jobRun.Id);
+        published[0].ConnectionId.Should().Be(jobRun.ConnectionId);
+        published[0].ChannelId.Should().Be(channelId);
+        published[0].RunStartedAt.Should().Be(startedAt,
+            "the boundary is the run's own start, so cards imported by it are stamped at or after it");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FailedRun_DoesNotRequestReconciliation()
+    {
+        JobRun jobRun = BuildJobRun();
+        ProductsImportJob importJob = BuildImportJob(jobRun);
+        Guid messageId = Guid.NewGuid();
+
+        // A failed card leaves its link unstamped, and an unstamped card is indistinguishable from
+        // one the channel dropped: sweeping would deactivate a product that is still listed.
+        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 1, statusAfterTotals: JobStatus.Running);
+        SetupResolvableConnection(jobRun, Guid.NewGuid());
+
+        jobRun.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        List<ChannelProductFullSetReconciliationRequestedEvent> published =
+            CaptureReconciliationEvents();
+
+        ProcessProductImportBatchCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(BuildEvent(jobRun.Id, isLastBatch: true), messageId, CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Failed);
+        published.Should().BeEmpty("a run with failures cannot speak for the whole listing");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CancelledRun_DoesNotRequestReconciliation()
+    {
+        JobRun jobRun = BuildJobRun(JobStatus.Cancelled);
+        ProductsImportJob importJob = BuildImportJob(jobRun);
+        Guid messageId = Guid.NewGuid();
+
+        // A cancelled run publishes a terminal batch so the job can finalise, but it never walked
+        // the whole listing; the cards it never fetched were not absent from the channel.
+        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Cancelled);
+        SetupResolvableConnection(jobRun, Guid.NewGuid());
+
+        jobRun.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        List<ChannelProductFullSetReconciliationRequestedEvent> published =
+            CaptureReconciliationEvents();
+
+        ProcessProductImportBatchCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(BuildEvent(jobRun.Id, isLastBatch: true), messageId, CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Cancelled);
+        published.Should().BeEmpty("a partial run does not describe the whole catalogue");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SuccessfulRunWithoutStartedAt_DoesNotRequestReconciliation()
+    {
+        JobRun jobRun = BuildJobRun();
+        ProductsImportJob importJob = BuildImportJob(jobRun);
+        Guid messageId = Guid.NewGuid();
+
+        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
+        SetupResolvableConnection(jobRun, Guid.NewGuid());
+
+        jobRun.StartedAt = null;
+
+        List<ChannelProductFullSetReconciliationRequestedEvent> published =
+            CaptureReconciliationEvents();
+
+        ProcessProductImportBatchCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(BuildEvent(jobRun.Id, isLastBatch: true), messageId, CancellationToken.None);
+
+        // Without a boundary the consumer would have to invent one, and the only invented value that
+        // compiles is default(DateTimeOffset) -- which deactivates every link of the channel.
+        published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReconciliationPublishFails_FinalisationStillSucceeds()
+    {
+        JobRun jobRun = BuildJobRun();
+        ProductsImportJob importJob = BuildImportJob(jobRun);
+        Guid messageId = Guid.NewGuid();
+
+        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
+        SetupResolvableConnection(jobRun, Guid.NewGuid());
+
+        jobRun.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(
+                It.IsAny<ChannelProductFullSetReconciliationRequestedEvent>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("broker unavailable"));
+
+        ProcessProductImportBatchCompletedConsumer consumer = CreateConsumer();
+
+        Func<Task> act = () => consumer.ProcessAsync(
+            BuildEvent(jobRun.Id, isLastBatch: true), messageId, CancellationToken.None);
+
+        // The import itself succeeded; a missed reconciliation only leaves IsActive stale until the
+        // next successful run, which reconciles again.
+        await act.Should().NotThrowAsync();
+        jobRun.Status.Should().Be(JobStatus.Success);
+    }
+
+    /// <summary>
+    /// Wires the aggregate-finalisation happy path: one recorded batch, no failures, the job
+    /// reaching its terminal status, and the checkpoint lookups the finalisation performs.
+    /// </summary>
+    private void SetupFinalisation(
+        JobRun jobRun,
+        ProductsImportJob importJob,
+        Guid messageId,
+        int totalFailed,
+        JobStatus statusAfterTotals)
+    {
+        SetupDefaults(jobRun, importJob);
+
+        _jobRunRepo
+            .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _jobRunRepo
+            .Setup(r => r.GetBatchResultTotalsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JobRunBatchResultTotals
+            {
+                TotalProcessed = 10,
+                TotalCreated = 10,
+                TotalUpdated = 0,
+                TotalSkipped = 0,
+                TotalFailed = totalFailed,
+                CombinedErrors = totalFailed > 0 ? "one card failed" : null,
+            });
+
+        _jobRunRepo
+            .Setup(r => r.CountBatchResultsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        if (statusAfterTotals == JobStatus.Cancelled)
+        {
+            jobRun.Status = JobStatus.Cancelled;
+        }
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(jobRun.ConnectionId, jobRun.JobType, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+    }
+
+    private void SetupResolvableConnection(JobRun jobRun, Guid channelId)
+    {
+        Connection connection = new Connection
+        {
+            Id = jobRun.ConnectionId,
+            ChannelId = channelId,
+            Name = "Test WB",
+            ApiKey = "test-key",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        _connectionRepo
+            .Setup(r => r.FindByIdAsync(jobRun.ConnectionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        _connectionRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+    }
+
+    private List<ChannelProductFullSetReconciliationRequestedEvent> CaptureReconciliationEvents()
+    {
+        List<ChannelProductFullSetReconciliationRequestedEvent> captured =
+            new List<ChannelProductFullSetReconciliationRequestedEvent>();
+
+        _eventPublisher
+            .Setup(p => p.PublishAsync(
+                It.IsAny<ChannelProductFullSetReconciliationRequestedEvent>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ChannelProductFullSetReconciliationRequestedEvent, CancellationToken>(
+                (e, _) => captured.Add(e))
+            .Returns(Task.CompletedTask);
+
+        return captured;
+    }
 }

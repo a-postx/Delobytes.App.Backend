@@ -199,14 +199,11 @@ public class ProcessProductsImportConsumer
                         terminalCards.Count,
                         cancelled);
 
-                    // cancelled means the cursor was not exhausted: the batch is terminal for the job
-                    // but does not describe the channel's whole listing.
                     await PublishBatchAsync(
                         jobRun,
                         connection,
                         terminalCards,
                         isLastBatch: true,
-                        isPartial: cancelled,
                         batchNumber,
                         totalBatches: batchNumber,
                         cancellationToken);
@@ -227,7 +224,6 @@ public class ProcessProductsImportConsumer
                         connection,
                         bufferedBatch.Cards,
                         isLastBatch: false,
-                        isPartial: false,
                         batchNumber,
                         totalBatches: 0,
                         cancellationToken);
@@ -256,7 +252,6 @@ public class ProcessProductsImportConsumer
                         connection,
                         cards,
                         isLastBatch: true,
-                        isPartial: cancelled,
                         batchNumber,
                         totalBatches: batchNumber,
                         cancellationToken);
@@ -301,7 +296,6 @@ public class ProcessProductsImportConsumer
         Connection connection,
         List<WildberriesCardSnapshot> cards,
         bool isLastBatch,
-        bool isPartial,
         int batchNumber,
         int totalBatches,
         CancellationToken cancellationToken)
@@ -313,17 +307,7 @@ public class ProcessProductsImportConsumer
             ChannelId = connection.ChannelId,
             Cards = cards,
             IsLastBatch = isLastBatch,
-            IsPartial = isPartial,
             TotalBatches = totalBatches,
-
-            // The run's own start, not "now": Catalog reconciles the full set on the terminal batch
-            // by comparing it against the stamp each imported card leaves on ChannelProduct, and the
-            // cards of the earlier batches were stamped after this instant only.
-            //
-            // Read from the persisted JobRun rather than captured when the loop began: a redelivered
-            // job resumes with checkpointed siblings already imported in an earlier attempt, and
-            // their stamps must still count as "seen by this run".
-            RunStartedAt = jobRun.StartedAt,
         };
 
         await _eventPublisher.PublishAsync(batchEvent, cancellationToken);

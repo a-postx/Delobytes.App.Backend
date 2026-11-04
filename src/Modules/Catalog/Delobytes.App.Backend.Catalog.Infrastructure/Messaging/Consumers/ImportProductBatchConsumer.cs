@@ -202,11 +202,11 @@ public class ImportProductBatchConsumer
                     }
                 }
 
-                // Inside the transaction and after the card loop: the sweep reads what this batch
-                // just stamped into LastSyncedAt, and a failure here must not leave the deactivations
-                // committed while the imports that justify them are rolled back.
-                await DeactivateLinksMissingFromFullSetAsync(message, channel != null, recordsFailed, cancellationToken);
-
+                // The full-set reconciliation is NOT done here: this batch cannot see its siblings'
+                // uncommitted rows, so it would read every card they have not yet committed as
+                // dropped by the channel. Integrations publishes
+                // ChannelProductFullSetReconciliationRequestedEvent once every batch of the run has
+                // been recorded, and Catalog sweeps then.
                 await transaction.CommitAsync(cancellationToken);
             }
             catch (Exception ex)
@@ -265,106 +265,6 @@ public class ImportProductBatchConsumer
             recordsUpdated,
             recordsSkipped,
             recordsFailed);
-    }
-
-    /// <summary>
-    /// On the terminal batch of a full listing import, marks every link of the channel that this
-    /// job never saw as inactive, so <see cref="ChannelProduct.IsActive"/> reports what the channel
-    /// currently lists instead of a constant true.
-    /// </summary>
-    /// <remarks>
-    /// The consumer sees one batch and knows nothing about its siblings, so the "was it in this
-    /// run" question is answered by the runs' own watermark: every card the import touches stamps
-    /// <see cref="ChannelProduct.LastSyncedAt"/>, and <see cref="ProductBatchImportRequestedEvent.RunStartedAt"/>
-    /// is the instant before the first of them. A link stamped earlier than that belongs to a
-    /// previous run and was therefore absent from this listing.
-    /// <para>
-    /// Deliberately conservative, because a wrongly deactivated link is invisible until the next
-    /// import of the same card:
-    /// <list type="bullet">
-    /// <item>Only the terminal batch sweeps, and only when the publisher supplied a start instant.
-    /// Without one the boundary is unknown and the sweep is skipped rather than guessed.</item>
-    /// <item>A partial run (a cancelled job) sweeps nothing: its terminal batch is terminal only
-    /// for the job, and the cards it never fetched were not absent from the channel.</item>
-    /// <item>A batch that produced failures sweeps nothing: the failed cards' own stamps may have
-    /// been rolled back to the savepoint, so their links would look abandoned.</item>
-    /// <item>Links that were never synced (null stamp) are left alone; they were created outside
-    /// any import and this run has no claim to have observed their absence.</item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// Known limitation: only this batch's failures are visible here. A sibling that failed earlier
-    /// in the same job leaves its cards unstamped, so their links are deactivated by this sweep as
-    /// if the channel had dropped them. The damage is limited to the flag: the product is still
-    /// listed, and the next successful import reactivates the link through
-    /// <see cref="UpdateExistingProductAsync"/>. Guarding on the job's own failure count is not an
-    /// option from here — that counter is maintained by the aggregator, which may not have
-    /// folded in the sibling's result yet.
-    /// </para>
-    /// </remarks>
-    /// <param name="message">The batch being processed.</param>
-    /// <param name="channelExists">False when the channel itself could not be resolved.</param>
-    /// <param name="batchFailures">Cards this batch failed to import.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of links deactivated.</returns>
-    private async Task<int> DeactivateLinksMissingFromFullSetAsync(
-        ProductBatchImportRequestedEvent message,
-        bool channelExists,
-        int batchFailures,
-        CancellationToken cancellationToken)
-    {
-        if (!message.IsLastBatch || message.IsPartial || message.RunStartedAt == null || !channelExists)
-        {
-            return 0;
-        }
-
-        // A failed card in this batch cannot be told apart from a card the channel dropped, and the
-        // distinction is exactly what the sweep asserts. Leaving the batch alone is the safe side:
-        // the next successful import corrects it.
-        if (batchFailures > 0)
-        {
-            _logger.LogWarning(
-                "JobRun {JobRunId}: skipping full-set reconciliation for ChannelId={ChannelId} because the " +
-                "terminal batch reported failures; the links it could not import would look abandoned.",
-                message.JobRunId,
-                message.ChannelId);
-
-            return 0;
-        }
-
-        DateTimeOffset runStartedAt = message.RunStartedAt.Value;
-
-        List<ChannelProduct> abandonedLinks = await _context.ChannelProducts
-            .Where(cp => cp.ChannelId == message.ChannelId
-                && cp.IsActive
-                && cp.LastSyncedAt != null
-                && cp.LastSyncedAt < runStartedAt)
-            .ToListAsync(cancellationToken);
-
-        if (abandonedLinks.Count == 0)
-        {
-            return 0;
-        }
-
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-
-        foreach (ChannelProduct link in abandonedLinks)
-        {
-            link.IsActive = false;
-            link.UpdatedAt = now;
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "JobRun {JobRunId}: deactivated {Count} ChannelProduct link(s) for ChannelId={ChannelId} that were " +
-            "absent from the full listing imported since {RunStartedAt}.",
-            message.JobRunId,
-            abandonedLinks.Count,
-            message.ChannelId,
-            runStartedAt);
-
-        return abandonedLinks.Count;
     }
 
     /// <summary>

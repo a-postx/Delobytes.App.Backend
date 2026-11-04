@@ -1,18 +1,13 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
-using Delobytes.App.Backend.Integrations.Contracts.Models;
 using FluentAssertions;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
@@ -22,13 +17,14 @@ using Xunit;
 namespace Delobytes.App.Backend.Tests.Infrastructure.Catalog;
 
 /// <summary>
-/// Covers the full-set reconciliation of <see cref="ChannelProduct.IsActive"/>: on the terminal
-/// batch of a complete listing import, links the run never observed are deactivated, and every
-/// condition that makes the run an unreliable witness of the listing suppresses the sweep.
+/// Covers <see cref="ChannelProductFullSetReconciliationConsumer"/>: the sweep that marks a
+/// channel's links inactive when the finished import run never observed them.
 ///
-/// The consumer processes one batch and cannot see its siblings, so "seen by this run" is decided
-/// by comparing <see cref="ChannelProduct.LastSyncedAt"/> against the run's start instant. These
-/// tests pin that boundary and each of its guards.
+/// These tests are deliberately written against the consumer directly rather than through the batch
+/// import. The bug this design replaced lived precisely in that coupling: the sweep used to run
+/// inside a batch transaction, where its siblings' committed-but-not-yet-visible rows looked like
+/// dropped cards. Exercising the sweep in isolation pins the contract it actually has — it is given
+/// a run boundary by Integrations once every batch is recorded, and asks nothing of the batches.
 /// </summary>
 public class ChannelProductFullSetReconciliationTests
 {
@@ -39,143 +35,72 @@ public class ChannelProductFullSetReconciliationTests
     private readonly Guid _jobRunId = Guid.NewGuid();
 
     [Fact]
-    public async Task ProcessAsync_TerminalBatch_DeactivatesLinksMissingFromListing()
+    public async Task ProcessAsync_LinksNotTouchedByRun_AreDeactivated()
     {
         string databaseName = Guid.NewGuid().ToString();
         DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
 
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await CreateChannelAsync(setupContext, _otherChannelId);
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
 
-        // 111 is in the batch below, 999 was listed by an earlier import only.
-        await SeedLinkAsync(setupContext, _channelId, "111", runStartedAt.AddDays(-1));
-        await SeedLinkAsync(setupContext, _channelId, "999", runStartedAt.AddDays(-1));
+        // Seen by an earlier run, absent from this one.
+        await SeedLinkAsync(context, _channelId, "999", runStartedAt.AddDays(-1));
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
+        // Seen by this run: stamped at or after its start.
+        Guid liveLinkId = await SeedLinkAsync(context, _channelId, "111", runStartedAt.AddSeconds(5));
 
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: true,
-                runStartedAt: runStartedAt),
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+
+        int deactivated = await consumer.ProcessAsync(
+            BuildMessage(runStartedAt),
             CancellationToken.None);
 
-        (await IsLinkActiveAsync(consumerContext, _channelId, "111")).Should().BeTrue(
-            "the run observed this card, so the link is live");
-        (await IsLinkActiveAsync(consumerContext, _channelId, "999")).Should().BeFalse(
-            "the card was absent from the full listing this run walked");
+        deactivated.Should().Be(1);
+        (await IsActiveAsync(context, liveLinkId)).Should().BeTrue(
+            "this card was imported by the run, so its link is live");
+        (await IsLinkActiveAsync(context, _channelId, "999")).Should().BeFalse(
+            "the card was absent from the listing the run walked");
     }
 
     [Fact]
-    public async Task ProcessAsync_NonTerminalBatch_LeavesLinksAlone()
+    public async Task ProcessAsync_LinkStampedExactlyAtRunStart_StaysActive()
     {
         string databaseName = Guid.NewGuid().ToString();
         DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
 
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await SeedLinkAsync(setupContext, _channelId, "999", runStartedAt.AddDays(-1));
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
+        // The comparison is strict: a stamp equal to the boundary belongs to this run, and treating
+        // it as older would deactivate cards imported in the first milliseconds of every run.
+        await SeedLinkAsync(context, _channelId, "111", runStartedAt);
 
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: false,
-                runStartedAt: runStartedAt),
-            CancellationToken.None);
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
 
-        (await IsLinkActiveAsync(consumerContext, _channelId, "999")).Should().BeTrue(
-            "a non-terminal batch says nothing about the cards later batches will carry");
+        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+
+        deactivated.Should().Be(0);
+        (await IsLinkActiveAsync(context, _channelId, "111")).Should().BeTrue();
     }
 
     [Fact]
-    public async Task ProcessAsync_PartialRun_LeavesLinksAlone()
+    public async Task ProcessAsync_AlreadyInactiveLink_IsNotCountedAgain()
     {
         string databaseName = Guid.NewGuid().ToString();
         DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
 
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await SeedLinkAsync(setupContext, _channelId, "999", runStartedAt.AddDays(-1));
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
+        await SeedLinkAsync(context, _channelId, "999", runStartedAt.AddDays(-1), isActive: false);
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
 
-        // A cancelled job publishes a terminal batch for a listing it never finished walking.
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: true,
-                runStartedAt: runStartedAt,
-                isPartial: true),
-            CancellationToken.None);
+        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
-        (await IsLinkActiveAsync(consumerContext, _channelId, "999")).Should().BeTrue(
-            "the cards a cancelled run never fetched were not absent from the channel");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_MissingRunStart_LeavesLinksAlone()
-    {
-        string databaseName = Guid.NewGuid().ToString();
-
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await SeedLinkAsync(setupContext, _channelId, "999", DateTimeOffset.UtcNow.AddDays(-30));
-
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
-
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: true,
-                runStartedAt: null),
-            CancellationToken.None);
-
-        (await IsLinkActiveAsync(consumerContext, _channelId, "999")).Should().BeTrue(
-            "without a boundary every link would look abandoned, so the sweep must not run at all");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_BatchWithFailures_LeavesLinksAlone()
-    {
-        string databaseName = Guid.NewGuid().ToString();
-        DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
-
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await SeedLinkAsync(setupContext, _channelId, "999", runStartedAt.AddDays(-1));
-
-        // A product already owns this SKU, so the card below cannot be imported: the batch reports
-        // one failure and its own stamps may have been rolled back to the card savepoint.
-        await setupContext.Products.AddAsync(new Product
-        {
-            Id = Guid.NewGuid(),
-            Sku = "SKU-TAKEN",
-            Name = "Existing product",
-            Status = ProductStatus.Active,
-            CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
-        });
-
-        await setupContext.SaveChangesAsync();
-
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
-
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-TAKEN") },
-                isLastBatch: true,
-                runStartedAt: runStartedAt),
-            CancellationToken.None);
-
-        (await IsLinkActiveAsync(consumerContext, _channelId, "999")).Should().BeTrue(
-            "a card this batch could not import is indistinguishable from a dropped card");
+        // Idempotency matters: a redelivered request must not report work it did not do, and must
+        // not resurrect or re-touch rows a previous delivery already handled.
+        deactivated.Should().Be(0);
+        (await IsLinkActiveAsync(context, _channelId, "999")).Should().BeFalse();
     }
 
     [Fact]
@@ -184,22 +109,18 @@ public class ChannelProductFullSetReconciliationTests
         string databaseName = Guid.NewGuid().ToString();
         DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
 
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await SeedLinkAsync(setupContext, _channelId, "999", lastSyncedAt: null);
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
+        // Created outside any import: no stamp, so no run can claim to have observed its absence.
+        await SeedLinkAsync(context, _channelId, "999", lastSyncedAt: null);
 
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: true,
-                runStartedAt: runStartedAt),
-            CancellationToken.None);
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
 
-        (await IsLinkActiveAsync(consumerContext, _channelId, "999")).Should().BeTrue(
-            "a link created outside any import carries no stamp, so no run can claim to have missed it");
+        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+
+        deactivated.Should().Be(0);
+        (await IsLinkActiveAsync(context, _channelId, "999")).Should().BeTrue();
     }
 
     [Fact]
@@ -208,85 +129,85 @@ public class ChannelProductFullSetReconciliationTests
         string databaseName = Guid.NewGuid().ToString();
         DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
 
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
-        await CreateChannelAsync(setupContext, _otherChannelId);
-        await SeedLinkAsync(setupContext, _otherChannelId, "999", runStartedAt.AddDays(-1));
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
+        await CreateChannelAsync(context, _otherChannelId);
+        await SeedLinkAsync(context, _otherChannelId, "999", runStartedAt.AddDays(-1));
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
 
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: true,
-                runStartedAt: runStartedAt),
-            CancellationToken.None);
+        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
-        (await IsLinkActiveAsync(consumerContext, _otherChannelId, "999")).Should().BeTrue(
-            "a listing import describes one channel and cannot speak for another");
+        // A listing import describes one channel; another channel's cards are not evidence of
+        // anything about it.
+        deactivated.Should().Be(0);
+        (await IsLinkActiveAsync(context, _otherChannelId, "999")).Should().BeTrue();
     }
 
     [Fact]
-    public async Task ProcessAsync_CardReturnsAfterDeactivation_ReactivatesLink()
+    public async Task ProcessAsync_MissingRunStart_SkipsTheSweepEntirely()
+    {
+        string databaseName = Guid.NewGuid().ToString();
+
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
+        await SeedLinkAsync(context, _channelId, "999", DateTimeOffset.UtcNow.AddDays(-30));
+
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+
+        // default(DateTimeOffset) is what an event with no boundary deserialises to. Read literally
+        // it is "the beginning of time", which would deactivate every link of the channel.
+        int deactivated = await consumer.ProcessAsync(
+            BuildMessage(default(DateTimeOffset)),
+            CancellationToken.None);
+
+        deactivated.Should().Be(0);
+        (await IsLinkActiveAsync(context, _channelId, "999")).Should().BeTrue(
+            "without a boundary the sweep must not run at all");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DeactivatedLink_IsReactivatedByTheNextImport()
     {
         string databaseName = Guid.NewGuid().ToString();
         DateTimeOffset runStartedAt = DateTimeOffset.UtcNow;
 
-        CatalogDbContext setupContext = BuildCatalogDbContext(databaseName);
-        await CreateChannelAsync(setupContext, _channelId);
+        using CatalogDbContext context = BuildCatalogDbContext(databaseName);
+        await CreateChannelAsync(context, _channelId);
 
-        Guid linkId = await SeedLinkAsync(setupContext, _channelId, "111", runStartedAt.AddDays(-5), isActive: false);
+        // The card was deactivated by an earlier run, then imported again: the import stamped it at
+        // its own start and flipped IsActive back on, which is what UpdateExistingProductAsync does.
+        Guid linkId = await SeedLinkAsync(
+            context, _channelId, "111", runStartedAt.AddSeconds(1), isActive: true);
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(databaseName);
-        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext);
+        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
 
-        await consumer.ProcessAsync(
-            BuildMessage(
-                new List<WildberriesCardSnapshot> { BuildCard(111, "SKU-111") },
-                isLastBatch: true,
-                runStartedAt: runStartedAt),
-            CancellationToken.None);
+        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
-        ChannelProduct? link = await consumerContext.ChannelProducts
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(cp => cp.Id == linkId);
-
-        link.Should().NotBeNull();
-        link!.IsActive.Should().BeTrue(
-            "the card is listed again, so the link the sweep deactivated is live again");
-        link.LastSyncedAt.Should().BeOnOrAfter(runStartedAt);
+        deactivated.Should().Be(0);
+        (await IsActiveAsync(context, linkId)).Should().BeTrue(
+            "the card is listed again, so the sweep of the run that saw it must not deactivate it");
     }
 
-    private ProductBatchImportRequestedEvent BuildMessage(
-        List<WildberriesCardSnapshot> cards,
-        bool isLastBatch,
-        DateTimeOffset? runStartedAt,
-        bool isPartial = false)
+    private ChannelProductFullSetReconciliationRequestedEvent BuildMessage(DateTimeOffset runStartedAt)
     {
-        return new ProductBatchImportRequestedEvent
+        return new ChannelProductFullSetReconciliationRequestedEvent
         {
             JobRunId = _jobRunId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = cards,
-            IsLastBatch = isLastBatch,
-            IsPartial = isPartial,
             RunStartedAt = runStartedAt,
-            TotalBatches = 1,
         };
     }
 
-    private static WildberriesCardSnapshot BuildCard(long nmId, string vendorCode)
+    private static async Task<bool> IsActiveAsync(CatalogDbContext context, Guid linkId)
     {
-        return new WildberriesCardSnapshot
-        {
-            NmId = nmId,
-            Name = "Product " + nmId,
-            VendorCode = vendorCode,
-            Barcodes = new List<string>(),
-            Description = "Description",
-        };
+        ChannelProduct? link = await context.ChannelProducts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(cp => cp.Id == linkId);
+
+        link.Should().NotBeNull();
+        return link!.IsActive;
     }
 
     private static async Task<bool> IsLinkActiveAsync(
@@ -301,8 +222,8 @@ public class ChannelProductFullSetReconciliationTests
     }
 
     /// <summary>
-    /// Seeds a link that belongs to a previous import. Its <paramref name="lastSyncedAt"/> is what
-    /// the sweep reads, so the tests set it explicitly instead of letting the import stamp it.
+    /// Seeds a link with an explicit <paramref name="lastSyncedAt"/>: the sweep reads only that
+    /// field, so letting the import own it would make the boundary untestable.
     /// </summary>
     private async Task<Guid> SeedLinkAsync(
         CatalogDbContext context,
@@ -340,7 +261,7 @@ public class ChannelProductFullSetReconciliationTests
         return link.Id;
     }
 
-    private async Task CreateChannelAsync(CatalogDbContext context, Guid channelId)
+    private static async Task CreateChannelAsync(CatalogDbContext context, Guid channelId)
     {
         await context.Channels.AddAsync(new Channel
         {
@@ -365,20 +286,10 @@ public class ChannelProductFullSetReconciliationTests
         return new CatalogDbContext(options, tenantContextMock.Object);
     }
 
-    private static ImportProductBatchConsumer BuildConsumer(CatalogDbContext context)
+    private static ChannelProductFullSetReconciliationConsumer BuildConsumer(CatalogDbContext context)
     {
-        Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
-        photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
-                It.IsAny<Product>(),
-                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ProductPhotoImportResult());
-
-        return new ImportProductBatchConsumer(
+        return new ChannelProductFullSetReconciliationConsumer(
             context,
-            new Mock<IPublishEndpoint>().Object,
-            photoServiceMock.Object,
-            Mock.Of<ILogger<ImportProductBatchConsumer>>());
+            Mock.Of<ILogger<ChannelProductFullSetReconciliationConsumer>>());
     }
 }
