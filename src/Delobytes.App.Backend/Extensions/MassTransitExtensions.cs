@@ -47,7 +47,7 @@ internal static class MassTransitExtensions
                     cfg.UseMessageRetry(r => r.Intervals(100, 500, 1000));
 
                     // боевая среда на 1 ядре и 1Гб ОЗУ, лимит подключений Maximum Pool Size=10
-                    cfg.ConcurrentMessageLimit = 1;
+                    cfg.ConcurrentMessageLimit = 2;
                     cfg.PrefetchCount = 2;
 
                     cfg.ReceiveEndpoint("catalog-products-import", e =>
