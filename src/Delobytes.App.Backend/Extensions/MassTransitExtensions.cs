@@ -46,6 +46,17 @@ internal static class MassTransitExtensions
                     // UseMessageRetry override still get the same resilience as the InMemory transport.
                     cfg.UseMessageRetry(r => r.Intervals(100, 500, 1000));
 
+                    // боевая среда на 1 ядре и 1Гб ОЗУ, лимит подключений Maximum Pool Size=10
+                    cfg.ConcurrentMessageLimit = 1;
+                    cfg.PrefetchCount = 2;
+
+                    cfg.ReceiveEndpoint("catalog-products-import", e =>
+                    {
+                        e.ConfigureConsumer<ImportProductBatchMassTransitConsumer>(ctx);
+
+                        e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+                    });
+
                     cfg.ConfigureEndpoints(ctx);
                 });
             }
@@ -61,10 +72,8 @@ internal static class MassTransitExtensions
                     {
                         e.ConfigureConsumer<ImportProductBatchMassTransitConsumer>(ctx);
 
-                        // Retry policy with exponential backoff
                         e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
 
-                        // Higher concurrency for batch processing
                         e.UseConcurrencyLimit(5);
                     });
 
