@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
@@ -82,6 +82,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<ImportProductBatchConsumer>();
         services.AddScoped<ProductOrdersCheckCompletedConsumer>();
+        services.AddScoped<ChannelProductFullSetReconciliationConsumer>();
 
         return services;
     }

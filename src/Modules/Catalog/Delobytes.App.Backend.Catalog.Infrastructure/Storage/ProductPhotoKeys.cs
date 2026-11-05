@@ -14,16 +14,17 @@ internal static class ProductPhotoKeys
     internal const string Extension = "webp";
 
     /// <summary>
-    /// Builds <c>product-photos/{tenantId:N}/{productId:N}/{photoId:N}.webp</c>.
-    /// The photo id is part of the key, so a retry keeps the same key and overwrites
-    /// the same object instead of leaving an orphan behind.
+    /// Builds <c>product-photos/{tenantId:N}/{productId:N}/{contentHash}.webp</c>.
+    /// Content-addressed, so the bytes behind a key never change and the object can be served
+    /// with <c>Cache-Control: immutable</c> truthfully; identical bytes on two channels resolve
+    /// to one object. ChannelId is deliberately absent from the key for that deduplication.
     /// </summary>
     /// <param name="tenantId">Owning tenant; isolates one tenant's objects from another's.</param>
     /// <param name="productId">Product the photo belongs to.</param>
-    /// <param name="photoId">Row identifier, stable across retries of the same row.</param>
+    /// <param name="contentHash">Lowercase hex SHA-256 of the payload.</param>
     /// <returns>Storage key relative to the bucket root.</returns>
-    internal static string Build(Guid tenantId, Guid productId, Guid photoId)
+    internal static string Build(Guid tenantId, Guid productId, string contentHash)
     {
-        return $"{Prefix}/{tenantId:N}/{productId:N}/{photoId:N}.{Extension}";
+        return $"{Prefix}/{tenantId:N}/{productId:N}/{contentHash}.{Extension}";
     }
 }

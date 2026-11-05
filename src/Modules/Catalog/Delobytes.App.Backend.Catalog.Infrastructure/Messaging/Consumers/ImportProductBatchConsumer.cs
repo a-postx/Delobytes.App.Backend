@@ -288,16 +288,20 @@ public class ImportProductBatchConsumer
             {
                 ProductPhotoImportResult photoResult = await _photoService.ImportPhotosAsync(
                     pending.Product,
+                    pending.ChannelId,
                     pending.Sources,
                     cancellationToken);
 
-                if (photoResult.Failed > 0)
+                if (photoResult.Failed > 0 || photoResult.Removed > 0)
                 {
                     _logger.LogWarning(
-                        "NmId={NmId}: {Imported} photo(s) imported, {Skipped} skipped, {Failed} failed",
+                        "NmId={NmId}, ChannelId={ChannelId}: {Imported} photo(s) imported, {Replaced} replaced, {Skipped} skipped, {Removed} removed, {Failed} failed",
                         pending.NmId,
+                        pending.ChannelId,
                         photoResult.Imported,
+                        photoResult.Replaced,
                         photoResult.Skipped,
+                        photoResult.Removed,
                         photoResult.Failed);
                 }
             }
@@ -497,7 +501,7 @@ public class ImportProductBatchConsumer
             hasChanges = true;
         }
 
-        QueuePhotos(channelProduct.Product, card, pendingPhotoImports);
+        QueuePhotos(channelProduct.Product, card, channelProduct.ChannelId, pendingPhotoImports);
 
         // Correctness of the Sales-side projection must not depend on whether this card happened to
         // change anything: a link that was created before this event existed, or one whose earlier
@@ -567,7 +571,7 @@ public class ImportProductBatchConsumer
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
 
-        QueuePhotos(product, card, pendingPhotoImports);
+        QueuePhotos(product, card, channelId, pendingPhotoImports);
 
         QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
 
@@ -630,7 +634,7 @@ public class ImportProductBatchConsumer
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
         SynchronizePackingUnit(product, card);
 
-        QueuePhotos(product, card, pendingPhotoImports);
+        QueuePhotos(product, card, channelId, pendingPhotoImports);
 
         QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
 
@@ -663,6 +667,16 @@ public class ImportProductBatchConsumer
         ChannelProduct channelProduct,
         List<PendingChannelProductLink> pendingChannelProductLinks)
     {
+        // Reconciliation now runs for cards that changed no row, so the same link can be queued
+        // more than once per batch; the Sales consumer upserts, so a duplicate is only wasted work.
+        bool alreadyQueued = pendingChannelProductLinks
+            .Any(p => p.ChannelProduct.Id == channelProduct.Id);
+
+        if (alreadyQueued)
+        {
+            return;
+        }
+
         pendingChannelProductLinks.Add(new PendingChannelProductLink
         {
             ChannelProduct = channelProduct,
@@ -703,7 +717,7 @@ public class ImportProductBatchConsumer
                     ExternalSku = channelProduct.ExternalSku,
                     Sku = channelProduct.Product.Sku,
                     ProductName = channelProduct.Product.Name,
-                    PhotoUrl = ResolvePrimaryPhotoUrl(channelProduct.Product),
+                    PhotoUrl = ResolvePrimaryPhotoUrl(channelProduct.Product, channelProduct.ChannelId),
                 };
 
                 await _publishEndpoint.Publish(linkedEvent, cancellationToken);
@@ -723,13 +737,17 @@ public class ImportProductBatchConsumer
     }
 
     /// <summary>
-    /// Resolves the public URL of a product's first uploaded thumbnail. Read after the transaction,
-    /// so the outcome reflects the committed rows only.
+    /// Resolves the public URL of the first uploaded thumbnail that the given channel's card shows.
+    /// Read after the transaction, so the outcome reflects the committed rows only.
+    /// Legacy rows with <see cref="Guid.Empty"/> as their channel are excluded: their owner is
+    /// unknown, and the photo import of that card assigns it before this method runs.
     /// </summary>
-    private string? ResolvePrimaryPhotoUrl(Product product)
+    private string? ResolvePrimaryPhotoUrl(Product product, Guid channelId)
     {
         ProductPhoto? primaryPhoto = product.Photos
-            .Where(p => p.Status == ProductPhotoStatus.Uploaded && p.SizeVariant == ThumbnailSizeVariant)
+            .Where(p => p.Status == ProductPhotoStatus.Uploaded
+                        && p.SizeVariant == ThumbnailSizeVariant
+                        && p.ChannelId == channelId)
             .OrderBy(p => p.DisplayOrder)
             .FirstOrDefault();
 
@@ -744,28 +762,21 @@ public class ImportProductBatchConsumer
     /// <summary>
     /// Records the photos of a card for download after the database transaction commits. The
     /// tracked <see cref="Product"/> instance is kept, so the rows the photo service adds land in
-    /// the same context that owns the product.
+    /// the same context that owns the product. An empty source list is queued as well: it is how a
+    /// card whose photos were all removed in the marketplace reaches reconciliation.
     /// </summary>
     private static void QueuePhotos(
         Product product,
         WildberriesCardSnapshot card,
+        Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports)
     {
-        if (card.Photos.Count == 0)
-        {
-            return;
-        }
-
         List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
-
-        if (photoSources.Count == 0)
-        {
-            return;
-        }
 
         pendingPhotoImports.Add(new PendingPhotoImport
         {
             Product = product,
+            ChannelId = channelId,
             Sources = photoSources,
             NmId = card.NmId,
         });
@@ -956,6 +967,8 @@ public class ImportProductBatchConsumer
     private class PendingPhotoImport
     {
         public Product Product { get; set; } = default!;
+
+        public Guid ChannelId { get; set; }
 
         public List<MarketplacePhotoSource> Sources { get; set; } = new();
 

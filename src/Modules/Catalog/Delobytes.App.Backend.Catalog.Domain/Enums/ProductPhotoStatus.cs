@@ -12,5 +12,8 @@ public enum ProductPhotoStatus
     Uploaded = 1,
 
     /// <summary>Download or upload failed; see ErrorMessage.</summary>
-    Failed = 2
+    Failed = 2,
+
+    /// <summary>Blob scheduled for deletion, row retained during the grace period, never returned to clients.</summary>
+    Removed = 3
 }

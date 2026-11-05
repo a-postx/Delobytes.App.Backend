@@ -772,6 +772,15 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("ChannelId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000000"));
+
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -798,6 +807,9 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<int?>("Height")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("OriginalFileName")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -805,6 +817,9 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
@@ -853,9 +868,13 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                     b.HasIndex("ProductId", "DisplayOrder", "SizeVariant");
 
-                    b.HasIndex("TenantId", "ProductId", "ExternalId")
+                    b.HasIndex("TenantId", "ProductId", "ContentHash")
+                        .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ContentHash");
+
+                    b.HasIndex("TenantId", "ProductId", "ChannelId", "ExternalId")
                         .IsUnique()
-                        .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ExternalId");
+                        .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ChannelId_ExternalId")
+                        .HasFilter("\"Status\" <> 3");
 
                     b.ToTable("ProductPhotos", "catalog");
                 });

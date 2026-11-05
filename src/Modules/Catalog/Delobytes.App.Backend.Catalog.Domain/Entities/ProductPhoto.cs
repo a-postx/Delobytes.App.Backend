@@ -13,14 +13,24 @@ public class ProductPhoto : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 
     public Guid ProductId { get; set; }
 
+    /// <summary>
+    /// Channel that declared this photo.
+    /// </summary>
+    public Guid ChannelId { get; set; }
+
     /// <summary>Position among the product's photos, 1-based; shared by both size variants.</summary>
     public int DisplayOrder { get; set; }
 
     /// <summary>"thumbnail" or "large".</summary>
     public string SizeVariant { get; set; } = default!;
 
-    /// <summary>Object key: product-photos/{tenantId:N}/{productId:N}/{photoId:N}.webp</summary>
+    /// <summary>Object key, content-addressed: product-photos/{tenantId:N}/{productId:N}/{contentHash}.webp</summary>
     public string StorageKey { get; set; } = default!;
+
+    /// <summary>
+    /// SHA-256 of the stored bytes, lowercase hex.
+    /// </summary>
+    public string? ContentHash { get; set; }
 
     public string OriginalFileName { get; set; } = default!;
 
@@ -37,10 +47,16 @@ public class ProductPhoto : ITenantScoped, IAuditableEntity, IRowVersionedEntity
     /// <summary>Source marketplace, e.g. "Wildberries".</summary>
     public string Source { get; set; } = default!;
 
-    /// <summary>"{nmId}_{displayOrder}_{sizeVariant}" — the idempotency key across re-imports.</summary>
+    /// <summary>
+    /// Slot key within the channel, "{nmId}_{displayOrder}_{sizeVariant}"; no longer globally unique.
+    /// </summary>
     public string ExternalId { get; set; } = default!;
 
     public string? ErrorMessage { get; set; }
+
+    public DateTimeOffset? LastCheckedAt { get; set; }
+
+    public DateTimeOffset? RemovedAt { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 

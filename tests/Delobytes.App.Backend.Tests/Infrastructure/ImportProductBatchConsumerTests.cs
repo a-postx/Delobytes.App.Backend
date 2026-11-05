@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
+using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
+using Delobytes.App.Backend.Catalog.Infrastructure.Storage;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Contracts.Storage;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using FluentAssertions;
@@ -972,9 +976,10 @@ public class ImportProductBatchConsumerTests
         photoServiceMock
             .Setup(s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
+                It.IsAny<Guid>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<Product, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((product, _, _) =>
+            .Callback<Product, Guid, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((product, _, _, _) =>
             {
                 // A separate context stands in for another connection: if the product is visible
                 // here, the transaction that created it has already been committed.
@@ -1013,6 +1018,7 @@ public class ImportProductBatchConsumerTests
         photoServiceMock.Verify(
             s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
+                It.IsAny<Guid>(),
                 It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -1053,6 +1059,7 @@ public class ImportProductBatchConsumerTests
         photoServiceMock
             .Setup(s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
+                It.IsAny<Guid>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("storage unavailable"));
@@ -1121,9 +1128,10 @@ public class ImportProductBatchConsumerTests
         photoServiceMock
             .Setup(s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
+                It.IsAny<Guid>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback(() =>
+            .Callback<Product, Guid, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((_, _, _, _) =>
             {
                 // A committed product is visible to a second context; an uncommitted one is not.
                 using CatalogDbContext probeContext = BuildCatalogDbContext(_tenantId, databaseName);
@@ -1157,6 +1165,7 @@ public class ImportProductBatchConsumerTests
         photoServiceMock.Verify(
             s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
+                It.IsAny<Guid>(),
                 It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -1175,7 +1184,7 @@ public class ImportProductBatchConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_SkipsPhotoImport_WhenCardHasNoPhotos()
+    public async Task ProcessAsync_QueuesEmptyPhotoSet_WhenCardHasNoPhotos()
     {
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
@@ -1211,12 +1220,231 @@ public class ImportProductBatchConsumerTests
         await consumer.ProcessAsync(message, CancellationToken.None);
 
         // Assert
+        // A card that stopped reporting photos is the only signal that the channel's photos were
+        // removed, so the import must run with an empty declaration instead of being skipped.
         photoServiceMock.Verify(
             s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                _channelId,
+                It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CardWithoutPhotos_RemovesOnlyThatChannelsPhotos()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid otherChannelId = Guid.NewGuid();
+
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "SKU-001",
+            Name = "Test Product",
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.WildberriesImport,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+
+        product.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = _channelId,
+            ExternalProductId = "123456789",
+            ExternalSku = "SKU-001",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        });
+
+        product.Photos.Add(BuildStoredPhoto(product.Id, _channelId, "1_1_thumbnail", "product-photos/importing.webp"));
+        product.Photos.Add(BuildStoredPhoto(product.Id, otherChannelId, "1_1_thumbnail", "product-photos/other.webp"));
+
+        await setupContext.Products.AddAsync(product);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        Mock<IObjectStorage> storageMock = new Mock<IObjectStorage>();
+        ProductPhotoService photoService = BuildRealPhotoService(storageMock);
+
+        ImportProductBatchConsumer consumer = new ImportProductBatchConsumer(
+            consumerContext,
+            publishEndpointMock.Object,
+            photoService,
+            Mock.Of<ILogger<ImportProductBatchConsumer>>());
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Test Product",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+        };
+
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
+        {
+            JobRunId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = true,
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        List<ProductPhoto> photos = await assertContext.ProductPhotos
+            .IgnoreQueryFilters()
+            .Where(p => p.ProductId == product.Id)
+            .ToListAsync();
+
+        ProductPhoto importedChannelPhoto = photos.Should().ContainSingle(p => p.ChannelId == _channelId).Subject;
+        importedChannelPhoto.Status.Should().Be(ProductPhotoStatus.Removed);
+        importedChannelPhoto.RemovedAt.Should().NotBeNull();
+
+        ProductPhoto otherChannelPhoto = photos.Should().ContainSingle(p => p.ChannelId == otherChannelId).Subject;
+        otherChannelPhoto.Status.Should().Be(ProductPhotoStatus.Uploaded);
+
+        // Reconciliation only marks rows; the blob is collected by the sweeper.
+        storageMock.Verify(
+            s => s.DeleteManyAsync(
+                It.IsAny<StorageArea>(),
+                It.IsAny<IReadOnlyCollection<string>>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_PublishesPrimaryPhotoOfTheImportingChannel()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid otherChannelId = Guid.NewGuid();
+
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = "SKU-001",
+            Name = "Test Product",
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.WildberriesImport,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+
+        product.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = _channelId,
+            ExternalProductId = "123456789",
+            ExternalSku = "SKU-001",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        });
+
+        product.Photos.Add(BuildStoredPhoto(product.Id, _channelId, "1_1_thumbnail", "product-photos/importing-channel.webp"));
+        product.Photos.Add(BuildStoredPhoto(product.Id, otherChannelId, "1_1_thumbnail", "product-photos/other-channel.webp"));
+
+        await setupContext.Products.AddAsync(product);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        Mock<IProductPhotoService> photoServiceMock = BuildPhotoServiceMock();
+
+        photoServiceMock
+            .Setup(s => s.GetPublicUrl(It.IsAny<ProductPhoto>()))
+            .Returns<ProductPhoto>(p => "https://cdn.example.com/" + p.StorageKey);
+
+        ImportProductBatchConsumer consumer = BuildConsumer(consumerContext, publishEndpointMock.Object, photoServiceMock);
+
+        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        {
+            NmId = 123456789,
+            Name = "Test Product",
+            VendorCode = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Photos = new List<WildberriesPhotoUrls>
+            {
+                new WildberriesPhotoUrls { C246x328 = "https://example.test/t.webp" },
+            },
+        };
+
+        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
+        {
+            JobRunId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            Cards = new List<WildberriesCardSnapshot> { card },
+            IsLastBatch = true,
+        };
+
+        // Act
+        await consumer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ChannelProductLinkedEvent>(e =>
+                    e.ChannelId == _channelId
+                    && e.PhotoUrl == "https://cdn.example.com/product-photos/importing-channel.webp"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    private static ProductPhoto BuildStoredPhoto(
+        Guid productId,
+        Guid channelId,
+        string externalId,
+        string storageKey)
+    {
+        return new ProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ChannelId = channelId,
+            ExternalId = externalId,
+            DisplayOrder = 1,
+            SizeVariant = "thumbnail",
+            StorageKey = storageKey,
+            OriginalFileName = "photo.webp",
+            ContentType = "image/webp",
+            SizeBytes = 64,
+            Source = "Wildberries",
+            Status = ProductPhotoStatus.Uploaded,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+    }
+
+    private ProductPhotoService BuildRealPhotoService(Mock<IObjectStorage> storageMock)
+    {
+        Mock<IHttpClientFactory> httpClientFactoryMock = new Mock<IHttpClientFactory>();
+        httpClientFactoryMock
+            .Setup(f => f.CreateClient(ProductPhotoService.HttpClientName))
+            .Returns(new HttpClient());
+
+        Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
+        tenantContextMock.Setup(tc => tc.TenantId).Returns(_tenantId);
+
+        return new ProductPhotoService(
+            storageMock.Object,
+            httpClientFactoryMock.Object,
+            tenantContextMock.Object,
+            Mock.Of<ILogger<ProductPhotoService>>());
     }
 
     private CatalogDbContext BuildCatalogDbContext(Guid tenantId, string databaseName)
@@ -1275,6 +1503,7 @@ public class ImportProductBatchConsumerTests
         photoServiceMock
             .Setup(s => s.ImportPhotosAsync(
                 It.IsAny<Product>(),
+                It.IsAny<Guid>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());

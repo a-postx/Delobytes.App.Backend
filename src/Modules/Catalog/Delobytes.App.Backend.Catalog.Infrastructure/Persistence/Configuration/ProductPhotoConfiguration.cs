@@ -50,6 +50,13 @@ public class ProductPhotoConfiguration : IEntityTypeConfiguration<ProductPhoto>
             .HasMaxLength(200)
             .IsRequired();
 
+        builder.Property(p => p.ChannelId)
+            .IsRequired()
+            .HasDefaultValue(Guid.Empty);
+
+        builder.Property(p => p.ContentHash)
+            .HasMaxLength(64);
+
         builder.Property(p => p.ErrorMessage)
             .HasMaxLength(1000);
 
@@ -64,9 +71,20 @@ public class ProductPhotoConfiguration : IEntityTypeConfiguration<ProductPhoto>
         // Idempotency is enforced by the database, not only by a check in code:
         // a concurrent re-import gets a unique-violation instead of a silent duplicate.
         // TenantId is a shadow property, so it is referenced by name.
-        builder.HasIndex("TenantId", nameof(ProductPhoto.ProductId), nameof(ProductPhoto.ExternalId))
+        // ChannelId is part of the key because two channels may import identically shaped ExternalIds
+        // for one product; the filter keeps the superseded row of a replaced slot from blocking the new one.
+        builder.HasIndex(
+                "TenantId",
+                nameof(ProductPhoto.ProductId),
+                nameof(ProductPhoto.ChannelId),
+                nameof(ProductPhoto.ExternalId))
             .IsUnique()
-            .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ExternalId");
+            .HasFilter("\"Status\" <> 3")
+            .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ChannelId_ExternalId");
+
+        // Supports the sweeper's check for a blob still referenced by a live row.
+        builder.HasIndex("TenantId", nameof(ProductPhoto.ProductId), nameof(ProductPhoto.ContentHash))
+            .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ContentHash");
 
         builder.HasOne(p => p.Product)
             .WithMany(pr => pr.Photos)
