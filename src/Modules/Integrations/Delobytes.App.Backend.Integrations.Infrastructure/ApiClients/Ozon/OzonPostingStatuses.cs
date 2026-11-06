@@ -38,6 +38,5 @@ internal static class OzonPostingStatuses
         "delivered",
         "cancelled",
         "not_accepted",
-        "sent_by_seller",
     };
 }

@@ -731,7 +731,7 @@ public class OzonApiClientGetOrdersTests
 
         statusList.Should().Contain("awaiting_registration");
         statusList.Should().Contain("acceptance_in_progress");
-        statusList.Should().Contain("sent_by_seller");
+        statusList.Should().NotContain("sent_by_seller");
 
         // The FBO five are a strict subset of the FBS list, so their absence proves nothing; the
         // FBS-only states above are what tells the two default sets apart.
