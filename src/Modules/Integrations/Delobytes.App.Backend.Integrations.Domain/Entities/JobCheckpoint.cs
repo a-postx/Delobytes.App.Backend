@@ -1,3 +1,5 @@
+using Delobytes.App.Backend.Contracts.Interfaces;
+
 namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 
 /// <summary>
@@ -5,7 +7,7 @@ namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 /// task can resume after a cancellation or restart. Dies together with its owning JobRun;
 /// unlike <see cref="SyncCheckpoint"/> it carries no business meaning once the run is gone.
 /// </summary>
-public class JobCheckpoint
+public class JobCheckpoint : ITenantScoped
 {
     /// <summary>
     /// Gets or sets the identifier, shared with and referencing the owning <see cref="JobRun"/>.

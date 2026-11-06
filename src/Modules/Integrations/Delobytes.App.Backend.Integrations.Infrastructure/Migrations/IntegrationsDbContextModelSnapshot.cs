@@ -104,10 +104,15 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("JobRunId");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("JobCheckpoints", "integrations");
                 });
@@ -348,10 +353,15 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<Guid>("JobRunId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
                     b.Property<int?>("TotalImportBatches")
                         .HasColumnType("integer");
 
                     b.HasKey("JobRunId");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("ProductsImportJobs", "integrations");
                 });
