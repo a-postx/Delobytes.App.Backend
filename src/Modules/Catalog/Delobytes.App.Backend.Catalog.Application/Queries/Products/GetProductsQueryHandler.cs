@@ -230,12 +230,15 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                 PackingUnit = null,
 
                 // The list view returns only thumbnail photos; the single-product endpoint returns all variants.
+                // Only one channel importer exists today, so this unfiltered list is that channel's
+                // photo set; per-channel selection is a later stage.
                 Photos = p.Photos
                     .Where(ph => ph.Status == ProductPhotoStatus.Uploaded && ph.SizeVariant == "thumbnail")
                     .OrderBy(ph => ph.DisplayOrder)
                     .Select(ph => new ProductPhotoDto
                     {
                         Id = ph.Id,
+                        ChannelId = ph.ChannelId,
                         DisplayOrder = ph.DisplayOrder,
                         SizeVariant = ph.SizeVariant,
                         Url = _photoService.GetPublicUrl(ph),

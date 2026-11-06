@@ -94,6 +94,8 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                 })
                 .ToList(),
             PackingUnit = ToPackingUnitDto(product.PackingUnits.FirstOrDefault(pu => pu.IsActive)),
+            // Only one channel importer exists today, so this flat, unfiltered list is that
+            // channel's photo set; per-channel selection is a later stage.
             Photos = product.Photos
                 .Where(ph => ph.Status == ProductPhotoStatus.Uploaded)
                 .OrderBy(ph => ph.DisplayOrder)
@@ -101,6 +103,7 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                 .Select(ph => new ProductPhotoDto
                 {
                     Id = ph.Id,
+                    ChannelId = ph.ChannelId,
                     DisplayOrder = ph.DisplayOrder,
                     SizeVariant = ph.SizeVariant,
                     Url = _photoService.GetPublicUrl(ph),

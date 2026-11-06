@@ -4,6 +4,8 @@ public class ProductPhotoDto
 {
     public Guid Id { get; set; }
 
+    public Guid ChannelId { get; set; }
+
     public int DisplayOrder { get; set; }
 
     public string SizeVariant { get; set; } = default!;

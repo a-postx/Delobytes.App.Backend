@@ -191,6 +191,7 @@ public partial class Program
             builder.Services.AddHostedService<WorkerHostedService>();
             builder.Services.AddHostedService<WatchdogHostedService>();
             builder.Services.AddHostedService<RawApiResponseCleanupHostedService>();
+            builder.Services.AddHostedService<ProductPhotoGarbageCollector>();
 
             // ── CORS ─────────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();

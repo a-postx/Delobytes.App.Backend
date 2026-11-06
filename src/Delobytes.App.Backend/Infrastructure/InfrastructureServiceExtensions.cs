@@ -1,4 +1,5 @@
 using Amazon.S3;
+using Delobytes.App.Backend.Catalog.Application.Options;
 using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
@@ -48,6 +49,8 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ICorrelationScope, CorrelationScope>();
 
         services.Configure<ObjectStorageOptions>(configuration.GetSection("ObjectStorage"));
+
+        services.Configure<ProductPhotoRetentionOptions>(configuration.GetSection("ProductPhotoRetention"));
 
         // Access keys never live in appsettings.json; PostConfigure merges them in from Lockbox secrets.
         services.PostConfigure<ObjectStorageOptions>(options =>
