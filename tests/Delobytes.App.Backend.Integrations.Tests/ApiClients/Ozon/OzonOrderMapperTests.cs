@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon.Dtos;
@@ -309,8 +310,8 @@ public class OzonOrderMapperTests
                     "products": [
                         {
                             "offer_id": "свч-77",
-                            "name": "Свечи восковые натуральные цветные набор 77",
-                            "sku": 5918369809,
+                            "name": "Свечи восковые",
+                            "sku": 9999999909,
                             "quantity": 1,
                             "price": { "amount": "880", "currency": "RUB" }
                         }
@@ -318,7 +319,7 @@ public class OzonOrderMapperTests
                     "financial_data": {
                         "products": [
                             {
-                                "product_id": 5918369809,
+                                "product_id": 9999999909,
                                 "old_price": 1200.50,
                                 "price": 880.00,
                                 "payout": 792.32,
@@ -599,6 +600,120 @@ public class OzonOrderMapperTests
         line.LineKey.Should().Be("93849103-0021-1");
         line.FulfillmentSchema.Should().Be("fbs");
         line.UnitPrice.Should().Be(880m);
+        line.Currency.Should().Be("RUB");
+    }
+
+    // ── FBO endpoint defaulting ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Map_FboSourceSchema_PostingWithoutDeliverySchema_DefaultsFulfillmentSchemaToFbo()
+    {
+        // v3/posting/fbo/list never reports delivery_schema; the caller states the endpoint
+        // instead, through sourceSchema, and the mapper must still resolve "fbo" from that alone.
+        OzonPosting posting = FbsPosting("post-1", "order-1", schema: null, createdAt: CreatedAt);
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+            new[] { posting }, OrdersSchema.Fbo, null, out int rowsWithoutIdentity);
+
+        rowsWithoutIdentity.Should().Be(0);
+        result[0].IsSellerWarehouse.Should().BeFalse();
+        result[0].Lines[0].FulfillmentSchema.Should().Be("fbo");
+    }
+
+    [Fact]
+    public void Map_FboSourceSchema_PostingReportingItsOwnSchema_KeepsReportedValue()
+    {
+        // A posting that does report delivery_schema (should Ozon ever add it to this endpoint)
+        // must win over the endpoint default.
+        OzonPosting posting = FbsPosting("post-1", "order-1", schema: "fbo", createdAt: CreatedAt);
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+            new[] { posting }, OrdersSchema.Fbo, null, out _);
+
+        result[0].Lines[0].FulfillmentSchema.Should().Be("fbo");
+    }
+
+    [Fact]
+    public void Map_WithoutSourceSchema_PostingWithoutDeliverySchema_LeavesFulfillmentSchemaNull()
+    {
+        // The overloads that do not state a source schema (kept for backward compatibility) must
+        // not guess: this is the behaviour every pre-fix caller relied on.
+        OzonPosting posting = FbsPosting("post-1", "order-1", schema: null, createdAt: CreatedAt);
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+
+        result[0].IsSellerWarehouse.Should().BeNull();
+        result[0].Lines[0].FulfillmentSchema.Should().BeNull();
+    }
+
+    [Fact]
+    public void Map_FbsSourceSchema_PostingWithoutDeliverySchema_LeavesFulfillmentSchemaNull()
+    {
+        // Unlike FBO, v4/posting/fbs/list is documented to always report delivery_schema. A
+        // posting that still omits it is an anomaly to tolerate, not a reason to default to "fbs" -
+        // rFBS exists and must not be folded into it.
+        OzonPosting posting = FbsPosting("post-1", "order-1", schema: null, createdAt: CreatedAt);
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+            new[] { posting }, OrdersSchema.Fbs, null, out _);
+
+        result[0].IsSellerWarehouse.Should().BeNull();
+        result[0].Lines[0].FulfillmentSchema.Should().BeNull();
+    }
+
+    [Fact]
+    public void Map_FboPageDeserializedFromRealOzonResponse_DefaultsFulfillmentSchemaToFbo()
+    {
+        // Mirrors the real v3/posting/fbo/list shape: no delivery_schema field anywhere in the
+        // payload, exactly like Ozon's actual response for this endpoint.
+        const string body = """
+        {
+            "has_next": false,
+            "postings": [
+                {
+                    "posting_number": "45274296-0617-1",
+                    "order_id": 40192045304,
+                    "order_number": "45274296-0617",
+                    "status": "delivered",
+                    "substatus": "posting_received",
+                    "cancellation": null,
+                    "products": [
+                        {
+                            "offer_id": "свч-74",
+                            "name": "Свечи восковые натуральные",
+                            "sku": 5022694666,
+                            "quantity": 1,
+                            "price": { "amount": "900", "currency": "RUB" }
+                        }
+                    ],
+                    "analytics_data": null,
+                    "financial_data": null,
+                    "created_at": "2026-10-29T05:18:33.587560Z",
+                    "in_process_at": "2026-10-29T05:18:51.134376Z"
+                }
+            ]
+        }
+        """;
+
+        OzonPostingListResponse? page = System.Text.Json.JsonSerializer.Deserialize<OzonPostingListResponse>(
+            body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        page.Should().NotBeNull();
+
+        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+            page!.Postings!, OrdersSchema.Fbo, null, out int rowsWithoutIdentity);
+
+        rowsWithoutIdentity.Should().Be(0);
+        result.Should().HaveCount(1);
+
+        ChannelOrderSnapshot snapshot = result[0];
+        snapshot.ExternalOrderId.Should().Be("45274296-0617");
+        snapshot.IsSellerWarehouse.Should().BeFalse();
+
+        ChannelOrderLineSnapshot line = snapshot.Lines[0];
+        line.LineKey.Should().Be("45274296-0617-1");
+        line.FulfillmentSchema.Should().Be("fbo");
+        line.UnitPrice.Should().Be(900m);
         line.Currency.Should().Be("RUB");
     }
 }

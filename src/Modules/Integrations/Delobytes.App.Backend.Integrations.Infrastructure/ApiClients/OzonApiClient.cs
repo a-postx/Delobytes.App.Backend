@@ -247,6 +247,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
             connectionId,
             FboListPath,
             OrdersRateLimiterMethods.OzonPostingFboList,
+            OrdersSchema.Fbo,
             body,
             ReadFlatPageAsync,
             cancellationToken);
@@ -264,6 +265,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
             connectionId,
             FbsListPath,
             OrdersRateLimiterMethods.OzonPostingFbsList,
+            OrdersSchema.Fbs,
             body,
             ReadFbsPageAsync,
             cancellationToken);
@@ -276,11 +278,15 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
     /// supplies, plus the reader for the response shape, which v3 and v4 disagree on. Keeping one
     /// implementation is what stops the two schemas from drifting apart in how they report throttling
     /// or turn a page into orders.
+    /// <paramref name="sourceSchema"/> is passed on to <see cref="OzonOrderMapper.Map"/> so a
+    /// posting that omits <c>delivery_schema</c> can still resolve <c>FulfillmentSchema</c> from the
+    /// endpoint it was read from - <c>v3/posting/fbo/list</c> never reports the field at all.
     /// </summary>
     private async Task<OrdersPage> FetchPostingListPageAsync<TBody>(
         Guid connectionId,
         string path,
         string rateLimiterMethod,
+        OrdersSchema sourceSchema,
         TBody body,
         Func<HttpContent, CancellationToken, Task<OzonPostingListResponse?>> readPage,
         CancellationToken cancellationToken)
@@ -363,7 +369,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
 
         List<OzonPosting> postings = page?.Postings ?? new List<OzonPosting>();
 
-        List<ChannelOrderSnapshot> orders = OzonOrderMapper.Map(postings, _logger, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> orders = OzonOrderMapper.Map(postings, sourceSchema, _logger, out int rowsWithoutIdentity);
 
         if (rowsWithoutIdentity > 0)
         {

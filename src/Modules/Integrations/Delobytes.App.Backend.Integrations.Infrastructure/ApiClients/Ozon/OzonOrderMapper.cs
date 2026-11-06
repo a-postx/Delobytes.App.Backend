@@ -1,4 +1,5 @@
 using System.Globalization;
+using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon.Dtos;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,12 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 internal static class OzonOrderMapper
 {
     private const int MaxIdentityLength = 100;
+
+    /// <summary>
+    /// The <c>delivery_schema</c> value assumed for a posting read off <c>v3/posting/fbo/list</c>
+    /// when the posting itself carries no such field.
+    /// </summary>
+    private const string FboEndpointSchema = "fbo";
 
     private static readonly IReadOnlyDictionary<string, int> StatusRank =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -28,20 +35,19 @@ internal static class OzonOrderMapper
         };
 
     /// <summary>
-    /// Maps one posting page without diagnostics. Prefer the overload taking an
-    /// <see cref="ILogger"/> where one is available: the anomalies this mapper tolerates (unknown
-    /// status, disagreeing currencies) are only ever observable through it.
+    /// Maps one posting page without diagnostics and without knowledge of the source endpoint.
     /// </summary>
     /// <param name="postings">The page's postings, in response order.</param>
     /// <param name="rowsWithoutIdentity">The number of postings dropped for lacking an identity.</param>
     /// <returns>One snapshot per distinct order of the page, in first-arrival order.</returns>
     public static List<ChannelOrderSnapshot> Map(IReadOnlyList<OzonPosting> postings, out int rowsWithoutIdentity)
     {
-        return Map(postings, null, out rowsWithoutIdentity);
+        return Map(postings, null, null, out rowsWithoutIdentity);
     }
 
     /// <summary>
-    /// Maps one posting page, reporting tolerated anomalies to <paramref name="logger"/>.
+    /// Maps one posting page, reporting tolerated anomalies to <paramref name="logger"/>, without
+    /// knowledge of the source endpoint.
     /// </summary>
     /// <param name="postings">The page's postings, in response order.</param>
     /// <param name="logger">Logger for unknown statuses and disagreeing currencies; may be null.</param>
@@ -49,6 +55,23 @@ internal static class OzonOrderMapper
     /// <returns>One snapshot per distinct order of the page, in first-arrival order.</returns>
     public static List<ChannelOrderSnapshot> Map(
         IReadOnlyList<OzonPosting> postings, ILogger? logger, out int rowsWithoutIdentity)
+    {
+        return Map(postings, null, logger, out rowsWithoutIdentity);
+    }
+
+    /// <summary>
+    /// Maps one posting page, reporting tolerated anomalies to <paramref name="logger"/>.
+    /// </summary>
+    /// <param name="postings">The page's postings, in response order.</param>
+    /// <param name="sourceSchema">The endpoint the page was read from, when known.</param>
+    /// <param name="logger">Logger for unknown statuses and disagreeing currencies; may be null.</param>
+    /// <param name="rowsWithoutIdentity">The number of postings dropped for lacking an identity.</param>
+    /// <returns>One snapshot per distinct order of the page, in first-arrival order.</returns>
+    public static List<ChannelOrderSnapshot> Map(
+        IReadOnlyList<OzonPosting> postings,
+        OrdersSchema? sourceSchema,
+        ILogger? logger,
+        out int rowsWithoutIdentity)
     {
         ArgumentNullException.ThrowIfNull(postings);
 
@@ -90,11 +113,18 @@ internal static class OzonOrderMapper
         }
 
         bool loggedUnknownStatus = false;
+        bool loggedMissingFbsSchema = false;
         List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>(orderKeysInArrivalOrder.Count);
 
         foreach (string orderKey in orderKeysInArrivalOrder)
         {
-            snapshots.Add(MapToOrderSnapshot(orderKey, postingsByOrderKey[orderKey], logger, ref loggedUnknownStatus));
+            snapshots.Add(MapToOrderSnapshot(
+                orderKey,
+                postingsByOrderKey[orderKey],
+                sourceSchema,
+                logger,
+                ref loggedUnknownStatus,
+                ref loggedMissingFbsSchema));
         }
 
         return snapshots;
@@ -116,7 +146,12 @@ internal static class OzonOrderMapper
     }
 
     private static ChannelOrderSnapshot MapToOrderSnapshot(
-        string orderKey, List<OzonPosting> orderPostings, ILogger? logger, ref bool loggedUnknownStatus)
+        string orderKey,
+        List<OzonPosting> orderPostings,
+        OrdersSchema? sourceSchema,
+        ILogger? logger,
+        ref bool loggedUnknownStatus,
+        ref bool loggedMissingFbsSchema)
     {
         EnsureIdentityLength(orderKey, nameof(orderKey));
 
@@ -132,7 +167,8 @@ internal static class OzonOrderMapper
                 rowOrderDates.Add(dateCandidate.Value);
             }
 
-            foreach (ChannelOrderLineSnapshot line in MapPostingLines(posting))
+            foreach (ChannelOrderLineSnapshot line in MapPostingLines(
+                posting, sourceSchema, logger, ref loggedMissingFbsSchema))
             {
                 lines.Add(line);
             }
@@ -186,7 +222,7 @@ internal static class OzonOrderMapper
             DeliveryCity = firstPosting.AnalyticsData?.City ?? firstPosting.FinancialData?.ClusterTo,
             DeliveryRegion = firstPosting.AnalyticsData?.Region ?? firstPosting.FinancialData?.ClusterFrom,
             WarehouseName = firstPosting.AnalyticsData?.WarehouseName ?? firstPosting.DeliveryMethod?.Warehouse,
-            IsSellerWarehouse = IsSellerWarehouseFromSchema(orderPostings),
+            IsSellerWarehouse = IsSellerWarehouseFromSchema(orderPostings, sourceSchema),
             IsB2b = firstPosting.AnalyticsData?.IsLegal,
             IsTestOrder = null,
             ChannelReportedTotal = header.ChannelReportedTotal,
@@ -196,7 +232,8 @@ internal static class OzonOrderMapper
         };
     }
 
-    private static List<ChannelOrderLineSnapshot> MapPostingLines(OzonPosting posting)
+    private static List<ChannelOrderLineSnapshot> MapPostingLines(
+        OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, ref bool loggedMissingFbsSchema)
     {
         List<OzonPostingProduct> products = posting.Products!;
         List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>(products.Count);
@@ -207,6 +244,8 @@ internal static class OzonOrderMapper
         {
             occurrencesBySku[product.Sku] = occurrencesBySku.TryGetValue(product.Sku, out int count) ? count + 1 : 1;
         }
+
+        string? fulfillmentSchema = ResolveFulfillmentSchema(posting, sourceSchema, logger, ref loggedMissingFbsSchema);
 
         Dictionary<long, int> ordinalBySku = new Dictionary<long, int>();
         OzonPostingFinancialProduct? financialProduct;
@@ -237,11 +276,46 @@ internal static class OzonOrderMapper
                 ChannelReportedTotal = null,
                 ChannelReportedCommission = financialProduct?.Commission?.Amount,
                 ChannelReportedPayout = financialProduct?.Payout,
-                FulfillmentSchema = posting.DeliverySchema
+                FulfillmentSchema = fulfillmentSchema
             });
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// Resolves one posting's <c>FulfillmentSchema</c>. The posting's own <c>delivery_schema</c>
+    /// wins whenever it reports one - that covers FBS/rFBS, and tolerates Ozon adding the field to
+    /// the FBO endpoint later. Absent that, a posting known to come from
+    /// <see cref="OrdersSchema.Fbo"/> defaults to "fbo": that endpoint's postings are, by
+    /// construction, exclusively Ozon-fulfilled, so the default is not a guess but a fact about the
+    /// endpoint the mapper's caller already knows. A posting from the FBS endpoint that still omits
+    /// the field, or one whose source endpoint is unknown, resolves to null instead of being
+    /// defaulted the other way - rFBS exists and must not be folded into "fbs".
+    /// </summary>
+    private static string? ResolveFulfillmentSchema(
+        OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, ref bool loggedMissingFbsSchema)
+    {
+        if (posting.DeliverySchema != null)
+        {
+            return posting.DeliverySchema;
+        }
+
+        if (sourceSchema == OrdersSchema.Fbo)
+        {
+            return FboEndpointSchema;
+        }
+
+        if (sourceSchema == OrdersSchema.Fbs && !loggedMissingFbsSchema)
+        {
+            logger?.LogWarning(
+                "Ozon FBS posting {PostingNumber} did not report delivery_schema; " +
+                "FulfillmentSchema is left unresolved for it.",
+                posting.PostingNumber);
+            loggedMissingFbsSchema = true;
+        }
+
+        return null;
     }
 
     private static string BuildLineKey(
@@ -352,18 +426,23 @@ internal static class OzonOrderMapper
     }
 
     /// <summary>
-    /// Reduces the postings' <c>delivery_schema</c> values to the order-level flag. Returns null
-    /// when the postings disagree, and also when no posting reports a known schema: a page that
-    /// says nothing about fulfilment must not be read as proof of Ozon fulfilment.
+    /// Reduces the postings' resolved delivery schemas to the order-level flag. Returns null when
+    /// the postings disagree, and also when no posting resolves to a known schema: a page that says
+    /// nothing about fulfilment, from an endpoint that itself proves nothing either, must not be
+    /// read as proof of Ozon fulfilment. See <see cref="ResolveFulfillmentSchema"/> for how a
+    /// posting without <c>delivery_schema</c> resolves when <paramref name="sourceSchema"/> is
+    /// <see cref="OrdersSchema.Fbo"/>.
     /// </summary>
-    private static bool? IsSellerWarehouseFromSchema(List<OzonPosting> postings)
+    private static bool? IsSellerWarehouseFromSchema(List<OzonPosting> postings, OrdersSchema? sourceSchema)
     {
         bool hasSellerFulfilled = false;
         bool hasOzonFulfilled = false;
 
         foreach (OzonPosting posting in postings)
         {
-            string? schema = posting.DeliverySchema;
+            string? schema = string.IsNullOrWhiteSpace(posting.DeliverySchema)
+                ? (sourceSchema == OrdersSchema.Fbo ? FboEndpointSchema : null)
+                : posting.DeliverySchema;
 
             if (string.Equals(schema, "fbs", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(schema, "rfbs", StringComparison.OrdinalIgnoreCase))
