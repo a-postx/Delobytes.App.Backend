@@ -27,7 +27,6 @@ public class ComponentConfiguration : IEntityTypeConfiguration<Component>
 
         builder.Property(pc => pc.Category)
             .HasConversion<int>()
-            .HasDefaultValue(ComponentCategory.Material)
             .IsRequired();
 
         builder.Property(pc => pc.IsActive)

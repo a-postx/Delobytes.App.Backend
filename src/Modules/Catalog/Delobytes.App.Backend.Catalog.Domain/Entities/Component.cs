@@ -5,8 +5,6 @@ namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
 /// <summary>
 /// Represents a material or component.
-/// Carries descriptive data only; price and supplier live in <see cref="ComponentPrice"/>
-/// versions so that historical cost calculations remain intact.
 /// </summary>
 public class Component : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {

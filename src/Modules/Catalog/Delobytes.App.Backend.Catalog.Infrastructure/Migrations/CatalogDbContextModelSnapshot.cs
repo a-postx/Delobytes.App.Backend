@@ -234,9 +234,7 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<int>("Category")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1);
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
