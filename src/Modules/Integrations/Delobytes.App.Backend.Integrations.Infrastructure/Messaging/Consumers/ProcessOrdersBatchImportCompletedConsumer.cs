@@ -458,10 +458,10 @@ public class ProcessOrdersBatchImportCompletedConsumer
         }
 
         // The fetch finished, yet the JobRun carries no threshold: the completion event was delayed
-        // or lost between the orchestrator and this consumer. The checkpoint it was built from is
+        // between the orchestrator and this consumer. The checkpoint it was built from is
         // authoritative, so finalise from it rather than leaving the run for the watchdog.
-        _logger.LogWarning(
-            "JobRun {JobRunId}: checkpoint reports a finished fetch but the expected batch count was never recorded (completion event lost or delayed), finalising from the checkpoint with {ExpectedBatches} batch(es)",
+        _logger.LogInformation(
+            "JobRun {JobRunId}: checkpoint reports a finished fetch but the expected batch count was never recorded (completion event delayed), finalising from the checkpoint with {ExpectedBatches} batch(es)",
             jobRun.Id,
             payload.TotalBatches);
 
