@@ -61,7 +61,6 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.WarehouseName)
             .HasMaxLength(200);
 
-        builder.Property(o => o.IsSellerWarehouse);
         builder.Property(o => o.IsB2b);
         builder.Property(o => o.IsTestOrder);
 

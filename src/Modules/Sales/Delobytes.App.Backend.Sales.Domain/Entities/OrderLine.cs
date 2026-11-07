@@ -93,9 +93,11 @@ public class OrderLine : ITenantScoped
     public DateTimeOffset? StatusChangedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the fulfilment schema as reported by the channel (Ozon: <c>"fbo"</c>,
-    /// <c>"fbs"</c>, <c>"rfbs"</c>). Null for channels that do not split orders by fulfilment
-    /// model, and for Ozon postings that omit the field.
+    /// Gets or sets the fulfilment schema as reported by the channel, prefixed per channel to
+    /// keep each marketplace's schema set distinct: Ozon reports <c>oz_fbo</c>/<c>oz_fbs</c>/
+    /// <c>oz_rfbs</c> (normalized from its own <c>delivery_schema</c>), Wildberries reports
+    /// <c>wb_fbw</c> (Склад WB) or <c>wb_fbs</c> (Склад продавца), derived from
+    /// <c>warehouseType</c>. Null only for an Ozon FBS posting that omits <c>delivery_schema</c>.
     /// </summary>
     public string? FulfillmentSchema { get; set; }
 

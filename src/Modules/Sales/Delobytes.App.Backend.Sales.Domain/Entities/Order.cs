@@ -88,12 +88,6 @@ public class Order : ITenantScoped, IRowVersionedEntity
     public string? WarehouseName { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the order ships from the seller's warehouse
-    /// rather than the channel's own.
-    /// </summary>
-    public bool? IsSellerWarehouse { get; set; }
-
-    /// <summary>
     /// Gets or sets a value indicating whether the order is business-to-business.
     /// </summary>
     public bool? IsB2b { get; set; }

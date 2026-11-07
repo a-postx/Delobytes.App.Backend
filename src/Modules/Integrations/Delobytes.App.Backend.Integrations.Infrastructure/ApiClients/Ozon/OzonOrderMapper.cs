@@ -15,10 +15,16 @@ internal static class OzonOrderMapper
     private const int MaxIdentityLength = 100;
 
     /// <summary>
-    /// The <c>delivery_schema</c> value assumed for a posting read off <c>v3/posting/fbo/list</c>
-    /// when the posting itself carries no such field.
+    /// Prefix applied to every Ozon-reported fulfilment schema, keeping it distinct from the
+    /// equivalent Wildberries codes (<c>wb_fbw</c>/<c>wb_fbs</c>) once both share one column.
     /// </summary>
-    private const string FboEndpointSchema = "fbo";
+    private const string OzonSchemaPrefix = "oz_";
+
+    /// <summary>
+    /// The raw <c>delivery_schema</c> value assumed for a posting read off
+    /// <c>v3/posting/fbo/list</c> when the posting itself carries no such field.
+    /// </summary>
+    private const string FboEndpointRawSchema = "fbo";
 
     private static readonly IReadOnlyDictionary<string, int> StatusRank =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -222,7 +228,6 @@ internal static class OzonOrderMapper
             DeliveryCity = firstPosting.AnalyticsData?.City ?? firstPosting.FinancialData?.ClusterTo,
             DeliveryRegion = firstPosting.AnalyticsData?.Region ?? firstPosting.FinancialData?.ClusterFrom,
             WarehouseName = firstPosting.AnalyticsData?.WarehouseName ?? firstPosting.DeliveryMethod?.Warehouse,
-            IsSellerWarehouse = IsSellerWarehouseFromSchema(orderPostings, sourceSchema),
             IsB2b = firstPosting.AnalyticsData?.IsLegal,
             IsTestOrder = null,
             ChannelReportedTotal = header.ChannelReportedTotal,
@@ -284,10 +289,11 @@ internal static class OzonOrderMapper
     }
 
     /// <summary>
-    /// Resolves one posting's <c>FulfillmentSchema</c>. The posting's own <c>delivery_schema</c>
+    /// Resolves one posting's <c>FulfillmentSchema</c>, normalized to Ozon's prefixed codes
+    /// (<c>oz_fbo</c>/<c>oz_fbs</c>/<c>oz_rfbs</c>). The posting's own <c>delivery_schema</c>
     /// wins whenever it reports one - that covers FBS/rFBS, and tolerates Ozon adding the field to
     /// the FBO endpoint later. Absent that, a posting known to come from
-    /// <see cref="OrdersSchema.Fbo"/> defaults to "fbo": that endpoint's postings are, by
+    /// <see cref="OrdersSchema.Fbo"/> defaults to <c>oz_fbo</c>: that endpoint's postings are, by
     /// construction, exclusively Ozon-fulfilled, so the default is not a guess but a fact about the
     /// endpoint the mapper's caller already knows. A posting from the FBS endpoint that still omits
     /// the field, or one whose source endpoint is unknown, resolves to null instead of being
@@ -296,14 +302,14 @@ internal static class OzonOrderMapper
     private static string? ResolveFulfillmentSchema(
         OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, ref bool loggedMissingFbsSchema)
     {
-        if (posting.DeliverySchema != null)
+        if (!string.IsNullOrWhiteSpace(posting.DeliverySchema))
         {
-            return posting.DeliverySchema;
+            return NormalizeOzonSchema(posting.DeliverySchema);
         }
 
         if (sourceSchema == OrdersSchema.Fbo)
         {
-            return FboEndpointSchema;
+            return NormalizeOzonSchema(FboEndpointRawSchema);
         }
 
         if (sourceSchema == OrdersSchema.Fbs && !loggedMissingFbsSchema)
@@ -316,6 +322,18 @@ internal static class OzonOrderMapper
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Prefixes a raw Ozon <c>delivery_schema</c> value (<c>fbo</c>/<c>fbs</c>/<c>rfbs</c>, as
+    /// Ozon itself reports it) so it cannot be confused with Wildberries' own schema codes once
+    /// both channels write into the same <see cref="ChannelOrderLineSnapshot.FulfillmentSchema"/>
+    /// column. Applied uniformly rather than through a lookup table, so a schema Ozon adds later
+    /// still comes out prefixed instead of falling through unnoticed.
+    /// </summary>
+    private static string NormalizeOzonSchema(string rawSchema)
+    {
+        return OzonSchemaPrefix + rawSchema.ToLowerInvariant();
     }
 
     private static string BuildLineKey(
@@ -423,49 +441,6 @@ internal static class OzonOrderMapper
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Reduces the postings' resolved delivery schemas to the order-level flag. Returns null when
-    /// the postings disagree, and also when no posting resolves to a known schema: a page that says
-    /// nothing about fulfilment, from an endpoint that itself proves nothing either, must not be
-    /// read as proof of Ozon fulfilment. See <see cref="ResolveFulfillmentSchema"/> for how a
-    /// posting without <c>delivery_schema</c> resolves when <paramref name="sourceSchema"/> is
-    /// <see cref="OrdersSchema.Fbo"/>.
-    /// </summary>
-    private static bool? IsSellerWarehouseFromSchema(List<OzonPosting> postings, OrdersSchema? sourceSchema)
-    {
-        bool hasSellerFulfilled = false;
-        bool hasOzonFulfilled = false;
-
-        foreach (OzonPosting posting in postings)
-        {
-            string? schema = string.IsNullOrWhiteSpace(posting.DeliverySchema)
-                ? (sourceSchema == OrdersSchema.Fbo ? FboEndpointSchema : null)
-                : posting.DeliverySchema;
-
-            if (string.Equals(schema, "fbs", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(schema, "rfbs", StringComparison.OrdinalIgnoreCase))
-            {
-                hasSellerFulfilled = true;
-            }
-            else if (!string.IsNullOrWhiteSpace(schema))
-            {
-                hasOzonFulfilled = true;
-            }
-        }
-
-        if (hasSellerFulfilled && hasOzonFulfilled)
-        {
-            return null;
-        }
-
-        if (hasSellerFulfilled)
-        {
-            return true;
-        }
-
-        return hasOzonFulfilled ? false : null;
     }
 
     private static void EnsureIdentityLength(string identity, string name)

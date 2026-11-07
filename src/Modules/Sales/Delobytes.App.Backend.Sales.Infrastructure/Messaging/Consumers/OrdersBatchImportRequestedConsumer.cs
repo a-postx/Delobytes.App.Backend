@@ -434,7 +434,6 @@ public class OrdersBatchImportRequestedConsumer
         order.DeliveryCity = snapshot.DeliveryCity;
         order.DeliveryRegion = snapshot.DeliveryRegion;
         order.WarehouseName = snapshot.WarehouseName;
-        order.IsSellerWarehouse = snapshot.IsSellerWarehouse;
         order.IsB2b = snapshot.IsB2b;
         order.IsTestOrder = snapshot.IsTestOrder;
         order.ChannelReportedDeliveryFee = snapshot.ChannelReportedDeliveryFee;
@@ -476,8 +475,7 @@ public class OrdersBatchImportRequestedConsumer
                 LineKey = line.LineKey,
                 IsCancelled = line.IsCancelled,
                 StatusChangedAt = line.StatusChangedAt,
-                ChannelReportedTotal = channelReportedTotal,
-                FulfillmentSchema = line.FulfillmentSchema
+                ChannelReportedTotal = channelReportedTotal
             });
         }
 
@@ -510,75 +508,6 @@ public class OrdersBatchImportRequestedConsumer
         order.OrderDate = header.OrderDate;
         order.StatusChangedAt = header.StatusChangedAt;
         order.ChannelReportedTotal = header.ChannelReportedTotal;
-
-        // Recomputed from the persisted line set rather than left as whatever ApplyOrderSnapshot
-        // copied from this run's own snapshot: a mixed cart (FBO and FBS postings under one
-        // order_number) is written by two separate runs, so a single run only ever sees its own
-        // half of the fulfilment schema mix and would otherwise publish that half as the answer
-        // for the whole cart.
-        //
-        // Only when the persisted set actually carries schemas. Wildberries reports the flag
-        // itself and never sets one, so reducing its lines would replace a reported fact with a
-        // value derived from data the channel does not publish.
-        if (TryReduceFulfillmentSchema(persistedLines, out bool? isSellerWarehouse))
-        {
-            order.IsSellerWarehouse = isSellerWarehouse;
-        }
-    }
-
-    /// <summary>
-    /// Reduces the persisted lines' fulfilment schemas to the order-level flag: true when every line
-    /// carrying a schema is seller-fulfilled (fbs/rfbs), false when they are all Ozon-fulfilled, null
-    /// when the cart mixes both. Ozon only.
-    /// </summary>
-    /// <param name="lines">The whole persisted line set of the cart.</param>
-    /// <param name="isSellerWarehouse">The reduced flag, meaningless when the method returns false.</param>
-    /// <returns>
-    /// False when no line carries a schema, which means the reduction has no input and the caller
-    /// must keep whatever the channel reported. Lines without a schema are skipped rather than
-    /// counted as Ozon-fulfilled: after the FBO half of a mixed cart has been imported and the FBS
-    /// half has not, that would report a confident "Ozon warehouse" for a cart that is neither.
-    /// </returns>
-    private static bool TryReduceFulfillmentSchema(
-        List<ChannelOrderLineSnapshot> lines, out bool? isSellerWarehouse)
-    {
-        bool hasOzonFulfilled = false;
-        bool hasSellerFulfilled = false;
-        bool hasSchema = false;
-
-        foreach (ChannelOrderLineSnapshot line in lines)
-        {
-            string? schema = line.FulfillmentSchema;
-
-            if (string.IsNullOrEmpty(schema))
-            {
-                continue;
-            }
-
-            hasSchema = true;
-
-            if (string.Equals(schema, "fbs", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(schema, "rfbs", StringComparison.OrdinalIgnoreCase))
-            {
-                hasSellerFulfilled = true;
-            }
-            else
-            {
-                hasOzonFulfilled = true;
-            }
-        }
-
-        if (!hasSchema)
-        {
-            isSellerWarehouse = null;
-            return false;
-        }
-
-        isSellerWarehouse = hasSellerFulfilled && hasOzonFulfilled
-            ? null
-            : hasSellerFulfilled;
-
-        return true;
     }
 
     /// <summary>

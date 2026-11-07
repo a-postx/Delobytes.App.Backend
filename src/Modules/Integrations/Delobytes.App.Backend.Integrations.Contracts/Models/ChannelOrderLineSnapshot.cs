@@ -103,7 +103,8 @@ public record ChannelOrderLineSnapshot
     public decimal? ChannelReportedPayout { get; init; }
 
     /// <summary>
-    /// Gets the fulfilment schema for this line (e.g., "fbo", "fbs", "rfbs"). Ozon only.
+    /// Gets the fulfilment schema for this line, channel-prefixed to keep each marketplace's own
+    /// schema set distinct.
     /// </summary>
     public string? FulfillmentSchema { get; init; }
 }

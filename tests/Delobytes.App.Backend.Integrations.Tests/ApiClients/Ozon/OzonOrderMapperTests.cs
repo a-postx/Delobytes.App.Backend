@@ -478,24 +478,23 @@ public class OzonOrderMapperTests
     }
 
     [Theory]
-    [InlineData("fbs", true)]
-    [InlineData("FBS", true)]
-    [InlineData("rfbs", true)]
-    [InlineData("fbo", false)]
+    [InlineData("fbs", "oz_fbs")]
+    [InlineData("FBS", "oz_fbs")]
+    [InlineData("rfbs", "oz_rfbs")]
+    [InlineData("fbo", "oz_fbo")]
     [InlineData(null, null)]
     [InlineData("", null)]
-    public void Map_SinglePosting_ReducesDeliverySchemaToIsSellerWarehouse(string? schema, bool? expected)
+    public void Map_SinglePosting_ResolvesPrefixedFulfillmentSchema(string? schema, string? expectedSchema)
     {
         OzonPosting posting = FbsPosting("post-1", "order-1", schema: schema, inProcessAt: CreatedAt);
 
         List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
 
-        result[0].IsSellerWarehouse.Should().Be(expected);
-        result[0].Lines[0].FulfillmentSchema.Should().Be(schema);
+        result[0].Lines[0].FulfillmentSchema.Should().Be(expectedSchema);
     }
 
     [Fact]
-    public void Map_MixedFboAndFbsPostings_IsSellerWarehouseIsNullAndEachLineKeepsItsSchema()
+    public void Map_MixedFboAndFbsPostings_EachLineKeepsItsOwnPrefixedSchema()
     {
         // One order_number split into an FBO posting and an FBS posting is one order that is neither
         // wholly Ozon-fulfilled nor wholly seller-fulfilled.
@@ -511,14 +510,13 @@ public class OzonOrderMapperTests
 
         result.Should().HaveCount(1);
         ChannelOrderSnapshot snapshot = result[0];
-        snapshot.IsSellerWarehouse.Should().BeNull();
         snapshot.Lines.Should().HaveCount(2);
-        snapshot.Lines.Single(l => l.ExternalLineId == "post-1").FulfillmentSchema.Should().Be("fbo");
-        snapshot.Lines.Single(l => l.ExternalLineId == "post-2").FulfillmentSchema.Should().Be("fbs");
+        snapshot.Lines.Single(l => l.ExternalLineId == "post-1").FulfillmentSchema.Should().Be("oz_fbo");
+        snapshot.Lines.Single(l => l.ExternalLineId == "post-2").FulfillmentSchema.Should().Be("oz_fbs");
     }
 
     [Fact]
-    public void Map_AllFboPostings_IsSellerWarehouseIsFalse()
+    public void Map_AllFboPostings_BothLinesGetOzFboSchema()
     {
         OzonPosting first = FbsPosting("post-1", "order-1", schema: "fbo", inProcessAt: CreatedAt);
         OzonPosting second = FbsPosting(
@@ -530,7 +528,7 @@ public class OzonOrderMapperTests
 
         List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { first, second }, out _);
 
-        result[0].IsSellerWarehouse.Should().BeFalse();
+        result[0].Lines.Should().OnlyContain(l => l.FulfillmentSchema == "oz_fbo");
     }
 
     [Fact]
@@ -594,11 +592,10 @@ public class OzonOrderMapperTests
         snapshot.StatusChangedAt.Should().Be(page.Postings![0].InProcessAt!.Value);
         snapshot.DeliveryCity.Should().Be("Москва");
         snapshot.WarehouseName.Should().Be("Склад продавца");
-        snapshot.IsSellerWarehouse.Should().BeTrue();
 
         ChannelOrderLineSnapshot line = snapshot.Lines[0];
         line.LineKey.Should().Be("93849103-0021-1");
-        line.FulfillmentSchema.Should().Be("fbs");
+        line.FulfillmentSchema.Should().Be("oz_fbs");
         line.UnitPrice.Should().Be(880m);
         line.Currency.Should().Be("RUB");
     }
@@ -616,8 +613,7 @@ public class OzonOrderMapperTests
             new[] { posting }, OrdersSchema.Fbo, null, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
-        result[0].IsSellerWarehouse.Should().BeFalse();
-        result[0].Lines[0].FulfillmentSchema.Should().Be("fbo");
+        result[0].Lines[0].FulfillmentSchema.Should().Be("oz_fbo");
     }
 
     [Fact]
@@ -630,7 +626,7 @@ public class OzonOrderMapperTests
         List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
             new[] { posting }, OrdersSchema.Fbo, null, out _);
 
-        result[0].Lines[0].FulfillmentSchema.Should().Be("fbo");
+        result[0].Lines[0].FulfillmentSchema.Should().Be("oz_fbo");
     }
 
     [Fact]
@@ -642,7 +638,6 @@ public class OzonOrderMapperTests
 
         List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
 
-        result[0].IsSellerWarehouse.Should().BeNull();
         result[0].Lines[0].FulfillmentSchema.Should().BeNull();
     }
 
@@ -657,7 +652,6 @@ public class OzonOrderMapperTests
         List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
             new[] { posting }, OrdersSchema.Fbs, null, out _);
 
-        result[0].IsSellerWarehouse.Should().BeNull();
         result[0].Lines[0].FulfillmentSchema.Should().BeNull();
     }
 
@@ -708,11 +702,10 @@ public class OzonOrderMapperTests
 
         ChannelOrderSnapshot snapshot = result[0];
         snapshot.ExternalOrderId.Should().Be("45274296-0617");
-        snapshot.IsSellerWarehouse.Should().BeFalse();
 
         ChannelOrderLineSnapshot line = snapshot.Lines[0];
         line.LineKey.Should().Be("45274296-0617-1");
-        line.FulfillmentSchema.Should().Be("fbo");
+        line.FulfillmentSchema.Should().Be("oz_fbo");
         line.UnitPrice.Should().Be(900m);
         line.Currency.Should().Be("RUB");
     }

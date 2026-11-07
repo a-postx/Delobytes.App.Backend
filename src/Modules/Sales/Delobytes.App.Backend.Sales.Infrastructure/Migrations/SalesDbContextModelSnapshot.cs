@@ -138,9 +138,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                     b.Property<bool?>("IsB2b")
                         .HasColumnType("boolean");
 
-                    b.Property<bool?>("IsSellerWarehouse")
-                        .HasColumnType("boolean");
-
                     b.Property<bool?>("IsTestOrder")
                         .HasColumnType("boolean");
 

@@ -30,6 +30,8 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private const int MaxIdentityLength = 100;
     private const int ResponseBodyLogLimit = 500;
     private const string StickerIdentityPrefix = "wb-stk:";
+    private const string WildberriesSellerWarehouseSchema = "wb_fbs";
+    private const string WildberriesOwnWarehouseSchema = "wb_fbw";
     private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
@@ -857,8 +859,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         // one helper; nothing else in the codebase may compute them.
         ChannelOrderHeaderFacts header = ChannelOrderHeaderFacts.Reduce(lines, rowOrderDates);
 
-        bool? isSellerWarehouse = first.WarehouseType?.Contains("продавца", StringComparison.OrdinalIgnoreCase);
-
         return new ChannelOrderSnapshot
         {
             ExternalOrderId = orderKey,
@@ -877,7 +877,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             Currency = WildberriesCurrency,
             DeliveryRegion = first.RegionName,
             WarehouseName = first.WarehouseName,
-            IsSellerWarehouse = isSellerWarehouse,
             ChannelReportedTotal = header.ChannelReportedTotal,
             Lines = lines
         };
@@ -904,8 +903,21 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             Currency = WildberriesCurrency,
             IsCancelled = dto.IsCancel,
             StatusChangedAt = ParseMoscowTimestamp(dto.LastChangeDate),
-            ChannelReportedTotal = dto.TotalPrice
+            ChannelReportedTotal = dto.TotalPrice,
+            FulfillmentSchema = ResolveFulfillmentSchema(dto.WarehouseType)
         };
+    }
+
+    private static string? ResolveFulfillmentSchema(string? warehouseType)
+    {
+        if (string.IsNullOrWhiteSpace(warehouseType))
+        {
+            return null;
+        }
+
+        return warehouseType.Contains("продавца", StringComparison.OrdinalIgnoreCase)
+            ? WildberriesSellerWarehouseSchema
+            : WildberriesOwnWarehouseSchema;
     }
 
     private WildberriesCardSnapshot MapToSnapshot(WildberriesCardDto dto)

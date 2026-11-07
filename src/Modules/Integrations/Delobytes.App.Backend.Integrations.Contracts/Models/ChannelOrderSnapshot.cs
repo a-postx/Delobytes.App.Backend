@@ -65,11 +65,6 @@ public record ChannelOrderSnapshot
     public string? WarehouseName { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether the order ships from the seller's own warehouse.
-    /// </summary>
-    public bool? IsSellerWarehouse { get; init; }
-
-    /// <summary>
     /// Gets a value indicating whether the order is a business-to-business order.
     /// </summary>
     public bool? IsB2b { get; init; }

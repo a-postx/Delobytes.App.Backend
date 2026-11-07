@@ -128,7 +128,6 @@ public class WildberriesApiClientGetOrdersTests
         order.CancelReason.Should().BeNull();
         order.Currency.Should().Be("RUB");
         order.WarehouseName.Should().Be("Подольск");
-        order.IsSellerWarehouse.Should().BeFalse();
         order.DeliveryRegion.Should().Be("Московская");
         order.ChannelReportedTotal.Should().Be(1200);
 
@@ -144,10 +143,38 @@ public class WildberriesApiClientGetOrdersTests
         line.UnitPriceBeforeDiscount.Should().Be(1200);
         line.Currency.Should().Be("RUB");
 
+        // "Склад WB" is Wildberries' own fulfilment warehouse, not the seller's; wb_fbw keeps this
+        // channel's codes distinct from Ozon's oz_fbo/oz_fbs/oz_rfbs once both share one column.
+        line.FulfillmentSchema.Should().Be("wb_fbw");
+
         // `subject` is the product's category, not its card title: WB reports the title only in the
         // content API. Copying the category here published a wrong fact that no consumer could tell
         // apart from a real name, so the field stays null until the catalogue link fills it.
         line.ProductName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_SellerWarehouseType_MapsToWbFbsSchema()
+    {
+        string json = """
+        [
+            {
+                "date": "2024-01-10T08:00:00",
+                "lastChangeDate": "2024-01-10T09:30:00",
+                "warehouseType": "Склад продавца",
+                "nmId": 123456,
+                "gNumber": "G-1",
+                "srid": "SRID-1"
+            }
+        ]
+        """;
+
+        WildberriesApiClient client = BuildClientRespondingWith(json);
+
+        OrdersPage page = await client.GetOrdersAsync(Guid.NewGuid(), BuildWindowRequest(), CancellationToken.None);
+
+        ChannelOrderLineSnapshot line = page.Orders.Single().Lines.Single();
+        line.FulfillmentSchema.Should().Be("wb_fbs");
     }
 
     [Fact]
