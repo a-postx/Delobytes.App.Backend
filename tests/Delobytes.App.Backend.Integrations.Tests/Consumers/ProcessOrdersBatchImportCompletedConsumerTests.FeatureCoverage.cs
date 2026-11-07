@@ -40,11 +40,30 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public async Task ProcessAsync_ExpectedBatchCountUnknown_DoesNotFinaliseEvenAtOrAboveAnyCount(int recorded)
+    public async Task ProcessAsync_FetchUnfinishedAtAnyRecordedCount_DoesNotFinalise(int recorded)
     {
         JobRun run = BuildJobRun();
         SetupDefaults(run, totalBatches: 1, recordedBatches: recorded);
         run.ExpectedBatchCount = null;
+
+        // A backfill that has published one day out of many: the checkpoint carries the running
+        // batch count with IsFetchCompleted left false, so no recorded count can settle the run.
+        _jobCheckpointRepo
+            .Setup(r => r.GetByJobRunIdAsync(run.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JobCheckpoint
+            {
+                JobRunId = run.Id,
+                Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
+                {
+                    TotalBatches = 1,
+                    MaxChangedAt = FetchedMaxChangedAt,
+                    WindowTo = DateTimeOffset.UtcNow,
+                    PagesFetched = 1,
+                    IsFetchCompleted = false,
+                }),
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+
         OrdersBatchImportCompletedEvent message = BuildEvent(run.Id);
 
         await CreateConsumer().ProcessAsync(message, message.BatchId, CancellationToken.None);
@@ -54,6 +73,50 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FetchFinishedButCheckpointCountHigher_DoesNotFinaliseEarly()
+    {
+        JobRun run = BuildJobRun();
+        SetupDefaults(run, totalBatches: 3, recordedBatches: 1);
+        run.ExpectedBatchCount = null;
+        _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(2, 0, 0, 0));
+        OrdersBatchImportCompletedEvent message = BuildEvent(run.Id);
+
+        await CreateConsumer().ProcessAsync(message, message.BatchId, CancellationToken.None);
+
+        // The checkpoint is authoritative once the fetch finished: three batches were announced and
+        // only one result is stored, so the remaining two are still in flight.
+        run.Status.Should().Be(JobStatus.Running);
+        run.CompletedAt.Should().BeNull();
+        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
+        _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CompletionEventArrivesAfterFinalisationFromCheckpoint_DoesNotFinaliseTwice()
+    {
+        JobRun run = BuildJobRun();
+        SetupDefaults(run, totalBatches: 1, recordedBatches: 1);
+        SetupConnection(run);
+        run.ExpectedBatchCount = null;
+        _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(3, 1, 1, 0));
+        OrdersBatchImportCompletedEvent batchMessage = BuildEvent(run.Id);
+        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(batchMessage, batchMessage.BatchId, CancellationToken.None);
+        run.Status.Should().Be(JobStatus.Success, "the checkpoint announced the only batch of this run");
+
+        await consumer.ProcessFetchCompletedAsync(BuildFetchCompletedEvent(run.Id, totalBatches: 1), CancellationToken.None);
+
+        run.Status.Should().Be(JobStatus.Success);
+        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Once);
+        _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Once);
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2),
+            "the late completion event finalises nothing but still nudges downstream consumers");
     }
 
     [Theory]
@@ -211,6 +274,56 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "the winning finalisation published the completed event");
+    }
+
+    [Fact]
+    public async Task HealthyOrdering_BatchBeforeFetchCompleted_ProducesNoWarning()
+    {
+        // The production ordering, reproduced step by step: a delta run publishes its only batch
+        // mid-fetch, so the batch result is consumed while the checkpoint still says the fetch is
+        // unfinished and before the completion event has written the threshold. Neither delivery
+        // may log a warning — this is the shape of a healthy run, and treating it as an anomaly
+        // left the warning firing twice an hour forever.
+        JobRun run = BuildJobRun();
+        SetupDefaults(run, totalBatches: 1, recordedBatches: 1);
+        SetupConnection(run);
+        run.ExpectedBatchCount = null;
+        _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(3, 1, 1, 0));
+
+        // OrdersBatchPublisher.PublishUnitAsync writes this checkpoint after publishing the batch,
+        // and FinishCompletedAsync overwrites it once the fetch is over.
+        OrdersImportCheckpointPayload fetched = new OrdersImportCheckpointPayload
+        {
+            TotalBatches = 1,
+            MaxChangedAt = FetchedMaxChangedAt,
+            WindowTo = DateTimeOffset.UtcNow,
+            PagesFetched = 1,
+            IsFetchCompleted = false,
+        };
+
+        _jobCheckpointRepo
+            .Setup(r => r.GetByJobRunIdAsync(run.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new JobCheckpoint
+            {
+                JobRunId = run.Id,
+                Payload = JsonSerializer.Serialize(fetched),
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+
+        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersBatchImportCompletedEvent batchMessage = BuildEvent(run.Id);
+
+        await consumer.ProcessAsync(batchMessage, batchMessage.BatchId, CancellationToken.None);
+
+        run.Status.Should().Be(JobStatus.Running, "the fetch outcome is not known when the batch result arrives");
+
+        fetched = fetched with { IsFetchCompleted = true };
+
+        await consumer.ProcessFetchCompletedAsync(BuildFetchCompletedEvent(run.Id, totalBatches: 1), CancellationToken.None);
+
+        run.Status.Should().Be(JobStatus.Success);
+        run.RecordsCreated.Should().Be(3);
+        WarningMessages().Should().BeEmpty();
     }
 
     [Fact]

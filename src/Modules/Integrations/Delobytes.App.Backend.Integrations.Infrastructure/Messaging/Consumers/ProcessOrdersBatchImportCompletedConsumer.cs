@@ -10,17 +10,21 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 
 /// <summary>
 /// Aggregates orders batch results and finalises the JobRun only once every batch announced by
-/// the orchestrator has been recorded, using the expected batch count the orchestrator announces
-/// via <see cref="OrdersImportFetchCompletedEvent"/>. Finalising on the first batch result to
-/// arrive would mark a multi-batch run terminal while later batches were still in flight, freezing
-/// its counters at a fraction of the real totals and letting the next scheduled run start against
-/// a watermark this one never earned.
-/// Two independent entry points can trigger finalisation, because the completion event and the
-/// batch results it describes can be delivered in either order: a batch result checks the
-/// <see cref="JobRun.ExpectedBatchCount"/> already recorded on the JobRun, and the completion
-/// event sets that same field and re-checks. Idempotent: duplicate batch deliveries are skipped
-/// via the batch's deterministic BatchId, and concurrent finalisation attempts from either entry
-/// point are serialised via JobRun's xmin concurrency token.
+/// the orchestrator has been recorded. Finalising on the first batch result to arrive would mark a
+/// multi-batch run terminal while later batches were still in flight, freezing its counters at a
+/// fraction of the real totals and letting the next scheduled run start against a watermark this
+/// one never earned.
+/// The threshold is read from <see cref="JobRun.ExpectedBatchCount"/> and, when the completion
+/// event has not written it yet, from the run's own checkpoint: the checkpoint is the durable
+/// record the orchestrator writes before it announces anything, so a batch result delivered ahead
+/// of the event reads the same number the event carries. That ordering is the normal one — batches
+/// are published mid-fetch — so it is not treated as an anomaly.
+/// <see cref="OrdersImportFetchCompletedEvent"/> stays the liveness trigger rather than the source
+/// of truth: it is the only wake-up a run with no batches at all ever receives, and it re-checks a
+/// run whose last batch result was recorded before the final checkpoint was written. Idempotent:
+/// duplicate batch deliveries are skipped via the batch's deterministic BatchId, and concurrent
+/// finalisation attempts from either entry point are serialised via JobRun's xmin concurrency
+/// token.
 /// </summary>
 public class ProcessOrdersBatchImportCompletedConsumer
 {
@@ -203,9 +207,9 @@ public class ProcessOrdersBatchImportCompletedConsumer
     }
 
     /// <summary>
-    /// Finalises the JobRun once <see cref="JobRun.ExpectedBatchCount"/> is known and every
-    /// expected batch result has been recorded. Called from both entry points, because either one
-    /// can be the delivery that brings the recorded count up to the expected total.
+    /// Finalises the JobRun once the expected batch count is known and every expected batch result
+    /// has been recorded. Called from both entry points, because either one can be the delivery
+    /// that brings the recorded count up to the expected total.
     /// </summary>
     private async Task TryFinalizeAsync(JobRun jobRun, CancellationToken cancellationToken)
     {
@@ -214,18 +218,19 @@ public class ProcessOrdersBatchImportCompletedConsumer
         // threshold yet. Without the re-read the run would never reach finalisation, because no
         // further delivery is guaranteed to arrive.
         int? expectedBatchCount = await _jobRunRepository.GetExpectedBatchCountAsync(jobRun.Id, cancellationToken);
+        OrdersImportCheckpointPayload? checkpointPayload = null;
 
         if (expectedBatchCount is null)
         {
-            // The expected batch count is unknown, so there is no way to tell whether every batch
-            // of the run has arrived. Leaving the JobRun untouched keeps it eligible for the
-            // watchdog (Running beyond the job type's timeout is failed), rather than declaring a
-            // partial import complete.
-            _logger.LogWarning(
-                "JobRun {JobRunId}: expected batch count is unavailable (fetch-completed event not yet received), not finalising",
-                jobRun.Id);
+            CheckpointThreshold threshold = await ResolveCheckpointThresholdAsync(jobRun, cancellationToken);
 
-            return;
+            if (!threshold.IsKnown)
+            {
+                return;
+            }
+
+            expectedBatchCount = threshold.ExpectedBatchCount;
+            checkpointPayload = threshold.Payload;
         }
 
         int recordedBatches = await _jobRunRepository.CountBatchResultsAsync(jobRun.Id, cancellationToken);
@@ -250,8 +255,13 @@ public class ProcessOrdersBatchImportCompletedConsumer
         // threshold onto it; the UPDATE below persists it together with the final counters.
         jobRun.ExpectedBatchCount = expectedBatchCount;
 
-        JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
-        OrdersImportCheckpointPayload? payload = DeserializePayload(jobRun.Id, checkpoint?.Payload);
+        OrdersImportCheckpointPayload? payload = checkpointPayload;
+
+        if (payload == null)
+        {
+            JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
+            payload = DeserializePayload(jobRun.Id, checkpoint?.Payload);
+        }
 
         if (payload == null)
         {
@@ -398,6 +408,66 @@ public class ProcessOrdersBatchImportCompletedConsumer
             ?? throw new InvalidOperationException("Completed orders backfill has no handover watermark.");
     }
 
+    /// <summary>
+    /// Resolves the expected batch count from the run's own checkpoint, for the case where a batch
+    /// result reaches the aggregator before the completion event has written the threshold onto the
+    /// JobRun. Returns the checkpoint payload and its count, or nulls when the payload is
+    /// unavailable or its fetch outcome is still open, which keeps the run untouched and eligible
+    /// for the watchdog instead of declaring a partial import complete. The payload is handed back
+    /// so finalisation can reuse it instead of reading the same row twice.
+    /// </summary>
+    private async Task<CheckpointThreshold> ResolveCheckpointThresholdAsync(
+        JobRun jobRun, CancellationToken cancellationToken)
+    {
+        JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
+
+        if (checkpoint == null)
+        {
+            // The batch result overtook the orchestrator's very first checkpoint write, so neither
+            // the threshold nor the fetch outcome exists yet.
+            _logger.LogInformation(
+                "JobRun {JobRunId}: no checkpoint yet (the run is still starting), not finalising",
+                jobRun.Id);
+
+            return default;
+        }
+
+        OrdersImportCheckpointPayload? payload = DeserializePayload(jobRun.Id, checkpoint.Payload);
+
+        if (payload == null)
+        {
+            _logger.LogWarning(
+                "JobRun {JobRunId}: checkpoint payload is unreadable, not finalising",
+                jobRun.Id);
+
+            return default;
+        }
+
+        if (payload.IsFetchCompleted != true)
+        {
+            // OrdersBatchPublisher.PublishUnitAsync persists a checkpoint after every published
+            // unit, carrying the batch count accumulated so far and IsFetchCompleted left false.
+            // Finalising on it would freeze the counters of a multi-unit backfill at the days
+            // fetched so far, so the fetch outcome — never the batch count alone — gates this.
+            _logger.LogInformation(
+                "JobRun {JobRunId}: fetch still in progress, {PublishedBatches} batch(es) published, not finalising",
+                jobRun.Id,
+                payload.TotalBatches);
+
+            return default;
+        }
+
+        // The fetch finished, yet the JobRun carries no threshold: the completion event was delayed
+        // or lost between the orchestrator and this consumer. The checkpoint it was built from is
+        // authoritative, so finalise from it rather than leaving the run for the watchdog.
+        _logger.LogWarning(
+            "JobRun {JobRunId}: checkpoint reports a finished fetch but the expected batch count was never recorded (completion event lost or delayed), finalising from the checkpoint with {ExpectedBatches} batch(es)",
+            jobRun.Id,
+            payload.TotalBatches);
+
+        return new CheckpointThreshold(payload, payload.TotalBatches);
+    }
+
     private async Task PublishCompletedEventAsync(JobRun jobRun, CancellationToken cancellationToken)
     {
         OrdersImportCompletedEvent completedEvent = new OrdersImportCompletedEvent
@@ -413,6 +483,11 @@ public class ProcessOrdersBatchImportCompletedConsumer
         _logger.LogInformation(
             "Published OrdersImportCompletedEvent for JobRun {JobRunId}",
             jobRun.Id);
+    }
+
+    private readonly record struct CheckpointThreshold(OrdersImportCheckpointPayload? Payload, int ExpectedBatchCount)
+    {
+        public bool IsKnown => Payload != null;
     }
 
     private static bool IsTerminalStatus(JobStatus status)

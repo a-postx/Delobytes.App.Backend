@@ -93,9 +93,9 @@ public class JobRun : ITenantScoped, IRowVersionedEntity
     /// <summary>
     /// Gets or sets the number of batch results the orders aggregator must record before
     /// finalising this run, as announced by <c>OrdersImportFetchCompletedEvent</c>. Null until
-    /// that event is processed. Durable on the JobRun itself (rather than read from
-    /// JobCheckpoint.Payload) because the event can be delivered before or after the batch
-    /// results it describes.
+    /// that event is processed. Durable on the JobRun itself because the event can be delivered
+    /// before or after the batch results it describes; when it arrives after them, the aggregator
+    /// reads the same number from the run's checkpoint instead of waiting for the event.
     /// </summary>
     public int? ExpectedBatchCount { get; set; }
 

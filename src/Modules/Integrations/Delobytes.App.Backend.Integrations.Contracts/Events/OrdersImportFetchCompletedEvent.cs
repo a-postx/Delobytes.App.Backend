@@ -4,8 +4,13 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 /// Published by Integrations.ProcessOrdersImportConsumer after it has finished fetching a run and
 /// persisted the final checkpoint. Replaces the empty terminal
 /// <see cref="OrdersBatchImportRequestedEvent"/> as the signal that tells
-/// Integrations.ProcessOrdersBatchImportCompletedConsumer (aggregator) how many batch results to
-/// expect, without routing that signal through the Sales upsert pipeline.
+/// Integrations.ProcessOrdersBatchImportCompletedConsumer (aggregator) to re-check the run, without
+/// routing that signal through the Sales upsert pipeline.
+/// Its payload mirrors the checkpoint the orchestrator persists immediately before publishing, so
+/// the aggregator reads the threshold from either one: the checkpoint covers batch results that
+/// arrive first, which is the normal ordering because batches are published mid-fetch, while this
+/// event covers a run that published no batches at all and every run whose last batch result was
+/// recorded before the final checkpoint was written.
 /// </summary>
 public record OrdersImportFetchCompletedEvent
 {

@@ -13,10 +13,7 @@ using Npgsql;
 namespace Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
 
 /// <summary>
-/// Consumer for persisting imported order batches into the Sales module. Upserts Order by
-/// (TenantId, ChannelId, ExternalOrderId) and OrderLine by (TenantId, OrderId, LineKey),
-/// resolves ChannelProductId from the local ChannelProductRef projection, and reports the
-/// outcome back to Integrations via OrdersBatchImportCompletedEvent.
+/// Consumer for persisting imported order batches into the Sales module.
 /// </summary>
 public class OrdersBatchImportRequestedConsumer
 {
@@ -27,9 +24,7 @@ public class OrdersBatchImportRequestedConsumer
     private const string UniqueViolationSqlState = "23505";
 
     /// <summary>
-    /// Upper bound on retry attempts for a single order upsert. Defense-in-depth only: with
-    /// sequential FBO/FBS execution enforced at the scheduler, a concurrent conflict on the same
-    /// order is rare.
+    /// Upper bound on retry attempts for a single order upsert.
     /// </summary>
     private const int MaxUpsertAttempts = 3;
 
@@ -169,9 +164,7 @@ public class OrdersBatchImportRequestedConsumer
 
     /// <summary>
     /// Runs <see cref="UpsertOrderAsync"/> and saves it, retrying with exponential backoff when the
-    /// save fails on a concurrent-insert conflict. Defense-in-depth: with FBO and FBS execution
-    /// serialized at the scheduler, two writers racing on the same order is expected to be rare, not
-    /// the common case this retry is designed to absorb silently.
+    /// save fails on a concurrent-insert conflict.
     /// </summary>
     private async Task<OrderUpsertStatus> UpsertOrderWithRetryAsync(
         Guid channelId,

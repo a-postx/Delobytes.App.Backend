@@ -94,10 +94,11 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
     }
 
     /// <summary>
-    /// Arranges the threshold announced by the fetch-completed event and how many batch results are
-    /// already stored, which together decide whether the aggregator finalises the run on this call.
-    /// Defaults to a single-batch run (1 of 1) so every pre-existing test below, written when the
-    /// aggregator finalised unconditionally, keeps the same outcome.
+    /// Arranges the threshold announced by the fetch-completed event, the checkpoint the orchestrator
+    /// persists alongside it, and how many batch results are already stored, which together decide
+    /// whether the aggregator finalises the run on this call. Defaults to a single-batch run (1 of 1)
+    /// so every pre-existing test below, written when the aggregator finalised unconditionally,
+    /// keeps the same outcome.
     /// </summary>
     private void SetupDefaults(JobRun jobRun, int totalBatches = 1, int recordedBatches = 1)
     {
@@ -121,9 +122,9 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        // The threshold reaches the aggregator only through OrdersImportFetchCompletedEvent, so it
-        // lives on the JobRun; the checkpoint below supplies the watermark the aggregator copies to
-        // SyncCheckpoint.
+        // The threshold lives on the JobRun, where the completion event writes it, and the
+        // checkpoint below mirrors it the way the orchestrator persists it — the aggregator falls
+        // back to that copy when a batch result overtakes the event.
         jobRun.ExpectedBatchCount = totalBatches;
 
         // TryFinalizeAsync re-reads the threshold instead of trusting the loaded instance, so the
@@ -143,6 +144,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                     MaxChangedAt = FetchedMaxChangedAt,
                     WindowTo = DateTimeOffset.UtcNow,
                     PagesFetched = 1,
+                    IsFetchCompleted = true,
                 }),
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
@@ -150,6 +152,33 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         _jobRunRepo
             .Setup(r => r.CountBatchResultsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(recordedBatches);
+    }
+
+    /// <summary>
+    /// Renders the Warning entries Moq recorded, so a test can assert what the aggregator treats as
+    /// an anomaly. The state argument of ILogger.Log is a formatted log entry whose ToString is the
+    /// message with placeholders substituted, which is what the assertions match against.
+    /// </summary>
+    private List<string> WarningMessages()
+    {
+        List<string> messages = new List<string>();
+
+        foreach (IInvocation invocation in _logger.Invocations)
+        {
+            if (invocation.Method.Name != nameof(ILogger.Log))
+            {
+                continue;
+            }
+
+            if (invocation.Arguments.Count > 2
+                && invocation.Arguments[0] is LogLevel level
+                && level == LogLevel.Warning)
+            {
+                messages.Add(invocation.Arguments[2]?.ToString() ?? string.Empty);
+            }
+        }
+
+        return messages;
     }
 
     private Connection SetupConnection(JobRun jobRun)
@@ -576,15 +605,71 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_ExpectedBatchCountUnknown_DoesNotFinaliseJobRun()
+    public async Task ProcessAsync_BatchResultBeforeCompletionEvent_FinalisesFromCheckpoint()
+    {
+        JobRun jobRun = BuildJobRun();
+
+        SetupDefaults(jobRun);
+        SetupConnection(jobRun);
+
+        // The normal ordering, not an anomaly: the orchestrator publishes batches mid-fetch and
+        // announces the threshold only afterwards, so this batch result reaches the aggregator
+        // before OrdersImportFetchCompletedEvent has written the threshold onto the JobRun.
+        jobRun.ExpectedBatchCount = null;
+
+        _jobRunRepo
+            .Setup(r => r.GetBatchResultTotalsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildTotals(created: 3, updated: 1, skipped: 1, failed: 0));
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(jobRun.ConnectionId, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        _syncCheckpointRepo
+            .Setup(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
+
+        _jobRunRepo.Verify(r => r.AddBatchResult(It.IsAny<JobRunBatchResult>()), Times.Once);
+        jobRun.Status.Should().Be(JobStatus.Success);
+        jobRun.ExpectedBatchCount.Should().Be(1);
+        _jobRunRepo.Verify(r => r.UpdateAsync(jobRun, It.IsAny<CancellationToken>()), Times.Once);
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        WarningMessages().Should().ContainMatch("*completion event lost or delayed*");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_BatchResultBeforeFetchFinished_DoesNotFinalise()
     {
         JobRun jobRun = BuildJobRun();
 
         SetupDefaults(jobRun);
 
-        // Overrides the threshold from SetupDefaults: the completion event has not been delivered
-        // yet, so the aggregator cannot tell whether this batch result is the last one.
+        // OrdersBatchPublisher.PublishUnitAsync persists the batch count accumulated so far with
+        // IsFetchCompleted left false, so the threshold in this checkpoint is a running total of a
+        // backfill that still has days to publish — not the final count.
         jobRun.ExpectedBatchCount = null;
+
+        _jobCheckpointRepo
+            .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JobCheckpoint
+            {
+                JobRunId = jobRun.Id,
+                Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
+                {
+                    TotalBatches = 1,
+                    MaxChangedAt = FetchedMaxChangedAt,
+                    WindowTo = DateTimeOffset.UtcNow,
+                    PagesFetched = 1,
+                    IsFetchCompleted = false,
+                }),
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
 
         ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
 
@@ -596,6 +681,35 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
+        WarningMessages().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NoCheckpointYet_DoesNotFinalise()
+    {
+        JobRun jobRun = BuildJobRun();
+
+        SetupDefaults(jobRun);
+
+        // The batch result overtook the orchestrator's first checkpoint write, so neither the
+        // threshold nor the fetch outcome exists here.
+        jobRun.ExpectedBatchCount = null;
+
+        _jobCheckpointRepo
+            .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobCheckpoint?)null);
+
+        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+
+        await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
+
+        _jobRunRepo.Verify(r => r.AddBatchResult(It.IsAny<JobRunBatchResult>()), Times.Once);
+        jobRun.Status.Should().Be(JobStatus.Running);
+        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
+        _eventPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        WarningMessages().Should().BeEmpty();
     }
 
     [Fact]

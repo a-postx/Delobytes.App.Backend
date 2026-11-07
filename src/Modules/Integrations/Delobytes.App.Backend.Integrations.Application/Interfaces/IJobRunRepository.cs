@@ -112,6 +112,8 @@ public interface IJobRunRepository
     /// of the job run. The aggregator needs it because
     /// <c>OrdersImportFetchCompletedEvent</c> can be consumed between a batch result's load of the
     /// run and its finalisation check, and a tracked instance would still report the old value.
+    /// Null means no completion event has recorded the threshold yet; the aggregator then falls
+    /// back to the run's checkpoint, which the orchestrator writes first.
     /// </summary>
     public Task<int?> GetExpectedBatchCountAsync(Guid id, CancellationToken cancellationToken);
 
