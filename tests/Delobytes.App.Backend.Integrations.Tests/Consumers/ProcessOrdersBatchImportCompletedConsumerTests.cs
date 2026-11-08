@@ -640,7 +640,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        WarningMessages().Should().ContainMatch("*completion event lost or delayed*");
+        WarningMessages().Should().BeEmpty();
     }
 
     [Fact]
