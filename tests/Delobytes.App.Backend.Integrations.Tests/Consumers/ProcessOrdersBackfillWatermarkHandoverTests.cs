@@ -11,6 +11,7 @@ using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -40,11 +41,27 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
     private ProcessOrdersBatchImportCompletedConsumer CreateConsumer()
     {
-        return new ProcessOrdersBatchImportCompletedConsumer(
+        OrdersImportFinalizer finalizer = new OrdersImportFinalizer(
             _jobRunRepo.Object,
-            _jobCheckpointRepo.Object,
+            TimeProvider.System,
+            NullLogger<OrdersImportFinalizer>.Instance);
+
+        OrdersImportWatermarkWriter watermarkWriter = new OrdersImportWatermarkWriter(
             _syncCheckpointRepo.Object,
             _connectionRepo.Object,
+            TimeProvider.System,
+            NullLogger<OrdersImportWatermarkWriter>.Instance);
+
+        OrdersBatchAggregator aggregator = new OrdersBatchAggregator(
+            _jobRunRepo.Object,
+            _jobCheckpointRepo.Object,
+            finalizer,
+            watermarkWriter,
+            TimeProvider.System,
+            NullLogger<OrdersBatchAggregator>.Instance);
+
+        return new ProcessOrdersBatchImportCompletedConsumer(
+            aggregator,
             _eventPublisher.Object,
             _logger.Object);
     }
@@ -55,7 +72,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -114,8 +131,8 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
             .ReturnsAsync(1);
 
         _jobRunRepo
-            .Setup(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .Setup(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         _jobRunRepo
             .Setup(r => r.CountBatchResultsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
@@ -151,7 +168,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
             });
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(jobRun.ConnectionId, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(jobRun.ConnectionId, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingCheckpoint);
 
         _syncCheckpointRepo
@@ -174,7 +191,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = jobRun.ConnectionId,
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             LastChangedAt = lastChangedAt,
             LastSuccessAt = DateTimeOffset.UtcNow.AddDays(-1),
             LastJobRunId = Guid.NewGuid(),

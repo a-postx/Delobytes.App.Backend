@@ -258,7 +258,8 @@ public class ProductLifecycleTests
         ProductDeletionRequestedConsumer consumer = new ProductDeletionRequestedConsumer(
             salesContext,
             publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>());
+            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+            TimeProvider.System);
 
         ProductDeletionRequestedEvent message = new ProductDeletionRequestedEvent
         {
@@ -302,7 +303,8 @@ public class ProductLifecycleTests
         ProductDeletionRequestedConsumer consumer = new ProductDeletionRequestedConsumer(
             salesContext,
             publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>());
+            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+            TimeProvider.System);
 
         ProductDeletionRequestedEvent message = new ProductDeletionRequestedEvent
         {
@@ -343,7 +345,8 @@ public class ProductLifecycleTests
         ProductDeletionRequestedConsumer salesConsumer = new ProductDeletionRequestedConsumer(
             salesContext,
             publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>());
+            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+            TimeProvider.System);
 
         // The Sales consumer re-publishes onto a no-op endpoint: we drive the Catalog side explicitly.
         publishEndpointMock
@@ -352,7 +355,8 @@ public class ProductLifecycleTests
                 new ProductOrdersCheckCompletedConsumer(
                     repository,
                     BuildPhotoServiceMock().Object,
-                    Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>()).ProcessAsync(e, ct));
+                    Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+                    TimeProvider.System).ProcessAsync(e, ct));
 
         RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(
             repository,
@@ -412,12 +416,14 @@ public class ProductLifecycleTests
                 new ProductOrdersCheckCompletedConsumer(
                     repository,
                     BuildPhotoServiceMock().Object,
-                    Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>()).ProcessAsync(e, ct));
+                    Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+                    TimeProvider.System).ProcessAsync(e, ct));
 
         ProductDeletionRequestedConsumer salesConsumer = new ProductDeletionRequestedConsumer(
             salesContext,
             publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>());
+            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+            TimeProvider.System);
 
         RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(
             repository,
@@ -461,7 +467,8 @@ public class ProductLifecycleTests
         ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
             repositoryMock.Object,
             BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>());
+            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+            TimeProvider.System);
 
         ProductOrdersCheckCompletedEvent message = new ProductOrdersCheckCompletedEvent
         {
@@ -493,7 +500,8 @@ public class ProductLifecycleTests
         ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
             repositoryMock.Object,
             BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>());
+            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+            TimeProvider.System);
 
         ProductOrdersCheckCompletedEvent message = new ProductOrdersCheckCompletedEvent
         {
@@ -522,7 +530,8 @@ public class ProductLifecycleTests
         ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
             repositoryMock.Object,
             BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>());
+            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+            TimeProvider.System);
 
         ProductOrdersCheckCompletedEvent message = new ProductOrdersCheckCompletedEvent
         {
@@ -553,7 +562,8 @@ public class ProductLifecycleTests
         ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
             repositoryMock.Object,
             BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>());
+            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+            TimeProvider.System);
 
         // Act
         Func<Task> act = () => handler.ProcessAsync(
@@ -832,7 +842,8 @@ public class ProductLifecycleTests
         ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
             repositoryMock.Object,
             photoServiceMock.Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>());
+            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+            TimeProvider.System);
 
         // Act
         await handler.ProcessAsync(
@@ -893,7 +904,8 @@ public class ProductLifecycleTests
         ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
             repositoryMock.Object,
             photoServiceMock.Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>());
+            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
+            TimeProvider.System);
 
         // Act — must not throw
         Func<Task> act = () => handler.ProcessAsync(

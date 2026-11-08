@@ -4,7 +4,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Extensions;
 
 /// <summary>
 /// Maps <see cref="JobType"/> to and from the camelCase-cased type token used by the unified
-/// jobs API ("products-import", "orders-import"). The enum names themselves are not a stable
+/// jobs API ("products-import", "wb-orders-import"). The enum names themselves are not a stable
 /// API contract: renaming a member must not silently change the public route segment.
 /// </summary>
 public static class JobTypeExtensions
@@ -15,24 +15,19 @@ public static class JobTypeExtensions
     public const string ProductsImport = "products-import";
 
     /// <summary>
-    /// API type token for <see cref="JobType.OrdersImport"/>.
+    /// API type token for <see cref="JobType.WbOrdersImport"/>.
     /// </summary>
-    public const string OrdersImport = "orders-import";
+    public const string WbOrdersImport = "wb-orders-import";
 
     /// <summary>
-    /// API type token for <see cref="JobType.OrdersSync"/>.
+    /// API type token for <see cref="JobType.OzonOrdersImportFbo"/>.
     /// </summary>
-    public const string OrdersSync = "orders-sync";
+    public const string OzonOrdersImportFbo = "ozon-orders-import-fbo";
 
     /// <summary>
-    /// API type token for <see cref="JobType.OrdersImportFbo"/>.
+    /// API type token for <see cref="JobType.OzonOrdersImportFbs"/>.
     /// </summary>
-    public const string OrdersImportFbo = "orders-import-fbo";
-
-    /// <summary>
-    /// API type token for <see cref="JobType.OrdersImportFbs"/>.
-    /// </summary>
-    public const string OrdersImportFbs = "orders-import-fbs";
+    public const string OzonOrdersImportFbs = "ozon-orders-import-fbs";
 
     /// <summary>
     /// Returns the API type token for the given job type.
@@ -42,10 +37,9 @@ public static class JobTypeExtensions
         return jobType switch
         {
             JobType.ProductsImport => ProductsImport,
-            JobType.OrdersImport => OrdersImport,
-            JobType.OrdersSync => OrdersSync,
-            JobType.OrdersImportFbo => OrdersImportFbo,
-            JobType.OrdersImportFbs => OrdersImportFbs,
+            JobType.WbOrdersImport => WbOrdersImport,
+            JobType.OzonOrdersImportFbo => OzonOrdersImportFbo,
+            JobType.OzonOrdersImportFbs => OzonOrdersImportFbs,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(jobType),
                 jobType,

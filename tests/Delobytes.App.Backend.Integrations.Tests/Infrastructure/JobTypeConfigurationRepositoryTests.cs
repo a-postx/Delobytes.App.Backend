@@ -52,7 +52,7 @@ public class JobTypeConfigurationRepositoryTests
         {
             ctx.JobTypeConfigurations.AddRange(
                 BuildConfiguration(JobType.ProductsImport, 60, 50),
-                BuildConfiguration(JobType.OrdersImport, 30, 100));
+                BuildConfiguration(JobType.WbOrdersImport, 30, 100));
 
             await ctx.SaveChangesAsync();
         }
@@ -61,10 +61,10 @@ public class JobTypeConfigurationRepositoryTests
         {
             JobTypeConfigurationRepository repository = new JobTypeConfigurationRepository(ctx);
 
-            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.OrdersImport, CancellationToken.None);
+            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.WbOrdersImport, CancellationToken.None);
 
             configuration.Should().NotBeNull();
-            configuration!.JobType.Should().Be(JobType.OrdersImport);
+            configuration!.JobType.Should().Be(JobType.WbOrdersImport);
             configuration.TimeoutMinutes.Should().Be(30);
             configuration.BatchSize.Should().Be(100);
         }
@@ -110,7 +110,7 @@ public class JobTypeConfigurationRepositoryTests
         {
             JobTypeConfigurationRepository repository = new JobTypeConfigurationRepository(ctx);
 
-            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.OrdersSync, CancellationToken.None);
+            JobTypeConfiguration? configuration = await repository.GetByTypeAsync((JobType)99, CancellationToken.None);
 
             configuration.Should().BeNull();
         }
@@ -125,7 +125,7 @@ public class JobTypeConfigurationRepositoryTests
         {
             JobTypeConfigurationRepository repository = new JobTypeConfigurationRepository(ctx);
 
-            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.OrdersImport, CancellationToken.None);
+            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.WbOrdersImport, CancellationToken.None);
 
             configuration.Should().BeNull();
         }
@@ -140,7 +140,7 @@ public class JobTypeConfigurationRepositoryTests
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, TenantMock(Guid.NewGuid()).Object))
         {
-            ctx.JobTypeConfigurations.Add(BuildConfiguration(JobType.OrdersImport, 30, 100));
+            ctx.JobTypeConfigurations.Add(BuildConfiguration(JobType.WbOrdersImport, 30, 100));
             await ctx.SaveChangesAsync();
         }
 
@@ -151,7 +151,7 @@ public class JobTypeConfigurationRepositoryTests
         {
             JobTypeConfigurationRepository repository = new JobTypeConfigurationRepository(ctx);
 
-            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.OrdersImport, CancellationToken.None);
+            JobTypeConfiguration? configuration = await repository.GetByTypeAsync(JobType.WbOrdersImport, CancellationToken.None);
 
             configuration.Should().NotBeNull("the reference table must stay readable without a tenant context");
         }

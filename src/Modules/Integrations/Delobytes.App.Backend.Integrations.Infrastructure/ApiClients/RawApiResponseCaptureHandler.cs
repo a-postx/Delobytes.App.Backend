@@ -25,6 +25,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     private readonly IJobRunExecutionContext _jobRunExecutionContext;
     private readonly IRawApiResponseRepository _rawApiResponseRepository;
     private readonly ILogger<RawApiResponseCaptureHandler> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RawApiResponseCaptureHandler"/> class.
@@ -32,11 +33,13 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     public RawApiResponseCaptureHandler(
         IJobRunExecutionContext jobRunExecutionContext,
         IRawApiResponseRepository rawApiResponseRepository,
-        ILogger<RawApiResponseCaptureHandler> logger)
+        ILogger<RawApiResponseCaptureHandler> logger,
+        TimeProvider timeProvider)
     {
         _jobRunExecutionContext = jobRunExecutionContext;
         _rawApiResponseRepository = rawApiResponseRepository;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -57,7 +60,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             : await request.Content.ReadAsStringAsync(cancellationToken);
 
         string endpoint = GetEndpoint(request);
-        DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset startedAt = _timeProvider.GetUtcNow();
 
         try
         {

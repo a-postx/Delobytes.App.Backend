@@ -102,7 +102,7 @@ public partial class SchedulerHostedServiceTests
     public async Task Tick_DueOrdersImportSchedule_CreatesPendingSystemJobRunAndTypeSpecificRow()
     {
         // Arrange
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         List<JobRun> createdRuns = new List<JobRun>();
@@ -120,7 +120,7 @@ public partial class SchedulerHostedServiceTests
         createdRuns.Should().HaveCount(1);
         JobRun created = createdRuns[0];
         created.ConnectionId.Should().Be(_connectionId);
-        created.JobType.Should().Be(JobType.OrdersImport);
+        created.JobType.Should().Be(JobType.WbOrdersImport);
         created.Status.Should().Be(JobStatus.Pending);
         created.RequestedByUserId.Should().BeNull("scheduler-initiated jobs are system-owned");
         created.CreatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
@@ -150,9 +150,9 @@ public partial class SchedulerHostedServiceTests
     [Fact]
     public async Task Tick_UnsupportedJobType_CreatesJobRunWithoutTypeSpecificRow()
     {
-        // OrdersSync has no scheduler support yet; the JobRun must still exist so the work
+        // No scheduler case handles an undefined job type; the JobRun must still exist so the work
         // is tracked rather than silently dropped.
-        JobSchedule schedule = BuildSchedule(JobType.OrdersSync);
+        JobSchedule schedule = BuildSchedule((JobType)99);
         SetupDueSchedules(schedule);
 
         SchedulerHostedService scheduler = BuildScheduler();
@@ -176,7 +176,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildConnection(ChannelCatalog.OzonCode));
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
+        JobSchedule schedule = BuildSchedule(JobType.OzonOrdersImportFbo);
         SetupDueSchedules(schedule);
 
         List<JobRun> createdRuns = new List<JobRun>();
@@ -190,8 +190,8 @@ public partial class SchedulerHostedServiceTests
         await RunSingleTickAsync(scheduler);
 
         createdRuns.Should().HaveCount(1);
-        createdRuns[0].JobType.Should().Be(JobType.OrdersImportFbo);
-        createdRuns.Should().NotContain(r => r.JobType == JobType.OrdersImport);
+        createdRuns[0].JobType.Should().Be(JobType.OzonOrdersImportFbo);
+        createdRuns.Should().NotContain(r => r.JobType == JobType.WbOrdersImport);
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildConnection(ChannelCatalog.WildberriesCode));
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         List<JobRun> createdRuns = new List<JobRun>();
@@ -214,7 +214,7 @@ public partial class SchedulerHostedServiceTests
 
         await RunSingleTickAsync(scheduler);
 
-        createdRuns.Should().ContainSingle(r => r.JobType == JobType.OrdersImport);
+        createdRuns.Should().ContainSingle(r => r.JobType == JobType.WbOrdersImport);
     }
 
     [Fact]
@@ -226,7 +226,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildConnection("yandex.kit"));
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
@@ -246,8 +246,8 @@ public partial class SchedulerHostedServiceTests
     // ── Tick: rate limiter pre-check ────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(ChannelCatalog.WildberriesCode, JobType.OrdersImport)]
-    [InlineData(ChannelCatalog.OzonCode, JobType.OrdersImportFbo)]
+    [InlineData(ChannelCatalog.WildberriesCode, JobType.WbOrdersImport)]
+    [InlineData(ChannelCatalog.OzonCode, JobType.OzonOrdersImportFbo)]
     public async Task Tick_RateLimiterRefusesSlot_SkipsScheduleAndDoesNotAdvanceNextRunAt(
         string channelCode, JobType jobType)
     {
@@ -280,11 +280,11 @@ public partial class SchedulerHostedServiceTests
     {
         // The skipped schedule must stay due so the next tick re-evaluates it once the
         // in-flight job frees the slot.
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         _jobRunRepositoryMock
-            .Setup(r => r.HasActiveJobAsync(_connectionId, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveJobAsync(_connectionId, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
@@ -316,7 +316,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(inactive);
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         SchedulerHostedService scheduler = BuildScheduler();
@@ -339,7 +339,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Connection?)null);
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         SchedulerHostedService scheduler = BuildScheduler();
@@ -359,7 +359,7 @@ public partial class SchedulerHostedServiceTests
     [Fact]
     public async Task Tick_AfterCreatingJobRun_AdvancesLastRunAtAndNextRunAt()
     {
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         DateTimeOffset tickStartedAt = DateTimeOffset.UtcNow;
@@ -390,7 +390,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(p => p.GetAccountingSettingsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = timeZoneId });
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         SchedulerHostedService scheduler = BuildScheduler();
@@ -420,7 +420,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(p => p.GetAccountingSettingsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "Not/AZone" });
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         SchedulerHostedService scheduler = BuildScheduler();
@@ -442,7 +442,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(p => p.GetAccountingSettingsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("tenant not found"));
 
-        JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
+        JobSchedule schedule = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(schedule);
 
         SchedulerHostedService scheduler = BuildScheduler();
@@ -457,8 +457,8 @@ public partial class SchedulerHostedServiceTests
     [Fact]
     public async Task Tick_OneScheduleFails_DoesNotPreventTheNextOneFromBeingProcessed()
     {
-        JobSchedule failing = BuildSchedule(JobType.OrdersImport);
-        JobSchedule succeeding = BuildSchedule(JobType.OrdersImport);
+        JobSchedule failing = BuildSchedule(JobType.WbOrdersImport);
+        JobSchedule succeeding = BuildSchedule(JobType.WbOrdersImport);
         SetupDueSchedules(failing, succeeding);
 
         _jobRunRepositoryMock
@@ -485,8 +485,8 @@ public partial class SchedulerHostedServiceTests
         Guid otherTenantId = Guid.NewGuid();
         Guid otherConnectionId = Guid.NewGuid();
 
-        JobSchedule first = BuildSchedule(JobType.OrdersImport);
-        JobSchedule second = BuildSchedule(JobType.OrdersImport);
+        JobSchedule first = BuildSchedule(JobType.WbOrdersImport);
+        JobSchedule second = BuildSchedule(JobType.WbOrdersImport);
         second.TenantId = otherTenantId;
         second.ConnectionId = otherConnectionId;
 
@@ -525,7 +525,7 @@ public partial class SchedulerHostedServiceTests
         _scheduleRepositoryMock
             .SetupSequence(r => r.GetDueSchedulesAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("db unavailable"))
-            .ReturnsAsync(new List<JobSchedule> { BuildSchedule(JobType.OrdersImport) });
+            .ReturnsAsync(new List<JobSchedule> { BuildSchedule(JobType.WbOrdersImport) });
 
         SchedulerHostedService scheduler = BuildScheduler(tickIntervalSeconds: 1);
 
@@ -561,7 +561,8 @@ public partial class SchedulerHostedServiceTests
         return new SchedulerHostedService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new BackgroundJobsOptions { SchedulerTickIntervalSeconds = tickIntervalSeconds }),
-            NullLogger<SchedulerHostedService>.Instance);
+            NullLogger<SchedulerHostedService>.Instance,
+            TimeProvider.System);
     }
 
     /// <summary>

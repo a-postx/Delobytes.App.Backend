@@ -28,8 +28,8 @@ public sealed class OzonChannelModule : ChannelModule
 
     public override void RegisterOrders(IServiceCollection services)
     {
-        AddOrdersJob(services, JobType.OrdersImportFbo, OrdersSchema.Fbo, OzonPostingStatuses.FboStatuses);
-        AddOrdersJob(services, JobType.OrdersImportFbs, OrdersSchema.Fbs, OzonPostingStatuses.FbsStatuses);
+        AddOrdersJob(services, JobType.OzonOrdersImportFbo, OrdersSchema.Fbo, OzonPostingStatuses.FboStatuses);
+        AddOrdersJob(services, JobType.OzonOrdersImportFbs, OrdersSchema.Fbs, OzonPostingStatuses.FbsStatuses);
     }
 
     public override void RegisterApiClient(IServiceCollection services)

@@ -54,7 +54,8 @@ public class WildberriesApiClientProductsSourceTests
             new FixedConnectionResolver(),
             new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
-            NullLogger<WildberriesApiClient>.Instance);
+            NullLogger<WildberriesApiClient>.Instance,
+            TimeProvider.System);
 
         client.SetTemplate(TestTemplate);
 

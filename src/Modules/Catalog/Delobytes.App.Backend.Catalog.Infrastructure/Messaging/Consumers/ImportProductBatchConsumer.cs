@@ -40,6 +40,7 @@ public class ImportProductBatchConsumer
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly IProductPhotoService _photoService;
     private readonly ILogger<ImportProductBatchConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     // Cached per consumer instance (scoped per message): Npgsql in production supports
     // savepoints, EF Core InMemory used in unit tests does not. Detected once so the
@@ -53,16 +54,19 @@ public class ImportProductBatchConsumer
     /// <param name="publishEndpoint">MassTransit publish endpoint.</param>
     /// <param name="photoService">Photo import/delete service.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="timeProvider">Clock source.</param>
     public ImportProductBatchConsumer(
         CatalogDbContext context,
         IPublishEndpoint publishEndpoint,
         IProductPhotoService photoService,
-        ILogger<ImportProductBatchConsumer> logger)
+        ILogger<ImportProductBatchConsumer> logger,
+        TimeProvider timeProvider)
     {
         _context = context;
         _publishEndpoint = publishEndpoint;
         _photoService = photoService;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     private static string TrimName(string name)
@@ -494,7 +498,7 @@ public class ImportProductBatchConsumer
             hasChanges = true;
         }
 
-        bool packingUnitChanged = SynchronizePackingUnit(channelProduct.Product, card);
+        bool packingUnitChanged = SynchronizePackingUnit(channelProduct.Product, card, _timeProvider.GetUtcNow());
 
         if (packingUnitChanged)
         {
@@ -508,7 +512,7 @@ public class ImportProductBatchConsumer
         // publication failed, is healed by the next import of the same card.
         QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
 
-        channelProduct.LastSyncedAt = DateTimeOffset.UtcNow;
+        channelProduct.LastSyncedAt = _timeProvider.GetUtcNow();
 
         return hasChanges
             ? new ImportResult { Status = ImportStatus.Updated }
@@ -559,8 +563,8 @@ public class ImportProductBatchConsumer
             ExternalSku = card.VendorCode,
             ChannelSpecificData = card.ChannelSpecificData,
             IsActive = true,
-            LastSyncedAt = DateTimeOffset.UtcNow,
-            CreatedAt = DateTimeOffset.UtcNow
+            LastSyncedAt = _timeProvider.GetUtcNow(),
+            CreatedAt = _timeProvider.GetUtcNow()
         };
 
         _context.ChannelProducts.Add(channelProduct);
@@ -569,7 +573,7 @@ public class ImportProductBatchConsumer
         product.Description = TrimDescription(card.Description);
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
-        SynchronizePackingUnit(product, card);
+        SynchronizePackingUnit(product, card, _timeProvider.GetUtcNow());
 
         QueuePhotos(product, card, channelId, pendingPhotoImports);
 
@@ -611,7 +615,7 @@ public class ImportProductBatchConsumer
             Description = TrimDescription(card.Description),
             Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = _timeProvider.GetUtcNow()
         };
 
         _context.Products.Add(product);
@@ -625,14 +629,14 @@ public class ImportProductBatchConsumer
             ExternalSku = card.VendorCode,
             ChannelSpecificData = card.ChannelSpecificData,
             IsActive = true,
-            LastSyncedAt = DateTimeOffset.UtcNow,
-            CreatedAt = DateTimeOffset.UtcNow
+            LastSyncedAt = _timeProvider.GetUtcNow(),
+            CreatedAt = _timeProvider.GetUtcNow()
         };
 
         _context.ChannelProducts.Add(channelProduct);
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
-        SynchronizePackingUnit(product, card);
+        SynchronizePackingUnit(product, card, _timeProvider.GetUtcNow());
 
         QueuePhotos(product, card, channelId, pendingPhotoImports);
 
@@ -852,7 +856,7 @@ public class ImportProductBatchConsumer
     /// Length/width/height are required on PackingUnit, so a card without all three
     /// leaves any existing packing unit untouched.
     /// </summary>
-    private static bool SynchronizePackingUnit(Product product, WildberriesCardSnapshot card)
+    private static bool SynchronizePackingUnit(Product product, WildberriesCardSnapshot card, DateTimeOffset now)
     {
         if (card.LengthCm == null || card.WidthCm == null || card.HeightCm == null)
         {
@@ -872,7 +876,7 @@ public class ImportProductBatchConsumer
                 HeightCm = card.HeightCm.Value,
                 WeightKg = card.WeightKg,
                 IsActive = true,
-                CreatedAt = DateTimeOffset.UtcNow
+                CreatedAt = now
             });
 
             return true;
@@ -906,7 +910,7 @@ public class ImportProductBatchConsumer
 
         if (hasChanges)
         {
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            existing.UpdatedAt = now;
         }
 
         return hasChanges;
@@ -941,7 +945,7 @@ public class ImportProductBatchConsumer
                     Value = barcodeValue,
                     Type = WildberriesBarcodeType,
                     IsDefault = false,
-                    CreatedAt = DateTimeOffset.UtcNow
+                    CreatedAt = _timeProvider.GetUtcNow()
                 };
 
                 _context.ProductBarcodes.Add(barcode);

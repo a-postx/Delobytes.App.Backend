@@ -224,7 +224,7 @@ public partial class JobRunRepositoryTests
             ctx.JobRuns.Add(stuckJob);
 
             // Fresh Running job, still within timeout, must be excluded.
-            JobRun freshJob = BuildJobRun(connectionA.Id, JobType.OrdersSync, JobStatus.Running, now.AddMinutes(-5));
+            JobRun freshJob = BuildJobRun(connectionA.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, now.AddMinutes(-5));
             freshJob.StartedAt = now.AddMinutes(-5);
             ctx.JobRuns.Add(freshJob);
 
@@ -310,7 +310,7 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
             ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddHours(-3)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Failed, now.AddHours(-1)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Failed, now.AddHours(-1)));
             await ctx.SaveChangesAsync();
         }
 
@@ -347,7 +347,7 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
             ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Success, now.AddMinutes(-5)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Success, now.AddMinutes(-5)));
             await ctx.SaveChangesAsync();
         }
 
@@ -356,10 +356,10 @@ public partial class JobRunRepositoryTests
             JobRunRepository repository = new JobRunRepository(ctx);
 
             (int totalCount, List<JobRun> items) = await repository.GetPagedAsync(
-                JobType.OrdersImport, null, null, null, null, CancellationToken.None);
+                JobType.WbOrdersImport, null, null, null, null, CancellationToken.None);
 
             totalCount.Should().Be(1);
-            items.Should().ContainSingle().Which.JobType.Should().Be(JobType.OrdersImport);
+            items.Should().ContainSingle().Which.JobType.Should().Be(JobType.WbOrdersImport);
         }
     }
 
@@ -408,7 +408,7 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
             ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-30)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Running, now.AddMinutes(-20)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Running, now.AddMinutes(-20)));
             ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
             await ctx.SaveChangesAsync();
         }
@@ -444,7 +444,7 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
             ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.OrdersImport, JobStatus.Failed, now.AddMinutes(-5)));
+            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Failed, now.AddMinutes(-5)));
             await ctx.SaveChangesAsync();
         }
 

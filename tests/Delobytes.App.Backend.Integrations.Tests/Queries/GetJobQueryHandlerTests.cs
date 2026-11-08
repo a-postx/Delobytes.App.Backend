@@ -93,7 +93,7 @@ public class GetJobQueryHandlerTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Success,
             CreatedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -107,7 +107,7 @@ public class GetJobQueryHandlerTests
             new GetJobQuery { JobRunId = jobRun.Id },
             CancellationToken.None);
 
-        dto.Type.Should().Be("orders-import");
+        dto.Type.Should().Be("wb-orders-import");
     }
 
     [Fact]

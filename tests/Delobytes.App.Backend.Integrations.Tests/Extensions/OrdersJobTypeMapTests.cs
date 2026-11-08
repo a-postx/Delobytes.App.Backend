@@ -21,7 +21,7 @@ public class OrdersJobTypeMapTests
         IReadOnlyList<JobType> jobTypes = OrdersJobTypeMap.GetOrdersJobTypes("ozon");
 
         jobTypes.Should().BeEquivalentTo(
-            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs },
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs },
             "the EnableFbs flag is gone, so sequencing is the only thing that decides which runs");
     }
 
@@ -32,7 +32,7 @@ public class OrdersJobTypeMapTests
         // list decides which schema takes the connection first.
         IReadOnlyList<JobType> jobTypes = OrdersJobTypeMap.GetOrdersJobTypes("ozon");
 
-        jobTypes.Should().ContainInOrder(JobType.OrdersImportFbo, JobType.OrdersImportFbs);
+        jobTypes.Should().ContainInOrder(JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs);
     }
 
     [Theory]
@@ -47,7 +47,7 @@ public class OrdersJobTypeMapTests
     [Fact]
     public void GetOrdersJobTypes_Wildberries_ReturnsOrdersImportOnly()
     {
-        OrdersJobTypeMap.GetOrdersJobTypes("wildberries").Should().BeEquivalentTo(new[] { JobType.OrdersImport });
+        OrdersJobTypeMap.GetOrdersJobTypes("wildberries").Should().BeEquivalentTo(new[] { JobType.WbOrdersImport });
     }
 
     [Theory]
@@ -72,20 +72,19 @@ public class OrdersJobTypeMapTests
     }
 
     [Theory]
-    [InlineData(JobType.OrdersImport, true)]
-    [InlineData(JobType.OrdersImportFbo, true)]
-    [InlineData(JobType.OrdersImportFbs, true)]
+    [InlineData(JobType.WbOrdersImport, true)]
+    [InlineData(JobType.OzonOrdersImportFbo, true)]
+    [InlineData(JobType.OzonOrdersImportFbs, true)]
     [InlineData(JobType.ProductsImport, false)]
-    [InlineData(JobType.OrdersSync, false)]
     public void IsScheduledOrdersJobType_CoversExactlyTheThreeOrdersTypes(JobType jobType, bool expected)
     {
         OrdersJobTypeMap.IsScheduledOrdersJobType(jobType).Should().Be(expected);
     }
 
     [Theory]
-    [InlineData("ozon", JobType.OrdersImportFbo, OrdersRateLimiterMethods.OzonPostingFboList)]
-    [InlineData("ozon", JobType.OrdersImportFbs, OrdersRateLimiterMethods.OzonPostingFbsList)]
-    [InlineData("wildberries", JobType.OrdersImport, OrdersRateLimiterMethods.WildberriesSupplierOrders)]
+    [InlineData("ozon", JobType.OzonOrdersImportFbo, OrdersRateLimiterMethods.OzonPostingFboList)]
+    [InlineData("ozon", JobType.OzonOrdersImportFbs, OrdersRateLimiterMethods.OzonPostingFbsList)]
+    [InlineData("wildberries", JobType.WbOrdersImport, OrdersRateLimiterMethods.WildberriesSupplierOrders)]
     public void GetRateLimitMethod_SupportedPair_ReturnsTheChannelMethod(
         string channelCode, JobType jobType, string expectedMethod)
     {
@@ -93,12 +92,12 @@ public class OrdersJobTypeMapTests
     }
 
     [Theory]
-    [InlineData("ozon", JobType.OrdersImport)]
+    [InlineData("ozon", JobType.WbOrdersImport)]
     [InlineData("ozon", JobType.ProductsImport)]
-    [InlineData("wildberries", JobType.OrdersImportFbo)]
-    [InlineData("wildberries", JobType.OrdersImportFbs)]
-    [InlineData("yandex.kit", JobType.OrdersImport)]
-    [InlineData(null, JobType.OrdersImport)]
+    [InlineData("wildberries", JobType.OzonOrdersImportFbo)]
+    [InlineData("wildberries", JobType.OzonOrdersImportFbs)]
+    [InlineData("yandex.kit", JobType.WbOrdersImport)]
+    [InlineData(null, JobType.WbOrdersImport)]
     public void GetRateLimitMethod_UnsupportedPair_ReturnsNull(string? channelCode, JobType jobType)
     {
         OrdersJobTypeMap.GetRateLimitMethod(channelCode, jobType).Should().BeNull(

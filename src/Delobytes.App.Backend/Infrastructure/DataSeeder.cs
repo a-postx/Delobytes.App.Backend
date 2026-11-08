@@ -331,7 +331,7 @@ public static class DataSeeder
     }
 
     /// <summary>
-    /// Disables an enabled <see cref="JobType.OrdersImport"/> schedule found on a connection whose
+    /// Disables an enabled <see cref="JobType.WbOrdersImport"/> schedule found on a connection whose
     /// channel no longer maps to that job type (e.g. Ozon, after earlier versions of this seeder
     /// created it for every channel indiscriminately). Leaves the row in place, disabled, so an
     /// operator can see what happened instead of having it silently disappear.
@@ -348,7 +348,7 @@ public static class DataSeeder
 
         foreach (JobSchedule schedule in existingSchedules)
         {
-            if (schedule.JobType != JobType.OrdersImport || !schedule.IsEnabled)
+            if (schedule.JobType != JobType.WbOrdersImport || !schedule.IsEnabled)
             {
                 continue;
             }
@@ -360,7 +360,7 @@ public static class DataSeeder
 
             bool stillBelongsHere = OrdersJobTypeMap
                 .GetOrdersJobTypes(channelCode)
-                .Contains(JobType.OrdersImport);
+                .Contains(JobType.WbOrdersImport);
 
             if (stillBelongsHere)
             {
@@ -407,19 +407,19 @@ public static class DataSeeder
             },
             new JobTypeConfiguration
             {
-                JobType = JobType.OrdersImport,
+                JobType = JobType.WbOrdersImport,
                 TimeoutMinutes = 30,
                 BatchSize = 100,
             },
             new JobTypeConfiguration
             {
-                JobType = JobType.OrdersImportFbo,
+                JobType = JobType.OzonOrdersImportFbo,
                 TimeoutMinutes = 30,
                 BatchSize = 100,
             },
             new JobTypeConfiguration
             {
-                JobType = JobType.OrdersImportFbs,
+                JobType = JobType.OzonOrdersImportFbs,
                 TimeoutMinutes = 30,
                 BatchSize = 100,
             },

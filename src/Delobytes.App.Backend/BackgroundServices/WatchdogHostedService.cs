@@ -19,15 +19,18 @@ public class WatchdogHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly WatchdogOptions _options;
     private readonly ILogger<WatchdogHostedService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public WatchdogHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<WatchdogOptions> options,
-        ILogger<WatchdogHostedService> logger)
+        ILogger<WatchdogHostedService> logger,
+        TimeProvider timeProvider)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -100,7 +103,7 @@ public class WatchdogHostedService : BackgroundService
         IJobTypeConfigurationRepository jobTypeConfigurationRepository = scope.ServiceProvider.GetRequiredService<IJobTypeConfigurationRepository>();
         IntegrationsDbContext context = scope.ServiceProvider.GetRequiredService<IntegrationsDbContext>();
 
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         List<StuckJobCandidate> candidates = new List<StuckJobCandidate>();
 
         foreach (JobType jobType in Enum.GetValues<JobType>())
@@ -109,8 +112,8 @@ public class WatchdogHostedService : BackgroundService
 
             if (configuration == null)
             {
-                // Not every JobType necessarily has a configured timeout (e.g. OrdersSync is
-                // reserved for a future task type); nothing to time out for it yet.
+                // Not every JobType necessarily has a configured timeout (a type may predate its
+                // configuration row); nothing to time out for it yet.
                 continue;
             }
 
@@ -155,7 +158,7 @@ public class WatchdogHostedService : BackgroundService
 
             jobRun.Status = JobStatus.Failed;
             jobRun.Error = $"Job exceeded timeout of {stuckJob.TimeoutMinutes} minutes";
-            jobRun.CompletedAt = DateTimeOffset.UtcNow;
+            jobRun.CompletedAt = _timeProvider.GetUtcNow();
 
             await jobRunRepository.UpdateAsync(jobRun, cancellationToken);
 

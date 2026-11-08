@@ -63,13 +63,13 @@ public class OrdersBackfillWalkerTests
         OrdersBackfillWalker walker = CreateWalker();
 
         OrdersBackfillState wbState = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImport, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.WbOrdersImport, TestTunings.Wildberries(), CancellationToken.None);
         OrdersBackfillState ozonState = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImportFbo, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.OzonOrdersImportFbo, TestTunings.Wildberries(), CancellationToken.None);
 
         wbState.Id.Should().NotBe(ozonState.Id);
-        wbState.JobType.Should().Be(JobType.OrdersImport);
-        ozonState.JobType.Should().Be(JobType.OrdersImportFbo);
+        wbState.JobType.Should().Be(JobType.WbOrdersImport);
+        ozonState.JobType.Should().Be(JobType.OzonOrdersImportFbo);
         wbState.ConnectionId.Should().Be(connectionId);
         ozonState.ConnectionId.Should().Be(connectionId);
     }
@@ -81,9 +81,9 @@ public class OrdersBackfillWalkerTests
         OrdersBackfillWalker walker = CreateWalker();
 
         OrdersBackfillState wbState = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImport, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.WbOrdersImport, TestTunings.Wildberries(), CancellationToken.None);
         OrdersBackfillState ozonState = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImportFbo, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.OzonOrdersImportFbo, TestTunings.Wildberries(), CancellationToken.None);
 
         DateTimeOffset ozonOriginalNextDay = ozonState.NextDayToFetch;
 
@@ -91,7 +91,7 @@ public class OrdersBackfillWalkerTests
         await _backfillStateRepo.Object.UpsertAsync(wbState, CancellationToken.None);
 
         OrdersBackfillState reloadedOzonState = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImportFbo, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.OzonOrdersImportFbo, TestTunings.Wildberries(), CancellationToken.None);
 
         reloadedOzonState.NextDayToFetch.Should().Be(ozonOriginalNextDay);
     }
@@ -103,9 +103,9 @@ public class OrdersBackfillWalkerTests
         OrdersBackfillWalker walker = CreateWalker();
 
         OrdersBackfillState created = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImport, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.WbOrdersImport, TestTunings.Wildberries(), CancellationToken.None);
         OrdersBackfillState fetchedAgain = await walker.GetOrCreateAsync(
-            connectionId, JobType.OrdersImport, TestTunings.Wildberries(), CancellationToken.None);
+            connectionId, JobType.WbOrdersImport, TestTunings.Wildberries(), CancellationToken.None);
 
         fetchedAgain.Id.Should().Be(created.Id);
         _backfillStateRepo.Verify(

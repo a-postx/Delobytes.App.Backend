@@ -48,7 +48,7 @@ public class CancelJobCommandHandlerTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow,
         };

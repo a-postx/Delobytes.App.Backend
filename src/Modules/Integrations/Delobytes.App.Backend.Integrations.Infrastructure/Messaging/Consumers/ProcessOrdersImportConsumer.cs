@@ -244,8 +244,8 @@ public class ProcessOrdersImportConsumer
     {
         return jobType switch
         {
-            JobType.OrdersImportFbo => OrdersSchema.Fbo,
-            JobType.OrdersImportFbs => OrdersSchema.Fbs,
+            JobType.OzonOrdersImportFbo => OrdersSchema.Fbo,
+            JobType.OzonOrdersImportFbs => OrdersSchema.Fbs,
             _ => null,
         };
     }

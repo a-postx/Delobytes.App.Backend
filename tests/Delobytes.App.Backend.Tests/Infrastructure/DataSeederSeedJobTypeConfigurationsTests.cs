@@ -64,15 +64,15 @@ public class DataSeederSeedJobTypeConfigurationsTests
             .Should().BeEquivalentTo(new[]
             {
                 JobType.ProductsImport,
-                JobType.OrdersImport,
-                JobType.OrdersImportFbo,
-                JobType.OrdersImportFbs,
+                JobType.WbOrdersImport,
+                JobType.OzonOrdersImportFbo,
+                JobType.OzonOrdersImportFbs,
             });
     }
 
     [Theory]
-    [InlineData(JobType.OrdersImportFbo)]
-    [InlineData(JobType.OrdersImportFbs)]
+    [InlineData(JobType.OzonOrdersImportFbo)]
+    [InlineData(JobType.OzonOrdersImportFbs)]
     public async Task SeedJobTypeConfigurationsAsync_OrdersSchemaTypes_UseThirtyMinuteTimeoutAndBatchOfOneHundred(
         JobType jobType)
     {
@@ -109,24 +109,10 @@ public class DataSeederSeedJobTypeConfigurationsTests
         await RunSeederAsync(options);
 
         JobTypeConfiguration configuration = (await ReadConfigurationsAsync(options))
-            .Single(c => c.JobType == JobType.OrdersImport);
+            .Single(c => c.JobType == JobType.WbOrdersImport);
 
         configuration.TimeoutMinutes.Should().Be(30);
         configuration.BatchSize.Should().Be(100);
-    }
-
-    [Fact]
-    public async Task SeedJobTypeConfigurationsAsync_DoesNotSeedTypesWithoutATimeoutPolicy()
-    {
-        // OrdersSync is reserved for the future reconciliation task type; seeding it now would
-        // silently give the watchdog authority to fail jobs of a type nobody has sized yet.
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-
-        await RunSeederAsync(options);
-
-        List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
-
-        configurations.Should().NotContain(c => c.JobType == JobType.OrdersSync);
     }
 
     [Fact]
@@ -183,7 +169,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
         {
             ctx.JobTypeConfigurations.Add(new JobTypeConfiguration
             {
-                JobType = JobType.OrdersImport,
+                JobType = JobType.WbOrdersImport,
                 TimeoutMinutes = 30,
                 BatchSize = 100,
             });

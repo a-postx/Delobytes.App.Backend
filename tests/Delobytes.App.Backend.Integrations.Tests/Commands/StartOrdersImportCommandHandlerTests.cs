@@ -63,7 +63,7 @@ public class StartOrdersImportCommandHandlerTests
             .ReturnsAsync(connection);
 
         _jobRunRepo
-            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _jobRunRepo
@@ -119,7 +119,7 @@ public class StartOrdersImportCommandHandlerTests
             .ReturnsAsync(connection);
 
         _jobRunRepo
-            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         StartOrdersImportCommandHandler handler = CreateHandler();
@@ -155,7 +155,7 @@ public class StartOrdersImportCommandHandlerTests
 
         savedJobRun.Should().NotBeNull();
         savedJobRun!.Status.Should().Be(JobStatus.Pending);
-        savedJobRun.JobType.Should().Be(JobType.OrdersImport);
+        savedJobRun.JobType.Should().Be(JobType.WbOrdersImport);
         savedJobRun.ConnectionId.Should().Be(connection.Id);
         savedJobRun.RequestedByUserId.Should().BeNull();
     }

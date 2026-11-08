@@ -18,7 +18,7 @@ public class WildberriesImportOptionsValidator : IValidateOptions<WildberriesImp
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, WildberriesImportOptions options)
     {
-        OrdersImportTuning tuning = options.ToTuning(JobType.OrdersImport);
+        OrdersImportTuning tuning = options.ToTuning(JobType.WbOrdersImport);
 
         TimeSpan budget = tuning.RunBudget;
         TimeSpan maxInProcessWait = tuning.MaxInProcessWait;

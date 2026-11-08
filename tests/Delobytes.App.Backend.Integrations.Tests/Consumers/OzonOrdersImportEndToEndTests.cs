@@ -59,7 +59,7 @@ public class OzonOrdersImportEndToEndTests
 
     private ProcessOrdersImportConsumer CreateConsumer(int backfillRunBudgetSeconds = 1200)
     {
-        return CreateOzonConsumer(JobType.OrdersImportFbo, backfillRunBudgetSeconds);
+        return CreateOzonConsumer(JobType.OzonOrdersImportFbo, backfillRunBudgetSeconds);
     }
 
     private ProcessOrdersImportConsumer CreateOzonConsumer(
@@ -89,10 +89,10 @@ public class OzonOrdersImportEndToEndTests
             new Mock<ILogger<OrdersBackfillWalker>>().Object,
             _timeProvider);
 
-        IOrdersFetcherResolver resolver = jobType == JobType.OrdersImportFbs
+        IOrdersFetcherResolver resolver = jobType == JobType.OzonOrdersImportFbs
             ? StubOrdersFetcherResolver.For(
                 "ozon",
-                JobType.OrdersImportFbs,
+                JobType.OzonOrdersImportFbs,
                 new OrdersFetchers(
                     new BackfillOrdersFetcher(
                         backfillWalker,
@@ -102,13 +102,13 @@ public class OzonOrdersImportEndToEndTests
                         _syncCheckpointRepo.Object,
                         batchPublisher,
                         new Mock<ILogger<OzonDeltaOrdersFetcher>>().Object,
-                        TestTunings.Ozon(options, JobType.OrdersImportFbs),
+                        TestTunings.Ozon(options, JobType.OzonOrdersImportFbs),
                         OrdersSchema.Fbs,
                         OzonPostingStatuses.FbsStatuses),
-                    TestTunings.Ozon(options, JobType.OrdersImportFbs)))
+                    TestTunings.Ozon(options, JobType.OzonOrdersImportFbs)))
             : StubOrdersFetcherResolver.For(
                 "ozon",
-                JobType.OrdersImportFbo,
+                JobType.OzonOrdersImportFbo,
                 new OrdersFetchers(
                     new BackfillOrdersFetcher(
                         backfillWalker,
@@ -153,7 +153,7 @@ public class OzonOrdersImportEndToEndTests
         return new CursorPagedOrdersReader(
             pacedSource,
             new Mock<ILogger<CursorPagedOrdersReader>>().Object,
-            TestTunings.Ozon(options, JobType.OrdersImportFbs),
+            TestTunings.Ozon(options, JobType.OzonOrdersImportFbs),
             OrdersSchema.Fbs);
     }
 
@@ -186,7 +186,7 @@ public class OzonOrdersImportEndToEndTests
         };
     }
 
-    private JobRun BuildJobRun(Connection connection, JobType jobType = JobType.OrdersImportFbo)
+    private JobRun BuildJobRun(Connection connection, JobType jobType = JobType.OzonOrdersImportFbo)
     {
         return new JobRun
         {
@@ -406,7 +406,7 @@ public class OzonOrdersImportEndToEndTests
             r => r.CreateAsync(
                 It.Is<JobRun>(next =>
                     next.Status == JobStatus.Pending
-                    && next.JobType == JobType.OrdersImportFbo
+                    && next.JobType == JobType.OzonOrdersImportFbo
                     && next.ConnectionId == connection.Id
                     && next.NotBefore == retryAt),
                 It.IsAny<CancellationToken>()),
@@ -427,7 +427,7 @@ public class OzonOrdersImportEndToEndTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImportFbo,
+            JobType = JobType.OzonOrdersImportFbo,
             OldestDayInScope = today.AddDays(-180),
             NextDayToFetch = today.AddDays(-181),
             IsCompleted = true,
@@ -514,7 +514,7 @@ public class OzonOrdersImportEndToEndTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImportFbo,
+            JobType = JobType.OzonOrdersImportFbo,
             OldestDayInScope = today.AddDays(-180),
             NextDayToFetch = today.AddDays(-181),
             IsCompleted = true,
@@ -556,7 +556,7 @@ public class OzonOrdersImportEndToEndTests
     public async Task UnsupportedChannelJobTypeCombination_FailsTheRunWithTheNewMessage()
     {
         Connection connection = BuildConnection(BuildOzonTemplate());
-        JobRun jobRun = BuildJobRun(connection, JobType.OrdersImportFbs);
+        JobRun jobRun = BuildJobRun(connection, JobType.OzonOrdersImportFbs);
 
         SetupRun(jobRun);
 
@@ -592,7 +592,7 @@ public class OzonOrdersImportEndToEndTests
         jobRun.Status.Should().Be(JobStatus.Failed);
         jobRun.Error.Should().Contain("does not support orders import for job type");
         jobRun.Error.Should().Contain("ozon");
-        jobRun.Error.Should().Contain(nameof(JobType.OrdersImportFbs));
+        jobRun.Error.Should().Contain(nameof(JobType.OzonOrdersImportFbs));
 
         _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -603,13 +603,13 @@ public class OzonOrdersImportEndToEndTests
     public async Task FbsBackfill_WalksDayByDay_ReadingEveryWindowThroughTheFbsSchema()
     {
         Connection connection = BuildConnection(BuildOzonTemplate());
-        JobRun jobRun = BuildJobRun(connection, JobType.OrdersImportFbs);
+        JobRun jobRun = BuildJobRun(connection, JobType.OzonOrdersImportFbs);
 
         SetupRun(jobRun);
         UseStateStore();
         UseInstantCompleteSource();
 
-        await RunAsync(jobRun, connection, CreateOzonConsumer(JobType.OrdersImportFbs));
+        await RunAsync(jobRun, connection, CreateOzonConsumer(JobType.OzonOrdersImportFbs));
 
         _issuedRequests.Should().NotBeEmpty();
         _issuedRequests.Should().OnlyContain(request => request.Schema == OrdersSchema.Fbs,
@@ -626,7 +626,7 @@ public class OzonOrdersImportEndToEndTests
             Times.Once);
 
         _persistedState.Should().NotBeNull();
-        _persistedState!.JobType.Should().Be(JobType.OrdersImportFbs,
+        _persistedState!.JobType.Should().Be(JobType.OzonOrdersImportFbs,
             "FBO and FBS keep independent backfill cursors on one connection");
         _persistedState.IsCompleted.Should().BeTrue();
         _persistedState.HandoverWatermark.Should().NotBeNull();
@@ -638,7 +638,7 @@ public class OzonOrdersImportEndToEndTests
     public async Task FbsDelta_AfterHandover_RequestsFbsSchemaWithFbsStatuses()
     {
         Connection connection = BuildConnection(BuildOzonTemplate());
-        JobRun jobRun = BuildJobRun(connection, JobType.OrdersImportFbs);
+        JobRun jobRun = BuildJobRun(connection, JobType.OzonOrdersImportFbs);
         DateTimeOffset today = OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow());
         DateTimeOffset handoverWatermark = today.AddDays(-1);
 
@@ -646,7 +646,7 @@ public class OzonOrdersImportEndToEndTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImportFbs,
+            JobType = JobType.OzonOrdersImportFbs,
             OldestDayInScope = today.AddDays(-180),
             NextDayToFetch = today.AddDays(-181),
             IsCompleted = true,
@@ -662,7 +662,7 @@ public class OzonOrdersImportEndToEndTests
             HasMore = false,
         }));
 
-        await RunAsync(jobRun, connection, CreateOzonConsumer(JobType.OrdersImportFbs));
+        await RunAsync(jobRun, connection, CreateOzonConsumer(JobType.OzonOrdersImportFbs));
 
         _issuedRequests.Should().ContainSingle();
         _issuedRequests[0].Schema.Should().Be(OrdersSchema.Fbs);
@@ -680,7 +680,7 @@ public class OzonOrdersImportEndToEndTests
     public async Task FbsBackfill_ThrottledMidRun_SchedulesContinuationWithTheFbsJobType()
     {
         Connection connection = BuildConnection(BuildOzonTemplate());
-        JobRun jobRun = BuildJobRun(connection, JobType.OrdersImportFbs);
+        JobRun jobRun = BuildJobRun(connection, JobType.OzonOrdersImportFbs);
         DateTimeOffset retryAt = _timeProvider.GetUtcNow().AddHours(3);
 
         SetupRun(jobRun);
@@ -689,13 +689,13 @@ public class OzonOrdersImportEndToEndTests
             ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom), HasMore = false }
             : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = retryAt }));
 
-        await RunAsync(jobRun, connection, CreateOzonConsumer(JobType.OrdersImportFbs));
+        await RunAsync(jobRun, connection, CreateOzonConsumer(JobType.OzonOrdersImportFbs));
 
         _jobRunRepo.Verify(
             r => r.CreateAsync(
                 It.Is<JobRun>(next =>
                     next.Status == JobStatus.Pending
-                    && next.JobType == JobType.OrdersImportFbs
+                    && next.JobType == JobType.OzonOrdersImportFbs
                     && next.ConnectionId == connection.Id
                     && next.NotBefore == retryAt),
                 It.IsAny<CancellationToken>()),
@@ -703,7 +703,7 @@ public class OzonOrdersImportEndToEndTests
             "the continuation must resume the same schema, not its sibling");
 
         _jobRunRepo.Verify(
-            r => r.CreateAsync(It.Is<JobRun>(next => next.JobType == JobType.OrdersImportFbo), It.IsAny<CancellationToken>()),
+            r => r.CreateAsync(It.Is<JobRun>(next => next.JobType == JobType.OzonOrdersImportFbo), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 }

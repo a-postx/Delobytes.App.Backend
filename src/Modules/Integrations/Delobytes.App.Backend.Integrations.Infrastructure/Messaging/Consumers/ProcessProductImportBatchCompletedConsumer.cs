@@ -21,6 +21,7 @@ public class ProcessProductImportBatchCompletedConsumer
     private readonly IConnectionRepository _connectionRepository;
     private readonly IEventPublisher _eventPublisher;
     private readonly ILogger<ProcessProductImportBatchCompletedConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProcessProductImportBatchCompletedConsumer"/> class.
@@ -30,13 +31,15 @@ public class ProcessProductImportBatchCompletedConsumer
         ISyncCheckpointRepository syncCheckpointRepository,
         IConnectionRepository connectionRepository,
         IEventPublisher eventPublisher,
-        ILogger<ProcessProductImportBatchCompletedConsumer> logger)
+        ILogger<ProcessProductImportBatchCompletedConsumer> logger,
+        TimeProvider timeProvider)
     {
         _jobRunRepository = jobRunRepository;
         _syncCheckpointRepository = syncCheckpointRepository;
         _connectionRepository = connectionRepository;
         _eventPublisher = eventPublisher;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -102,7 +105,7 @@ public class ProcessProductImportBatchCompletedConsumer
             RecordsFailed = message.RecordsFailed,
             ErrorMessage = message.ErrorMessage,
             IsLastBatch = message.IsLastBatch,
-            ReceivedAt = DateTimeOffset.UtcNow,
+            ReceivedAt = _timeProvider.GetUtcNow(),
         };
 
         _jobRunRepository.AddBatchResult(batchResult);
@@ -164,7 +167,7 @@ public class ProcessProductImportBatchCompletedConsumer
         jobRun.RecordsUpdated = totals.TotalUpdated;
         jobRun.RecordsSkipped = totals.TotalSkipped;
         jobRun.RecordsFailed = totals.TotalFailed;
-        jobRun.CompletedAt = DateTimeOffset.UtcNow;
+        jobRun.CompletedAt = _timeProvider.GetUtcNow();
 
         bool hasErrors = totals.TotalFailed > 0 || totals.CombinedErrors != null;
 
@@ -224,7 +227,7 @@ public class ProcessProductImportBatchCompletedConsumer
 
             if (syncCheckpoint != null)
             {
-                syncCheckpoint.LastSuccessAt = DateTimeOffset.UtcNow;
+                syncCheckpoint.LastSuccessAt = _timeProvider.GetUtcNow();
                 syncCheckpoint.LastJobRunId = jobRun.Id;
                 await _syncCheckpointRepository.UpsertAsync(syncCheckpoint, cancellationToken);
             }
@@ -234,7 +237,7 @@ public class ProcessProductImportBatchCompletedConsumer
 
         if (connection != null)
         {
-            connection.LastSyncAt = DateTimeOffset.UtcNow;
+            connection.LastSyncAt = _timeProvider.GetUtcNow();
             await _connectionRepository.SaveChangesAsync(cancellationToken);
         }
 

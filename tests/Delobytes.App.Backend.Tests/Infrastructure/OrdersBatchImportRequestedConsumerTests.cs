@@ -838,7 +838,7 @@ public class OrdersBatchImportRequestedConsumerTests
         Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
         tenantContextMock.Setup(tc => tc.TenantId).Returns(tenantId);
 
-        return new OrdersBatchImportRequestedConsumer(context, publishEndpoint, tenantContextMock.Object, loggerMock.Object);
+        return new OrdersBatchImportRequestedConsumer(context, publishEndpoint, tenantContextMock.Object, loggerMock.Object, TimeProvider.System);
     }
 
     private SalesDbContext BuildSalesDbContext(

@@ -63,8 +63,8 @@ public class WatchdogHostedServiceTests : IDisposable
     [Fact]
     public async Task Tick_RunningJobPastItsTimeout_IsFailedWithTimeoutError()
     {
-        ConfigureTimeout(JobType.OrdersImport, 30);
-        JobRun stuck = await SeedJobRunAsync(JobType.OrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
+        JobRun stuck = await SeedJobRunAsync(JobType.WbOrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
 
         WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
 
@@ -81,8 +81,8 @@ public class WatchdogHostedServiceTests : IDisposable
     [Fact]
     public async Task Tick_RunningJobWithinItsTimeout_IsLeftRunning()
     {
-        ConfigureTimeout(JobType.OrdersImport, 30);
-        JobRun fresh = await SeedJobRunAsync(JobType.OrdersImport, DateTimeOffset.UtcNow.AddMinutes(-10));
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
+        JobRun fresh = await SeedJobRunAsync(JobType.WbOrdersImport, DateTimeOffset.UtcNow.AddMinutes(-10));
 
         WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
 
@@ -101,11 +101,11 @@ public class WatchdogHostedServiceTests : IDisposable
         // Both jobs started at the same moment. OrdersImport (30 min) must time out while
         // ProductsImport (60 min) must not: a single global threshold would catch both, and
         // a per-type loop that forgets to filter by type would fail the products import too.
-        ConfigureTimeout(JobType.OrdersImport, 30);
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
         ConfigureTimeout(JobType.ProductsImport, 60);
 
         DateTimeOffset startedAt = DateTimeOffset.UtcNow.AddMinutes(-45);
-        JobRun ordersJob = await SeedJobRunAsync(JobType.OrdersImport, startedAt);
+        JobRun ordersJob = await SeedJobRunAsync(JobType.WbOrdersImport, startedAt);
         JobRun productsJob = await SeedJobRunAsync(JobType.ProductsImport, startedAt);
 
         WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
@@ -119,10 +119,10 @@ public class WatchdogHostedServiceTests : IDisposable
     [Fact]
     public async Task Tick_JobTypeWithoutConfiguration_IsNeverTimedOut()
     {
-        // OrdersSync has no seeded JobTypeConfiguration row; without a timeout policy the
+        // OzonOrdersImportFbo has no seeded JobTypeConfiguration row here; without a timeout policy the
         // watchdog must skip the type rather than fall back to some default.
-        ConfigureTimeout(JobType.OrdersImport, 30);
-        JobRun unconfigured = await SeedJobRunAsync(JobType.OrdersSync, DateTimeOffset.UtcNow.AddHours(-10));
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
+        JobRun unconfigured = await SeedJobRunAsync(JobType.OzonOrdersImportFbo, DateTimeOffset.UtcNow.AddHours(-10));
 
         WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
 
@@ -139,11 +139,11 @@ public class WatchdogHostedServiceTests : IDisposable
     {
         // The whole point of the watchdog running in the host is that a crashed job of any
         // tenant gets reconciled; a tenant-filtered query would only ever see the caller's rows.
-        ConfigureTimeout(JobType.OrdersImport, 30);
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
 
-        JobRun ownTenantJob = await SeedJobRunAsync(JobType.OrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
+        JobRun ownTenantJob = await SeedJobRunAsync(JobType.WbOrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
         JobRun foreignTenantJob = await SeedJobRunAsync(
-            JobType.OrdersImport,
+            JobType.WbOrdersImport,
             DateTimeOffset.UtcNow.AddMinutes(-90),
             _otherTenantId);
 
@@ -160,9 +160,9 @@ public class WatchdogHostedServiceTests : IDisposable
     {
         // Pending/Success/Cancelled jobs are outside the watchdog's remit; only Running rows
         // are candidates for a timeout.
-        ConfigureTimeout(JobType.OrdersImport, 30);
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
         JobRun completed = await SeedJobRunAsync(
-            JobType.OrdersImport,
+            JobType.WbOrdersImport,
             DateTimeOffset.UtcNow.AddHours(-5),
             status: JobStatus.Success);
 
@@ -183,8 +183,8 @@ public class WatchdogHostedServiceTests : IDisposable
     {
         // The job may reach a terminal state while the watchdog is mid-tick. Re-reading before
         // writing is what prevents a finished job from being retroactively marked Failed.
-        ConfigureTimeout(JobType.OrdersImport, 30);
-        JobRun stuck = await SeedJobRunAsync(JobType.OrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
+        JobRun stuck = await SeedJobRunAsync(JobType.WbOrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
 
         Mock<IJobRunRepository> repositoryMock = new Mock<IJobRunRepository>();
         repositoryMock
@@ -217,10 +217,10 @@ public class WatchdogHostedServiceTests : IDisposable
     {
         // A single job that errors mid-tick (concurrent update, transient DB error) must not
         // abort the pass and strand every other stuck job until the next interval.
-        ConfigureTimeout(JobType.OrdersImport, 30);
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
 
-        JobRun failingJob = await SeedJobRunAsync(JobType.OrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
-        JobRun healthyJob = await SeedJobRunAsync(JobType.OrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
+        JobRun failingJob = await SeedJobRunAsync(JobType.WbOrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
+        JobRun healthyJob = await SeedJobRunAsync(JobType.WbOrdersImport, DateTimeOffset.UtcNow.AddMinutes(-90));
 
         Mock<IJobRunRepository> repositoryMock = new Mock<IJobRunRepository>();
         repositoryMock
@@ -247,7 +247,7 @@ public class WatchdogHostedServiceTests : IDisposable
     [Fact]
     public async Task Tick_WhenNothingIsStuck_PerformsNoWrites()
     {
-        ConfigureTimeout(JobType.OrdersImport, 30);
+        ConfigureTimeout(JobType.WbOrdersImport, 30);
 
         Mock<IJobRunRepository> repositoryMock = new Mock<IJobRunRepository>();
         repositoryMock
@@ -402,7 +402,8 @@ public class WatchdogHostedServiceTests : IDisposable
         return new WatchdogHostedService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new WatchdogOptions { IntervalMinutes = intervalMinutes }),
-            NullLogger<WatchdogHostedService>.Instance);
+            NullLogger<WatchdogHostedService>.Instance,
+            TimeProvider.System);
     }
 
     /// <summary>

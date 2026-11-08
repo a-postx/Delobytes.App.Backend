@@ -58,7 +58,7 @@ public class DeltaOrdersFetcherTests
         };
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
-        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.WbOrdersImport);
 
         OrdersImportCheckpointStore checkpointStore = new OrdersImportCheckpointStore(
             _jobCheckpointRepo.Object,
@@ -95,7 +95,7 @@ public class DeltaOrdersFetcherTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Running,
         };
 
@@ -186,7 +186,7 @@ public class DeltaOrdersFetcherTests
         (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, Now);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         UseOrdersSource(_ => new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1", Now.AddMinutes(-30)) } });
@@ -210,7 +210,7 @@ public class DeltaOrdersFetcherTests
         DateTimeOffset retryAt = Now.AddMinutes(5);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         UseOrdersSource(_ => new OrdersPage { Throttled = true, RetryAt = retryAt });
@@ -234,7 +234,7 @@ public class DeltaOrdersFetcherTests
         DateTimeOffset newest = Now.AddMinutes(-10);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         UseOrdersSource(_ => new OrdersPage
@@ -266,7 +266,7 @@ public class DeltaOrdersFetcherTests
         (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, windowTo);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         UseOrdersSource(_ => new OrdersPage
@@ -288,7 +288,7 @@ public class DeltaOrdersFetcherTests
         (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, Now);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         UseOrdersSource(_ => new OrdersPage());

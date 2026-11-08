@@ -59,7 +59,7 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
         }
 
         bool hasActiveJob = await _jobRunRepository
-            .HasActiveJobAsync(request.ConnectionId, JobType.OrdersImport, cancellationToken);
+            .HasActiveJobAsync(request.ConnectionId, JobType.WbOrdersImport, cancellationToken);
 
         if (hasActiveJob)
         {
@@ -71,7 +71,7 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
         {
             Id = Guid.NewGuid(),
             ConnectionId = request.ConnectionId,
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Pending,
             RequestedByUserId = null,
             CreatedAt = DateTimeOffset.UtcNow,

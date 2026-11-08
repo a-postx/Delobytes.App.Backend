@@ -39,8 +39,8 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
         DateTimeOffset previous = _timeProvider.GetUtcNow().AddDays(-1);
         DateTimeOffset retryAt = _timeProvider.GetUtcNow().AddSeconds(retrySeconds);
-        SyncCheckpoint checkpoint = new SyncCheckpoint { ConnectionId = connection.Id, JobType = JobType.OrdersImport, LastChangedAt = previous };
-        _syncCheckpointRepo.Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>())).ReturnsAsync(checkpoint);
+        SyncCheckpoint checkpoint = new SyncCheckpoint { ConnectionId = connection.Id, JobType = JobType.WbOrdersImport, LastChangedAt = previous };
+        _syncCheckpointRepo.Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>())).ReturnsAsync(checkpoint);
         _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersPage { Throttled = true, RetryAt = retryAt });
 
         await CreateConsumer().ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
@@ -54,7 +54,7 @@ public partial class ProcessOrdersImportConsumerTests
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
         _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next =>
             next.ConnectionId == connection.Id
-            && next.JobType == JobType.OrdersImport
+            && next.JobType == JobType.WbOrdersImport
             && next.Status == JobStatus.Pending
             && next.NotBefore == retryAt), It.IsAny<CancellationToken>()), Times.Once);
         _logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.Is<It.IsAnyType>((value, type) => value.ToString()!.Contains("stopped")), It.IsAny<Exception>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
@@ -68,8 +68,8 @@ public partial class ProcessOrdersImportConsumerTests
         JobRun run = BuildJobRun(connection);
         SetupDefaults(run);
         DateTimeOffset previous = _timeProvider.GetUtcNow().AddDays(-2);
-        SyncCheckpoint checkpoint = new SyncCheckpoint { ConnectionId = connection.Id, JobType = JobType.OrdersImport, LastChangedAt = previous };
-        _syncCheckpointRepo.Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>())).ReturnsAsync(checkpoint);
+        SyncCheckpoint checkpoint = new SyncCheckpoint { ConnectionId = connection.Id, JobType = JobType.WbOrdersImport, LastChangedAt = previous };
+        _syncCheckpointRepo.Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>())).ReturnsAsync(checkpoint);
         int calls = 0;
         _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
             .Returns((Guid id, OrdersRequest request, CancellationToken token) =>

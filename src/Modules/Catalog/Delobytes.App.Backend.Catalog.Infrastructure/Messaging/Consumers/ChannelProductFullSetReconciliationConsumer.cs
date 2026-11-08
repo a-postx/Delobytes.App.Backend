@@ -30,6 +30,7 @@ public class ChannelProductFullSetReconciliationConsumer
 {
     private readonly CatalogDbContext _context;
     private readonly ILogger<ChannelProductFullSetReconciliationConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the
@@ -37,12 +38,15 @@ public class ChannelProductFullSetReconciliationConsumer
     /// </summary>
     /// <param name="context">Catalog database context.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="timeProvider">Clock source.</param>
     public ChannelProductFullSetReconciliationConsumer(
         CatalogDbContext context,
-        ILogger<ChannelProductFullSetReconciliationConsumer> logger)
+        ILogger<ChannelProductFullSetReconciliationConsumer> logger,
+        TimeProvider timeProvider)
     {
         _context = context;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -92,7 +96,7 @@ public class ChannelProductFullSetReconciliationConsumer
             return 0;
         }
 
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
 
         foreach (ChannelProduct link in abandonedLinks)
         {

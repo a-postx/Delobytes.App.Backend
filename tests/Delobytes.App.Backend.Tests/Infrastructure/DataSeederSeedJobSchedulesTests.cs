@@ -20,7 +20,7 @@ namespace Delobytes.App.Backend.Tests.Infrastructure;
 /// Tests DataSeeder.SeedJobSchedulesAsync: each active connection must get exactly one enabled
 /// orders schedule per job type its channel maps to (idempotently) - one for Wildberries, FBO plus
 /// FBS for Ozon - and a stale
-/// <see cref="JobType.OrdersImport"/> schedule left on a non-Wildberries connection by earlier
+/// <see cref="JobType.WbOrdersImport"/> schedule left on a non-Wildberries connection by earlier
 /// versions of the seeder must be disabled rather than deleted.
 ///
 /// The DbContext and the MessageTenantContext are always the same instance here, exactly as
@@ -138,7 +138,7 @@ public class DataSeederSeedJobSchedulesTests
         schedules.Should().HaveCount(1);
         JobSchedule schedule = schedules[0];
         schedule.ConnectionId.Should().Be(connection.Id);
-        schedule.JobType.Should().Be(JobType.OrdersImport);
+        schedule.JobType.Should().Be(JobType.WbOrdersImport);
         schedule.CronExpression.Should().Be("0 * * * *");
         schedule.IsEnabled.Should().BeTrue();
         schedule.LastRunAt.Should().BeNull();
@@ -206,7 +206,7 @@ public class DataSeederSeedJobSchedulesTests
             {
                 Id = Guid.NewGuid(),
                 ConnectionId = connection.Id,
-                JobType = JobType.OrdersImport,
+                JobType = JobType.WbOrdersImport,
                 CronExpression = "0 * * * *",
                 IsEnabled = true,
                 LastRunAt = preservedLastRunAt,
@@ -244,7 +244,7 @@ public class DataSeederSeedJobSchedulesTests
             {
                 Id = Guid.NewGuid(),
                 ConnectionId = connection.Id,
-                JobType = JobType.OrdersImport,
+                JobType = JobType.WbOrdersImport,
                 CronExpression = "0 * * * *",
                 IsEnabled = false,
                 NextRunAt = DateTimeOffset.UtcNow.AddHours(1),
@@ -281,7 +281,7 @@ public class DataSeederSeedJobSchedulesTests
             {
                 Id = Guid.NewGuid(),
                 ConnectionId = first.Id,
-                JobType = JobType.OrdersImport,
+                JobType = JobType.WbOrdersImport,
                 CronExpression = "0 * * * *",
                 IsEnabled = true,
                 NextRunAt = DateTimeOffset.UtcNow.AddMinutes(30),
@@ -378,12 +378,12 @@ public class DataSeederSeedJobSchedulesTests
 
         schedules.Should().HaveCount(2);
         schedules.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
         schedules.Should().OnlyContain(s => s.IsEnabled);
         schedules.Should().OnlyContain(s => s.ConnectionId == connection.Id);
         schedules.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
         schedules.Should().OnlyContain(s => s.TenantId == tenantId);
-        schedules.Should().NotContain(s => s.JobType == JobType.OrdersImport);
+        schedules.Should().NotContain(s => s.JobType == JobType.WbOrdersImport);
     }
 
     [Fact]
@@ -401,7 +401,7 @@ public class DataSeederSeedJobSchedulesTests
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
         schedules.Should().ContainSingle();
-        schedules[0].JobType.Should().Be(JobType.OrdersImport);
+        schedules[0].JobType.Should().Be(JobType.WbOrdersImport);
     }
 
     [Fact]
@@ -446,10 +446,10 @@ public class DataSeederSeedJobSchedulesTests
         schedules.Should().HaveCount(3);
         schedules.Where(s => s.ConnectionId == wildberriesConnection.Id)
             .Select(s => s.JobType)
-            .Should().BeEquivalentTo(new[] { JobType.OrdersImport });
+            .Should().BeEquivalentTo(new[] { JobType.WbOrdersImport });
         schedules.Where(s => s.ConnectionId == ozonConnection.Id)
             .Select(s => s.JobType)
-            .Should().BeEquivalentTo(new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+            .Should().BeEquivalentTo(new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
         schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
@@ -470,7 +470,7 @@ public class DataSeederSeedJobSchedulesTests
 
         schedules.Should().HaveCount(2);
         schedules.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
         schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
@@ -485,7 +485,7 @@ public class DataSeederSeedJobSchedulesTests
         Connection connection = BuildConnection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
-        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.OrdersImport));
+        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.WbOrdersImport));
 
         RecordingLogger logger = new RecordingLogger();
 
@@ -493,9 +493,9 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        JobSchedule stale = schedules.Single(s => s.JobType == JobType.OrdersImport);
+        JobSchedule stale = schedules.Single(s => s.JobType == JobType.WbOrdersImport);
         stale.IsEnabled.Should().BeFalse("the Ozon connection runs OrdersImportFbo, not the Wildberries job");
-        schedules.Should().Contain(s => s.JobType == JobType.OrdersImportFbo && s.IsEnabled);
+        schedules.Should().Contain(s => s.JobType == JobType.OzonOrdersImportFbo && s.IsEnabled);
 
         logger.Entries.Should().Contain(e =>
             e.Level == LogLevel.Warning
@@ -514,7 +514,7 @@ public class DataSeederSeedJobSchedulesTests
         Connection connection = BuildConnection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
-        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.OrdersImport));
+        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.WbOrdersImport));
 
         await RunSeederAsync(options);
 
@@ -533,7 +533,7 @@ public class DataSeederSeedJobSchedulesTests
         Connection connection = BuildConnection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
-        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.OrdersImport));
+        await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.WbOrdersImport));
 
         RecordingLogger logger = new RecordingLogger();
 
@@ -542,7 +542,7 @@ public class DataSeederSeedJobSchedulesTests
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
         schedules.Should().ContainSingle();
-        schedules[0].JobType.Should().Be(JobType.OrdersImport);
+        schedules[0].JobType.Should().Be(JobType.WbOrdersImport);
         schedules[0].IsEnabled.Should().BeTrue();
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
     }

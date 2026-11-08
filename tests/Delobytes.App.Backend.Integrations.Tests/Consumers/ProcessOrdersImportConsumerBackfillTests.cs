@@ -90,7 +90,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             checkpointStore);
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
-        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.WbOrdersImport);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
             new AlwaysAllowOrdersRateLimiter(),
@@ -117,7 +117,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             backfillWalker,
             StubOrdersFetcherResolver.For(
                 "wildberries",
-                JobType.OrdersImport,
+                JobType.WbOrdersImport,
                 new OrdersFetchers(
                     new BackfillOrdersFetcher(backfillWalker, singlePageReader),
                     new DeltaOrdersFetcher(
@@ -170,7 +170,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Pending,
             CreatedAt = _timeProvider.GetUtcNow(),
             Connection = connection,
@@ -512,7 +512,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         persistedPayload.IsBackfillCompleted.Should().BeFalse();
         persistedPayload.MaxChangedAt.Should().BeNull();
         _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(next =>
-            next.ConnectionId == connection.Id && next.JobType == JobType.OrdersImport
+            next.ConnectionId == connection.Id && next.JobType == JobType.WbOrdersImport
             && next.Status == JobStatus.Pending && next.NotBefore == _timeProvider.GetUtcNow().AddHours(3)),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -854,12 +854,12 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         UseStateStore();
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SyncCheckpoint
             {
                 Id = Guid.NewGuid(),
                 ConnectionId = connection.Id,
-                JobType = JobType.OrdersImport,
+                JobType = JobType.WbOrdersImport,
                 LastChangedAt = lastChangedAt,
             });
 

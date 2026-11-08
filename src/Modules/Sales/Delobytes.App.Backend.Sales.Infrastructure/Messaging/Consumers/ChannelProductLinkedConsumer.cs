@@ -15,18 +15,22 @@ public class ChannelProductLinkedConsumer
 {
     private readonly SalesDbContext _context;
     private readonly ILogger<ChannelProductLinkedConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChannelProductLinkedConsumer"/> class.
     /// </summary>
     /// <param name="context">Sales database context.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="timeProvider">Clock source.</param>
     public ChannelProductLinkedConsumer(
         SalesDbContext context,
-        ILogger<ChannelProductLinkedConsumer> logger)
+        ILogger<ChannelProductLinkedConsumer> logger,
+        TimeProvider timeProvider)
     {
         _context = context;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -38,7 +42,7 @@ public class ChannelProductLinkedConsumer
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
 
         ChannelProductRef? projection = await _context.ChannelProductRefs
             .FirstOrDefaultAsync(r => r.ChannelProductId == message.ChannelProductId, cancellationToken);

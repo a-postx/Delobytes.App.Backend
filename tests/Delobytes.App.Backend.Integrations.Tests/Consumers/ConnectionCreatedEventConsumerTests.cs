@@ -147,7 +147,7 @@ public class ConnectionCreatedEventConsumerTests
         await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
 
         proposed.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs },
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs },
             "both schemas share one connection and are always scheduled; sequencing is enforced by the scheduler");
         proposed.Should().OnlyContain(s => s.ConnectionId == connection.Id);
         proposed.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
@@ -168,7 +168,7 @@ public class ConnectionCreatedEventConsumerTests
         await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
 
         proposed.Should().ContainSingle();
-        proposed[0].JobType.Should().Be(JobType.OrdersImport);
+        proposed[0].JobType.Should().Be(JobType.WbOrdersImport);
     }
 
     [Fact]

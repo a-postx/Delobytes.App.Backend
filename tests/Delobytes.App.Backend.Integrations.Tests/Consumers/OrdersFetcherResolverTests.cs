@@ -21,7 +21,7 @@ public class OrdersFetcherResolverTests
         (OrdersFetcherResolver resolver, IOrdersFetchers wildberries, _, _) = BuildResolver();
 
         OrdersFetchersResolution.Supported supported = resolver
-            .Resolve("wildberries", JobType.OrdersImport)
+            .Resolve("wildberries", JobType.WbOrdersImport)
             .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
         supported.Fetchers.Should().BeSameAs(wildberries);
@@ -33,7 +33,7 @@ public class OrdersFetcherResolverTests
         (OrdersFetcherResolver resolver, _, IOrdersFetchers ozonFbo, _) = BuildResolver();
 
         OrdersFetchersResolution.Supported supported = resolver
-            .Resolve("ozon", JobType.OrdersImportFbo)
+            .Resolve("ozon", JobType.OzonOrdersImportFbo)
             .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
         supported.Fetchers.Should().BeSameAs(ozonFbo);
@@ -45,7 +45,7 @@ public class OrdersFetcherResolverTests
         (OrdersFetcherResolver resolver, _, _, IOrdersFetchers ozonFbs) = BuildResolver();
 
         OrdersFetchersResolution.Supported supported = resolver
-            .Resolve("ozon", JobType.OrdersImportFbs)
+            .Resolve("ozon", JobType.OzonOrdersImportFbs)
             .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
         supported.Fetchers.Should().BeSameAs(ozonFbs);
@@ -57,9 +57,9 @@ public class OrdersFetcherResolverTests
         (OrdersFetcherResolver resolver, _, IOrdersFetchers fbo, IOrdersFetchers fbs) = BuildResolver();
 
         IOrdersFetchers resolvedFbo = ((OrdersFetchersResolution.Supported)
-            resolver.Resolve("ozon", JobType.OrdersImportFbo)).Fetchers;
+            resolver.Resolve("ozon", JobType.OzonOrdersImportFbo)).Fetchers;
         IOrdersFetchers resolvedFbs = ((OrdersFetchersResolution.Supported)
-            resolver.Resolve("ozon", JobType.OrdersImportFbs)).Fetchers;
+            resolver.Resolve("ozon", JobType.OzonOrdersImportFbs)).Fetchers;
 
         resolvedFbo.Should().NotBeSameAs(resolvedFbs,
             "sharing one set would let the FBS job read the FBO endpoint and its statuses");
@@ -68,14 +68,13 @@ public class OrdersFetcherResolverTests
     }
 
     [Theory]
-    [InlineData("ozon", JobType.OrdersImport)]
-    [InlineData("ozon", JobType.OrdersSync)]
+    [InlineData("ozon", JobType.WbOrdersImport)]
     [InlineData("ozon", JobType.ProductsImport)]
-    [InlineData("wildberries", JobType.OrdersImportFbo)]
-    [InlineData("wildberries", JobType.OrdersImportFbs)]
+    [InlineData("wildberries", JobType.OzonOrdersImportFbo)]
+    [InlineData("wildberries", JobType.OzonOrdersImportFbs)]
     [InlineData("wildberries", JobType.ProductsImport)]
-    [InlineData("yandex.kit", JobType.OrdersImport)]
-    [InlineData("", JobType.OrdersImport)]
+    [InlineData("yandex.kit", JobType.WbOrdersImport)]
+    [InlineData("", JobType.WbOrdersImport)]
     public void Resolve_UnsupportedCombination_ReturnsTheReason(string channelCode, JobType jobType)
     {
         (OrdersFetcherResolver resolver, _, _, _) = BuildResolver();
@@ -97,7 +96,7 @@ public class OrdersFetcherResolverTests
         (OrdersFetcherResolver resolver, _, _, IOrdersFetchers ozonFbs) = BuildResolver();
 
         OrdersFetchersResolution.Supported supported = resolver
-            .Resolve(channelCode, JobType.OrdersImportFbs)
+            .Resolve(channelCode, JobType.OzonOrdersImportFbs)
             .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
         supported.Fetchers.Should().BeSameAs(ozonFbs);
@@ -112,11 +111,11 @@ public class OrdersFetcherResolverTests
 
         ServiceCollection services = new ServiceCollection();
         services.AddKeyedSingleton(
-            OrdersFetcherKeys.Fetchers("wildberries", JobType.OrdersImport), wildberries);
+            OrdersFetcherKeys.Fetchers("wildberries", JobType.WbOrdersImport), wildberries);
         services.AddKeyedSingleton(
-            OrdersFetcherKeys.Fetchers("ozon", JobType.OrdersImportFbo), ozonFbo);
+            OrdersFetcherKeys.Fetchers("ozon", JobType.OzonOrdersImportFbo), ozonFbo);
         services.AddKeyedSingleton(
-            OrdersFetcherKeys.Fetchers("ozon", JobType.OrdersImportFbs), ozonFbs);
+            OrdersFetcherKeys.Fetchers("ozon", JobType.OzonOrdersImportFbs), ozonFbs);
 
         ServiceProvider provider = services.BuildServiceProvider();
 

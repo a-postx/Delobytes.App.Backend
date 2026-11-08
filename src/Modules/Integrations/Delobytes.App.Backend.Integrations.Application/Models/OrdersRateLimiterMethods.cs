@@ -12,7 +12,7 @@ public static class OrdersRateLimiterMethods
     public const string OzonPostingFboList = "posting/fbo/list";
 
     /// <summary>
-    /// Ozon <c>POST /v4/posting/fbs/list</c>. Reserved: FBS is not implemented yet.
+    /// Ozon <c>POST /v4/posting/fbs/list</c>.
     /// </summary>
     public const string OzonPostingFbsList = "posting/fbs/list";
 

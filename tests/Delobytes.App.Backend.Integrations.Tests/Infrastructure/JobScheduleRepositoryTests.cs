@@ -67,7 +67,7 @@ public class JobScheduleRepositoryTests
         Guid connectionId,
         DateTimeOffset? nextRunAt,
         bool isEnabled = true,
-        JobType jobType = JobType.OrdersImport,
+        JobType jobType = JobType.WbOrdersImport,
         DateTimeOffset? lastRunAt = null)
     {
         return new JobSchedule
@@ -124,7 +124,7 @@ public class JobScheduleRepositoryTests
             JobSchedule neverScheduled = BuildSchedule(
                 connection.Id,
                 nextRunAt: null,
-                jobType: JobType.OrdersSync);
+                jobType: JobType.OzonOrdersImportFbo);
 
             ctx.JobSchedules.AddRange(due, future, disabled, neverScheduled);
             await ctx.SaveChangesAsync();
@@ -303,9 +303,9 @@ public class JobScheduleRepositoryTests
             Connection target = await SeedConnectionAsync(ctx, template);
             Connection other = SeedConnectionWithoutTemplate(ctx, template);
 
-            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.OrdersImport));
+            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.WbOrdersImport));
             ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.ProductsImport));
-            ctx.JobSchedules.Add(BuildSchedule(other.Id, nextRunAt, jobType: JobType.OrdersSync));
+            ctx.JobSchedules.Add(BuildSchedule(other.Id, nextRunAt, jobType: JobType.OzonOrdersImportFbo));
             await ctx.SaveChangesAsync();
 
             targetConnectionId = target.Id;
@@ -317,8 +317,8 @@ public class JobScheduleRepositoryTests
 
             List<JobType> jobTypes = await repository.GetScheduledJobTypesAsync(targetConnectionId, CancellationToken.None);
 
-            jobTypes.Should().BeEquivalentTo(new[] { JobType.OrdersImport, JobType.ProductsImport });
-            jobTypes.Should().NotContain(JobType.OrdersSync, "the other connection's schedule must not leak in");
+            jobTypes.Should().BeEquivalentTo(new[] { JobType.WbOrdersImport, JobType.ProductsImport });
+            jobTypes.Should().NotContain(JobType.OzonOrdersImportFbo, "the other connection's schedule must not leak in");
         }
     }
 
@@ -373,7 +373,7 @@ public class JobScheduleRepositoryTests
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             Connection connection = await SeedConnectionAsync(ctx, template);
-            ctx.JobSchedules.Add(BuildSchedule(connection.Id, nextRunAt, jobType: JobType.OrdersImportFbo));
+            ctx.JobSchedules.Add(BuildSchedule(connection.Id, nextRunAt, jobType: JobType.OzonOrdersImportFbo));
             await ctx.SaveChangesAsync();
 
             connectionId = connection.Id;
@@ -381,8 +381,8 @@ public class JobScheduleRepositoryTests
 
         List<JobSchedule> candidates = new List<JobSchedule>
         {
-            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbo),
-            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbs),
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OzonOrdersImportFbo),
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OzonOrdersImportFbs),
         };
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
@@ -401,7 +401,7 @@ public class JobScheduleRepositoryTests
                 .Select(s => s.JobType)
                 .ToListAsync();
 
-            jobTypes.Should().BeEquivalentTo(new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs });
+            jobTypes.Should().BeEquivalentTo(new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
         }
     }
 
@@ -424,7 +424,7 @@ public class JobScheduleRepositoryTests
 
         List<JobSchedule> candidates = new List<JobSchedule>
         {
-            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbo),
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OzonOrdersImportFbo),
         };
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
@@ -461,7 +461,7 @@ public class JobScheduleRepositoryTests
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             Connection connection = await SeedConnectionAsync(ctx, template);
-            ctx.JobSchedules.Add(BuildSchedule(connection.Id, nextRunAt, jobType: JobType.OrdersImportFbo));
+            ctx.JobSchedules.Add(BuildSchedule(connection.Id, nextRunAt, jobType: JobType.OzonOrdersImportFbo));
             await ctx.SaveChangesAsync();
 
             connectionId = connection.Id;
@@ -469,7 +469,7 @@ public class JobScheduleRepositoryTests
 
         List<JobSchedule> candidates = new List<JobSchedule>
         {
-            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OrdersImportFbo),
+            BuildSchedule(connectionId, nextRunAt, jobType: JobType.OzonOrdersImportFbo),
         };
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))

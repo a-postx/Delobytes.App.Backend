@@ -100,6 +100,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrdersImportCheckpointStore>();
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<OrdersBackfillWalker>();
+        services.AddScoped<OrdersImportFinalizer>();
+        services.AddScoped<OrdersImportWatermarkWriter>();
+        services.AddScoped<OrdersBatchAggregator>();
 
         services.AddSingleton<IChannelCatalogService, ChannelCatalogService>();
         services.AddChannelModule<WildberriesChannelModule>();

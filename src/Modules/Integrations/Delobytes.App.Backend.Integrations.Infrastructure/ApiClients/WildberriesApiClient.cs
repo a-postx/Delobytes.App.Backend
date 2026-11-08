@@ -50,6 +50,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private readonly IOrdersRateLimiter _rateLimiter;
     private readonly ILogger<WildberriesApiClient> _logger;
     private readonly WildberriesImportOptions _options;
+    private readonly TimeProvider _timeProvider;
 
     private Guid? _templateId;
 
@@ -81,7 +82,8 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         IConnectionResolver connectionResolver,
         [FromKeyedServices(ChannelCatalog.WildberriesCode)] IOrdersRateLimiter rateLimiter,
         IOptions<WildberriesImportOptions> options,
-        ILogger<WildberriesApiClient> logger)
+        ILogger<WildberriesApiClient> logger,
+        TimeProvider timeProvider)
     {
         _httpClient = httpClient;
         _endpointResolver = endpointResolver;
@@ -89,6 +91,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         _rateLimiter = rateLimiter;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -262,7 +265,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 ApiResponse<ProductCardsData> apiResponse = new ApiResponse<ProductCardsData>
                 {
                     StatusCode = (int)response.StatusCode,
-                    Timestamp = DateTimeOffset.UtcNow
+                    Timestamp = _timeProvider.GetUtcNow()
                 };
 
                 if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
@@ -392,7 +395,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     IsSuccess = false,
                     ErrorMessage = $"Network error: {ex.Message}",
                     StatusCode = null,
-                    Timestamp = DateTimeOffset.UtcNow,
+                    Timestamp = _timeProvider.GetUtcNow(),
                     Data = new ProductCardsData
                     {
                         Cards = new List<WildberriesCardSnapshot>(),
@@ -409,7 +412,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     IsSuccess = false,
                     ErrorMessage = "Request timeout.",
                     StatusCode = null,
-                    Timestamp = DateTimeOffset.UtcNow,
+                    Timestamp = _timeProvider.GetUtcNow(),
                     Data = new ProductCardsData
                     {
                         Cards = new List<WildberriesCardSnapshot>(),
@@ -426,7 +429,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     IsSuccess = false,
                     ErrorMessage = "Invalid JSON response from API.",
                     StatusCode = null,
-                    Timestamp = DateTimeOffset.UtcNow,
+                    Timestamp = _timeProvider.GetUtcNow(),
                     Data = new ProductCardsData
                     {
                         Cards = new List<WildberriesCardSnapshot>(),

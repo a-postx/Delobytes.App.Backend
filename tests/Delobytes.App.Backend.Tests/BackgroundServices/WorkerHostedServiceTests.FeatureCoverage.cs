@@ -28,7 +28,7 @@ public partial class WorkerHostedServiceTests
     [Fact]
     public async Task Tick_DeferredPending_IsDispatchedOnlyWhenRepositoryReportsItDue()
     {
-        JobRun pending = BuildJobRun(JobType.OrdersImport);
+        JobRun pending = BuildJobRun(JobType.WbOrdersImport);
         pending.NotBefore = DateTimeOffset.UtcNow.AddHours(3);
         DateTimeOffset observedNow = default;
         _jobRunRepositoryMock.Setup(r => r.GetPendingJobsAsync(_tenantId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))

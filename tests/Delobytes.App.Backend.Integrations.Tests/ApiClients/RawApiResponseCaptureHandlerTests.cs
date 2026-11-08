@@ -75,7 +75,7 @@ public class RawApiResponseCaptureHandlerTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             StartedAt = DateTimeOffset.UtcNow,
@@ -119,7 +119,8 @@ public class RawApiResponseCaptureHandlerTests
             RawApiResponseCaptureHandler handler = new RawApiResponseCaptureHandler(
                 jobRunExecutionContext,
                 repository,
-                NullLogger<RawApiResponseCaptureHandler>.Instance)
+                NullLogger<RawApiResponseCaptureHandler>.Instance,
+                TimeProvider.System)
             {
                 InnerHandler = mockHttp,
             };
@@ -176,7 +177,8 @@ public class RawApiResponseCaptureHandlerTests
         RawApiResponseCaptureHandler handler = new RawApiResponseCaptureHandler(
             jobRunExecutionContext,
             repository,
-            NullLogger<RawApiResponseCaptureHandler>.Instance)
+            NullLogger<RawApiResponseCaptureHandler>.Instance,
+            TimeProvider.System)
         {
             InnerHandler = mockHttp,
         };

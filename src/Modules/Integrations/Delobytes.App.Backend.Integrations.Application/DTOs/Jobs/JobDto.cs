@@ -4,7 +4,7 @@ namespace Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
 
 /// <summary>
 /// API representation of a single job run regardless of its type, mapped from JobRun.
-/// Type is serialised as a camelCase token ("products-import", "orders-import") so that the
+/// Type is serialised as a camelCase token ("products-import", "wb-orders-import") so that the
 /// client never depends on enum member names.
 /// </summary>
 public class JobDto
@@ -12,7 +12,8 @@ public class JobDto
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the API type token: "products-import", "orders-import" or "orders-sync".
+    /// Gets or sets the API type token: "products-import", "wb-orders-import",
+    /// "ozon-orders-import-fbo" or "ozon-orders-import-fbs".
     /// </summary>
     public string Type { get; set; } = string.Empty;
 

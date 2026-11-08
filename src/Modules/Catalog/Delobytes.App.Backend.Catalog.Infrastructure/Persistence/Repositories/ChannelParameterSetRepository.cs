@@ -7,10 +7,12 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 public class ChannelParameterSetRepository : IChannelParameterSetRepository
 {
     private readonly CatalogDbContext _context;
+    private readonly TimeProvider _timeProvider;
 
-    public ChannelParameterSetRepository(CatalogDbContext context)
+    public ChannelParameterSetRepository(CatalogDbContext context, TimeProvider timeProvider)
     {
         _context = context;
+        _timeProvider = timeProvider;
     }
 
     public Task<ChannelParameterSet?> GetByIdAsync(Guid id, CancellationToken ct)
@@ -29,7 +31,7 @@ public class ChannelParameterSetRepository : IChannelParameterSetRepository
 
     public Task<ChannelParameterSet?> GetActiveByChannelIdAsync(Guid channelId, CancellationToken ct)
     {
-        DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
+        DateOnly today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
 
         return _context.ChannelParameterSets
             .Where(cps => cps.ChannelId == channelId)

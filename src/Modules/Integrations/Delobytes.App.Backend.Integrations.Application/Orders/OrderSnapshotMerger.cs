@@ -13,7 +13,7 @@ internal static class OrderSnapshotMerger
     /// Returns insertion-ordered values; a caller that needs deterministic output (the backfill
     /// walk) applies its own ordering on the result.
     /// </summary>
-    public static List<ChannelOrderSnapshot> MergeByExternalOrderId(IEnumerable<ChannelOrderSnapshot> reports)
+    internal static List<ChannelOrderSnapshot> MergeByExternalOrderId(IEnumerable<ChannelOrderSnapshot> reports)
     {
         Dictionary<string, ChannelOrderSnapshot> ordersByOrderKey = new Dictionary<string, ChannelOrderSnapshot>(StringComparer.Ordinal);
 

@@ -11,11 +11,11 @@ internal static class TestTunings
 {
     public static OrdersImportTuning Wildberries(WildberriesImportOptions? options = null)
     {
-        return (options ?? new WildberriesImportOptions()).ToTuning(JobType.OrdersImport);
+        return (options ?? new WildberriesImportOptions()).ToTuning(JobType.WbOrdersImport);
     }
 
     public static OrdersImportTuning Ozon(
-        OzonImportOptions? options = null, JobType jobType = JobType.OrdersImportFbo)
+        OzonImportOptions? options = null, JobType jobType = JobType.OzonOrdersImportFbo)
     {
         return (options ?? new OzonImportOptions()).ToTuning(jobType);
     }

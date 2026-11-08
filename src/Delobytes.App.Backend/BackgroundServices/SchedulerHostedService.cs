@@ -23,15 +23,18 @@ public class SchedulerHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BackgroundJobsOptions _options;
     private readonly ILogger<SchedulerHostedService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<BackgroundJobsOptions> options,
-        ILogger<SchedulerHostedService> logger)
+        ILogger<SchedulerHostedService> logger,
+        TimeProvider timeProvider)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -54,7 +57,7 @@ public class SchedulerHostedService : BackgroundService
 
     private async Task TickAsync(CancellationToken cancellationToken)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         List<JobSchedule> dueSchedules;
 
         using (IServiceScope lookupScope = _scopeFactory.CreateScope())
@@ -219,9 +222,9 @@ public class SchedulerHostedService : BackgroundService
 
                 // Orders import keeps its cursor in OrdersBackfillState/SyncCheckpoint rather than
                 // in a type-specific JobRun row, so nothing is created here on purpose.
-                case JobType.OrdersImport:
-                case JobType.OrdersImportFbo:
-                case JobType.OrdersImportFbs:
+                case JobType.WbOrdersImport:
+                case JobType.OzonOrdersImportFbo:
+                case JobType.OzonOrdersImportFbs:
                     break;
 
                 default:

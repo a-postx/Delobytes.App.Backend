@@ -12,7 +12,7 @@ public class OrdersImportTuningTests
     [Fact]
     public void Wildberries_Defaults_ResolveEverySettingToAnEffectiveValue()
     {
-        OrdersImportTuning tuning = new WildberriesImportOptions().ToTuning(JobType.OrdersImport);
+        OrdersImportTuning tuning = new WildberriesImportOptions().ToTuning(JobType.WbOrdersImport);
 
         tuning.RunBudget.Should().Be(TimeSpan.FromSeconds(WildberriesImportOptions.DefaultBackfillRunBudgetSeconds));
         tuning.MaxInProcessWait.Should().Be(TimeSpan.FromSeconds(WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
@@ -27,7 +27,7 @@ public class OrdersImportTuningTests
     [Fact]
     public void Wildberries_HasNoPageSize()
     {
-        OrdersImportTuning tuning = new WildberriesImportOptions().ToTuning(JobType.OrdersImport);
+        OrdersImportTuning tuning = new WildberriesImportOptions().ToTuning(JobType.WbOrdersImport);
 
         tuning.PageSize.Should().BeNull();
     }
@@ -38,7 +38,7 @@ public class OrdersImportTuningTests
         OrdersImportTuning tuning = new WildberriesImportOptions
         {
             MaxInProcessWaitSeconds = 0,
-        }.ToTuning(JobType.OrdersImport);
+        }.ToTuning(JobType.WbOrdersImport);
 
         tuning.MaxInProcessWait.Should().Be(TimeSpan.Zero);
     }
@@ -49,7 +49,7 @@ public class OrdersImportTuningTests
         OrdersImportTuning tuning = new WildberriesImportOptions
         {
             BackfillRunBudgetSeconds = 0,
-        }.ToTuning(JobType.OrdersImport);
+        }.ToTuning(JobType.WbOrdersImport);
 
         tuning.RunBudget.Should().Be(TimeSpan.FromSeconds(WildberriesImportOptions.DefaultBackfillRunBudgetSeconds));
     }
@@ -57,7 +57,7 @@ public class OrdersImportTuningTests
     [Fact]
     public void Ozon_Defaults_ResolveEverySettingToAnEffectiveValue()
     {
-        OrdersImportTuning tuning = new OzonImportOptions().ToTuning(JobType.OrdersImportFbo);
+        OrdersImportTuning tuning = new OzonImportOptions().ToTuning(JobType.OzonOrdersImportFbo);
 
         tuning.RunBudget.Should().Be(TimeSpan.FromSeconds(OzonImportOptions.DefaultBackfillRunBudgetSeconds));
         tuning.MaxInProcessWait.Should().Be(TimeSpan.FromSeconds(OzonImportOptions.DefaultMaxInProcessWaitSeconds));
@@ -74,14 +74,14 @@ public class OrdersImportTuningTests
         OrdersImportTuning tuning = new OzonImportOptions
         {
             MaxInProcessWaitSeconds = 0,
-        }.ToTuning(JobType.OrdersImportFbo);
+        }.ToTuning(JobType.OzonOrdersImportFbo);
 
         tuning.MaxInProcessWait.Should().Be(TimeSpan.Zero);
     }
 
     [Theory]
-    [InlineData(JobType.OrdersImportFbo, OrdersRateLimiterMethods.OzonPostingFboList)]
-    [InlineData(JobType.OrdersImportFbs, OrdersRateLimiterMethods.OzonPostingFbsList)]
+    [InlineData(JobType.OzonOrdersImportFbo, OrdersRateLimiterMethods.OzonPostingFboList)]
+    [InlineData(JobType.OzonOrdersImportFbs, OrdersRateLimiterMethods.OzonPostingFbsList)]
     public void Ozon_MethodNameIsSelectedByJobType(JobType jobType, string expectedMethod)
     {
         OrdersImportTuning tuning = new OzonImportOptions().ToTuning(jobType);
@@ -92,7 +92,7 @@ public class OrdersImportTuningTests
     [Fact]
     public void Ozon_UnsupportedJobType_Throws()
     {
-        Action act = () => new OzonImportOptions().ToTuning(JobType.OrdersImport);
+        Action act = () => new OzonImportOptions().ToTuning(JobType.WbOrdersImport);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }

@@ -24,6 +24,7 @@ public class ProductPhotoGarbageCollector : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProductPhotoRetentionOptions _options;
     private readonly ILogger<ProductPhotoGarbageCollector> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProductPhotoGarbageCollector"/> class.
@@ -31,14 +32,17 @@ public class ProductPhotoGarbageCollector : BackgroundService
     /// <param name="scopeFactory">Factory for the per-tenant scope that owns the DbContext.</param>
     /// <param name="options">Retention policy.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="timeProvider">Clock used to derive the retention cutoff.</param>
     public ProductPhotoGarbageCollector(
         IServiceScopeFactory scopeFactory,
         IOptions<ProductPhotoRetentionOptions> options,
-        ILogger<ProductPhotoGarbageCollector> logger)
+        ILogger<ProductPhotoGarbageCollector> logger,
+        TimeProvider timeProvider)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -50,7 +54,7 @@ public class ProductPhotoGarbageCollector : BackgroundService
         {
             try
             {
-                ProductPhotoGcResult result = await CleanupAsync(DateTimeOffset.UtcNow, stoppingToken);
+                ProductPhotoGcResult result = await CleanupAsync(_timeProvider.GetUtcNow(), stoppingToken);
 
                 _logger.LogInformation(
                     "ProductPhotoGarbageCollector: deleted {DeletedPhotos} photo row(s) and {DeletedBlobs} blob(s); {FailedTenants} tenant(s) failed.",

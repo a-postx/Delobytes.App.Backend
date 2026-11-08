@@ -94,12 +94,12 @@ public class GetJobsQueryHandlerTests
         SetupPage(0, new List<JobRun>());
 
         await CreateHandler().Handle(
-            new GetJobsQuery { Type = "orders-import" },
+            new GetJobsQuery { Type = "wb-orders-import" },
             CancellationToken.None);
 
         _jobRunRepo.Verify(
             r => r.GetPagedAsync(
-                JobType.OrdersImport,
+                JobType.WbOrdersImport,
                 It.IsAny<Guid?>(),
                 It.IsAny<JobStatus[]?>(),
                 It.IsAny<int?>(),

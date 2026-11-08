@@ -60,7 +60,8 @@ public class WildberriesApiClientGetOrdersTests
             new FixedConnectionResolver(),
             new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(options),
-            NullLogger<WildberriesApiClient>.Instance);
+            NullLogger<WildberriesApiClient>.Instance,
+            TimeProvider.System);
 
         client.SetTemplate(TestTemplate);
 
@@ -677,7 +678,8 @@ public class WildberriesApiClientGetOrdersTests
             new FixedConnectionResolver(),
             new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
-            NullLogger<WildberriesApiClient>.Instance);
+            NullLogger<WildberriesApiClient>.Instance,
+            TimeProvider.System);
 
         IOrdersSource ordersSource = client;
 

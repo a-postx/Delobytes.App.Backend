@@ -79,7 +79,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         UseStateStore();
         UseSource((request, call) => Task.FromResult(new OrdersPage { Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
         bool pending = false;
-        _jobRunRepo.Setup(r => r.HasPendingJobAsync(connection.Id, JobType.OrdersImport, run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(() => pending);
+        _jobRunRepo.Setup(r => r.HasPendingJobAsync(connection.Id, JobType.WbOrdersImport, run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(() => pending);
         _jobRunRepo.Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
             .Callback<JobRun, CancellationToken>((created, token) => pending = true)
             .ReturnsAsync((JobRun created, CancellationToken token) => created);
@@ -87,7 +87,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         await RunAsync(run, connection, CreateConsumer());
         await RunAsync(run, connection, CreateConsumer());
 
-        _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(j => j.ConnectionId == connection.Id && j.JobType == JobType.OrdersImport && j.Status == JobStatus.Pending && j.NotBefore == _timeProvider.GetUtcNow().AddHours(3)), It.IsAny<CancellationToken>()), Times.Once);
+        _jobRunRepo.Verify(r => r.CreateAsync(It.Is<JobRun>(j => j.ConnectionId == connection.Id && j.JobType == JobType.WbOrdersImport && j.Status == JobStatus.Pending && j.NotBefore == _timeProvider.GetUtcNow().AddHours(3)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -345,7 +345,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
 
         continuation.Should().NotBeNull();
         continuation!.ConnectionId.Should().Be(connection.Id);
-        continuation.JobType.Should().Be(JobType.OrdersImport);
+        continuation.JobType.Should().Be(JobType.WbOrdersImport);
         continuation.Status.Should().Be(JobStatus.Pending);
         continuation.NotBefore.Should().NotBeNull();
 

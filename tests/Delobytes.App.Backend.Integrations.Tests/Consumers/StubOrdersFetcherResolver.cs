@@ -34,7 +34,7 @@ internal sealed class StubOrdersFetcherResolver : IOrdersFetcherResolver
     /// </summary>
     public static StubOrdersFetcherResolver Unsupported()
     {
-        return new StubOrdersFetcherResolver(string.Empty, JobType.OrdersSync, null);
+        return new StubOrdersFetcherResolver(string.Empty, JobType.ProductsImport, null);
     }
 
     /// <inheritdoc/>

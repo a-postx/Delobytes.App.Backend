@@ -4,11 +4,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -71,7 +71,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
 
         run.Status.Should().Be(JobStatus.Running);
         run.CompletedAt.Should().BeNull();
-        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -91,7 +91,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         // only one result is stored, so the remaining two are still in flight.
         run.Status.Should().Be(JobStatus.Running);
         run.CompletedAt.Should().BeNull();
-        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -112,7 +112,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         await consumer.ProcessFetchCompletedAsync(BuildFetchCompletedEvent(run.Id, totalBatches: 1), CancellationToken.None);
 
         run.Status.Should().Be(JobStatus.Success);
-        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Once);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Once);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
@@ -141,13 +141,13 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             if (index < 2)
             {
                 run.Status.Should().Be(JobStatus.Running);
-                _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
+                _jobRunRepo.Verify(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
             }
         }
 
         run.Status.Should().Be(JobStatus.Success);
         run.RecordsCreated.Should().Be(2);
-        _jobRunRepo.Verify(r => r.UpdateAsync(run, It.IsAny<CancellationToken>()), Times.Once);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(run, It.IsAny<CancellationToken>()), Times.Once);
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -168,7 +168,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         await CreateConsumer().ProcessAsync(message, message.BatchId, CancellationToken.None);
 
         run.Status.Should().Be(JobStatus.Success);
-        _jobRunRepo.Verify(r => r.UpdateAsync(run, It.IsAny<CancellationToken>()), Times.Once);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(run, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         run.ExpectedBatchCount.Should().Be(3);
         run.Status.Should().Be(JobStatus.Running);
         run.CompletedAt.Should().BeNull();
-        _jobRunRepo.Verify(r => r.UpdateAsync(run, It.IsAny<CancellationToken>()), Times.Once);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(run, It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -228,7 +228,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         await consumer.ProcessFetchCompletedAsync(message, CancellationToken.None);
 
         run.RecordsCreated.Should().Be(2);
-        _jobRunRepo.Verify(r => r.UpdateAsync(run, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(run, It.IsAny<CancellationToken>()), Times.Exactly(2));
         _syncCheckpointRepo.Verify(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()),
@@ -248,7 +248,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
 
         run.ExpectedBatchCount.Should().Be(3);
         run.Status.Should().Be(JobStatus.Running);
-        _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jobRunRepo.Verify(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -260,8 +260,8 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         run.ExpectedBatchCount = null;
         _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(5, 0, 0, 0));
         _jobRunRepo
-            .Setup(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DbUpdateConcurrencyException());
+            .Setup(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         await CreateConsumer().ProcessFetchCompletedAsync(
             BuildFetchCompletedEvent(run.Id, totalBatches: 2),

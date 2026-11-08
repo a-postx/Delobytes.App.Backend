@@ -42,6 +42,22 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
+    public async Task<bool> TryUpdateAsync(JobRun jobRun, CancellationToken cancellationToken)
+    {
+        _context.JobRuns.Update(jobRun);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<(int TotalCount, List<JobRun> Items)> GetPagedAsync(
         JobType? jobType,
         Guid? connectionId,
@@ -106,7 +122,7 @@ public class JobRunRepository : IJobRunRepository
     {
         return _context.JobRuns.AnyAsync(
             j => j.ConnectionId == connectionId
-                && (j.JobType == JobType.OrdersImportFbo || j.JobType == JobType.OrdersImportFbs)
+                && (j.JobType == JobType.OzonOrdersImportFbo || j.JobType == JobType.OzonOrdersImportFbs)
                 && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
             cancellationToken);
     }

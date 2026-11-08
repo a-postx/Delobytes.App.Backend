@@ -48,8 +48,7 @@ public class StartJobCommandHandlerTests
     }
 
     [Theory]
-    [InlineData(JobType.OrdersImport)]
-    [InlineData(JobType.OrdersSync)]
+    [InlineData(JobType.WbOrdersImport)]
     public async Task Handle_NonStartableType_Throws_WithoutDispatching(JobType jobType)
     {
         StartJobCommandHandler handler = CreateHandler();
@@ -71,7 +70,7 @@ public class StartJobCommandHandlerTests
         StartJobCommandHandler handler = CreateHandler();
 
         Func<Task> act = () => handler.Handle(
-            new StartJobCommand { JobType = JobType.OrdersImport, ConnectionId = Guid.NewGuid() },
+            new StartJobCommand { JobType = JobType.WbOrdersImport, ConnectionId = Guid.NewGuid() },
             CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()

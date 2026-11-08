@@ -106,7 +106,7 @@ public class InvitationTenantScopedFlowTests
 
         using IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantId).Object);
         CreateInvitationCommandHandler handler = new CreateInvitationCommandHandler(
-            new InvitationRepository(ctx),
+            new InvitationRepository(ctx, TimeProvider.System),
             new TenantMembershipRepository(ctx),
             new UserRepository(ctx));
 
@@ -140,7 +140,7 @@ public class InvitationTenantScopedFlowTests
 
         using IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(null).Object);
         CreateInvitationCommandHandler handler = new CreateInvitationCommandHandler(
-            new InvitationRepository(ctx),
+            new InvitationRepository(ctx, TimeProvider.System),
             new TenantMembershipRepository(ctx),
             new UserRepository(ctx));
 
@@ -172,7 +172,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantA).Object))
         {
             CreateInvitationCommandHandler createHandler = new CreateInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx),
                 new UserRepository(ctx));
 
@@ -209,7 +209,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantB).Object))
         {
             AcceptInvitationCommandHandler acceptHandler = new AcceptInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx),
                 new UserRepository(ctx),
                 FakeJwt().Object);
@@ -253,7 +253,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantA).Object))
         {
             CreateInvitationCommandHandler createHandler = new CreateInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx),
                 new UserRepository(ctx));
 
@@ -288,7 +288,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(null).Object))
         {
             AcceptInvitationCommandHandler acceptHandler = new AcceptInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx),
                 new UserRepository(ctx),
                 FakeJwt().Object);
@@ -312,7 +312,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantId).Object))
         {
             CreateInvitationCommandHandler createHandler = new CreateInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx),
                 new UserRepository(ctx));
 
@@ -332,7 +332,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantId).Object))
         {
             RevokeInvitationCommandHandler revokeHandler = new RevokeInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx));
 
             RevokeInvitationResponse response = await revokeHandler.Handle(
@@ -372,7 +372,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantA).Object))
         {
             CreateInvitationCommandHandler createHandler = new CreateInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx),
                 new UserRepository(ctx));
 
@@ -392,7 +392,7 @@ public class InvitationTenantScopedFlowTests
         using (IdentityDbContext ctx = new IdentityDbContext(options, TenantMock(tenantB).Object))
         {
             RevokeInvitationCommandHandler revokeHandler = new RevokeInvitationCommandHandler(
-                new InvitationRepository(ctx),
+                new InvitationRepository(ctx, TimeProvider.System),
                 new TenantMembershipRepository(ctx));
 
             Func<Task> act = () => revokeHandler.Handle(

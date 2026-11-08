@@ -14,7 +14,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Queries;
 public class GetJobsQuery : IRequest<GetJobsResponse>
 {
     /// <summary>
-    /// Gets or sets the API type token filter ("products-import", "orders-import"). Null means
+    /// Gets or sets the API type token filter ("products-import", "wb-orders-import"). Null means
     /// "all types"; an unrecognised token is rejected instead of silently returning everything.
     /// </summary>
     public string? Type { get; set; }
@@ -65,7 +65,8 @@ public class GetJobsQueryHandler : IRequestHandler<GetJobsQuery, GetJobsResponse
             {
                 throw new InvalidOperationException(
                     $"Неизвестный тип задачи '{request.Type}'. Допустимые значения: " +
-                    $"'{JobTypeExtensions.ProductsImport}', '{JobTypeExtensions.OrdersImport}', '{JobTypeExtensions.OrdersSync}'.");
+                    $"'{JobTypeExtensions.ProductsImport}', '{JobTypeExtensions.WbOrdersImport}', " +
+                    $"'{JobTypeExtensions.OzonOrdersImportFbo}', '{JobTypeExtensions.OzonOrdersImportFbs}'.");
             }
 
             jobType = parsed;

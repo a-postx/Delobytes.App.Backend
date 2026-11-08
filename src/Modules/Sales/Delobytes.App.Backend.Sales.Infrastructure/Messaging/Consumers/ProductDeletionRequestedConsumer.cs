@@ -17,15 +17,18 @@ public class ProductDeletionRequestedConsumer
     private readonly SalesDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<ProductDeletionRequestedConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public ProductDeletionRequestedConsumer(
         SalesDbContext context,
         IPublishEndpoint publishEndpoint,
-        ILogger<ProductDeletionRequestedConsumer> logger)
+        ILogger<ProductDeletionRequestedConsumer> logger,
+        TimeProvider timeProvider)
     {
         _context = context;
         _publishEndpoint = publishEndpoint;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -62,7 +65,7 @@ public class ProductDeletionRequestedConsumer
             ProductId = message.ProductId,
             HasOrders = hasOrders,
             OrderCount = orderCount,
-            CheckedAt = DateTimeOffset.UtcNow,
+            CheckedAt = _timeProvider.GetUtcNow(),
         };
 
         await _publishEndpoint.Publish(resultEvent, cancellationToken);

@@ -50,7 +50,8 @@ public class ProcessProductsImportConsumerTests
             _eventPublisher.Object,
             _jobRunExecutionContext,
             wrappedOptions,
-            _logger.Object);
+            _logger.Object,
+            TimeProvider.System);
     }
 
     private static SystemChannelTemplate BuildWildberriesTemplate()

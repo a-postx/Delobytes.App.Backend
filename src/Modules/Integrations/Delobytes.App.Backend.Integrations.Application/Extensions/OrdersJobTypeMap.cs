@@ -52,9 +52,9 @@ public static class OrdersJobTypeMap
 
         return jobType switch
         {
-            JobType.OrdersImport => OrdersRateLimiterMethods.WildberriesSupplierOrders,
-            JobType.OrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
-            JobType.OrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
+            JobType.WbOrdersImport => OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            JobType.OzonOrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
+            JobType.OzonOrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
             _ => null,
         };
     }

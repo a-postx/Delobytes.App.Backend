@@ -82,7 +82,7 @@ public class SyncCheckpointRepositoryTests
             SyncCheckpoint checkpoint = new SyncCheckpoint
             {
                 ConnectionId = connection.Id,
-                JobType = JobType.OrdersSync,
+                JobType = JobType.WbOrdersImport,
                 LastChangedAt = null,
                 LastSuccessAt = DateTimeOffset.UtcNow.AddDays(-30),
             };
@@ -94,7 +94,7 @@ public class SyncCheckpointRepositoryTests
         {
             SyncCheckpointRepository repository = new SyncCheckpointRepository(ctx);
 
-            SyncCheckpoint? persisted = await repository.GetAsync(connection.Id, JobType.OrdersSync, CancellationToken.None);
+            SyncCheckpoint? persisted = await repository.GetAsync(connection.Id, JobType.WbOrdersImport, CancellationToken.None);
 
             persisted.Should().NotBeNull();
             persisted!.LastChangedAt.Should().BeNull("first run has no observed watermark yet");
@@ -125,7 +125,7 @@ public class SyncCheckpointRepositoryTests
                 new SyncCheckpoint
                 {
                     ConnectionId = connection.Id,
-                    JobType = JobType.OrdersSync,
+                    JobType = JobType.WbOrdersImport,
                     LastChangedAt = firstChangedAt,
                     LastSuccessAt = firstChangedAt,
                 },
@@ -139,7 +139,7 @@ public class SyncCheckpointRepositoryTests
                 new SyncCheckpoint
                 {
                     ConnectionId = connection.Id,
-                    JobType = JobType.OrdersSync,
+                    JobType = JobType.WbOrdersImport,
                     LastChangedAt = secondChangedAt,
                     LastSuccessAt = secondChangedAt,
                 },
@@ -150,13 +150,13 @@ public class SyncCheckpointRepositoryTests
         {
             SyncCheckpointRepository repository = new SyncCheckpointRepository(ctx);
 
-            SyncCheckpoint? persisted = await repository.GetAsync(connection.Id, JobType.OrdersSync, CancellationToken.None);
+            SyncCheckpoint? persisted = await repository.GetAsync(connection.Id, JobType.WbOrdersImport, CancellationToken.None);
 
             persisted.Should().NotBeNull();
             persisted!.LastChangedAt.Should().Be(secondChangedAt, "a second Upsert for the same (ConnectionId, JobType) must overwrite, not duplicate");
 
             int rowCount = await ctx.SyncCheckpoints.CountAsync(
-                c => c.ConnectionId == connection.Id && c.JobType == JobType.OrdersSync);
+                c => c.ConnectionId == connection.Id && c.JobType == JobType.WbOrdersImport);
             rowCount.Should().Be(1);
         }
     }
@@ -183,7 +183,7 @@ public class SyncCheckpointRepositoryTests
                 new SyncCheckpoint
                 {
                     ConnectionId = connectionA.Id,
-                    JobType = JobType.OrdersSync,
+                    JobType = JobType.WbOrdersImport,
                     LastSuccessAt = DateTimeOffset.UtcNow,
                 },
                 CancellationToken.None);
@@ -195,7 +195,7 @@ public class SyncCheckpointRepositoryTests
 
             // TenantB has no access to connectionA (different tenant's query filter scope);
             // the checkpoint must not be visible even though the row physically exists.
-            SyncCheckpoint? result = await repository.GetAsync(connectionA.Id, JobType.OrdersSync, CancellationToken.None);
+            SyncCheckpoint? result = await repository.GetAsync(connectionA.Id, JobType.WbOrdersImport, CancellationToken.None);
 
             result.Should().BeNull("a checkpoint stamped with TenantA's id must not leak to TenantB");
         }

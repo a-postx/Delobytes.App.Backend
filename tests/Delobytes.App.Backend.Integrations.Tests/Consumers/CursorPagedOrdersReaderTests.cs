@@ -114,7 +114,7 @@ public class CursorPagedOrdersReaderTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImportFbo,
+            JobType = JobType.OzonOrdersImportFbo,
             Status = JobStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow,
             Connection = connection,

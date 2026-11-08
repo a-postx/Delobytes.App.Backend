@@ -82,8 +82,8 @@ public class OzonImportOptions
     {
         string methodName = jobType switch
         {
-            JobType.OrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
-            JobType.OrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
+            JobType.OzonOrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
+            JobType.OzonOrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(jobType),
                 jobType,

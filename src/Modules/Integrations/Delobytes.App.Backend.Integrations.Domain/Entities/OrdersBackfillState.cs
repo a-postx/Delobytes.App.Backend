@@ -27,8 +27,8 @@ public class OrdersBackfillState : ITenantScoped
     /// <summary>
     /// Gets or sets the orders job type this cursor belongs to. Together with
     /// <see cref="ConnectionId"/> it uniquely identifies the cursor, so several orders job types
-    /// (e.g. Wildberries <see cref="JobType.OrdersImport"/> and Ozon
-    /// <see cref="JobType.OrdersImportFbo"/>) can run against the same connection independently.
+    /// (e.g. Wildberries <see cref="JobType.WbOrdersImport"/> and Ozon
+    /// <see cref="JobType.OzonOrdersImportFbo"/>) can run against the same connection independently.
     /// </summary>
     public JobType JobType { get; set; }
 

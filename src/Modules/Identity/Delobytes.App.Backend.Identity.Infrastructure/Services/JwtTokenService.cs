@@ -14,14 +14,17 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Services;
 public class JwtTokenService : IJwtTokenService
 {
     private readonly IConfiguration _configuration;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JwtTokenService"/> class.
     /// </summary>
     /// <param name="configuration">Application configuration.</param>
-    public JwtTokenService(IConfiguration configuration)
+    /// <param name="timeProvider">Clock used for the token's issue and expiry instants.</param>
+    public JwtTokenService(IConfiguration configuration, TimeProvider timeProvider)
     {
         _configuration = configuration;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -41,7 +44,7 @@ public class JwtTokenService : IJwtTokenService
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new Claim(JwtRegisteredClaimNames.Iat, _timeProvider.GetUtcNow().ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
         };
 
         // Add tenant and role claims only if user has a tenant
@@ -59,7 +62,7 @@ public class JwtTokenService : IJwtTokenService
             issuer: issuer,
             audience: audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
+            expires: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(expirationMinutes),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

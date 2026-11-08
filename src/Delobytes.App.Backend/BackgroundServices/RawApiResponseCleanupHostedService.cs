@@ -17,15 +17,18 @@ public class RawApiResponseCleanupHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly RawApiResponseCleanupOptions _options;
     private readonly ILogger<RawApiResponseCleanupHostedService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public RawApiResponseCleanupHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<RawApiResponseCleanupOptions> options,
-        ILogger<RawApiResponseCleanupHostedService> logger)
+        ILogger<RawApiResponseCleanupHostedService> logger,
+        TimeProvider timeProvider)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -80,7 +83,7 @@ public class RawApiResponseCleanupHostedService : BackgroundService
 
     private async Task TickAsync(CancellationToken cancellationToken)
     {
-        DateTimeOffset threshold = DateTimeOffset.UtcNow.AddDays(-GetRetentionDays());
+        DateTimeOffset threshold = _timeProvider.GetUtcNow().AddDays(-GetRetentionDays());
 
         using IServiceScope scope = _scopeFactory.CreateScope();
 

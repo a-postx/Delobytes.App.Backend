@@ -26,7 +26,7 @@ public sealed class WildberriesChannelModule : ChannelModule
 
     public override void RegisterOrders(IServiceCollection services)
     {
-        JobType jobType = JobType.OrdersImport;
+        JobType jobType = JobType.WbOrdersImport;
         string fetchersKey = OrdersFetcherKeys.Fetchers(ChannelCatalog.WildberriesCode, jobType);
         string backfillReaderKey = OrdersFetcherKeys.Reader(
             ChannelCatalog.WildberriesCode, jobType, OrdersFetcherKeys.BackfillSuffix);
@@ -99,6 +99,6 @@ public sealed class WildberriesChannelModule : ChannelModule
     private static OrdersImportTuning GetWildberriesTuning(IServiceProvider serviceProvider)
     {
         return serviceProvider.GetRequiredService<IOptions<WildberriesImportOptions>>()
-            .Value.ToTuning(JobType.OrdersImport);
+            .Value.ToTuning(JobType.WbOrdersImport);
     }
 }

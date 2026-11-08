@@ -877,7 +877,8 @@ public class ProductPhotoServiceTests
             storage.Object,
             httpClientFactory.Object,
             tenantContext.Object,
-            Mock.Of<ILogger<ProductPhotoService>>());
+            Mock.Of<ILogger<ProductPhotoService>>(),
+            TimeProvider.System);
     }
 
     private static MarketplacePhotoSource BuildSource(string externalId, int displayOrder, string sizeVariant)

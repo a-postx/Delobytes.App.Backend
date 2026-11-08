@@ -31,7 +31,8 @@ public class ProcessProductImportBatchCompletedConsumerTests
             _syncCheckpointRepo.Object,
             _connectionRepo.Object,
             _eventPublisher.Object,
-            _logger.Object);
+            _logger.Object,
+            TimeProvider.System);
     }
 
     private static JobRun BuildJobRun(JobStatus status = JobStatus.Running)

@@ -27,6 +27,7 @@ public class ProcessProductsImportConsumer
     private readonly JobRunExecutionContext _jobRunExecutionContext;
     private readonly WildberriesImportOptions _options;
     private readonly ILogger<ProcessProductsImportConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public ProcessProductsImportConsumer(
         IJobRunRepository jobRunRepository,
@@ -36,7 +37,8 @@ public class ProcessProductsImportConsumer
         IEventPublisher eventPublisher,
         JobRunExecutionContext jobRunExecutionContext,
         IOptions<WildberriesImportOptions> options,
-        ILogger<ProcessProductsImportConsumer> logger)
+        ILogger<ProcessProductsImportConsumer> logger,
+        TimeProvider timeProvider)
     {
         _jobRunRepository = jobRunRepository;
         _jobCheckpointRepository = jobCheckpointRepository;
@@ -46,6 +48,7 @@ public class ProcessProductsImportConsumer
         _jobRunExecutionContext = jobRunExecutionContext;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task ProcessAsync(ProductsImportRequestedEvent message, CancellationToken cancellationToken)
@@ -97,7 +100,7 @@ public class ProcessProductsImportConsumer
         if (jobRun.Status == JobStatus.Pending)
         {
             jobRun.Status = JobStatus.Running;
-            jobRun.StartedAt = DateTimeOffset.UtcNow;
+            jobRun.StartedAt = _timeProvider.GetUtcNow();
             await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
 
@@ -175,7 +178,7 @@ public class ProcessProductsImportConsumer
                     // Nothing is published, so the checkpoint may move past this page safely:
                     // the buffered batch keeps its own cursor and stays refetchable.
                     await _jobCheckpointRepository.UpsertAsync(
-                        BuildCheckpoint(jobRun.Id, data.NextCursor), cancellationToken);
+                        BuildCheckpoint(jobRun.Id, data.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
 
                     cursor = data.NextCursor;
                     continue;
@@ -233,7 +236,7 @@ public class ProcessProductsImportConsumer
                     // which at worst duplicates one batch that batch idempotency absorbs, instead
                     // of skipping it outright.
                     await _jobCheckpointRepository.UpsertAsync(
-                        BuildCheckpoint(jobRun.Id, bufferedBatch.NextCursor), cancellationToken);
+                        BuildCheckpoint(jobRun.Id, bufferedBatch.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
                 }
 
                 if (isTerminalPage)
@@ -324,7 +327,7 @@ public class ProcessProductsImportConsumer
     {
         jobRun.Status = JobStatus.Failed;
         jobRun.Error = errorMessage;
-        jobRun.CompletedAt = DateTimeOffset.UtcNow;
+        jobRun.CompletedAt = _timeProvider.GetUtcNow();
         await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
 
         try
@@ -352,13 +355,13 @@ public class ProcessProductsImportConsumer
         }
     }
 
-    private static JobCheckpoint BuildCheckpoint(Guid jobRunId, ProductCardsCursor? cursor)
+    private static JobCheckpoint BuildCheckpoint(Guid jobRunId, ProductCardsCursor? cursor, DateTimeOffset now)
     {
         return new JobCheckpoint
         {
             JobRunId = jobRunId,
             Payload = SerializeCursor(cursor) ?? string.Empty,
-            UpdatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = now,
         };
     }
 

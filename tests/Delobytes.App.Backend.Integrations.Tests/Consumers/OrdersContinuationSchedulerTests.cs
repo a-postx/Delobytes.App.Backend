@@ -28,7 +28,7 @@ public class OrdersContinuationSchedulerTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
         };
@@ -41,7 +41,7 @@ public class OrdersContinuationSchedulerTests
         DateTimeOffset resumeAt = _timeProvider.GetUtcNow().AddHours(3);
 
         _jobRunRepo
-            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.WbOrdersImport, current.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _jobRunRepo
             .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
@@ -52,7 +52,7 @@ public class OrdersContinuationSchedulerTests
         continuation.Should().NotBeNull();
         continuation!.Id.Should().NotBe(current.Id);
         continuation.ConnectionId.Should().Be(current.ConnectionId);
-        continuation.JobType.Should().Be(JobType.OrdersImport);
+        continuation.JobType.Should().Be(JobType.WbOrdersImport);
         continuation.Status.Should().Be(JobStatus.Pending);
         continuation.NotBefore.Should().Be(resumeAt);
         continuation.CreatedAt.Should().Be(_timeProvider.GetUtcNow());
@@ -69,7 +69,7 @@ public class OrdersContinuationSchedulerTests
         JobRun current = BuildCurrentRun();
 
         _jobRunRepo
-            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.WbOrdersImport, current.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         JobRun? continuation = await CreateScheduler().ScheduleAsync(
@@ -84,11 +84,11 @@ public class OrdersContinuationSchedulerTests
     public async Task ScheduleAsync_OrdersImportFboCurrentRun_CreatesContinuationWithSameJobTypeAndDoesNotBlockOrdersImport()
     {
         JobRun current = BuildCurrentRun();
-        current.JobType = JobType.OrdersImportFbo;
+        current.JobType = JobType.OzonOrdersImportFbo;
         DateTimeOffset resumeAt = _timeProvider.GetUtcNow().AddHours(1);
 
         _jobRunRepo
-            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImportFbo, current.Id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.HasPendingJobAsync(current.ConnectionId, JobType.OzonOrdersImportFbo, current.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         _jobRunRepo
             .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
@@ -97,12 +97,12 @@ public class OrdersContinuationSchedulerTests
         JobRun? continuation = await CreateScheduler().ScheduleAsync(current, resumeAt, CancellationToken.None);
 
         continuation.Should().NotBeNull();
-        continuation!.JobType.Should().Be(JobType.OrdersImportFbo);
+        continuation!.JobType.Should().Be(JobType.OzonOrdersImportFbo);
 
         // The pending check is scoped to the FBO job type, so it never consults (and is never
         // blocked by) a pending OrdersImport run on the same connection.
         _jobRunRepo.Verify(
-            r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            r => r.HasPendingJobAsync(current.ConnectionId, JobType.WbOrdersImport, It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -123,7 +123,7 @@ public class OrdersContinuationSchedulerTests
         // A run that is itself still Pending when the check happens would otherwise look like its
         // own continuation and block the retry forever.
         _jobRunRepo.Verify(
-            r => r.HasPendingJobAsync(current.ConnectionId, JobType.OrdersImport, current.Id, It.IsAny<CancellationToken>()),
+            r => r.HasPendingJobAsync(current.ConnectionId, JobType.WbOrdersImport, current.Id, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

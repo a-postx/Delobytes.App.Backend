@@ -17,7 +17,7 @@ public static class ChannelCatalog
         new ChannelDescriptor(
             WildberriesCode,
             "Wildberries",
-            new[] { JobType.OrdersImport },
+            new[] { JobType.WbOrdersImport },
             SerializesOrdersJobTypes: false),
 
         // Both Ozon schemas are always scheduled: they share one connection and one rate limiter, so
@@ -25,7 +25,7 @@ public static class ChannelCatalog
         new ChannelDescriptor(
             OzonCode,
             "Ozon",
-            new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs },
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs },
             SerializesOrdersJobTypes: true),
     };
 

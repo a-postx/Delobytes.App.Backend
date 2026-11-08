@@ -25,6 +25,13 @@ public interface IJobRunRepository
     public Task UpdateAsync(JobRun jobRun, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Persists changes made to an existing job run, reporting a stale concurrency token instead of
+    /// throwing one. Returns false when another writer saved the same run first, which is the case
+    /// two completion deliveries of the same orders import race for; the loser must step aside.
+    /// </summary>
+    public Task<bool> TryUpdateAsync(JobRun jobRun, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns a filtered, optionally paged set of job runs for the current tenant plus the
     /// total number of matching rows (counted before paging).
     /// </summary>

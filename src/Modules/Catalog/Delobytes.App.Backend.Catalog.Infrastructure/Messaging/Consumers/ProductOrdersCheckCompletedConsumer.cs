@@ -17,15 +17,18 @@ public class ProductOrdersCheckCompletedConsumer
     private readonly IProductRepository _productRepository;
     private readonly IProductPhotoService _photoService;
     private readonly ILogger<ProductOrdersCheckCompletedConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public ProductOrdersCheckCompletedConsumer(
         IProductRepository productRepository,
         IProductPhotoService photoService,
-        ILogger<ProductOrdersCheckCompletedConsumer> logger)
+        ILogger<ProductOrdersCheckCompletedConsumer> logger,
+        TimeProvider timeProvider)
     {
         _productRepository = productRepository;
         _photoService = photoService;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -82,7 +85,7 @@ public class ProductOrdersCheckCompletedConsumer
             // The card keeps existing in the channel after a soft product delete; ChannelProduct.IsActive
             // describes the channel listing, not whether we still show the product.
             product.Status = ProductStatus.Deleted;
-            product.DeletedAt = DateTimeOffset.UtcNow;
+            product.DeletedAt = _timeProvider.GetUtcNow();
 
             _logger.LogInformation("Product {ProductId} deleted successfully", product.Id);
         }

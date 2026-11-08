@@ -17,9 +17,9 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 public class OrdersFetcherContainerTests
 {
     [Theory]
-    [InlineData("wildberries", JobType.OrdersImport)]
-    [InlineData("ozon", JobType.OrdersImportFbo)]
-    [InlineData("ozon", JobType.OrdersImportFbs)]
+    [InlineData("wildberries", JobType.WbOrdersImport)]
+    [InlineData("ozon", JobType.OzonOrdersImportFbo)]
+    [InlineData("ozon", JobType.OzonOrdersImportFbs)]
     public void Resolve_SupportedPair_ResolvesTheFetcherSet(string channelCode, JobType jobType)
     {
         using ServiceProvider provider = BuildProvider();
@@ -44,7 +44,7 @@ public class OrdersFetcherContainerTests
         using IServiceScope scope = provider.CreateScope();
         IOrdersFetcherResolver resolver = scope.ServiceProvider.GetRequiredService<IOrdersFetcherResolver>();
 
-        resolver.Resolve("wildberries", JobType.OrdersImportFbo)
+        resolver.Resolve("wildberries", JobType.OzonOrdersImportFbo)
             .Should().BeOfType<OrdersFetchersResolution.Unsupported>();
     }
 

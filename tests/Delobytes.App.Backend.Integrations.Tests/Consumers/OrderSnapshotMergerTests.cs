@@ -87,6 +87,23 @@ public class OrderSnapshotMergerTests
     }
 
     [Fact]
+    public void MergeByExternalOrderId_AppliedTwice_IsANoOp()
+    {
+        // The backfill walk merges what its single-page reader already merged, so the second pass
+        // must be unable to change the result.
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ChannelOrderSnapshot first = BuildCart("ORDER-1", now.AddDays(-1), now, BuildLine("SRID-1", statusChangedAt: now));
+        ChannelOrderSnapshot second = BuildCart("ORDER-1", now.AddDays(-1), now, BuildLine("SRID-2", statusChangedAt: now));
+
+        List<ChannelOrderSnapshot> once = OrderSnapshotMerger.MergeByExternalOrderId(new[] { first, second });
+        List<ChannelOrderSnapshot> twice = OrderSnapshotMerger.MergeByExternalOrderId(once);
+
+        twice.Should().HaveCount(1);
+        twice.Single().Lines.Select(line => line.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        twice.Single().ExternalStatus.Should().Be(once.Single().ExternalStatus);
+    }
+
+    [Fact]
     public void Merge_LaterReportHoldsOnlyCancelledUnit_HeaderStaysActiveBecauseReducedFromMergedLines()
     {
         DateTimeOffset earlier = DateTimeOffset.UtcNow.AddMinutes(-30);

@@ -39,7 +39,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         _ordersSource
@@ -77,7 +77,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         _ordersSource
@@ -106,7 +106,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         _ordersSource
@@ -137,7 +137,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         _ordersSource
@@ -169,7 +169,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         int call = 0;
@@ -217,7 +217,7 @@ public partial class ProcessOrdersImportConsumerTests
         SetupDefaults(run);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(connection.Id, JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         _ordersSource
@@ -283,7 +283,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         IOrdersFetchers fetchers = new FixedFetchers(new FixedOutcomeFetcher(outcome), TestTunings.Wildberries());
         IOrdersFetcherResolver resolver = StubOrdersFetcherResolver.For(
-            "wildberries", JobType.OrdersImport, fetchers);
+            "wildberries", JobType.WbOrdersImport, fetchers);
 
         await CreateConsumer(fetcherResolver: resolver).ProcessAsync(
             new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id },

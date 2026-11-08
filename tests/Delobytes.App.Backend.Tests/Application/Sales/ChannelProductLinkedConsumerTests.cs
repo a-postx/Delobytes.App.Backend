@@ -170,7 +170,8 @@ public class ChannelProductLinkedConsumerTests
     {
         return new ChannelProductLinkedConsumer(
             context,
-            Mock.Of<ILogger<ChannelProductLinkedConsumer>>());
+            Mock.Of<ILogger<ChannelProductLinkedConsumer>>(),
+            TimeProvider.System);
     }
 
     private SalesDbContext BuildSalesDbContext(string databaseName)

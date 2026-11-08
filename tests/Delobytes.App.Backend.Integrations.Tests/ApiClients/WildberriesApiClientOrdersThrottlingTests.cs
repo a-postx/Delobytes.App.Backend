@@ -65,7 +65,8 @@ public class WildberriesApiClientOrdersThrottlingTests
             new FixedConnectionResolver(),
             rateLimiter,
             Options.Create(new WildberriesImportOptions()),
-            logger ?? NullLogger<WildberriesApiClient>.Instance);
+            logger ?? NullLogger<WildberriesApiClient>.Instance,
+            TimeProvider.System);
 
         client.SetTemplate(TestTemplate);
 

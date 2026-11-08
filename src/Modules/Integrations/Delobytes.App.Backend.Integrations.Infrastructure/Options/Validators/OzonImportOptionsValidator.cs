@@ -16,7 +16,7 @@ public class OzonImportOptionsValidator : IValidateOptions<OzonImportOptions>
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, OzonImportOptions options)
     {
-        OrdersImportTuning tuning = options.ToTuning(JobType.OrdersImportFbo);
+        OrdersImportTuning tuning = options.ToTuning(JobType.OzonOrdersImportFbo);
 
         TimeSpan budget = tuning.RunBudget;
         TimeSpan maxInProcessWait = tuning.MaxInProcessWait;

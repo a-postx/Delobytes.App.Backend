@@ -126,7 +126,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             r => r.CreateAsync(
                 It.Is<JobRun>(next =>
                     next.Status == JobStatus.Pending
-                    && next.JobType == JobType.OrdersImport
+                    && next.JobType == JobType.WbOrdersImport
                     && next.ConnectionId == connection.Id
                     && next.NotBefore >= startedAt),
                 It.IsAny<CancellationToken>()),

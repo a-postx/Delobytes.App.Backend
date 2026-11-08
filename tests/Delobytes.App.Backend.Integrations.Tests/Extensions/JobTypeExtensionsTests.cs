@@ -10,10 +10,9 @@ public class JobTypeExtensionsTests
 {
     [Theory]
     [InlineData(JobType.ProductsImport, "products-import")]
-    [InlineData(JobType.OrdersImport, "orders-import")]
-    [InlineData(JobType.OrdersSync, "orders-sync")]
-    [InlineData(JobType.OrdersImportFbo, "orders-import-fbo")]
-    [InlineData(JobType.OrdersImportFbs, "orders-import-fbs")]
+    [InlineData(JobType.WbOrdersImport, "wb-orders-import")]
+    [InlineData(JobType.OzonOrdersImportFbo, "ozon-orders-import-fbo")]
+    [InlineData(JobType.OzonOrdersImportFbs, "ozon-orders-import-fbs")]
     public void ToStringCamelCase_ReturnsStableApiToken(JobType jobType, string expected)
     {
         // The token is the public route segment: it must not follow a rename of the enum member.
@@ -30,12 +29,11 @@ public class JobTypeExtensionsTests
 
     [Theory]
     [InlineData("products-import", JobType.ProductsImport)]
-    [InlineData("orders-import", JobType.OrdersImport)]
-    [InlineData("orders-sync", JobType.OrdersSync)]
-    [InlineData("orders-import-fbo", JobType.OrdersImportFbo)]
-    [InlineData("orders-import-fbs", JobType.OrdersImportFbs)]
+    [InlineData("wb-orders-import", JobType.WbOrdersImport)]
+    [InlineData("ozon-orders-import-fbo", JobType.OzonOrdersImportFbo)]
+    [InlineData("ozon-orders-import-fbs", JobType.OzonOrdersImportFbs)]
     [InlineData("Products-Import", JobType.ProductsImport)]
-    [InlineData("ORDERS-IMPORT", JobType.OrdersImport)]
+    [InlineData("WB-ORDERS-IMPORT", JobType.WbOrdersImport)]
     [InlineData("  products-import  ", JobType.ProductsImport)]
     public void TryFromString_AcceptsKnownTokens(string token, JobType expected)
     {
@@ -59,10 +57,9 @@ public class JobTypeExtensionsTests
 
     [Theory]
     [InlineData(JobType.ProductsImport, true)]
-    [InlineData(JobType.OrdersImport, false)]
-    [InlineData(JobType.OrdersSync, false)]
-    [InlineData(JobType.OrdersImportFbo, false)]
-    [InlineData(JobType.OrdersImportFbs, false)]
+    [InlineData(JobType.WbOrdersImport, false)]
+    [InlineData(JobType.OzonOrdersImportFbo, false)]
+    [InlineData(JobType.OzonOrdersImportFbs, false)]
     public void IsCancellable_OnlyForUserInitiatedJobs(JobType jobType, bool expected)
     {
         jobType.IsCancellable().Should().Be(expected);
@@ -70,10 +67,9 @@ public class JobTypeExtensionsTests
 
     [Theory]
     [InlineData(JobType.ProductsImport, true)]
-    [InlineData(JobType.OrdersImport, false)]
-    [InlineData(JobType.OrdersSync, false)]
-    [InlineData(JobType.OrdersImportFbo, false)]
-    [InlineData(JobType.OrdersImportFbs, false)]
+    [InlineData(JobType.WbOrdersImport, false)]
+    [InlineData(JobType.OzonOrdersImportFbo, false)]
+    [InlineData(JobType.OzonOrdersImportFbs, false)]
     public void IsManuallyStartable_OnlyForUserInitiatedJobs(JobType jobType, bool expected)
     {
         jobType.IsManuallyStartable().Should().Be(expected);

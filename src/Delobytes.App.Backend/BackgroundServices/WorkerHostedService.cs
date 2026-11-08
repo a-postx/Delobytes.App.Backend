@@ -23,15 +23,18 @@ public class WorkerHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BackgroundJobsOptions _options;
     private readonly ILogger<WorkerHostedService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public WorkerHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<BackgroundJobsOptions> options,
-        ILogger<WorkerHostedService> logger)
+        ILogger<WorkerHostedService> logger,
+        TimeProvider timeProvider)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -104,7 +107,7 @@ public class WorkerHostedService : BackgroundService
                 return;
             }
 
-            DateTimeOffset now = DateTimeOffset.UtcNow;
+            DateTimeOffset now = _timeProvider.GetUtcNow();
 
             List<JobRun> pendingJobs = await jobRunRepository.GetPendingJobsAsync(tenantId, availableSlots, now, cancellationToken);
 
@@ -135,9 +138,9 @@ public class WorkerHostedService : BackgroundService
                         cancellationToken);
                     break;
 
-                case JobType.OrdersImport:
-                case JobType.OrdersImportFbo:
-                case JobType.OrdersImportFbs:
+                case JobType.WbOrdersImport:
+                case JobType.OzonOrdersImportFbo:
+                case JobType.OzonOrdersImportFbs:
                     // One event type for every orders import flavour: the consumer reads the job
                     // type (and therefore the channel fetchers) from the JobRun itself.
                     await eventPublisher.PublishAsync(

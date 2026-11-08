@@ -46,7 +46,7 @@ public class CancelProductsImportCommandHandlerTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersSync,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow,
         };

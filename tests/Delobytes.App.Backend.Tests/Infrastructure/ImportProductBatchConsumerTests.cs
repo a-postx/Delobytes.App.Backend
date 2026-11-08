@@ -1278,7 +1278,8 @@ public class ImportProductBatchConsumerTests
             consumerContext,
             publishEndpointMock.Object,
             photoService,
-            Mock.Of<ILogger<ImportProductBatchConsumer>>());
+            Mock.Of<ILogger<ImportProductBatchConsumer>>(),
+            TimeProvider.System);
 
         WildberriesCardSnapshot card = new WildberriesCardSnapshot
         {
@@ -1444,7 +1445,8 @@ public class ImportProductBatchConsumerTests
             storageMock.Object,
             httpClientFactoryMock.Object,
             tenantContextMock.Object,
-            Mock.Of<ILogger<ProductPhotoService>>());
+            Mock.Of<ILogger<ProductPhotoService>>(),
+            TimeProvider.System);
     }
 
     private CatalogDbContext BuildCatalogDbContext(Guid tenantId, string databaseName)
@@ -1494,7 +1496,7 @@ public class ImportProductBatchConsumerTests
     {
         Mock<ILogger<ImportProductBatchConsumer>> loggerMock = new Mock<ILogger<ImportProductBatchConsumer>>();
 
-        return new ImportProductBatchConsumer(context, publishEndpoint, photoService.Object, loggerMock.Object);
+        return new ImportProductBatchConsumer(context, publishEndpoint, photoService.Object, loggerMock.Object, TimeProvider.System);
     }
 
     private static Mock<IProductPhotoService> BuildPhotoServiceMock()

@@ -28,7 +28,7 @@ public class JobRunLifecycleTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = Guid.NewGuid(),
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
         };

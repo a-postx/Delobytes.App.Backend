@@ -117,7 +117,7 @@ public partial class WorkerHostedServiceTests
     [Fact]
     public async Task Tick_PendingOrdersImport_PublishesOrdersImportRequestedEvent()
     {
-        JobRun pending = BuildJobRun(JobType.OrdersImport);
+        JobRun pending = BuildJobRun(JobType.WbOrdersImport);
         SetupPending(pending);
 
         WorkerHostedService worker = BuildWorker();
@@ -135,9 +135,9 @@ public partial class WorkerHostedServiceTests
     [Fact]
     public async Task Tick_UnsupportedJobType_PublishesNothing()
     {
-        // OrdersSync has no consumer yet; publishing an event nobody handles would strand
+        // An undefined job type has no consumer; publishing an event nobody handles would strand
         // the job in Pending with no trace of why.
-        JobRun pending = BuildJobRun(JobType.OrdersSync);
+        JobRun pending = BuildJobRun((JobType)99);
         SetupPending(pending);
 
         WorkerHostedService worker = BuildWorker();
@@ -229,7 +229,7 @@ public partial class WorkerHostedServiceTests
     [Fact]
     public async Task Tick_DispatchesEveryPendingJobReturnedWithinTheLimit()
     {
-        JobRun first = BuildJobRun(JobType.OrdersImport);
+        JobRun first = BuildJobRun(JobType.WbOrdersImport);
         JobRun second = BuildJobRun(JobType.ProductsImport);
         SetupPending(first, second);
         _tenantSettingsProviderMock
@@ -293,7 +293,7 @@ public partial class WorkerHostedServiceTests
             .Setup(p => p.GetMaxBackgroundJobsParallelismAsync(healthyTenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
-        JobRun pending = BuildJobRun(JobType.OrdersImport);
+        JobRun pending = BuildJobRun(JobType.WbOrdersImport);
         _jobRunRepositoryMock
             .Setup(r => r.GetPendingJobsAsync(healthyTenantId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun> { pending });
@@ -323,8 +323,8 @@ public partial class WorkerHostedServiceTests
             .Setup(p => p.GetMaxBackgroundJobsParallelismAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
-        JobRun tenantAJob = BuildJobRun(JobType.OrdersImport);
-        JobRun tenantBJob = BuildJobRun(JobType.OrdersImport);
+        JobRun tenantAJob = BuildJobRun(JobType.WbOrdersImport);
+        JobRun tenantBJob = BuildJobRun(JobType.WbOrdersImport);
 
         _jobRunRepositoryMock
             .Setup(r => r.GetPendingJobsAsync(tenantAId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
@@ -397,7 +397,8 @@ public partial class WorkerHostedServiceTests
         return new WorkerHostedService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new BackgroundJobsOptions { WorkerTickIntervalSeconds = tickIntervalSeconds }),
-            NullLogger<WorkerHostedService>.Instance);
+            NullLogger<WorkerHostedService>.Instance,
+            TimeProvider.System);
     }
 
     private void SetupPending(params JobRun[] jobs)

@@ -71,7 +71,8 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         _collector = new ProductPhotoGarbageCollector(
             _provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new ProductPhotoRetentionOptions { RetentionDays = 30, IntervalHours = 24 }),
-            NullLogger<ProductPhotoGarbageCollector>.Instance);
+            NullLogger<ProductPhotoGarbageCollector>.Instance,
+            TimeProvider.System);
     }
 
     public void Dispose()

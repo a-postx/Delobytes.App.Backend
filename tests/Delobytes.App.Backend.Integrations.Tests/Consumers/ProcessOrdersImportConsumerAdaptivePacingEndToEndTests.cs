@@ -84,7 +84,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         {
             Id = Guid.NewGuid(),
             ConnectionId = connection.Id,
-            JobType = JobType.OrdersImport,
+            JobType = JobType.WbOrdersImport,
             Status = JobStatus.Pending,
             CreatedAt = DateTimeOffset.UtcNow,
             Connection = connection,
@@ -185,7 +185,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             .Returns(Task.CompletedTask);
 
         _syncCheckpointRepo
-            .Setup(r => r.GetAsync(It.IsAny<Guid>(), JobType.OrdersImport, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(It.IsAny<Guid>(), JobType.WbOrdersImport, It.IsAny<CancellationToken>()))
             .ReturnsAsync((SyncCheckpoint?)null);
 
         _clientFactory
@@ -211,7 +211,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             checkpointStore);
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
-        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.WbOrdersImport);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
             rateLimiter,
@@ -234,7 +234,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             backfillWalker,
             StubOrdersFetcherResolver.For(
                 "wildberries",
-                JobType.OrdersImport,
+                JobType.WbOrdersImport,
                 new OrdersFetchers(
                     new BackfillOrdersFetcher(backfillWalker, bisectingReader),
                     new DeltaOrdersFetcher(

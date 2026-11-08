@@ -59,6 +59,7 @@ public class OrdersBatchImportRequestedConsumer
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<OrdersBatchImportRequestedConsumer> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrdersBatchImportRequestedConsumer"/> class.
@@ -71,12 +72,14 @@ public class OrdersBatchImportRequestedConsumer
         SalesDbContext context,
         IPublishEndpoint publishEndpoint,
         ITenantContext tenantContext,
-        ILogger<OrdersBatchImportRequestedConsumer> logger)
+        ILogger<OrdersBatchImportRequestedConsumer> logger,
+        TimeProvider timeProvider)
     {
         _context = context;
         _publishEndpoint = publishEndpoint;
         _tenantContext = tenantContext;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -293,7 +296,7 @@ public class OrdersBatchImportRequestedConsumer
         Dictionary<string, Guid> channelProductIdsByExternalProductId,
         CancellationToken cancellationToken)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
 
         Order? existingOrder = await _context.Orders
             .Include(o => o.Lines)

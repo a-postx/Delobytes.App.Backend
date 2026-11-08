@@ -11,13 +11,15 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Persistence.Repositories
 public class InvitationRepository : IInvitationRepository
 {
     private readonly IdentityDbContext _context;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InvitationRepository"/> class.
     /// </summary>
-    public InvitationRepository(IdentityDbContext context)
+    public InvitationRepository(IdentityDbContext context, TimeProvider timeProvider)
     {
         _context = context;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -42,7 +44,7 @@ public class InvitationRepository : IInvitationRepository
     /// <inheritdoc/>
     public Task<Invitation?> FindPendingByTenantAndEmailAsync(Guid tenantId, string email, CancellationToken cancellationToken)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         return _context.Invitations
             .FirstOrDefaultAsync(
                 i => i.TenantId == tenantId &&
@@ -55,7 +57,7 @@ public class InvitationRepository : IInvitationRepository
     /// <inheritdoc/>
     public async Task<IReadOnlyList<Invitation>> GetPendingByTenantAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         return await _context.Invitations
             .Where(i => i.TenantId == tenantId && !i.IsAccepted && i.ExpiresAt > now)
             .ToListAsync(cancellationToken);

@@ -132,12 +132,12 @@ public class IntegrationsControllerJobTests
         // the handler decide. Here the handler's rejection surfaces as InvalidOperationException.
         _mediator
             .Setup(m => m.Send(
-                It.Is<StartJobCommand>(c => c.JobType == JobType.OrdersImport),
+                It.Is<StartJobCommand>(c => c.JobType == JobType.WbOrdersImport),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Задача типа 'orders-import' не может быть запущена вручную."));
 
         Func<Task> act = () => _controller.StartJob(
-            "orders-import",
+            "wb-orders-import",
             new StartJobRequest { ConnectionId = Guid.NewGuid() },
             CancellationToken.None);
 

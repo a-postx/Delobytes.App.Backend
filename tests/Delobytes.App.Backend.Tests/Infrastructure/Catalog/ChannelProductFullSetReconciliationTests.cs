@@ -290,6 +290,7 @@ public class ChannelProductFullSetReconciliationTests
     {
         return new ChannelProductFullSetReconciliationConsumer(
             context,
-            Mock.Of<ILogger<ChannelProductFullSetReconciliationConsumer>>());
+            Mock.Of<ILogger<ChannelProductFullSetReconciliationConsumer>>(),
+            TimeProvider.System);
     }
 }

@@ -66,7 +66,8 @@ public class ChannelApiClientFactoryTests
             new FixedConnectionResolver(),
             new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
-            NullLogger<WildberriesApiClient>.Instance));
+            NullLogger<WildberriesApiClient>.Instance,
+            TimeProvider.System));
 
         services.AddTransient(sp => new OzonApiClient(
             httpClient,
@@ -126,7 +127,8 @@ public class ChannelApiClientFactoryTests
             new FixedConnectionResolver(),
             new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
-            NullLogger<WildberriesApiClient>.Instance));
+            NullLogger<WildberriesApiClient>.Instance,
+            TimeProvider.System));
         services.AddKeyedTransient<IChannelApiClient>(
             ChannelCatalog.WildberriesCode, (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();

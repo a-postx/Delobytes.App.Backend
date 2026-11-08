@@ -34,6 +34,7 @@ public class ProductPhotoService : IProductPhotoService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<ProductPhotoService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProductPhotoService"/> class.
@@ -42,16 +43,19 @@ public class ProductPhotoService : IProductPhotoService
     /// <param name="httpClientFactory">Factory for the named download client.</param>
     /// <param name="tenantContext">Source of the current tenant; photos are keyed by it.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="timeProvider">Clock source.</param>
     public ProductPhotoService(
         IObjectStorage objectStorage,
         IHttpClientFactory httpClientFactory,
         ITenantContext tenantContext,
-        ILogger<ProductPhotoService> logger)
+        ILogger<ProductPhotoService> logger,
+        TimeProvider timeProvider)
     {
         _objectStorage = objectStorage;
         _httpClientFactory = httpClientFactory;
         _tenantContext = tenantContext;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     // Stops reading one byte past the limit, so an unexpectedly huge or endless response
@@ -95,7 +99,8 @@ public class ProductPhotoService : IProductPhotoService
     private static ProductPhoto CreatePendingPhoto(
         Product product,
         MarketplacePhotoSource source,
-        Guid channelId)
+        Guid channelId,
+        DateTimeOffset now)
     {
         ProductPhoto photo = new ProductPhoto
         {
@@ -113,7 +118,7 @@ public class ProductPhotoService : IProductPhotoService
 
             // AuditableEntityInterceptor fills CreatedAt on save, but callers may read the
             // entity before SaveChanges is ever called, so the value is set here as well.
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = now
         };
 
         product.Photos.Add(photo);
@@ -290,7 +295,7 @@ public class ProductPhotoService : IProductPhotoService
             .Select(s => s.ExternalId)
             .ToHashSet(StringComparer.Ordinal);
 
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
 
         List<ProductPhoto> undeclared = product.Photos
             .Where(p => p.Status == ProductPhotoStatus.Uploaded
@@ -354,7 +359,7 @@ public class ProductPhotoService : IProductPhotoService
         CancellationToken cancellationToken)
     {
         ProductPhoto? livePhoto = FindLivePhoto(product, channelId, source.ExternalId);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
 
         (byte[]? payload, string? failureReason) = await DownloadAsync(
             httpClient,
@@ -368,7 +373,7 @@ public class ProductPhotoService : IProductPhotoService
 
             if (livePhoto is null)
             {
-                ProductPhoto pendingPhoto = CreatePendingPhoto(product, source, channelId);
+                ProductPhoto pendingPhoto = CreatePendingPhoto(product, source, channelId, _timeProvider.GetUtcNow());
                 MarkFailed(pendingPhoto, reason, now);
 
                 return PhotoImportOutcome.Failed;
@@ -445,7 +450,7 @@ public class ProductPhotoService : IProductPhotoService
 
             if (livePhoto is null)
             {
-                ProductPhoto pendingPhoto = CreatePendingPhoto(product, source, channelId);
+                ProductPhoto pendingPhoto = CreatePendingPhoto(product, source, channelId, _timeProvider.GetUtcNow());
                 MarkFailed(pendingPhoto, reason, now);
             }
             else if (livePhoto.Status == ProductPhotoStatus.Uploaded)
