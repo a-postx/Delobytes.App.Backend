@@ -554,7 +554,10 @@ public partial class SchedulerHostedServiceTests
         services.AddSingleton(_connectionRepositoryMock.Object);
         services.AddSingleton(_tenantSettingsProviderMock.Object);
         services.AddSingleton(_tenantContext);
-        services.AddSingleton(ordersRateLimiter ?? BuildOrdersRateLimiter().Object);
+
+        IOrdersRateLimiter limiter = ordersRateLimiter ?? BuildOrdersRateLimiter().Object;
+        services.AddKeyedSingleton<IOrdersRateLimiter>(ChannelCatalog.WildberriesCode, limiter);
+        services.AddKeyedSingleton<IOrdersRateLimiter>(ChannelCatalog.OzonCode, limiter);
 
         ServiceProvider provider = services.BuildServiceProvider();
 

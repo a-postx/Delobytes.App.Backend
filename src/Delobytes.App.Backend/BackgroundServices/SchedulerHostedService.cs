@@ -277,15 +277,19 @@ public class SchedulerHostedService : BackgroundService
     {
         string? method = OrdersJobTypeMap.GetRateLimitMethod(channelCode, schedule.JobType);
 
-        if (method == null)
+        if (method == null
+            || !ChannelCatalog.TryGet(channelCode, out ChannelDescriptor descriptor))
         {
             return true;
         }
 
-        IOrdersRateLimiter rateLimiter = scope.ServiceProvider.GetRequiredService<IOrdersRateLimiter>();
+        // Limiters are keyed by the catalogue's canonical code, which is also what keys their
+        // buckets: the template's stored code is not guaranteed to match its casing.
+        IOrdersRateLimiter rateLimiter = scope.ServiceProvider
+            .GetRequiredKeyedService<IOrdersRateLimiter>(descriptor.Code);
 
         RateLimitScope rateLimitScope = new RateLimitScope(
-            channelCode!.ToLowerInvariant(),
+            descriptor.Code,
             connection.ApiKey,
             method);
 
