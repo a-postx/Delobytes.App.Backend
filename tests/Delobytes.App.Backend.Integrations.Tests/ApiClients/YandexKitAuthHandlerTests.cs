@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 using FluentAssertions;
 using Moq;
 using RichardSzalay.MockHttp;

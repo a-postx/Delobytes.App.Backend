@@ -16,6 +16,9 @@ using Microsoft.Extensions.Options;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 
 namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 

@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
 using FluentAssertions;
 using RichardSzalay.MockHttp;
 using Xunit;

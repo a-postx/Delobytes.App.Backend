@@ -1,6 +1,6 @@
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 
 /// <summary>
 /// A channel client that must be told which system channel template it serves before its first

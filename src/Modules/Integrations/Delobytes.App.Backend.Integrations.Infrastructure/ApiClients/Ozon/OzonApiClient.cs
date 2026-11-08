@@ -4,20 +4,19 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon.Dtos;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 
 /// <summary>
 /// Ozon marketplace API client. Reads FBO and FBS orders; product cards are not supported yet.

@@ -1,17 +1,14 @@
 using System.Net;
-using System.Net.Http.Json;
-using System.Text;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
-using Polly;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 
-public class WildberriesApiKeyValidator : IApiKeyValidator
+public class YandexKitApiKeyValidator : IApiKeyValidator
 {
     private readonly HttpClient _httpClient;
 
-    public WildberriesApiKeyValidator(HttpClient httpClient)
+    public YandexKitApiKeyValidator(HttpClient httpClient)
     {
         _httpClient = httpClient;
     }
@@ -23,12 +20,10 @@ public class WildberriesApiKeyValidator : IApiKeyValidator
         CancellationToken ct)
     {
         using HttpRequestMessage request = new HttpRequestMessage(
-            HttpMethod.Post,
-            "https://content-api.wildberries.ru/content/v2/get/cards/list");
+            HttpMethod.Get,
+            "https://api.kit.yandex.net/v1/products");
 
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
-        string body = "{ \"settings\": { \"sort\": { \"ascending\": true }, \"cursor\": { \"limit\": 1 }, \"filter\": { \"withPhoto\": -1 } } }";
-        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
         try
         {
@@ -42,16 +37,16 @@ public class WildberriesApiKeyValidator : IApiKeyValidator
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 return ApiKeyValidationResult.Failure(
-                    "Неверный API-ключ Wildberries. Убедитесь, что ключ активен и имеет нужные права.");
+                    "Неверный API-ключ Яндекс.Кит. Убедитесь, что ключ активен и имеет нужные права.");
             }
 
             return ApiKeyValidationResult.Failure(
-                $"Wildberries вернул неожиданный ответ: {(int)response.StatusCode}.");
+                $"Яндекс.Кит вернул неожиданный ответ: {(int)response.StatusCode}.");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             return ApiKeyValidationResult.Failure(
-                "Не удалось подключиться к Wildberries. Попробуйте позже.");
+                "Не удалось подключиться к Яндекс.Кит. Попробуйте позже.");
         }
     }
 }

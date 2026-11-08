@@ -9,9 +9,7 @@ public class ConnectionResolver : IConnectionResolver
     private readonly IConnectionRepository _connectionRepository;
     private readonly ITenantContext _tenantContext;
 
-    public ConnectionResolver(
-        IConnectionRepository connectionRepository,
-        ITenantContext tenantContext)
+    public ConnectionResolver(IConnectionRepository connectionRepository, ITenantContext tenantContext)
     {
         _connectionRepository = connectionRepository;
         _tenantContext = tenantContext;

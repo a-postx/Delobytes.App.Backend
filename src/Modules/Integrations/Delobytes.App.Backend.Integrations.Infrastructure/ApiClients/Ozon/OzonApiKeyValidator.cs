@@ -3,7 +3,7 @@ using System.Text;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 
 public class OzonApiKeyValidator : IApiKeyValidator
 {

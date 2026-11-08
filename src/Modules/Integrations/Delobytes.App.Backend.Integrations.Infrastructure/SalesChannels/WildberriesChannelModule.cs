@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

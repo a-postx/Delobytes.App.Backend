@@ -26,6 +26,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure;
 
