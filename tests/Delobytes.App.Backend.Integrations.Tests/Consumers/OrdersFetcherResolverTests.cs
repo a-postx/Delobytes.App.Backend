@@ -1,178 +1,70 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.Models;
-using Delobytes.App.Backend.Integrations.Application.Options;
+﻿using System;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
 /// <summary>
-/// Tests <see cref="OrdersFetcherResolver"/>: each (channel, job type) pair resolves to exactly one
-/// fetcher set, Ozon FBO and FBS resolve to different sets, and every other combination is refused
-/// rather than silently served the wrong schema.
+/// Tests <see cref="OrdersFetcherResolver"/>: each (channel, job type) pair resolves to the fetcher
+/// set registered under its key, Ozon FBO and FBS resolve to different sets, and every other
+/// combination is refused rather than silently served the wrong schema.
 /// </summary>
 public class OrdersFetcherResolverTests
 {
-    private readonly FakeTimeProvider _timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero));
-
-    private OzonImportOptions _ozonOptions = new OzonImportOptions { MaxInProcessWaitSeconds = 0 };
-
-    private OrdersBatchPublisher BuildPublisher()
+    [Fact]
+    public void Resolve_WildberriesOrdersImport_ReturnsTheWildberriesSet()
     {
-        OrdersImportCheckpointStore store = new OrdersImportCheckpointStore(
-            new Mock<IJobCheckpointRepository>().Object,
-            _timeProvider);
+        (OrdersFetcherResolver resolver, IOrdersFetchers wildberries, _, _) = BuildResolver();
 
-        return new OrdersBatchPublisher(new Mock<IEventPublisher>().Object, store);
-    }
+        OrdersFetchersResolution.Supported supported = resolver
+            .Resolve("wildberries", JobType.OrdersImport)
+            .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
-    private OzonOrdersFetchers BuildOzonFboFetchers(OzonImportOptions options, PacedOrdersSource pacedSource)
-    {
-        OrdersBackfillWalker walker = new OrdersBackfillWalker(
-            new Mock<IOrdersBackfillStateRepository>().Object,
-            BuildPublisher(),
-            NullLogger<OrdersBackfillWalker>.Instance,
-            _timeProvider);
-
-        OzonFboOrdersReader reader = new OzonFboOrdersReader(
-            pacedSource,
-            NullLogger<CursorPagedOrdersReader>.Instance,
-            Options.Create(options));
-
-        return new OzonOrdersFetchers(
-            new OzonBackfillOrdersFetcher(walker, reader),
-            new OzonDeltaOrdersFetcher(
-                reader,
-                new Mock<ISyncCheckpointRepository>().Object,
-                BuildPublisher(),
-                NullLogger<OzonDeltaOrdersFetcher>.Instance,
-                Options.Create(options),
-                OrdersSchema.Fbo,
-                OzonPostingStatuses.FboStatuses),
-            reader,
-            Options.Create(options));
-    }
-
-    private OzonFbsOrdersFetchers BuildOzonFbsFetchers(OzonImportOptions options, PacedOrdersSource pacedSource)
-    {
-        OrdersBackfillWalker walker = new OrdersBackfillWalker(
-            new Mock<IOrdersBackfillStateRepository>().Object,
-            BuildPublisher(),
-            NullLogger<OrdersBackfillWalker>.Instance,
-            _timeProvider);
-
-        OzonFbsOrdersReader reader = new OzonFbsOrdersReader(
-            pacedSource,
-            NullLogger<CursorPagedOrdersReader>.Instance,
-            Options.Create(options));
-
-        return new OzonFbsOrdersFetchers(
-            new OzonFbsBackfillOrdersFetcher(walker, reader),
-            new OzonFbsDeltaOrdersFetcher(
-                reader,
-                new Mock<ISyncCheckpointRepository>().Object,
-                BuildPublisher(),
-                NullLogger<OzonDeltaOrdersFetcher>.Instance,
-                Options.Create(options)),
-            reader,
-            Options.Create(options));
-    }
-
-    private WildberriesOrdersFetchers BuildWildberriesFetchers(PacedOrdersSource pacedSource)
-    {
-        WildberriesImportOptions options = new WildberriesImportOptions();
-
-        OrdersBackfillWalker walker = new OrdersBackfillWalker(
-            new Mock<IOrdersBackfillStateRepository>().Object,
-            BuildPublisher(),
-            NullLogger<OrdersBackfillWalker>.Instance,
-            _timeProvider);
-
-        BisectingOrdersReader reader = new BisectingOrdersReader(
-            pacedSource,
-            NullLogger<BisectingOrdersReader>.Instance,
-            Options.Create(options));
-
-        return new WildberriesOrdersFetchers(
-            new BackfillOrdersFetcher(walker, reader),
-            new DeltaOrdersFetcher(
-                reader,
-                new Mock<ISyncCheckpointRepository>().Object,
-                BuildPublisher(),
-                NullLogger<DeltaOrdersFetcher>.Instance),
-            reader,
-            Options.Create(options));
-    }
-
-    private OrdersFetcherResolver BuildResolver()
-    {
-        PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowOrdersRateLimiterForResolver(),
-            _timeProvider);
-
-        return new OrdersFetcherResolver(
-            BuildWildberriesFetchers(pacedSource),
-            BuildOzonFboFetchers(_ozonOptions, pacedSource),
-            BuildOzonFbsFetchers(_ozonOptions, pacedSource));
+        supported.Fetchers.Should().BeSameAs(wildberries);
     }
 
     [Fact]
-    public void TryResolve_WildberriesOrdersImport_ReturnsTheWildberriesSet()
+    public void Resolve_OzonFbo_ReturnsTheFboSet()
     {
-        OrdersFetcherResolver resolver = BuildResolver();
+        (OrdersFetcherResolver resolver, _, IOrdersFetchers ozonFbo, _) = BuildResolver();
 
-        bool resolved = resolver.TryResolve("wildberries", JobType.OrdersImport, out IOrdersFetchers? fetchers);
+        OrdersFetchersResolution.Supported supported = resolver
+            .Resolve("ozon", JobType.OrdersImportFbo)
+            .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
-        resolved.Should().BeTrue();
-        fetchers.Should().BeOfType<WildberriesOrdersFetchers>();
+        supported.Fetchers.Should().BeSameAs(ozonFbo);
     }
 
     [Fact]
-    public void TryResolve_OzonFbo_ReturnsTheFboSet()
+    public void Resolve_OzonFbs_ReturnsTheFbsSet()
     {
-        OrdersFetcherResolver resolver = BuildResolver();
+        (OrdersFetcherResolver resolver, _, _, IOrdersFetchers ozonFbs) = BuildResolver();
 
-        bool resolved = resolver.TryResolve("ozon", JobType.OrdersImportFbo, out IOrdersFetchers? fetchers);
+        OrdersFetchersResolution.Supported supported = resolver
+            .Resolve("ozon", JobType.OrdersImportFbs)
+            .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
 
-        resolved.Should().BeTrue();
-        fetchers.Should().BeOfType<OzonOrdersFetchers>();
+        supported.Fetchers.Should().BeSameAs(ozonFbs);
     }
 
     [Fact]
-    public void TryResolve_OzonFbs_ReturnsTheFbsSet()
+    public void Resolve_OzonFboAndFbs_ResolveToDifferentInstances()
     {
-        // FBS resolves unconditionally now: the EnableFbs flag is gone, so a scheduled FBS job must
-        // always find its fetchers.
-        OrdersFetcherResolver resolver = BuildResolver();
+        (OrdersFetcherResolver resolver, _, IOrdersFetchers fbo, IOrdersFetchers fbs) = BuildResolver();
 
-        bool resolved = resolver.TryResolve("ozon", JobType.OrdersImportFbs, out IOrdersFetchers? fetchers);
+        IOrdersFetchers resolvedFbo = ((OrdersFetchersResolution.Supported)
+            resolver.Resolve("ozon", JobType.OrdersImportFbo)).Fetchers;
+        IOrdersFetchers resolvedFbs = ((OrdersFetchersResolution.Supported)
+            resolver.Resolve("ozon", JobType.OrdersImportFbs)).Fetchers;
 
-        resolved.Should().BeTrue();
-        fetchers.Should().BeOfType<OzonFbsOrdersFetchers>();
-    }
-
-    [Fact]
-    public void TryResolve_OzonFboAndFbs_ResolveToDifferentInstances()
-    {
-        OrdersFetcherResolver resolver = BuildResolver();
-
-        resolver.TryResolve("ozon", JobType.OrdersImportFbo, out IOrdersFetchers? fbo);
-        resolver.TryResolve("ozon", JobType.OrdersImportFbs, out IOrdersFetchers? fbs);
-
-        fbo.Should().NotBeSameAs(fbs,
+        resolvedFbo.Should().NotBeSameAs(resolvedFbs,
             "sharing one set would let the FBS job read the FBO endpoint and its statuses");
-        fbo!.WindowReader.Should().BeOfType<OzonFboOrdersReader>();
-        fbs!.WindowReader.Should().BeOfType<OzonFbsOrdersReader>();
+        resolvedFbo.Should().BeSameAs(fbo);
+        resolvedFbs.Should().BeSameAs(fbs);
     }
 
     [Theory]
@@ -184,61 +76,50 @@ public class OrdersFetcherResolverTests
     [InlineData("wildberries", JobType.ProductsImport)]
     [InlineData("yandex.kit", JobType.OrdersImport)]
     [InlineData("", JobType.OrdersImport)]
-    public void TryResolve_UnsupportedCombination_ReturnsFalse(string channelCode, JobType jobType)
+    public void Resolve_UnsupportedCombination_ReturnsTheReason(string channelCode, JobType jobType)
     {
-        OrdersFetcherResolver resolver = BuildResolver();
+        (OrdersFetcherResolver resolver, _, _, _) = BuildResolver();
 
-        bool resolved = resolver.TryResolve(channelCode, jobType, out IOrdersFetchers? fetchers);
+        OrdersFetchersResolution.Unsupported unsupported = resolver
+            .Resolve(channelCode, jobType)
+            .Should().BeOfType<OrdersFetchersResolution.Unsupported>().Subject;
 
-        resolved.Should().BeFalse();
-        fetchers.Should().BeNull();
+        unsupported.Reason.Should().Be(
+            $"Channel '{channelCode}' does not support orders import for job type '{jobType}'");
     }
 
     [Theory]
     [InlineData("OZON")]
     [InlineData("Ozon")]
     [InlineData("ozon")]
-    public void TryResolve_ChannelCodeIsCaseInsensitive(string channelCode)
+    public void Resolve_ChannelCodeIsCaseInsensitive(string channelCode)
     {
-        OrdersFetcherResolver resolver = BuildResolver();
+        (OrdersFetcherResolver resolver, _, _, IOrdersFetchers ozonFbs) = BuildResolver();
 
-        resolver.TryResolve(channelCode, JobType.OrdersImportFbs, out IOrdersFetchers? fetchers).Should().BeTrue();
-        fetchers.Should().BeOfType<OzonFbsOrdersFetchers>();
+        OrdersFetchersResolution.Supported supported = resolver
+            .Resolve(channelCode, JobType.OrdersImportFbs)
+            .Should().BeOfType<OrdersFetchersResolution.Supported>().Subject;
+
+        supported.Fetchers.Should().BeSameAs(ozonFbs);
     }
 
-    /// <summary>
-    /// Limiter double sufficient for constructing the readers: no request is issued in these tests,
-    /// only the resolution is asserted.
-    /// </summary>
-    private sealed class AlwaysAllowOrdersRateLimiterForResolver : IOrdersRateLimiter
+    private static (OrdersFetcherResolver Resolver, IOrdersFetchers Wildberries, IOrdersFetchers OzonFbo, IOrdersFetchers OzonFbs)
+        BuildResolver()
     {
-        public Task<RateLimitAcquireResult> TryAcquireAsync(RateLimitScope scope, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new RateLimitAcquireResult
-            {
-                Acquired = true,
-                NextRequestAllowedAt = DateTimeOffset.UtcNow,
-            });
-        }
+        IOrdersFetchers wildberries = Mock.Of<IOrdersFetchers>();
+        IOrdersFetchers ozonFbo = Mock.Of<IOrdersFetchers>();
+        IOrdersFetchers ozonFbs = Mock.Of<IOrdersFetchers>();
 
-        public Task<DateTimeOffset> ReportRateLimitedAsync(
-            RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(DateTimeOffset.UtcNow);
-        }
+        ServiceCollection services = new ServiceCollection();
+        services.AddKeyedSingleton(
+            OrdersFetcherKeys.Fetchers("wildberries", JobType.OrdersImport), wildberries);
+        services.AddKeyedSingleton(
+            OrdersFetcherKeys.Fetchers("ozon", JobType.OrdersImportFbo), ozonFbo);
+        services.AddKeyedSingleton(
+            OrdersFetcherKeys.Fetchers("ozon", JobType.OrdersImportFbs), ozonFbs);
 
-        public Task ReportSuccessAsync(
-            RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
+        ServiceProvider provider = services.BuildServiceProvider();
 
-        public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
-            RateLimitScope scope, CancellationToken cancellationToken)
-        {
-            DateTimeOffset? result = null;
-
-            return Task.FromResult(result);
-        }
+        return (new OrdersFetcherResolver(provider), wildberries, ozonFbo, ozonFbs);
     }
 }

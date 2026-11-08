@@ -1,5 +1,5 @@
-using Delobytes.App.Backend.Integrations.Contracts.Models;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+﻿using Delobytes.App.Backend.Integrations.Contracts.Models;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Xunit;
 

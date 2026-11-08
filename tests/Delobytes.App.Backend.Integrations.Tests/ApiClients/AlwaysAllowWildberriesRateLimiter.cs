@@ -4,8 +4,6 @@ using System.Threading.Tasks;
 
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
 namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 
@@ -13,11 +11,10 @@ namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 /// Limiter double that never refuses a slot and records nothing. Constructor sites that are not
 /// about pacing use it so the adaptive limiter cannot decide whether their request goes out.
 /// </summary>
-internal sealed class AlwaysAllowWildberriesRateLimiter : IWildberriesRateLimiter
+internal sealed class AlwaysAllowWildberriesRateLimiter : IOrdersRateLimiter
 {
     public Task<RateLimitAcquireResult> TryAcquireAsync(
-        string apiKey,
-        WildberriesApiMethod method,
+        RateLimitScope scope,
         CancellationToken cancellationToken)
     {
         return Task.FromResult(new RateLimitAcquireResult
@@ -28,8 +25,7 @@ internal sealed class AlwaysAllowWildberriesRateLimiter : IWildberriesRateLimite
     }
 
     public Task<DateTimeOffset> ReportRateLimitedAsync(
-        string apiKey,
-        WildberriesApiMethod method,
+        RateLimitScope scope,
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {
@@ -37,8 +33,7 @@ internal sealed class AlwaysAllowWildberriesRateLimiter : IWildberriesRateLimite
     }
 
     public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
-        string apiKey,
-        WildberriesApiMethod method,
+        RateLimitScope scope,
         CancellationToken cancellationToken)
     {
         DateTimeOffset? result = DateTimeOffset.UtcNow;
@@ -46,8 +41,7 @@ internal sealed class AlwaysAllowWildberriesRateLimiter : IWildberriesRateLimite
     }
 
     public Task ReportSuccessAsync(
-        string apiKey,
-        WildberriesApiMethod method,
+        RateLimitScope scope,
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -13,7 +13,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -64,7 +64,7 @@ public partial class ProcessOrdersImportConsumerTests
         // published, which is zero because a stopped delta window publishes nothing.
         OrdersImportCheckpointPayload final = payloads.Last();
 
-        final.IsFetchCompleted.Should().BeFalse();
+        final.Phase.Should().NotBe(OrdersImportCheckpointPhase.FetchCompleted);
         final.TotalBatches.Should().Be(0);
         final.IsBackfill.Should().BeFalse();
     }
@@ -99,7 +99,7 @@ public partial class ProcessOrdersImportConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_StoppedDelta_LogsStopReasonAndResumeInstant()
+    public async Task ProcessAsync_StoppedDelta_LogsStopCauseAndResumeInstant()
     {
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
@@ -117,13 +117,13 @@ public partial class ProcessOrdersImportConsumerTests
             new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        // The enum name renders as the same word the old string carried, so existing operators'
-        // searches keep matching.
+        // The stop cause and the resume instant are both logged, so operators see why a run ended
+        // and when it may continue.
         _logger.Verify(
             l => l.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("stopReason=Throttled")),
+                It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("stopCause=Throttle")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -156,7 +156,7 @@ public partial class ProcessOrdersImportConsumerTests
         _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(
-                It.Is<JobCheckpoint>(c => c.Payload.Contains("\"IsFetchCompleted\":true")),
+                It.Is<JobCheckpoint>(c => c.Payload.Contains("\"Phase\":3")),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -204,7 +204,7 @@ public partial class ProcessOrdersImportConsumerTests
             Times.Never);
 
         payloads.Last().TotalBatches.Should().Be(0);
-        payloads.Last().IsFetchCompleted.Should().BeFalse();
+        payloads.Last().Phase.Should().NotBe(OrdersImportCheckpointPhase.FetchCompleted);
     }
 
     [Fact]
@@ -263,5 +263,107 @@ public partial class ProcessOrdersImportConsumerTests
         _ordersSource.Verify(
             s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_RequestBudgetExhausted_SchedulesAContinuationInsteadOfFailing()
+    {
+        Connection connection = BuildConnection(BuildWildberriesTemplate());
+        JobRun run = BuildJobRun(connection);
+        SetupDefaults(run);
+
+        DateTimeOffset resumeAt = _timeProvider.GetUtcNow();
+
+        FetchOutcome.Stopped outcome = new FetchOutcome.Stopped
+        {
+            RequestsIssued = 1000,
+            Cause = StopCause.RequestBudget,
+            ResumeAt = resumeAt,
+        };
+
+        IOrdersFetchers fetchers = new FixedFetchers(new FixedOutcomeFetcher(outcome), TestTunings.Wildberries());
+        IOrdersFetcherResolver resolver = StubOrdersFetcherResolver.For(
+            "wildberries", JobType.OrdersImport, fetchers);
+
+        await CreateConsumer(fetcherResolver: resolver).ProcessAsync(
+            new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        // The request budget used to throw and fail the run; it is now a soft stop, so the run
+        // records a checkpoint and hands the remaining work to a continuation.
+        _jobRunRepo.Verify(
+            r => r.CreateAsync(
+                It.Is<JobRun>(job => job.Status == JobStatus.Pending && job.NotBefore == resumeAt),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        run.Status.Should().Be(JobStatus.Running);
+        run.Error.Should().BeNull();
+    }
+
+    private sealed class FixedOutcomeFetcher : IOrdersFetcher
+    {
+        private readonly FetchOutcome _outcome;
+
+        public FixedOutcomeFetcher(FetchOutcome outcome)
+        {
+            _outcome = outcome;
+        }
+
+        public Task<FetchOutcome> FetchAsync(
+            OrdersImportContext context,
+            RunCounters counters,
+            BatchSequence batches,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_outcome);
+        }
+    }
+
+    private sealed class FixedFetchers : IOrdersFetchers
+    {
+        public FixedFetchers(IOrdersFetcher fetcher, OrdersImportTuning tuning)
+        {
+            Backfill = fetcher;
+            Delta = fetcher;
+            Tuning = tuning;
+        }
+
+        public IOrdersFetcher Backfill { get; }
+
+        public IOrdersFetcher Delta { get; }
+
+        public IOrdersWindowReader WindowReader
+        {
+            get
+            {
+                throw new NotSupportedException("The fixed fetcher set has no window reader.");
+            }
+        }
+
+        public OrdersImportTuning Tuning { get; }
+
+        public TimeSpan MaxInProcessWait
+        {
+            get
+            {
+                return Tuning.MaxInProcessWait;
+            }
+        }
+
+        public int MaxRequestsPerRun
+        {
+            get
+            {
+                return Tuning.MaxRequestsPerRun;
+            }
+        }
+
+        public TimeSpan RunBudget
+        {
+            get
+            {
+                return Tuning.RunBudget;
+            }
+        }
     }
 }

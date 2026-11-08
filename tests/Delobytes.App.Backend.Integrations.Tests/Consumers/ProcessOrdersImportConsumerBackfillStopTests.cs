@@ -1,16 +1,17 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -47,7 +48,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             Times.Never);
 
         persistedPayload.Should().NotBeNull();
-        persistedPayload!.IsFetchCompleted.Should().BeFalse();
+        persistedPayload!.Phase.Should().NotBe(OrdersImportCheckpointPhase.FetchCompleted);
         persistedPayload.IsBackfillCompleted.Should().BeFalse();
         persistedPayload.HandoverWatermark.Should().BeNull();
     }
@@ -87,7 +88,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         UseStateStore();
 
         UseSource((request, call) => Task.FromResult(call == 1
-            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, OrdersImportConstants.BatchSize + 1), HasMore = false }
+            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, OrdersImportTuning.DefaultBatchSize + 1), HasMore = false }
             : new OrdersPage { Orders = new List<ChannelOrderSnapshot>(), Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
 
         await RunAsync(jobRun, connection, CreateConsumer());
@@ -96,7 +97,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         // final count plus one, because no terminal batch exists to be counted.
         persistedPayload.Should().NotBeNull();
         persistedPayload!.TotalBatches.Should().Be(2);
-        persistedPayload.IsFetchCompleted.Should().BeFalse();
+        persistedPayload.Phase.Should().NotBe(OrdersImportCheckpointPhase.FetchCompleted);
         persistedPayload.PagesFetched.Should().Be(2);
     }
 
@@ -154,7 +155,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _jobRunRepo.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
 
         persistedPayload.Should().NotBeNull();
-        persistedPayload!.IsFetchCompleted.Should().BeTrue();
+        persistedPayload!.Phase.Should().Be(OrdersImportCheckpointPhase.FetchCompleted);
         persistedPayload.IsBackfillCompleted.Should().BeTrue();
     }
 }

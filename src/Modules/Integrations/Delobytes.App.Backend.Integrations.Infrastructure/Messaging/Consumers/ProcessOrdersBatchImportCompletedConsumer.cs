@@ -2,7 +2,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -260,7 +260,7 @@ public class ProcessOrdersBatchImportCompletedConsumer
         if (payload == null)
         {
             JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
-            payload = DeserializePayload(jobRun.Id, checkpoint?.Payload);
+            payload = OrdersImportCheckpointStore.TryDeserializePayload(jobRun.Id, checkpoint?.Payload);
         }
 
         if (payload == null)
@@ -387,6 +387,17 @@ public class ProcessOrdersBatchImportCompletedConsumer
 
     private DateTimeOffset? ResolveWatermark(OrdersImportCheckpointPayload payload)
     {
+        if (payload.Phase != OrdersImportCheckpointPhase.FetchCompleted)
+        {
+            if (payload.IsBackfill)
+            {
+                _logger.LogInformation(
+                    "Backfill run has not finished catch-up, leaving the delta watermark untouched");
+            }
+
+            return null;
+        }
+
         if (!payload.IsBackfill)
         {
             // The watermark is the newest source change date the orchestrator actually observed,
@@ -432,7 +443,8 @@ public class ProcessOrdersBatchImportCompletedConsumer
             return default;
         }
 
-        OrdersImportCheckpointPayload? payload = DeserializePayload(jobRun.Id, checkpoint.Payload);
+        OrdersImportCheckpointPayload? payload = OrdersImportCheckpointStore
+            .TryDeserializePayload(jobRun.Id, checkpoint.Payload);
 
         if (payload == null)
         {
@@ -443,12 +455,12 @@ public class ProcessOrdersBatchImportCompletedConsumer
             return default;
         }
 
-        if (payload.IsFetchCompleted != true)
+        if (payload.Phase != OrdersImportCheckpointPhase.FetchCompleted)
         {
-            // OrdersBatchPublisher.PublishUnitAsync persists a checkpoint after every published
-            // unit, carrying the batch count accumulated so far and IsFetchCompleted left false.
-            // Finalising on it would freeze the counters of a multi-unit backfill at the days
-            // fetched so far, so the fetch outcome — never the batch count alone — gates this.
+            // OrdersBatchPublisher.PublishUnitAsync persists an InProgress checkpoint after every
+            // published unit, carrying the batch count accumulated so far. Finalising on it would
+            // freeze the counters of a multi-unit backfill at the days fetched so far, so the
+            // fetch phase — never the batch count alone — gates this.
             _logger.LogInformation(
                 "JobRun {JobRunId}: fetch still in progress, {PublishedBatches} batch(es) published, not finalising",
                 jobRun.Id,
@@ -495,23 +507,5 @@ public class ProcessOrdersBatchImportCompletedConsumer
         return status == JobStatus.Success
             || status == JobStatus.Failed
             || status == JobStatus.Cancelled;
-    }
-
-    /// <summary>
-    /// Same decision as the orchestrator's checkpoint store, except that an unreadable payload is
-    /// reported as "unknown" here instead of thrown: the aggregator's documented behaviour for an
-    /// unknown watermark source is to leave the JobRun for the watchdog, and failing one batch
-    /// result would not repair the checkpoint anyway.
-    /// </summary>
-    private static OrdersImportCheckpointPayload? DeserializePayload(Guid jobRunId, string? payload)
-    {
-        try
-        {
-            return OrdersImportCheckpointStore.DeserializePayload(jobRunId, payload);
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
     }
 }

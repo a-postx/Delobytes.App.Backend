@@ -1,8 +1,9 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -44,25 +45,22 @@ public class OrdersBatchPublisherTests
         };
     }
 
-    private static (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+    private static (OrdersImportContext Context, RunCounters Counters, BatchSequence Batches) BuildRun(
         JobRun jobRun,
         Connection connection,
         int nextBatchIndex,
         DateTimeOffset windowTo,
         bool isBackfill)
     {
-        var context = new OrdersImportContext(
-            jobRun,
-            connection,
-            new Mock<IOrdersSource>().Object,
-            new Mock<OrdersBackfillState>().Object,
-            DateTimeOffset.UtcNow.AddMinutes(10),
-            windowTo,
-            isBackfill);
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: new Mock<IOrdersSource>().Object,
+            backfillState: new Mock<OrdersBackfillState>().Object,
+            windowTo: windowTo,
+            isBackfill: isBackfill);
 
-        var progress = new OrdersRunProgress(nextBatchIndex);
-
-        return (context, progress);
+        return (context, new RunCounters(), new BatchSequence(nextBatchIndex));
     }
 
     [Fact]
@@ -70,10 +68,10 @@ public class OrdersBatchPublisherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, 0, DateTimeOffset.UtcNow, false);
+        (OrdersImportContext context, RunCounters counters, BatchSequence batches) = BuildRun(jobRun, connection, 0, DateTimeOffset.UtcNow, false);
         OrdersBatchPublisher publisher = CreatePublisher();
 
-        await publisher.PublishUnitAsync(context, progress, new List<ChannelOrderSnapshot>(), CancellationToken.None);
+        await publisher.PublishUnitAsync(context, counters, batches, new List<ChannelOrderSnapshot>(), CancellationToken.None);
 
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()),
@@ -81,7 +79,7 @@ public class OrdersBatchPublisherTests
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()),
             Times.Never);
-        progress.NextBatchIndex.Should().Be(0);
+        batches.NextIndex.Should().Be(0);
     }
 
     [Fact]
@@ -90,7 +88,7 @@ public class OrdersBatchPublisherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset windowTo = DateTimeOffset.UtcNow;
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, 3, windowTo, true);
+        (OrdersImportContext context, RunCounters counters, BatchSequence batches) = BuildRun(jobRun, connection, 3, windowTo, true);
         OrdersBatchPublisher publisher = CreatePublisher();
         List<OrdersBatchImportRequestedEvent> published = new List<OrdersBatchImportRequestedEvent>();
 
@@ -101,14 +99,14 @@ public class OrdersBatchPublisherTests
 
         List<ChannelOrderSnapshot> unit = new List<ChannelOrderSnapshot> { BuildOrder("ORDER-1") };
 
-        await publisher.PublishUnitAsync(context, progress, unit, CancellationToken.None);
+        await publisher.PublishUnitAsync(context, counters, batches, unit, CancellationToken.None);
 
         published.Should().ContainSingle();
         published[0].JobRunId.Should().Be(jobRun.Id);
         published[0].ConnectionId.Should().Be(connection.Id);
         published[0].ChannelId.Should().Be(connection.ChannelId);
         published[0].BatchId.Should().Be(OrdersBatchPublisher.CreateBatchId(jobRun.Id, 3));
-        progress.NextBatchIndex.Should().Be(4);
+        batches.NextIndex.Should().Be(4);
     }
 
     [Fact]
@@ -117,7 +115,7 @@ public class OrdersBatchPublisherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset windowTo = DateTimeOffset.UtcNow;
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, 0, windowTo, true);
+        (OrdersImportContext context, RunCounters counters, BatchSequence batches) = BuildRun(jobRun, connection, 0, windowTo, true);
         OrdersBatchPublisher publisher = CreatePublisher();
         JobCheckpoint? savedCheckpoint = null;
 
@@ -128,11 +126,11 @@ public class OrdersBatchPublisherTests
 
         List<ChannelOrderSnapshot> unit = new List<ChannelOrderSnapshot> { BuildOrder("ORDER-1") };
 
-        await publisher.PublishUnitAsync(context, progress, unit, CancellationToken.None);
+        await publisher.PublishUnitAsync(context, counters, batches, unit, CancellationToken.None);
 
         savedCheckpoint.Should().NotBeNull();
         savedCheckpoint!.Payload.Should().Contain("\"TotalBatches\":1");
-        savedCheckpoint.Payload.Should().Contain("\"IsFetchCompleted\":false");
+        savedCheckpoint.Payload.Should().Contain("\"Phase\":1");
         savedCheckpoint.Payload.Should().Contain("\"IsBackfill\":true");
     }
 
@@ -141,7 +139,7 @@ public class OrdersBatchPublisherTests
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, 0, DateTimeOffset.UtcNow, false);
+        (OrdersImportContext context, RunCounters counters, BatchSequence batches) = BuildRun(jobRun, connection, 0, DateTimeOffset.UtcNow, false);
         OrdersBatchPublisher publisher = CreatePublisher();
         List<OrdersBatchImportRequestedEvent> published = new List<OrdersBatchImportRequestedEvent>();
 
@@ -151,19 +149,19 @@ public class OrdersBatchPublisherTests
             .Returns(Task.CompletedTask);
 
         List<ChannelOrderSnapshot> unit = Enumerable
-            .Range(0, OrdersImportConstants.BatchSize + 1)
+            .Range(0, OrdersImportTuning.DefaultBatchSize + 1)
             .Select(i => BuildOrder($"ORDER-{i}"))
             .ToList();
 
-        await publisher.PublishUnitAsync(context, progress, unit, CancellationToken.None);
+        await publisher.PublishUnitAsync(context, counters, batches, unit, CancellationToken.None);
 
         published.Should().HaveCount(2);
-        published[0].Orders.Should().HaveCount(OrdersImportConstants.BatchSize);
+        published[0].Orders.Should().HaveCount(OrdersImportTuning.DefaultBatchSize);
         published[1].Orders.Should().HaveCount(1);
         published.Select(p => p.BatchId).Should().Equal(
             OrdersBatchPublisher.CreateBatchId(jobRun.Id, 0),
             OrdersBatchPublisher.CreateBatchId(jobRun.Id, 1));
-        progress.NextBatchIndex.Should().Be(2);
+        batches.NextIndex.Should().Be(2);
     }
 
     [Fact]
@@ -200,13 +198,13 @@ public class OrdersBatchPublisherTests
     public void SplitIntoBatches_ExactlyBatchSize_ReturnsOneBatch()
     {
         List<ChannelOrderSnapshot> orders = Enumerable
-            .Range(0, OrdersImportConstants.BatchSize)
+            .Range(0, OrdersImportTuning.DefaultBatchSize)
             .Select(i => BuildOrder($"ORDER-{i}"))
             .ToList();
 
         List<List<ChannelOrderSnapshot>> batches = OrdersBatchPublisher.SplitIntoBatches(orders);
 
         batches.Should().ContainSingle();
-        batches[0].Should().HaveCount(OrdersImportConstants.BatchSize);
+        batches[0].Should().HaveCount(OrdersImportTuning.DefaultBatchSize);
     }
 }

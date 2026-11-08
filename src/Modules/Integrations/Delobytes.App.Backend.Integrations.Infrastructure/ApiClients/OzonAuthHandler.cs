@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
@@ -42,7 +43,7 @@ public class OzonAuthHandler : DelegatingHandler
                 "OzonAuthHandler: request has no ConnectionId option, falling back to " +
                 "FirstOrDefault resolution for channel 'ozon'.");
 
-            connection = await _connectionResolver.ResolveAsync("ozon", ct);
+            connection = await _connectionResolver.ResolveAsync(ChannelCatalog.OzonCode, ct);
         }
 
         string sellerId = ExtractSellerId(connection);

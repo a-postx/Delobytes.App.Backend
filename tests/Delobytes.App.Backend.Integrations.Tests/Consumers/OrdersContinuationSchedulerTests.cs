@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;

@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
@@ -49,7 +50,7 @@ public class WildberriesAuthHandler : DelegatingHandler
                 "WildberriesAuthHandler: request has no ConnectionId option, falling back to " +
                 "FirstOrDefault resolution for channel 'wildberries'.");
 
-            connection = await _connectionResolver.ResolveAsync("wildberries", ct);
+            connection = await _connectionResolver.ResolveAsync(ChannelCatalog.WildberriesCode, ct);
         }
 
         request.Headers.TryAddWithoutValidation("Authorization", connection.ApiKey);

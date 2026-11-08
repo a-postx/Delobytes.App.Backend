@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -7,6 +8,16 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
+
+public class StartProductsImportCommand : IRequest<StartProductsImportResponse>
+{
+    public Guid ConnectionId { get; set; }
+}
+
+public class StartProductsImportResponse
+{
+    public Guid JobRunId { get; set; }
+}
 
 public class StartProductsImportCommandHandler : IRequestHandler<StartProductsImportCommand, StartProductsImportResponse>
 {
@@ -53,7 +64,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         // Wildberries — единственный поддерживаемый источник в первой версии.
         if (!string.Equals(
                 connection.SystemChannelTemplate?.Code,
-                "wildberries",
+                ChannelCatalog.WildberriesCode,
                 StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -14,7 +14,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -90,6 +90,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             checkpointStore);
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
             new AlwaysAllowOrdersRateLimiter(),
@@ -98,13 +99,11 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
             _bisectingReaderLogger.Object,
-            wrappedOptions);
+            tuning);
 
         SinglePageOrdersReader singlePageReader = new SinglePageOrdersReader(
             pacedSource,
-            new Mock<ILogger<SinglePageOrdersReader>>().Object,
-            OrdersRateLimiterMethods.WildberriesSupplierOrders,
-            TimeSpan.FromSeconds(options.MaxInProcessWaitSeconds >= 0 ? options.MaxInProcessWaitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
+            new Mock<ILogger<SinglePageOrdersReader>>().Object);
 
         OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
             _backfillStateRepo.Object,
@@ -116,15 +115,17 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
-            StubOrdersFetcherResolver.ForWildberries(
-                new BackfillOrdersFetcher(backfillWalker, singlePageReader),
-                new DeltaOrdersFetcher(
-                    bisectingReader,
-                    _syncCheckpointRepo.Object,
-                    batchPublisher,
-                    new Mock<ILogger<DeltaOrdersFetcher>>().Object),
-                bisectingReader,
-                options),
+            StubOrdersFetcherResolver.For(
+                "wildberries",
+                JobType.OrdersImport,
+                new OrdersFetchers(
+                    new BackfillOrdersFetcher(backfillWalker, singlePageReader),
+                    new DeltaOrdersFetcher(
+                        bisectingReader,
+                        _syncCheckpointRepo.Object,
+                        batchPublisher,
+                        new Mock<ILogger<DeltaOrdersFetcher>>().Object),
+                    TestTunings.Wildberries(options))),
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
@@ -232,7 +233,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
 
     private static int GetDayCountInScope()
     {
-        return (int)OrdersImportConstants.BackfillWindow.TotalDays + 1;
+        return (int)WildberriesImportOptions.DefaultBackfillWindow.TotalDays + 1;
     }
 
     private static OrdersBackfillState Clone(OrdersBackfillState state)
@@ -460,7 +461,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         persistedPayload.IsBackfillCompleted.Should().BeTrue();
         persistedPayload.PagesFetched.Should().Be(expectedDays + 1);
 
-        persistedPayload.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - OrdersImportConstants.SafetyOverlap);
+        persistedPayload.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - WildberriesImportOptions.DefaultSafetyOverlap);
         _persistedState.CatchUpNextDay.Should().Be(newestDay);
         persistedPayload.MaxChangedAt.Should().BeNull();
     }
@@ -632,7 +633,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             Times.Once);
 
         persistedPayload.Should().NotBeNull();
-        persistedPayload!.IsFetchCompleted.Should().BeFalse();
+        persistedPayload!.Phase.Should().NotBe(OrdersImportCheckpointPhase.FetchCompleted);
         persistedPayload.TotalBatches.Should().Be(0);
         persistedPayload.IsBackfill.Should().BeTrue();
         persistedPayload.IsBackfillCompleted.Should().BeFalse();
@@ -875,6 +876,6 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _issuedRequests.Should().ContainSingle();
         _issuedRequests[0].Selection.Should().Be(OrdersSelectionMode.LastChanged);
         _issuedRequests[0].DateFrom.Should().Be(
-            lastChangedAt.Subtract(OrdersImportConstants.SafetyOverlap).ToOffset(MoscowOffset));
+            lastChangedAt.Subtract(WildberriesImportOptions.DefaultSafetyOverlap).ToOffset(MoscowOffset));
     }
 }

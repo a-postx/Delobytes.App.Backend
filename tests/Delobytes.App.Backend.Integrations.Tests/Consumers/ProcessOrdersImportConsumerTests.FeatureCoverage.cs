@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -14,7 +14,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -154,7 +154,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         requests.Should().ContainSingle();
         requests[0].Selection.Should().Be(OrdersSelectionMode.LastChanged);
-        requests[0].DateFrom.Should().Be(legacy ? oldest + OrdersImportConstants.BackfillWindow : handover);
+        requests[0].DateFrom.Should().Be(legacy ? oldest + WildberriesImportOptions.DefaultBackfillWindow : handover);
         _backfillStateRepo.Verify(r => r.UpsertAsync(It.IsAny<OrdersBackfillState>(), It.IsAny<CancellationToken>()), Times.Never);
 
         if (legacy)
@@ -174,8 +174,10 @@ public partial class ProcessOrdersImportConsumerTests
         DateTimeOffset start = _timeProvider.GetUtcNow();
         DateTimeOffset stoppedAt = start.AddSeconds(1200);
         DateTimeOffset slot = stoppedAt.AddSeconds(slotOffsetSeconds);
-        Mock<IWildberriesRateLimiter> limiter = new Mock<IWildberriesRateLimiter>();
-        limiter.Setup(l => l.GetNextRequestAllowedAtAsync(connection.ApiKey, WildberriesApiMethod.SupplierOrders, It.IsAny<CancellationToken>())).ReturnsAsync(slot);
+        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>();
+        RateLimitScope stopScope = new RateLimitScope(
+            "wildberries", connection.ApiKey, OrdersRateLimiterMethods.WildberriesSupplierOrders);
+        limiter.Setup(l => l.GetNextRequestAllowedAtAsync(stopScope, It.IsAny<CancellationToken>())).ReturnsAsync(slot);
         _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
             .Returns((Guid id, OrdersRequest request, CancellationToken token) =>
             {
@@ -234,13 +236,13 @@ public partial class ProcessOrdersImportConsumerTests
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
         SetupDefaults(run);
-        _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersPage { Orders = BuildOrders(OrdersImportConstants.BatchSize + 1) });
+        _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersPage { Orders = BuildOrders(OrdersImportTuning.DefaultBatchSize + 1) });
         List<string> operations = new List<string>();
         _jobCheckpointRepo.Setup(r => r.UpsertAsync(It.IsAny<JobCheckpoint>(), It.IsAny<CancellationToken>()))
             .Callback<JobCheckpoint, CancellationToken>((checkpoint, token) =>
             {
                 OrdersImportCheckpointPayload payload = JsonSerializer.Deserialize<OrdersImportCheckpointPayload>(checkpoint.Payload)!;
-                operations.Add($"checkpoint:{payload.TotalBatches}:{payload.IsFetchCompleted}");
+                operations.Add($"checkpoint:{payload.TotalBatches}:{payload.Phase}");
             }).Returns(Task.CompletedTask);
         _eventPublisher.Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
             .Callback<OrdersBatchImportRequestedEvent, CancellationToken>((batch, token) => operations.Add($"data:{batch.Orders.Count}"))
@@ -252,11 +254,11 @@ public partial class ProcessOrdersImportConsumerTests
         await CreateConsumer().ProcessAsync(new OrdersImportRequestedEvent { JobRunId = run.Id, ConnectionId = connection.Id }, CancellationToken.None);
 
         operations.Should().Equal(
-            "checkpoint:0:False",
+            "checkpoint:0:Started",
             "data:30",
             "data:1",
-            "checkpoint:2:False",
-            "checkpoint:2:True",
+            "checkpoint:2:InProgress",
+            "checkpoint:2:FetchCompleted",
             "completed:2");
     }
 

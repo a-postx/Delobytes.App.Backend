@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -14,7 +14,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -98,7 +98,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         Connection connection = BuildConnection(BuildWildberriesTemplate());
         JobRun run = BuildJobRun(connection);
         DateTimeOffset today = GetMoscowDayStart(_timeProvider.GetUtcNow());
-        DateTimeOffset retentionStart = today.AddDays(-(int)OrdersImportConstants.BackfillWindow.TotalDays);
+        DateTimeOffset retentionStart = today.AddDays(-(int)WildberriesImportOptions.DefaultBackfillWindow.TotalDays);
         SetupRun(run);
         _persistedState = new OrdersBackfillState
         {
@@ -157,10 +157,16 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _jobCheckpointRepo.Setup(r => r.GetByJobRunIdAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new JobCheckpoint
         {
             JobRunId = run.Id,
-            Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload { IsBackfill = true, IsFetchCompleted = false, TotalBatches = 7 }),
+            Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
+            {
+                Phase = OrdersImportCheckpointPhase.InProgress,
+                IsBackfill = true,
+                TotalBatches = 7,
+                WindowTo = DateTimeOffset.UtcNow,
+            }),
         });
         UseSource((request, call) => Task.FromResult(call == 1
-            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, OrdersImportConstants.BatchSize + 1) }
+            ? new OrdersPage { Orders = BuildOrdersForDay(request.DateFrom, OrdersImportTuning.DefaultBatchSize + 1) }
             : new OrdersPage { Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));
         List<OrdersBatchImportRequestedEvent> batches = new List<OrdersBatchImportRequestedEvent>();
         OrdersImportCheckpointPayload? latest = null;
@@ -174,14 +180,14 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         // Batch numbering resumes at the persisted count, so the two data batches carry 7 and 8 and
         // a later run continues at 9 instead of reusing BatchIds the aggregator has recorded.
         batches.Should().HaveCount(2);
-        batches[0].Orders.Should().HaveCount(OrdersImportConstants.BatchSize);
+        batches[0].Orders.Should().HaveCount(OrdersImportTuning.DefaultBatchSize);
         batches[1].Orders.Should().HaveCount(1);
         batches.Select(b => b.BatchId).Should().Equal(
             OrdersBatchPublisher.CreateBatchId(run.Id, 7),
             OrdersBatchPublisher.CreateBatchId(run.Id, 8));
 
         latest.Should().NotBeNull();
-        latest!.IsFetchCompleted.Should().BeFalse();
+        latest!.Phase.Should().NotBe(OrdersImportCheckpointPhase.FetchCompleted);
         latest.TotalBatches.Should().Be(9);
         latest.IsBackfillCompleted.Should().BeFalse();
 
@@ -189,7 +195,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         // stop write that adds PagesFetched. Neither finalises the run.
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(
-                It.Is<JobCheckpoint>(c => c.Payload.Contains("\"TotalBatches\":9") && c.Payload.Contains("\"IsFetchCompleted\":false")),
+                It.Is<JobCheckpoint>(c => c.Payload.Contains("\"TotalBatches\":9") && !c.Payload.Contains("\"Phase\":3")),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
 
@@ -213,7 +219,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
         _eventPublisher.Verify(p => p.PublishAsync(It.IsAny<OrdersImportFetchCompletedEvent>(), It.IsAny<CancellationToken>()), Times.Once);
         payloads.Last().TotalBatches.Should().Be(0);
-        payloads.Last().IsFetchCompleted.Should().BeTrue();
+        payloads.Last().Phase.Should().Be(OrdersImportCheckpointPhase.FetchCompleted);
     }
 
     [Theory]
@@ -270,8 +276,8 @@ public partial class ProcessOrdersImportConsumerBackfillTests
             .Callback<OrdersImportFetchCompletedEvent, CancellationToken>((completed, token) =>
             {
                 _persistedState!.IsCompleted.Should().BeTrue();
-                _persistedState.HandoverWatermark.Should().Be(requestStartedAt - OrdersImportConstants.SafetyOverlap);
-                final!.IsFetchCompleted.Should().BeTrue();
+                _persistedState.HandoverWatermark.Should().Be(requestStartedAt - WildberriesImportOptions.DefaultSafetyOverlap);
+                final!.Phase.Should().Be(OrdersImportCheckpointPhase.FetchCompleted);
                 final.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
             }).Returns(Task.CompletedTask);
 
@@ -280,7 +286,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _issuedRequests.Should().HaveCount(2);
         _issuedRequests.Should().OnlyContain(q => q.Selection == OrdersSelectionMode.Placed && q.DateFrom == today);
         _persistedState.IsCompleted.Should().BeTrue();
-        _persistedState.HandoverWatermark.Should().Be(requestStartedAt - OrdersImportConstants.SafetyOverlap);
+        _persistedState.HandoverWatermark.Should().Be(requestStartedAt - WildberriesImportOptions.DefaultSafetyOverlap);
         final!.HandoverWatermark.Should().Be(_persistedState.HandoverWatermark);
         final.IsBackfillCompleted.Should().BeTrue();
     }
@@ -365,7 +371,7 @@ public partial class ProcessOrdersImportConsumerBackfillTests
         _persistedState.IsCompleted.Should().BeTrue();
         _persistedState.CompletedAt.Should().Be(secondRunStartedAt);
         _persistedState.HandoverWatermark.Should().Be(
-            secondRunStartedAt - OrdersImportConstants.SafetyOverlap);
+            secondRunStartedAt - WildberriesImportOptions.DefaultSafetyOverlap);
 
         secondRun.Status.Should().Be(JobStatus.Running);
 

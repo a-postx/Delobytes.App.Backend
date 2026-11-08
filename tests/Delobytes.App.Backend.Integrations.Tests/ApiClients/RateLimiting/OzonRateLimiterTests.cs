@@ -228,4 +228,57 @@ public class OzonRateLimiterTests
 
         (await limiter.GetNextRequestAllowedAtAsync(scope, CancellationToken.None)).Should().BeNull();
     }
+
+    // ── Bucket dictionary bound ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TryAcquireAsync_ManyKeys_KeepsTheBucketDictionaryProportionalToActiveKeys()
+    {
+        FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromMinutes(1));
+
+        for (int i = 0; i < 100; i++)
+        {
+            await limiter.TryAcquireAsync(Scope($"client-{i}"), CancellationToken.None);
+        }
+
+        limiter.BucketCount.Should().Be(100);
+
+        // Four minimum intervals pass, so every bucket touched during the burst is idle. The next
+        // insert evicts them before adding its own.
+        timeProvider.Advance(TimeSpan.FromMinutes(5));
+
+        await limiter.TryAcquireAsync(Scope("client-fresh"), CancellationToken.None);
+
+        limiter.BucketCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_WithNoMinimumInterval_EvictsBucketsIdleForTenMinutes()
+    {
+        FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
+
+        await limiter.TryAcquireAsync(Scope("client-old"), CancellationToken.None);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(11));
+
+        await limiter.TryAcquireAsync(Scope("client-new"), CancellationToken.None);
+
+        limiter.BucketCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_SameRawKeyUnderTwoMethods_SharesOneBucket()
+    {
+        FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        OzonRateLimiter limiter = CreateLimiter(timeProvider);
+
+        await limiter.TryAcquireAsync(Scope("client-id"), CancellationToken.None);
+        await limiter.TryAcquireAsync(
+            new RateLimitScope("ozon", "client-id", OrdersRateLimiterMethods.OzonPostingFbsList),
+            CancellationToken.None);
+
+        limiter.BucketCount.Should().Be(1);
+    }
 }

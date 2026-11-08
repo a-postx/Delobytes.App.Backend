@@ -1,9 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
-/// Operational configuration for RawApiResponseCleanupHostedService (Stage 14). RawApiResponses
-/// rows outlive nothing on their own — the application never deletes JobRuns, so the cascade
-/// from JobRun never fires — which makes a time-based sweep the only bound on the table's growth.
+/// Operational configuration for RawApiResponseCleanupHostedService.
 /// </summary>
 public class RawApiResponseCleanupOptions
 {

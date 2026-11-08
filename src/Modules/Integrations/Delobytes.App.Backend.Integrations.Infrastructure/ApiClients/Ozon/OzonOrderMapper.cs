@@ -41,47 +41,21 @@ internal static class OzonOrderMapper
         };
 
     /// <summary>
-    /// Maps one posting page without diagnostics and without knowledge of the source endpoint.
-    /// </summary>
-    /// <param name="postings">The page's postings, in response order.</param>
-    /// <param name="rowsWithoutIdentity">The number of postings dropped for lacking an identity.</param>
-    /// <returns>One snapshot per distinct order of the page, in first-arrival order.</returns>
-    public static List<ChannelOrderSnapshot> Map(IReadOnlyList<OzonPosting> postings, out int rowsWithoutIdentity)
-    {
-        return Map(postings, null, null, out rowsWithoutIdentity);
-    }
-
-    /// <summary>
-    /// Maps one posting page, reporting tolerated anomalies to <paramref name="logger"/>, without
-    /// knowledge of the source endpoint.
-    /// </summary>
-    /// <param name="postings">The page's postings, in response order.</param>
-    /// <param name="logger">Logger for unknown statuses and disagreeing currencies; may be null.</param>
-    /// <param name="rowsWithoutIdentity">The number of postings dropped for lacking an identity.</param>
-    /// <returns>One snapshot per distinct order of the page, in first-arrival order.</returns>
-    public static List<ChannelOrderSnapshot> Map(
-        IReadOnlyList<OzonPosting> postings, ILogger? logger, out int rowsWithoutIdentity)
-    {
-        return Map(postings, null, logger, out rowsWithoutIdentity);
-    }
-
-    /// <summary>
     /// Maps one posting page, reporting tolerated anomalies to <paramref name="logger"/>.
     /// </summary>
     /// <param name="postings">The page's postings, in response order.</param>
     /// <param name="sourceSchema">The endpoint the page was read from, when known.</param>
     /// <param name="logger">Logger for unknown statuses and disagreeing currencies; may be null.</param>
-    /// <param name="rowsWithoutIdentity">The number of postings dropped for lacking an identity.</param>
-    /// <returns>One snapshot per distinct order of the page, in first-arrival order.</returns>
-    public static List<ChannelOrderSnapshot> Map(
+    /// <returns>One snapshot per distinct order of the page, in first-arrival order, and the
+    /// diagnostics collected while mapping it.</returns>
+    public static OzonMappingResult Map(
         IReadOnlyList<OzonPosting> postings,
         OrdersSchema? sourceSchema,
-        ILogger? logger,
-        out int rowsWithoutIdentity)
+        ILogger? logger)
     {
         ArgumentNullException.ThrowIfNull(postings);
 
-        rowsWithoutIdentity = 0;
+        OzonMappingDiagnostics diagnostics = new OzonMappingDiagnostics();
 
         Dictionary<string, List<OzonPosting>> postingsByOrderKey = new Dictionary<string, List<OzonPosting>>(StringComparer.Ordinal);
         List<string> orderKeysInArrivalOrder = new List<string>();
@@ -90,7 +64,7 @@ internal static class OzonOrderMapper
         {
             if (string.IsNullOrWhiteSpace(posting.PostingNumber))
             {
-                rowsWithoutIdentity++;
+                diagnostics.ReportRowsWithoutIdentity(1);
                 continue;
             }
 
@@ -98,13 +72,13 @@ internal static class OzonOrderMapper
 
             if (orderKey == null)
             {
-                rowsWithoutIdentity++;
+                diagnostics.ReportRowsWithoutIdentity(1);
                 continue;
             }
 
             if (posting.Products == null || posting.Products.Count == 0)
             {
-                rowsWithoutIdentity++;
+                diagnostics.ReportRowsWithoutIdentity(1);
                 continue;
             }
 
@@ -118,8 +92,6 @@ internal static class OzonOrderMapper
             orderPostings.Add(posting);
         }
 
-        bool loggedUnknownStatus = false;
-        bool loggedMissingFbsSchema = false;
         List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>(orderKeysInArrivalOrder.Count);
 
         foreach (string orderKey in orderKeysInArrivalOrder)
@@ -129,11 +101,10 @@ internal static class OzonOrderMapper
                 postingsByOrderKey[orderKey],
                 sourceSchema,
                 logger,
-                ref loggedUnknownStatus,
-                ref loggedMissingFbsSchema));
+                diagnostics));
         }
 
-        return snapshots;
+        return new OzonMappingResult(snapshots, diagnostics.RowsWithoutIdentity);
     }
 
     private static string? GetOrderKey(OzonPosting posting)
@@ -156,8 +127,7 @@ internal static class OzonOrderMapper
         List<OzonPosting> orderPostings,
         OrdersSchema? sourceSchema,
         ILogger? logger,
-        ref bool loggedUnknownStatus,
-        ref bool loggedMissingFbsSchema)
+        OzonMappingDiagnostics diagnostics)
     {
         EnsureIdentityLength(orderKey, nameof(orderKey));
 
@@ -174,7 +144,7 @@ internal static class OzonOrderMapper
             }
 
             foreach (ChannelOrderLineSnapshot line in MapPostingLines(
-                posting, sourceSchema, logger, ref loggedMissingFbsSchema))
+                posting, sourceSchema, logger, diagnostics))
             {
                 lines.Add(line);
             }
@@ -191,7 +161,7 @@ internal static class OzonOrderMapper
 
         OzonPosting determiningPosting = allCancelled
             ? orderPostings[0]
-            : SelectHeaderWinner(orderPostings, logger, ref loggedUnknownStatus);
+            : SelectHeaderWinner(orderPostings, logger, diagnostics);
 
         string? reportedHeaderStatus = allCancelled ? null : determiningPosting.Status;
         string? reportedCancelReason = allCancelled ? GetCancelReason(determiningPosting) : null;
@@ -238,7 +208,7 @@ internal static class OzonOrderMapper
     }
 
     private static List<ChannelOrderLineSnapshot> MapPostingLines(
-        OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, ref bool loggedMissingFbsSchema)
+        OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, OzonMappingDiagnostics diagnostics)
     {
         List<OzonPostingProduct> products = posting.Products!;
         List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>(products.Count);
@@ -247,10 +217,13 @@ internal static class OzonOrderMapper
 
         foreach (OzonPostingProduct product in products)
         {
-            occurrencesBySku[product.Sku] = occurrencesBySku.TryGetValue(product.Sku, out int count) ? count + 1 : 1;
+            int occurrenceCount;
+            occurrencesBySku[product.Sku] = occurrencesBySku.TryGetValue(product.Sku, out occurrenceCount)
+                ? occurrenceCount + 1
+                : 1;
         }
 
-        string? fulfillmentSchema = ResolveFulfillmentSchema(posting, sourceSchema, logger, ref loggedMissingFbsSchema);
+        string? fulfillmentSchema = ResolveFulfillmentSchema(posting, sourceSchema, logger, diagnostics);
 
         Dictionary<long, int> ordinalBySku = new Dictionary<long, int>();
         OzonPostingFinancialProduct? financialProduct;
@@ -300,7 +273,7 @@ internal static class OzonOrderMapper
     /// defaulted the other way - rFBS exists and must not be folded into "fbs".
     /// </summary>
     private static string? ResolveFulfillmentSchema(
-        OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, ref bool loggedMissingFbsSchema)
+        OzonPosting posting, OrdersSchema? sourceSchema, ILogger? logger, OzonMappingDiagnostics diagnostics)
     {
         if (!string.IsNullOrWhiteSpace(posting.DeliverySchema))
         {
@@ -312,13 +285,12 @@ internal static class OzonOrderMapper
             return NormalizeOzonSchema(FboEndpointRawSchema);
         }
 
-        if (sourceSchema == OrdersSchema.Fbs && !loggedMissingFbsSchema)
+        if (sourceSchema == OrdersSchema.Fbs && diagnostics.TryReportMissingFbsSchema())
         {
             logger?.LogWarning(
                 "Ozon FBS posting {PostingNumber} did not report delivery_schema; " +
                 "FulfillmentSchema is left unresolved for it.",
                 posting.PostingNumber);
-            loggedMissingFbsSchema = true;
         }
 
         return null;
@@ -353,7 +325,8 @@ internal static class OzonOrderMapper
             return $"{postingNumber}:{sku.ToString(CultureInfo.InvariantCulture)}";
         }
 
-        int ordinal = ordinalBySku.TryGetValue(sku, out int previous) ? previous + 1 : 1;
+        int previousOrdinal;
+        int ordinal = ordinalBySku.TryGetValue(sku, out previousOrdinal) ? previousOrdinal + 1 : 1;
         ordinalBySku[sku] = ordinal;
 
         return $"{postingNumber}:{sku.ToString(CultureInfo.InvariantCulture)}:{ordinal.ToString(CultureInfo.InvariantCulture)}";
@@ -383,7 +356,7 @@ internal static class OzonOrderMapper
     }
 
     private static OzonPosting SelectHeaderWinner(
-        List<OzonPosting> orderPostings, ILogger? logger, ref bool loggedUnknownStatus)
+        List<OzonPosting> orderPostings, ILogger? logger, OzonMappingDiagnostics diagnostics)
     {
         OzonPosting? winner = null;
         int winnerRank = int.MaxValue;
@@ -397,7 +370,8 @@ internal static class OzonOrderMapper
 
             int rank;
 
-            if (posting.Status != null && StatusRank.TryGetValue(posting.Status, out int knownRank))
+            int knownRank;
+            if (posting.Status != null && StatusRank.TryGetValue(posting.Status, out knownRank))
             {
                 rank = knownRank;
             }
@@ -405,14 +379,13 @@ internal static class OzonOrderMapper
             {
                 rank = int.MaxValue;
 
-                if (!loggedUnknownStatus)
+                if (diagnostics.TryReportUnknownStatus())
                 {
                     logger?.LogWarning(
                         "Ozon posting {PostingNumber} reports unrecognized status {Status}; it ranks " +
                         "last in header aggregation.",
                         posting.PostingNumber,
                         posting.Status);
-                    loggedUnknownStatus = true;
                 }
             }
 
@@ -452,3 +425,46 @@ internal static class OzonOrderMapper
         }
     }
 }
+
+internal sealed class OzonMappingDiagnostics
+{
+    private bool _loggedUnknownStatus;
+    private bool _loggedMissingFbsSchema;
+
+    public int RowsWithoutIdentity { get; private set; }
+
+    public void ReportRowsWithoutIdentity(int count)
+    {
+        RowsWithoutIdentity += count;
+    }
+
+    /// <summary>
+    /// Returns true exactly once, so the caller logs the first occurrence only.
+    /// </summary>
+    public bool TryReportUnknownStatus()
+    {
+        if (_loggedUnknownStatus)
+        {
+            return false;
+        }
+
+        _loggedUnknownStatus = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Returns true exactly once, so the caller logs the first occurrence only.
+    /// </summary>
+    public bool TryReportMissingFbsSchema()
+    {
+        if (_loggedMissingFbsSchema)
+        {
+            return false;
+        }
+
+        _loggedMissingFbsSchema = true;
+        return true;
+    }
+}
+
+internal sealed record OzonMappingResult(List<ChannelOrderSnapshot> Orders, int RowsWithoutIdentity);

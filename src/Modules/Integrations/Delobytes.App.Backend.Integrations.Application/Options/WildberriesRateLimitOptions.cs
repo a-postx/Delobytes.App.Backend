@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
-/// Adaptive pacing configuration for <see cref="Interfaces.IWildberriesRateLimiter"/>. The real
+/// Adaptive pacing configuration for <see cref="Interfaces.IOrdersRateLimiter"/>. The real
 /// per-key allowance is unknown ahead of time and is learned from the API's own
 /// <c>x-ratelimit-*</c> headers; these values only bound the learning process.
 /// </summary>

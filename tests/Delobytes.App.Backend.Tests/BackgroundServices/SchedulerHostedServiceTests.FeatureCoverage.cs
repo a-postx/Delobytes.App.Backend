@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -60,7 +61,7 @@ public partial class SchedulerHostedServiceTests
         // The channel-neutral limiter must still be asked about the Wildberries orders bucket,
         // otherwise a fresh Ozon bucket (always empty) would let every tick through.
         JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
-        Connection connection = BuildConnection(OrdersJobTypeMap.WildberriesChannelCode);
+        Connection connection = BuildConnection(ChannelCatalog.WildberriesCode);
         SetupDueSchedules(schedule);
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
         Mock<IOrdersRateLimiter> limiter = BuildOrdersRateLimiter();
@@ -71,7 +72,7 @@ public partial class SchedulerHostedServiceTests
         limiter.Verify(
             l => l.GetNextRequestAllowedAtAsync(
                 It.Is<RateLimitScope>(s =>
-                    s.ChannelCode == OrdersJobTypeMap.WildberriesChannelCode
+                    s.ChannelCode == ChannelCatalog.WildberriesCode
                     && s.ApiKey == connection.ApiKey
                     && s.Method == OrdersRateLimiterMethods.WildberriesSupplierOrders),
                 It.IsAny<CancellationToken>()),
@@ -82,7 +83,7 @@ public partial class SchedulerHostedServiceTests
     public async Task Tick_OzonOrdersImportFbo_UsesOzonPostingFboListScope()
     {
         JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
-        Connection connection = BuildConnection(OrdersJobTypeMap.OzonChannelCode);
+        Connection connection = BuildConnection(ChannelCatalog.OzonCode);
         SetupDueSchedules(schedule);
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
         Mock<IOrdersRateLimiter> limiter = BuildOrdersRateLimiter();
@@ -93,7 +94,7 @@ public partial class SchedulerHostedServiceTests
         limiter.Verify(
             l => l.GetNextRequestAllowedAtAsync(
                 It.Is<RateLimitScope>(s =>
-                    s.ChannelCode == OrdersJobTypeMap.OzonChannelCode
+                    s.ChannelCode == ChannelCatalog.OzonCode
                     && s.ApiKey == connection.ApiKey
                     && s.Method == OrdersRateLimiterMethods.OzonPostingFboList),
                 It.IsAny<CancellationToken>()),
@@ -104,7 +105,7 @@ public partial class SchedulerHostedServiceTests
     }
 
     [Theory]
-    [InlineData(JobType.ProductsImport, OrdersJobTypeMap.WildberriesChannelCode)]
+    [InlineData(JobType.ProductsImport, ChannelCatalog.WildberriesCode)]
     [InlineData(JobType.OrdersImport, "yandex.kit")]
     [InlineData(JobType.OrdersImport, "")]
     public async Task Tick_JobTypeNotMappedToChannel_DoesNotConsultLimiter(JobType type, string code)
@@ -151,7 +152,7 @@ public partial class SchedulerHostedServiceTests
         // wait, and its schedule must stay due so the next tick picks it up once the first finishes.
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+            .ReturnsAsync(BuildConnection(ChannelCatalog.OzonCode));
 
         JobSchedule schedule = BuildSchedule(scheduleJobType);
         SetupDueSchedules(schedule);
@@ -182,7 +183,7 @@ public partial class SchedulerHostedServiceTests
         // because each type only ever sees its own active row.
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+            .ReturnsAsync(BuildConnection(ChannelCatalog.OzonCode));
 
         SetupDueSchedules(BuildSchedule(JobType.OrdersImportFbs));
 
@@ -226,7 +227,7 @@ public partial class SchedulerHostedServiceTests
     {
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+            .ReturnsAsync(BuildConnection(ChannelCatalog.OzonCode));
 
         JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
         SetupDueSchedules(schedule);
@@ -279,7 +280,7 @@ public partial class SchedulerHostedServiceTests
     {
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+            .ReturnsAsync(BuildConnection(ChannelCatalog.OzonCode));
 
         SetupDueSchedules(BuildSchedule(JobType.OrdersImportFbo));
 

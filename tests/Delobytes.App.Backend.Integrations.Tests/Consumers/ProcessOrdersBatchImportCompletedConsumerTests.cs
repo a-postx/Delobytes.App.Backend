@@ -8,7 +8,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -140,11 +140,12 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                 JobRunId = jobRun.Id,
                 Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
                 {
+                    Phase = OrdersImportCheckpointPhase.FetchCompleted,
                     TotalBatches = totalBatches,
                     MaxChangedAt = FetchedMaxChangedAt,
                     WindowTo = DateTimeOffset.UtcNow,
                     PagesFetched = 1,
-                    IsFetchCompleted = true,
+                    IsBackfill = false,
                 }),
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
@@ -662,11 +663,12 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                 JobRunId = jobRun.Id,
                 Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
                 {
+                    Phase = OrdersImportCheckpointPhase.InProgress,
                     TotalBatches = 1,
                     MaxChangedAt = FetchedMaxChangedAt,
                     WindowTo = DateTimeOffset.UtcNow,
                     PagesFetched = 1,
-                    IsFetchCompleted = false,
+                    IsBackfill = false,
                 }),
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
@@ -766,11 +768,12 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         // MaxChangedAt=null models a delta run whose window genuinely contained no orders.
         OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
         {
+            Phase = OrdersImportCheckpointPhase.FetchCompleted,
             TotalBatches = 1,
             MaxChangedAt = null,
             WindowTo = DateTimeOffset.UtcNow,
             PagesFetched = 1,
-            IsFetchCompleted = true,
+            IsBackfill = false,
         };
 
         jobRun.ExpectedBatchCount = 1;

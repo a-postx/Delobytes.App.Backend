@@ -1,10 +1,10 @@
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 
@@ -94,13 +94,17 @@ public class ProcessOrdersImportConsumer
         // configuration error that fails the run outright, not a run that starts and then stops.
         string channelCode = connection.SystemChannelTemplate.Code;
 
-        if (!_fetcherResolver.TryResolve(channelCode, jobRun.JobType, out IOrdersFetchers? fetchers) || fetchers == null)
+        OrdersFetchersResolution resolution = _fetcherResolver.Resolve(channelCode, jobRun.JobType);
+
+        if (resolution is not OrdersFetchersResolution.Supported supported)
         {
-            string error = $"Channel '{channelCode}' does not support orders import for job type '{jobRun.JobType}'";
+            string error = ((OrdersFetchersResolution.Unsupported)resolution).Reason;
             _logger.LogError("JobRun {JobRunId}: {Error}", jobRun.Id, error);
             await _jobRunLifecycle.FailAsync(jobRun, error, cancellationToken);
             return;
         }
+
+        IOrdersFetchers fetchers = supported.Fetchers;
 
         // The budget comes from the resolved channel: Ozon paces a cursor walk where Wildberries
         // paces a bisection, so one shared constant would be wrong for at least one of them.
@@ -147,7 +151,7 @@ public class ProcessOrdersImportConsumer
         OrdersImportCheckpointPayload? previousPayload = await _checkpointStore
             .LoadAsync(jobRun.Id, cancellationToken);
 
-        if (previousPayload != null && previousPayload.IsFetchCompleted != false)
+        if (previousPayload != null && previousPayload.Phase == OrdersImportCheckpointPhase.FetchCompleted)
         {
             await PublishFetchCompletedForFinishedRunAsync(jobRun, connection, previousPayload, cancellationToken);
             return;
@@ -156,19 +160,27 @@ public class ProcessOrdersImportConsumer
         (OrdersImportContext context, int nextBatchIndex) = await CreateContextAsync(
             jobRun, connection, deadline, ordersSource, fetchers, previousPayload, cancellationToken);
 
-        OrdersRunProgress progress = new OrdersRunProgress(nextBatchIndex);
+        RunCounters counters = new RunCounters();
+        BatchSequence batches = new BatchSequence(nextBatchIndex);
 
         IOrdersFetcher fetcher = context.IsBackfill ? fetchers.Backfill : fetchers.Delta;
 
-        FetchOutcome outcome = await fetcher.FetchAsync(context, progress, cancellationToken);
+        FetchOutcome outcome = await fetcher.FetchAsync(context, counters, batches, cancellationToken);
 
-        if (outcome.IsStopped)
+        switch (outcome)
         {
-            await FinishStoppedAsync(context, progress, outcome, cancellationToken);
-            return;
+            case FetchOutcome.Stopped stopped:
+                await FinishStoppedAsync(context, counters, batches, stopped, cancellationToken);
+                break;
+            case FetchOutcome.BackfillRead backfill:
+                await FinishCompletedAsync(context, counters, batches, backfill, cancellationToken);
+                break;
+            case FetchOutcome.DeltaRead delta:
+                await FinishCompletedAsync(context, counters, batches, delta, cancellationToken);
+                break;
+            default:
+                throw new InvalidOperationException($"Unhandled fetch outcome {outcome.GetType().Name}.");
         }
-
-        await FinishCompletedAsync(context, progress, outcome, cancellationToken);
     }
 
     private async Task<(OrdersImportContext Context, int NextBatchIndex)> CreateContextAsync(
@@ -185,7 +197,7 @@ public class ProcessOrdersImportConsumer
         DateTimeOffset windowTo = previousPayload?.WindowTo ?? _timeProvider.GetUtcNow();
 
         OrdersBackfillState backfillState = await _backfillWalker
-            .GetOrCreateAsync(connection.Id, jobRun.JobType, cancellationToken);
+            .GetOrCreateAsync(connection.Id, jobRun.JobType, fetchers.Tuning, cancellationToken);
 
         // The walk decides the branch, not the watermark. A connection that was syncing under
         // the old single-request backfill has an incomplete history precisely because that
@@ -194,37 +206,31 @@ public class ProcessOrdersImportConsumer
         // in place is not recoverable.
         bool isBackfill = previousPayload?.IsBackfill == true || !backfillState.IsCompleted;
 
-        // A redelivered message continues batch numbering where the last attempt left off,
-        // identified by IsFetchCompleted == false: that attempt published some units and
-        // persisted their count, but never reached the finishing write. Starting over at 0 would
-        // reuse BatchIds already recorded for different content under this JobRunId.
-        int nextBatchIndex = previousPayload != null && previousPayload.IsFetchCompleted == false
+        // A redelivered message continues batch numbering where the last attempt left off: an
+        // InProgress or Stopped attempt published some units and persisted their count, but never
+        // reached the finishing write. Starting over at 0 would reuse BatchIds already recorded
+        // for different content under this JobRunId.
+        int nextBatchIndex = previousPayload != null
+            && previousPayload.Phase is OrdersImportCheckpointPhase.InProgress or OrdersImportCheckpointPhase.Stopped
             ? previousPayload.TotalBatches
             : 0;
 
-        OrdersImportContext context = new OrdersImportContext(
-            jobRun,
-            connection,
-            ordersSource,
-            backfillState,
-            deadline,
-            windowTo,
-            isBackfill,
-            ResolveSchema(jobRun.JobType),
-            fetchers.MaxRequestsPerRun);
+        OrdersImportContext context = new OrdersImportContext
+        {
+            JobRun = jobRun,
+            Connection = connection,
+            OrdersSource = ordersSource,
+            BackfillState = backfillState,
+            Tuning = fetchers.Tuning,
+            Deadline = deadline,
+            WindowTo = windowTo,
+            IsBackfill = isBackfill,
+            Schema = ResolveSchema(jobRun.JobType),
+        };
 
         if (previousPayload == null)
         {
-            await _checkpointStore.SaveAsync(
-                jobRun.Id,
-                new OrdersImportCheckpointPayload
-                {
-                    TotalBatches = 0,
-                    WindowTo = context.WindowTo,
-                    IsBackfill = context.IsBackfill,
-                    IsFetchCompleted = false,
-                },
-                cancellationToken);
+            await _checkpointStore.SaveStartedAsync(jobRun.Id, context, cancellationToken);
         }
 
         return (context, nextBatchIndex);
@@ -246,84 +252,114 @@ public class ProcessOrdersImportConsumer
 
     /// <summary>
     /// A run stopped by throttle or budget leaves its data incomplete, so it neither finalises the
-    /// job (no IsFetchCompleted=true, no completion event) nor reports a failure: it persists the
+    /// job (no FetchCompleted phase, no completion event) nor reports a failure: it persists the
     /// progress checkpoint and schedules a continuation.
     /// </summary>
     private async Task FinishStoppedAsync(
         OrdersImportContext context,
-        OrdersRunProgress progress,
-        FetchOutcome outcome,
+        RunCounters counters,
+        BatchSequence batches,
+        FetchOutcome.Stopped outcome,
         CancellationToken cancellationToken)
     {
-        await _checkpointStore.SaveAsync(
-            context.JobRun.Id,
-            new OrdersImportCheckpointPayload
-            {
-                TotalBatches = progress.NextBatchIndex,
-                WindowTo = context.WindowTo,
-                PagesFetched = outcome.RequestsIssued,
-                IsBackfill = context.IsBackfill,
-                IsFetchCompleted = false,
-            },
-            cancellationToken);
+        await _checkpointStore.SaveStoppedAsync(
+            context.JobRun.Id, context, counters, batches, cancellationToken);
 
-        Guid? continuationId = null;
-        DateTimeOffset? continuationNotBefore = null;
+        JobRun? continuation = await _continuationScheduler
+            .ScheduleAsync(context.JobRun, outcome.ResumeAt, cancellationToken);
 
-        if (outcome.ResumeAt.HasValue)
-        {
-            JobRun? continuation = await _continuationScheduler
-                .ScheduleAsync(context.JobRun, outcome.ResumeAt.Value, cancellationToken);
-
-            if (continuation != null)
-            {
-                continuationId = continuation.Id;
-                continuationNotBefore = continuation.NotBefore;
-            }
-        }
+        Guid? continuationId = continuation?.Id;
+        DateTimeOffset? continuationNotBefore = continuation?.NotBefore;
 
         _logger.LogWarning(
-            "JobRun {JobRunId}: stopped, backfill={Backfill}, stopReason={StopReason}, "
-            + "fetched {Orders} orders, resumeAt={ResumeAt}, inProcessWaits={InProcessWaits}, "
+            "JobRun {JobRunId}: stopped, backfill={Backfill}, stopCause={StopCause}, "
+            + "requests={Requests}, resumeAt={ResumeAt}, inProcessWaits={InProcessWaits}, "
             + "totalWaitedSeconds={TotalWaitedSeconds}, continuationId={ContinuationId}, "
             + "continuationNotBefore={ContinuationNotBefore}",
             context.JobRun.Id,
             context.IsBackfill,
-            outcome.StopReason,
-            outcome.OrdersFetched,
+            outcome.Cause,
+            outcome.RequestsIssued,
             outcome.ResumeAt,
-            progress.InProcessWaits,
-            progress.TotalWaited.TotalSeconds,
+            counters.InProcessWaits,
+            counters.TotalWaited.TotalSeconds,
             continuationId,
             continuationNotBefore);
     }
 
     private async Task FinishCompletedAsync(
         OrdersImportContext context,
-        OrdersRunProgress progress,
-        FetchOutcome outcome,
+        RunCounters counters,
+        BatchSequence batches,
+        FetchOutcome.DeltaRead outcome,
         CancellationToken cancellationToken)
     {
-        OrdersImportCheckpointPayload payload = new OrdersImportCheckpointPayload
-        {
-            TotalBatches = progress.NextBatchIndex,
-            MaxChangedAt = outcome.MaxChangedAt,
-            WindowTo = context.WindowTo,
-            PagesFetched = outcome.RequestsIssued,
-            IsBackfill = context.IsBackfill,
-            IsBackfillCompleted = context.IsBackfill && outcome.IsBackfillCompleted,
-            HandoverWatermark = context.IsBackfill ? outcome.HandoverWatermark : null,
-            IsFetchCompleted = true,
-        };
+        await PersistCompletedAsync(
+            context,
+            counters,
+            batches,
+            outcome.MaxChangedAt,
+            isBackfillCompleted: false,
+            handoverWatermark: null,
+            outcome.Orders.Count,
+            cancellationToken);
+    }
 
+    private async Task FinishCompletedAsync(
+        OrdersImportContext context,
+        RunCounters counters,
+        BatchSequence batches,
+        FetchOutcome.BackfillRead outcome,
+        CancellationToken cancellationToken)
+    {
+        await PersistCompletedAsync(
+            context,
+            counters,
+            batches,
+            maxChangedAt: null,
+            isBackfillCompleted: context.IsBackfill && outcome.IsCompleted,
+            handoverWatermark: context.IsBackfill ? outcome.HandoverWatermark : null,
+            outcome.OrdersFetched,
+            cancellationToken);
+    }
+
+    private async Task PersistCompletedAsync(
+        OrdersImportContext context,
+        RunCounters counters,
+        BatchSequence batches,
+        DateTimeOffset? maxChangedAt,
+        bool isBackfillCompleted,
+        DateTimeOffset? handoverWatermark,
+        int rows,
+        CancellationToken cancellationToken)
+    {
         // The final count must be persisted before the completion event is published: the
         // aggregator finalises on whichever of the completion event or a batch result brings its
         // recorded count up to the expected total, and it can only do that once it knows the
         // final count.
-        await _checkpointStore.SaveAsync(context.JobRun.Id, payload, cancellationToken);
+        await _checkpointStore.SaveCompletedAsync(
+            context.JobRun.Id,
+            context,
+            counters,
+            batches,
+            maxChangedAt,
+            isBackfillCompleted,
+            handoverWatermark,
+            cancellationToken);
 
         await _eventPublisher.PublishAsync(
-            BuildFetchCompletedEvent(context.JobRun.Id, context.Connection.Id, payload),
+            new OrdersImportFetchCompletedEvent
+            {
+                JobRunId = context.JobRun.Id,
+                ConnectionId = context.Connection.Id,
+                TotalBatches = batches.NextIndex,
+                MaxChangedAt = maxChangedAt,
+                HandoverWatermark = handoverWatermark,
+                IsBackfill = context.IsBackfill,
+                IsBackfillCompleted = isBackfillCompleted,
+                PagesFetched = counters.RequestsIssued,
+                WindowTo = context.WindowTo,
+            },
             cancellationToken);
 
         _logger.LogInformation(
@@ -331,11 +367,11 @@ public class ProcessOrdersImportConsumer
             + "published {Batches} batches, inProcessWaits={InProcessWaits}, totalWaitedSeconds={TotalWaitedSeconds}",
             context.JobRun.Id,
             context.IsBackfill,
-            outcome.OrdersFetched,
-            outcome.RequestsIssued,
-            payload.TotalBatches,
-            progress.InProcessWaits,
-            progress.TotalWaited.TotalSeconds);
+            rows,
+            counters.RequestsIssued,
+            batches.NextIndex,
+            counters.InProcessWaits,
+            counters.TotalWaited.TotalSeconds);
     }
 
     private async Task PublishFetchCompletedForFinishedRunAsync(

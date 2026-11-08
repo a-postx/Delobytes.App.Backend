@@ -4,7 +4,7 @@ using System.Net.Http;
 using System.Text;
 
 using Delobytes.App.Backend.Integrations.Application.Models;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using FluentAssertions;
 using Xunit;
 

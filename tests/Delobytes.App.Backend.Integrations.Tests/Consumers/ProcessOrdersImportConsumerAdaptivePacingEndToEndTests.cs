@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -25,7 +25,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
@@ -135,7 +135,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
 
     private static int GetDayCountInScope()
     {
-        return (int)OrdersImportConstants.BackfillWindow.TotalDays + 1;
+        return (int)WildberriesImportOptions.DefaultBackfillWindow.TotalDays + 1;
     }
 
     private static OrdersBackfillState Clone(OrdersBackfillState state)
@@ -193,7 +193,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             .Returns(source);
     }
 
-    private ProcessOrdersImportConsumer CreateConsumer(IWildberriesRateLimiter rateLimiter, int backfillRunBudgetSeconds = 1200)
+    private ProcessOrdersImportConsumer CreateConsumer(IOrdersRateLimiter rateLimiter, int backfillRunBudgetSeconds = 1200)
     {
         WildberriesImportOptions options = new WildberriesImportOptions
         {
@@ -211,15 +211,16 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             checkpointStore);
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new WildberriesOrdersRateLimiterAdapter(rateLimiter),
+            rateLimiter,
             _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
             NullLogger<BisectingOrdersReader>.Instance,
-            wrappedOptions);
+            tuning);
 
         OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
             _backfillStateRepo.Object,
@@ -231,15 +232,17 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
-            StubOrdersFetcherResolver.ForWildberries(
-                new BackfillOrdersFetcher(backfillWalker, bisectingReader),
-                new DeltaOrdersFetcher(
-                    bisectingReader,
-                    _syncCheckpointRepo.Object,
-                    batchPublisher,
-                    NullLogger<DeltaOrdersFetcher>.Instance),
-                bisectingReader,
-                options),
+            StubOrdersFetcherResolver.For(
+                "wildberries",
+                JobType.OrdersImport,
+                new OrdersFetchers(
+                    new BackfillOrdersFetcher(backfillWalker, bisectingReader),
+                    new DeltaOrdersFetcher(
+                        bisectingReader,
+                        _syncCheckpointRepo.Object,
+                        batchPublisher,
+                        NullLogger<DeltaOrdersFetcher>.Instance),
+                    tuning)),
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
@@ -300,7 +303,8 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         WildberriesRateLimiter rateLimiter = new WildberriesRateLimiter(
             throttleRepository,
             Options.Create(rateLimitOptions),
-            NullLogger<WildberriesRateLimiter>.Instance);
+            NullLogger<WildberriesRateLimiter>.Instance,
+            _timeProvider);
 
         FakeRateLimitedOrdersSource source = new FakeRateLimitedOrdersSource(
             rateLimiter,
@@ -322,7 +326,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         int expectedDays = GetDayCountInScope();
 
         WildberriesMethodThrottle? throttle = await throttleRepository.GetAsync(
-            WildberriesKeyFingerprint.Compute(ApiKey), WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            ApiKeyFingerprint.Compute(ApiKey), WildberriesApiMethod.SupplierOrders, CancellationToken.None);
         throttle.Should().NotBeNull();
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         // The limiter uses wall time; move its persisted slot instead of sleeping in the test.
@@ -344,7 +348,7 @@ public class ProcessOrdersImportConsumerAdaptivePacingEndToEndTests
         List<string> publishedIds = PublishedOrderIds();
         publishedIds.Should().HaveCount((expectedDays + 1) * 2);
         publishedIds.Distinct().Should().HaveCount(expectedDays * 2);
-        _persistedState.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - OrdersImportConstants.SafetyOverlap);
+        _persistedState.HandoverWatermark.Should().Be(_timeProvider.GetUtcNow() - WildberriesImportOptions.DefaultSafetyOverlap);
 
         OrdersImportCheckpointPayload? lastPayload = CaptureLastPayload();
         lastPayload.Should().NotBeNull();

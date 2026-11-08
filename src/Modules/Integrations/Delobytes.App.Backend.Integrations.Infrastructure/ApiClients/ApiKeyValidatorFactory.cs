@@ -1,31 +1,27 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
+/// <summary>
+/// Resolves the API-key validator a channel registered under its own key, so adding a channel
+/// needs no edit here.
+/// </summary>
 public class ApiKeyValidatorFactory : IApiKeyValidatorFactory
 {
-    private readonly WildberriesApiKeyValidator _wildberries;
-    private readonly OzonApiKeyValidator _ozon;
-    private readonly YandexKitApiKeyValidator _yandexKit;
+    private readonly IServiceProvider _serviceProvider;
 
-    public ApiKeyValidatorFactory(
-        WildberriesApiKeyValidator wildberries,
-        OzonApiKeyValidator ozon,
-        YandexKitApiKeyValidator yandexKit)
+    public ApiKeyValidatorFactory(IServiceProvider serviceProvider)
     {
-        _wildberries = wildberries;
-        _ozon = ozon;
-        _yandexKit = yandexKit;
+        _serviceProvider = serviceProvider;
     }
 
     public IApiKeyValidator Create(string channelCode)
     {
-        return channelCode.ToLowerInvariant() switch
-        {
-            "wildberries" => _wildberries,
-            "ozon" => _ozon,
-            "yandex.kit" => _yandexKit,
-            _ => throw new NotSupportedException($"Валидатор для канала '{channelCode}' не найден."),
-        };
+        IApiKeyValidator? validator = _serviceProvider.GetKeyedService<IApiKeyValidator>(
+            channelCode.ToLowerInvariant());
+
+        return validator
+            ?? throw new NotSupportedException($"Валидатор для канала '{channelCode}' не найден.");
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -15,7 +15,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
@@ -50,7 +50,8 @@ public partial class ProcessOrdersImportConsumerTests
     private ProcessOrdersImportConsumer CreateConsumer(
         int maxOrdersPerResponse = 80000,
         TimeSpan? minOrdersWindow = null,
-        IWildberriesRateLimiter? rateLimiter = null)
+        IOrdersRateLimiter? rateLimiter = null,
+        IOrdersFetcherResolver? fetcherResolver = null)
     {
         WildberriesImportOptions options = new WildberriesImportOptions
         {
@@ -59,6 +60,7 @@ public partial class ProcessOrdersImportConsumerTests
         };
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
 
         OrdersImportCheckpointStore checkpointStore = new OrdersImportCheckpointStore(
             _jobCheckpointRepo.Object,
@@ -68,22 +70,20 @@ public partial class ProcessOrdersImportConsumerTests
             _eventPublisher.Object,
             checkpointStore);
 
-        IWildberriesRateLimiter effectiveRateLimiter = rateLimiter ?? new AlwaysAllowWildberriesRateLimiter();
+        IOrdersRateLimiter effectiveRateLimiter = rateLimiter ?? new AlwaysAllowWildberriesRateLimiter();
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new WildberriesOrdersRateLimiterAdapter(effectiveRateLimiter),
+            effectiveRateLimiter,
             _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
             new Mock<ILogger<BisectingOrdersReader>>().Object,
-            wrappedOptions);
+            tuning);
 
         SinglePageOrdersReader singlePageReader = new SinglePageOrdersReader(
             pacedSource,
-            new Mock<ILogger<SinglePageOrdersReader>>().Object,
-            OrdersRateLimiterMethods.WildberriesSupplierOrders,
-            TimeSpan.FromSeconds(wrappedOptions.Value.MaxInProcessWaitSeconds >= 0 ? wrappedOptions.Value.MaxInProcessWaitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
+            new Mock<ILogger<SinglePageOrdersReader>>().Object);
 
         OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(
             _backfillStateRepo.Object,
@@ -95,15 +95,17 @@ public partial class ProcessOrdersImportConsumerTests
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
-            StubOrdersFetcherResolver.ForWildberries(
-                new BackfillOrdersFetcher(backfillWalker, singlePageReader),
-                new DeltaOrdersFetcher(
-                    bisectingReader,
-                    _syncCheckpointRepo.Object,
-                    batchPublisher,
-                    _deltaFetcherLogger.Object),
-                bisectingReader,
-                options),
+            fetcherResolver ?? StubOrdersFetcherResolver.For(
+                "wildberries",
+                JobType.OrdersImport,
+                new OrdersFetchers(
+                    new BackfillOrdersFetcher(backfillWalker, singlePageReader),
+                    new DeltaOrdersFetcher(
+                        bisectingReader,
+                        _syncCheckpointRepo.Object,
+                        batchPublisher,
+                        _deltaFetcherLogger.Object),
+                    TestTunings.Wildberries(options))),
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
@@ -546,7 +548,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Selection.Should().Be(OrdersSelectionMode.LastChanged);
-        capturedRequest.DateFrom.Should().Be((lastChangedAt - OrdersImportConstants.SafetyOverlap)
+        capturedRequest.DateFrom.Should().Be((lastChangedAt - WildberriesImportOptions.DefaultSafetyOverlap)
             .ToOffset(TimeSpan.FromHours(3)));
     }
 
@@ -1653,7 +1655,7 @@ public partial class ProcessOrdersImportConsumerTests
 
         _jobCheckpointRepo.Verify(
             r => r.UpsertAsync(It.Is<JobCheckpoint>(checkpoint =>
-                checkpoint.Payload.Contains("\"IsFetchCompleted\":false")), It.IsAny<CancellationToken>()),
+                checkpoint.Payload.Contains("\"Phase\":0")), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

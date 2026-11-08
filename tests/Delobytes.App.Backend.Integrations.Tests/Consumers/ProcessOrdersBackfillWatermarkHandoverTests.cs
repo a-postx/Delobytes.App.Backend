@@ -3,11 +3,12 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -80,6 +81,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     {
         return new OrdersImportCheckpointPayload
         {
+            Phase = OrdersImportCheckpointPhase.FetchCompleted,
             TotalBatches = 1,
             MaxChangedAt = maxChangedAt,
             WindowTo = DateTimeOffset.UtcNow,
@@ -423,10 +425,10 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
         _savedCheckpoint.Should().NotBeNull();
 
         DateTimeOffset expectedWindowFrom = _savedCheckpoint!.LastChangedAt!.Value
-            .Subtract(OrdersImportConstants.SafetyOverlap);
+            .Subtract(WildberriesImportOptions.DefaultSafetyOverlap);
 
         _savedCheckpoint!.LastChangedAt.Should().Be(HandoverWatermark);
-        expectedWindowFrom.Should().Be(HandoverWatermark.Subtract(OrdersImportConstants.SafetyOverlap));
+        expectedWindowFrom.Should().Be(HandoverWatermark.Subtract(WildberriesImportOptions.DefaultSafetyOverlap));
         expectedWindowFrom.Should().BeAfter(ReferenceInstant.AddDays(-1));
     }
 }

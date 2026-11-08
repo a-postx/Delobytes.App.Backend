@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -156,7 +157,7 @@ public class SchedulerHostedService : BackgroundService
 
             bool hasActiveJob;
 
-            if (IsOzonOrdersJob(channelCode, schedule.JobType))
+            if (SerializesOrdersJobTypes(channelCode))
             {
                 // FBO and FBS share one connection and must never run concurrently: they fetch
                 // overlapping order_number ranges and write to the same Order row.
@@ -251,10 +252,10 @@ public class SchedulerHostedService : BackgroundService
     /// True when the schedule belongs to an Ozon connection and drives either of the two orders
     /// job types (FBO or FBS) that must never run concurrently on the same connection.
     /// </summary>
-    private static bool IsOzonOrdersJob(string? channelCode, JobType jobType)
+    private static bool SerializesOrdersJobTypes(string? channelCode)
     {
-        return string.Equals(channelCode, OrdersJobTypeMap.OzonChannelCode, StringComparison.OrdinalIgnoreCase)
-            && (jobType == JobType.OrdersImportFbo || jobType == JobType.OrdersImportFbs);
+        return ChannelCatalog.TryGet(channelCode, out ChannelDescriptor descriptor)
+            && descriptor.SerializesOrdersJobTypes;
     }
 
     /// <summary>

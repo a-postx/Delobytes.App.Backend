@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
-/// Outcome of <see cref="Interfaces.IWildberriesRateLimiter.TryAcquireAsync"/>.
+/// Outcome of <see cref="Interfaces.IOrdersRateLimiter.TryAcquireAsync"/>.
 /// </summary>
 public sealed record RateLimitAcquireResult
 {

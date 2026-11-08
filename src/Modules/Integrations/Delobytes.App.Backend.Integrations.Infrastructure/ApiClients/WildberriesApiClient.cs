@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -11,6 +12,9 @@ using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
+using Delobytes.App.Backend.Integrations.Application.Orders;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,7 +23,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// <summary>
 /// Wildberries marketplace API client implementation.
 /// </summary>
-public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource
+public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder
 {
     private const int DeserializationMaxAttempts = 3;
     private const string WildberriesCurrency = "RUB";
@@ -38,12 +42,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// Wildberries has operated on a fixed UTC+3 offset (no DST) since 2014; the orders API
     /// takes dates in this local time and does not accept a time zone designator.
     /// </summary>
-    private static readonly TimeSpan MoscowOffset = TimeSpan.FromHours(3);
+    private static readonly TimeSpan MoscowOffset = OrdersWindowPlanner.MoscowTime;
 
     private readonly HttpClient _httpClient;
     private readonly IEndpointResolver _endpointResolver;
     private readonly IConnectionResolver _connectionResolver;
-    private readonly IWildberriesRateLimiter _rateLimiter;
+    private readonly IOrdersRateLimiter _rateLimiter;
     private readonly ILogger<WildberriesApiClient> _logger;
     private readonly WildberriesImportOptions _options;
 
@@ -75,7 +79,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         HttpClient httpClient,
         IEndpointResolver endpointResolver,
         IConnectionResolver connectionResolver,
-        IWildberriesRateLimiter rateLimiter,
+        [FromKeyedServices(ChannelCatalog.WildberriesCode)] IOrdersRateLimiter rateLimiter,
         IOptions<WildberriesImportOptions> options,
         ILogger<WildberriesApiClient> logger)
     {
@@ -478,10 +482,9 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
 
-        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(
-            connection.ApiKey,
-            WildberriesApiMethod.SupplierOrders,
-            cancellationToken);
+        RateLimitScope scope = BuildOrdersScope(connection.ApiKey);
+
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
 
         if (!acquireResult.Acquired)
         {
@@ -490,7 +493,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 "Wildberries orders request for connection {ConnectionId} was not issued: the rate " +
                 "limiter has not released the next slot for method {Method} yet.",
                 connectionId,
-                WildberriesApiMethod.SupplierOrders);
+                scope.Method);
 
             return CreateThrottledPage(acquireResult.NextRequestAllowedAt);
         }
@@ -530,11 +533,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         // Reported before the body is read: the counters describe this response, and a body that
         // fails to deserialize must not cost the limiter its only feedback on the real allowance.
-        await _rateLimiter.ReportSuccessAsync(
-            connection.ApiKey,
-            WildberriesApiMethod.SupplierOrders,
-            rateLimitSignal,
-            cancellationToken);
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
 
         List<WildberriesOrderDto>? orders =
             await response.Content.ReadFromJsonAsync<List<WildberriesOrderDto>>(cancellationToken);
@@ -688,6 +687,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         };
     }
 
+    private RateLimitScope BuildOrdersScope(string apiKey)
+    {
+        return new RateLimitScope(
+            ChannelCode, apiKey, OrdersRateLimiterMethods.WildberriesSupplierOrders);
+    }
+
     private async Task<OrdersPage> HandleThrottledResponseAsync(
         string apiKey,
         Guid connectionId,
@@ -698,8 +703,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
-            apiKey,
-            WildberriesApiMethod.SupplierOrders,
+            BuildOrdersScope(apiKey),
             signal,
             cancellationToken);
 
@@ -711,7 +715,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             "Retry is taken from x-ratelimit-retry, not from x-ratelimit-reset. Response: {Response}",
             connectionId,
             WildberriesApiMethod.SupplierOrders,
-            WildberriesKeyFingerprint.Compute(apiKey),
+            ApiKeyFingerprint.Compute(apiKey),
             signal.RequestId,
             signal.Limit,
             signal.Remaining,

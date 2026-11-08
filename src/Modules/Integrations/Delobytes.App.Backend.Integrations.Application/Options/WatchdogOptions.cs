@@ -1,9 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
-/// Operational configuration for WatchdogHostedService (Stage 12). Per-type timeout values
-/// live in the database instead (JobTypeConfiguration.TimeoutMinutes) since they differ per
-/// JobType and are looked up by other components too.
+/// Operational configuration for WatchdogHostedService.
 /// </summary>
 public class WatchdogOptions
 {

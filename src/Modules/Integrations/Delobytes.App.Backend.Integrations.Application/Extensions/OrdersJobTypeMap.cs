@@ -1,50 +1,25 @@
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Application.Extensions;
 
 /// <summary>
-/// The single source of truth for "which orders job types does a channel run". Both the seeder
-/// (which creates a schedule) and the scheduler (which fires one) read it, so a channel can never
-/// be seeded with one job type and dispatched as another.
+/// Compatibility facade over <see cref="ChannelCatalog"/> for callers that already depend on this
+/// static (the seeder and the scheduler). The catalogue is the single source of truth; this class
+/// only restates its answers in the shapes those callers use.
 /// </summary>
 public static class OrdersJobTypeMap
 {
     /// <summary>
-    /// SystemChannelTemplate.Code of Wildberries connections, compared case-insensitively.
-    /// </summary>
-    public const string WildberriesChannelCode = "wildberries";
-
-    /// <summary>
-    /// SystemChannelTemplate.Code of Ozon connections, compared case-insensitively.
-    /// </summary>
-    public const string OzonChannelCode = "ozon";
-
-    /// <summary>
     /// Returns the orders job types the channel runs, in scheduling order. An unknown or blank
     /// channel code yields an empty list: such a connection gets no orders schedule at all.
     /// </summary>
-    /// <param name="channelCode">The connection's <c>SystemChannelTemplate.Code</c>.</param>
     public static IReadOnlyList<JobType> GetOrdersJobTypes(string? channelCode)
     {
-        if (string.IsNullOrWhiteSpace(channelCode))
-        {
-            return Array.Empty<JobType>();
-        }
-
-        if (IsWildberries(channelCode))
-        {
-            return new[] { JobType.OrdersImport };
-        }
-
-        if (IsOzon(channelCode))
-        {
-            // Both schemas are always scheduled: they share one connection and one rate limiter, so
-            // the scheduler serialises them rather than a configuration flag deciding which exists.
-            return new[] { JobType.OrdersImportFbo, JobType.OrdersImportFbs };
-        }
-
-        return Array.Empty<JobType>();
+        return ChannelCatalog.TryGet(channelCode, out ChannelDescriptor descriptor)
+            ? descriptor.OrdersJobTypes
+            : Array.Empty<JobType>();
     }
 
     /// <summary>
@@ -52,7 +27,15 @@ public static class OrdersJobTypeMap
     /// </summary>
     public static bool IsScheduledOrdersJobType(JobType jobType)
     {
-        return jobType is JobType.OrdersImport or JobType.OrdersImportFbo or JobType.OrdersImportFbs;
+        foreach (ChannelDescriptor descriptor in ChannelCatalog.All)
+        {
+            if (descriptor.OrdersJobTypes.Contains(jobType))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -61,38 +44,18 @@ public static class OrdersJobTypeMap
     /// </summary>
     public static string? GetRateLimitMethod(string? channelCode, JobType jobType)
     {
-        if (string.IsNullOrWhiteSpace(channelCode))
+        if (!ChannelCatalog.TryGet(channelCode, out ChannelDescriptor descriptor)
+            || !descriptor.OrdersJobTypes.Contains(jobType))
         {
             return null;
         }
 
-        if (IsWildberries(channelCode))
+        return jobType switch
         {
-            return jobType == JobType.OrdersImport
-                ? OrdersRateLimiterMethods.WildberriesSupplierOrders
-                : null;
-        }
-
-        if (IsOzon(channelCode))
-        {
-            return jobType switch
-            {
-                JobType.OrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
-                JobType.OrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
-                _ => null,
-            };
-        }
-
-        return null;
-    }
-
-    private static bool IsWildberries(string channelCode)
-    {
-        return string.Equals(channelCode, WildberriesChannelCode, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsOzon(string channelCode)
-    {
-        return string.Equals(channelCode, OzonChannelCode, StringComparison.OrdinalIgnoreCase);
+            JobType.OrdersImport => OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            JobType.OrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
+            JobType.OrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
+            _ => null,
+        };
     }
 }

@@ -8,7 +8,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -55,11 +55,12 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                 JobRunId = run.Id,
                 Payload = JsonSerializer.Serialize(new OrdersImportCheckpointPayload
                 {
+                    Phase = OrdersImportCheckpointPhase.InProgress,
                     TotalBatches = 1,
                     MaxChangedAt = FetchedMaxChangedAt,
                     WindowTo = DateTimeOffset.UtcNow,
                     PagesFetched = 1,
-                    IsFetchCompleted = false,
+                    IsBackfill = false,
                 }),
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
@@ -294,11 +295,12 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         // and FinishCompletedAsync overwrites it once the fetch is over.
         OrdersImportCheckpointPayload fetched = new OrdersImportCheckpointPayload
         {
+            Phase = OrdersImportCheckpointPhase.InProgress,
             TotalBatches = 1,
             MaxChangedAt = FetchedMaxChangedAt,
             WindowTo = DateTimeOffset.UtcNow,
             PagesFetched = 1,
-            IsFetchCompleted = false,
+            IsBackfill = false,
         };
 
         _jobCheckpointRepo
@@ -317,7 +319,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
 
         run.Status.Should().Be(JobStatus.Running, "the fetch outcome is not known when the batch result arrives");
 
-        fetched = fetched with { IsFetchCompleted = true };
+        fetched = fetched with { Phase = OrdersImportCheckpointPhase.FetchCompleted };
 
         await consumer.ProcessFetchCompletedAsync(BuildFetchCompletedEvent(run.Id, totalBatches: 1), CancellationToken.None);
 

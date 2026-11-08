@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,7 +9,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -112,7 +112,7 @@ public class OzonSchemaReadersTests
         };
     }
 
-    private (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+    private (OrdersImportContext Context, RunCounters Progress) BuildRun(
         SinglePageOrdersSource source, JobType jobType, bool deadlineAlreadyPassed = false)
     {
         Connection connection = BuildConnection();
@@ -131,17 +131,15 @@ public class OzonSchemaReadersTests
             ? _timeProvider.GetUtcNow().AddMinutes(-1)
             : _timeProvider.GetUtcNow().AddMinutes(10);
 
-        OrdersImportContext context = new OrdersImportContext(
-            jobRun,
-            connection,
-            source,
-            new OrdersBackfillState(),
-            deadline,
-            WindowFrom.AddDays(1),
-            false,
-            null);
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: source,
+            tuning: TestTunings.Ozon(BuildOptions(), jobType),
+            deadline: deadline,
+            windowTo: WindowFrom.AddDays(1));
 
-        return (context, new OrdersRunProgress(0));
+        return (context, new RunCounters());
     }
 
     private static OzonImportOptions BuildOptions()
@@ -149,32 +147,34 @@ public class OzonSchemaReadersTests
         return new OzonImportOptions { MaxInProcessWaitSeconds = 0 };
     }
 
-    private OzonFboOrdersReader CreateFboReader(RecordingRateLimiter limiter)
+    private CursorPagedOrdersReader CreateFboReader(RecordingRateLimiter limiter)
     {
-        return new OzonFboOrdersReader(
+        return new CursorPagedOrdersReader(
             new PacedOrdersSource(limiter, _timeProvider),
             NullLogger<CursorPagedOrdersReader>.Instance,
-            Options.Create(BuildOptions()));
+            TestTunings.Ozon(BuildOptions()),
+            OrdersSchema.Fbo);
     }
 
-    private OzonFbsOrdersReader CreateFbsReader(RecordingRateLimiter limiter)
+    private CursorPagedOrdersReader CreateFbsReader(RecordingRateLimiter limiter)
     {
-        return new OzonFbsOrdersReader(
+        return new CursorPagedOrdersReader(
             new PacedOrdersSource(limiter, _timeProvider),
             NullLogger<CursorPagedOrdersReader>.Instance,
-            Options.Create(BuildOptions()));
+            TestTunings.Ozon(BuildOptions(), JobType.OrdersImportFbs),
+            OrdersSchema.Fbs);
     }
 
     [Fact]
     public async Task FboReader_PinsFboSchemaOnTheIssuedRequest()
     {
         SinglePageOrdersSource source = new SinglePageOrdersSource();
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, JobType.OrdersImportFbo);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, JobType.OrdersImportFbo);
 
         FetchOutcome outcome = await CreateFboReader(new RecordingRateLimiter()).ReadWindowAsync(
             BuildRequest(OrdersSchema.Fbs), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeFalse();
+        outcome.Should().BeOfType<FetchOutcome.DeltaRead>();
         source.Requests.Should().ContainSingle();
         source.Requests[0].Schema.Should().Be(OrdersSchema.Fbo,
             "a caller that asks for the wrong schema must not be served the FBS endpoint");
@@ -184,12 +184,12 @@ public class OzonSchemaReadersTests
     public async Task FbsReader_PinsFbsSchemaOnTheIssuedRequest()
     {
         SinglePageOrdersSource source = new SinglePageOrdersSource();
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, JobType.OrdersImportFbs);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, JobType.OrdersImportFbs);
 
         FetchOutcome outcome = await CreateFbsReader(new RecordingRateLimiter()).ReadWindowAsync(
             BuildRequest(null), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeFalse();
+        outcome.Should().BeOfType<FetchOutcome.DeltaRead>();
         source.Requests.Should().ContainSingle();
         source.Requests[0].Schema.Should().Be(OrdersSchema.Fbs,
             "a request that names no schema must not fall through to the FBO endpoint");
@@ -200,14 +200,13 @@ public class OzonSchemaReadersTests
     {
         SinglePageOrdersSource source = new SinglePageOrdersSource();
         RecordingRateLimiter limiter = new RecordingRateLimiter();
-        (OrdersImportContext context, OrdersRunProgress progress) =
+        (OrdersImportContext context, RunCounters progress) =
             BuildRun(source, JobType.OrdersImportFbo, deadlineAlreadyPassed: true);
 
         FetchOutcome outcome = await CreateFboReader(limiter).ReadWindowAsync(
             BuildRequest(OrdersSchema.Fbo), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeTrue();
-        outcome.StopReason.Should().Be(StopReason.Budget);
+        outcome.Stopped().Cause.Should().Be(StopCause.TimeBudget);
         limiter.Scopes.Should().NotBeEmpty();
         limiter.Scopes.Should().OnlyContain(scope => scope.Method == OrdersRateLimiterMethods.OzonPostingFboList);
         limiter.Scopes.Should().OnlyContain(scope => scope.ChannelCode == "ozon");
@@ -220,14 +219,13 @@ public class OzonSchemaReadersTests
     {
         SinglePageOrdersSource source = new SinglePageOrdersSource();
         RecordingRateLimiter limiter = new RecordingRateLimiter();
-        (OrdersImportContext context, OrdersRunProgress progress) =
+        (OrdersImportContext context, RunCounters progress) =
             BuildRun(source, JobType.OrdersImportFbs, deadlineAlreadyPassed: true);
 
         FetchOutcome outcome = await CreateFbsReader(limiter).ReadWindowAsync(
             BuildRequest(OrdersSchema.Fbs), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeTrue();
-        outcome.StopReason.Should().Be(StopReason.Budget);
+        outcome.Stopped().Cause.Should().Be(StopCause.TimeBudget);
         limiter.Scopes.Should().NotBeEmpty();
         limiter.Scopes.Should().OnlyContain(
             scope => scope.Method == OrdersRateLimiterMethods.OzonPostingFbsList,
@@ -240,7 +238,7 @@ public class OzonSchemaReadersTests
     public async Task FbsReader_MatchingSchema_KeepsThePagingFieldsOfTheRequest()
     {
         SinglePageOrdersSource source = new SinglePageOrdersSource();
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, JobType.OrdersImportFbs);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, JobType.OrdersImportFbs);
 
         OrdersRequest request = BuildRequest(OrdersSchema.Fbs);
         request.Statuses = OzonPostingStatuses.FbsStatuses;
@@ -262,7 +260,7 @@ public class OzonSchemaReadersTests
         // Statuses belong to the delta fetcher: a backfill day carries none, because posting/fbs/list
         // filters a backfill window by in_process_at alone.
         SinglePageOrdersSource source = new SinglePageOrdersSource();
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, JobType.OrdersImportFbs);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, JobType.OrdersImportFbs);
 
         await CreateFbsReader(new RecordingRateLimiter()).ReadWindowAsync(
             BuildRequest(null), context, progress, CancellationToken.None);

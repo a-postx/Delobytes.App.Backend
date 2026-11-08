@@ -1,6 +1,9 @@
+﻿using System;
+using System.Collections.Generic;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -12,77 +15,74 @@ public class OrdersImportContextAndProgressTests
     private static OrdersImportContext BuildContext(JobRun jobRun, Connection connection, DateTimeOffset windowTo, bool isBackfill)
     {
         IOrdersSource ordersSource = new Mock<IOrdersSource>().Object;
-        OrdersBackfillState backfillState = new OrdersBackfillState();
 
-        return new OrdersImportContext(
-            jobRun,
-            connection,
-            ordersSource,
-            backfillState,
-            DateTimeOffset.UtcNow.AddMinutes(10),
-            windowTo,
-            isBackfill);
+        return OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: ordersSource,
+            windowTo: windowTo,
+            isBackfill: isBackfill);
     }
 
-    private static OrdersRunProgress BuildProgress(int nextBatchIndex)
+    private static BatchSequence BuildBatches(int nextIndex)
     {
-        return new OrdersRunProgress(nextBatchIndex);
+        return new BatchSequence(nextIndex);
     }
 
     [Fact]
-    public void Constructor_SetsNextBatchIndexWindowToAndIsBackfill()
+    public void Context_CarriesWindowToAndBranch()
     {
         JobRun jobRun = new JobRun { Id = Guid.NewGuid(), ConnectionId = Guid.NewGuid() };
         Connection connection = new Connection { Id = jobRun.ConnectionId, ChannelId = Guid.NewGuid() };
         DateTimeOffset windowTo = DateTimeOffset.UtcNow;
 
         OrdersImportContext context = BuildContext(jobRun, connection, windowTo, true);
-        OrdersRunProgress progress = BuildProgress(5);
+        BatchSequence batches = BuildBatches(5);
 
         context.IsBackfill.Should().BeTrue();
         context.WindowTo.Should().Be(windowTo);
-        progress.NextBatchIndex.Should().Be(5);
+        batches.NextIndex.Should().Be(5);
     }
 
     [Fact]
-    public void Constructor_StartsTheRunWithZeroCounters()
+    public void RunCounters_StartAtZero()
     {
         JobRun jobRun = new JobRun { Id = Guid.NewGuid(), ConnectionId = Guid.NewGuid() };
         Connection connection = new Connection { Id = jobRun.ConnectionId, ChannelId = Guid.NewGuid() };
-        OrdersImportContext context = BuildContext(jobRun, connection, DateTimeOffset.UtcNow, false);
-        OrdersRunProgress progress = BuildProgress(0);
+        BuildContext(jobRun, connection, DateTimeOffset.UtcNow, false);
+        RunCounters counters = new RunCounters();
 
-        progress.RequestsIssued.Should().Be(0);
-        progress.InProcessWaits.Should().Be(0);
-        progress.TotalWaited.Should().Be(TimeSpan.Zero);
+        counters.RequestsIssued.Should().Be(0);
+        counters.InProcessWaits.Should().Be(0);
+        counters.TotalWaited.Should().Be(TimeSpan.Zero);
     }
 
     [Fact]
-    public void TakeNextBatchIndex_ReturnsCurrentIndexThenIncrements()
+    public void TakeNext_ReturnsCurrentIndexThenIncrements()
     {
-        OrdersRunProgress progress = BuildProgress(7);
+        BatchSequence batches = BuildBatches(7);
 
-        int first = progress.TakeNextBatchIndex();
-        int second = progress.TakeNextBatchIndex();
+        int first = batches.TakeNext();
+        int second = batches.TakeNext();
 
         first.Should().Be(7);
         second.Should().Be(8);
-        progress.NextBatchIndex.Should().Be(9);
+        batches.NextIndex.Should().Be(9);
     }
 
     [Fact]
-    public void TakeNextBatchIndex_StartingFromZero_AdvancesSequentially()
+    public void TakeNext_StartingFromZero_AdvancesSequentially()
     {
-        OrdersRunProgress progress = BuildProgress(0);
+        BatchSequence batches = BuildBatches(0);
 
         List<int> taken = new List<int>
         {
-            progress.TakeNextBatchIndex(),
-            progress.TakeNextBatchIndex(),
-            progress.TakeNextBatchIndex(),
+            batches.TakeNext(),
+            batches.TakeNext(),
+            batches.TakeNext(),
         };
 
         taken.Should().Equal(0, 1, 2);
-        progress.NextBatchIndex.Should().Be(3);
+        batches.NextIndex.Should().Be(3);
     }
 }

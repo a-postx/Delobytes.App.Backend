@@ -1,14 +1,17 @@
 using System.Reflection;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
+using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
 using Delobytes.App.Backend.Integrations.Infrastructure.Options.Validators;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
@@ -88,15 +91,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobTypeConfigurationRepository, JobTypeConfigurationRepository>();
         services.AddScoped<IOrdersBackfillStateRepository, OrdersBackfillStateRepository>();
         services.AddScoped<IWildberriesMethodThrottleRepository, WildberriesMethodThrottleRepository>();
-        services.AddScoped<IWildberriesRateLimiter, WildberriesRateLimiter>();
-        services.AddScoped<WildberriesOrdersRateLimiterAdapter>();
-        services.AddSingleton<OzonRateLimiter>(sp =>
-        {
-            OzonImportOptions ozonImportOptions = sp.GetRequiredService<IOptions<OzonImportOptions>>().Value;
-            TimeSpan minimumRequestInterval = TimeSpan.FromSeconds(ozonImportOptions.MinimumRequestIntervalSeconds);
-            return new OzonRateLimiter(sp.GetRequiredService<TimeProvider>(), minimumRequestInterval);
-        });
-        services.AddScoped<IOrdersRateLimiter, OrdersRateLimiterRouter>();
         services.AddScoped<IRawApiResponseRepository, RawApiResponseRepository>();
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
@@ -105,66 +99,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProcessProductImportBatchCompletedConsumer>();
         services.AddScoped<OrdersImportCheckpointStore>();
         services.AddScoped<OrdersBatchPublisher>();
-        services.AddScoped<PacedOrdersSource>();
-        services.AddScoped<BisectingOrdersReader>();
-        services.AddScoped(sp =>
-        {
-            int waitSeconds = sp.GetRequiredService<IOptions<WildberriesImportOptions>>().Value.MaxInProcessWaitSeconds;
-
-            return new SinglePageOrdersReader(
-                sp.GetRequiredService<PacedOrdersSource>(),
-                sp.GetRequiredService<ILogger<SinglePageOrdersReader>>(),
-                OrdersRateLimiterMethods.WildberriesSupplierOrders,
-                TimeSpan.FromSeconds(waitSeconds >= 0 ? waitSeconds : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds));
-        });
         services.AddScoped<OrdersBackfillWalker>();
-        services.AddScoped(sp => new BackfillOrdersFetcher(
-            sp.GetRequiredService<OrdersBackfillWalker>(),
-            sp.GetRequiredService<SinglePageOrdersReader>()));
-        services.AddScoped<DeltaOrdersFetcher>();
 
-        // The Ozon pagers are bound to one API method and one wait tolerance at construction, so
-        // each schema gets its own concrete reader here rather than a registration of
-        // IOrdersWindowReader, which would collide with BisectingOrdersReader - and with the other
-        // schema's reader - the other implementations of that interface.
-        services.AddScoped<OzonFboOrdersReader>();
-        services.AddScoped<OzonFbsOrdersReader>();
+        services.AddSingleton<IChannelCatalogService, ChannelCatalogService>();
+        services.AddChannelModule<WildberriesChannelModule>();
+        services.AddChannelModule<OzonChannelModule>();
 
-        services.AddScoped(sp => new OzonBackfillOrdersFetcher(
-            sp.GetRequiredService<OrdersBackfillWalker>(),
-            sp.GetRequiredService<OzonFboOrdersReader>()));
-        services.AddScoped(sp => new OzonDeltaOrdersFetcher(
-            sp.GetRequiredService<OzonFboOrdersReader>(),
-            sp.GetRequiredService<ISyncCheckpointRepository>(),
-            sp.GetRequiredService<OrdersBatchPublisher>(),
-            sp.GetRequiredService<ILogger<OzonDeltaOrdersFetcher>>(),
-            sp.GetRequiredService<IOptions<OzonImportOptions>>(),
-            OrdersSchema.Fbo,
-            OzonPostingStatuses.FboStatuses));
-        services.AddScoped(sp => new OzonOrdersFetchers(
-            sp.GetRequiredService<OzonBackfillOrdersFetcher>(),
-            sp.GetRequiredService<OzonDeltaOrdersFetcher>(),
-            sp.GetRequiredService<OzonFboOrdersReader>(),
-            sp.GetRequiredService<IOptions<OzonImportOptions>>()));
-        services.AddScoped(sp => new OzonFbsBackfillOrdersFetcher(
-            sp.GetRequiredService<OrdersBackfillWalker>(),
-            sp.GetRequiredService<OzonFbsOrdersReader>()));
-        services.AddScoped(sp => new OzonFbsDeltaOrdersFetcher(
-            sp.GetRequiredService<OzonFbsOrdersReader>(),
-            sp.GetRequiredService<ISyncCheckpointRepository>(),
-            sp.GetRequiredService<OrdersBatchPublisher>(),
-            sp.GetRequiredService<ILogger<OzonDeltaOrdersFetcher>>(),
-            sp.GetRequiredService<IOptions<OzonImportOptions>>()));
-        services.AddScoped(sp => new OzonFbsOrdersFetchers(
-            sp.GetRequiredService<OzonFbsBackfillOrdersFetcher>(),
-            sp.GetRequiredService<OzonFbsDeltaOrdersFetcher>(),
-            sp.GetRequiredService<OzonFbsOrdersReader>(),
-            sp.GetRequiredService<IOptions<OzonImportOptions>>()));
-        services.AddScoped(sp => new WildberriesOrdersFetchers(
-            sp.GetRequiredService<BackfillOrdersFetcher>(),
-            sp.GetRequiredService<DeltaOrdersFetcher>(),
-            sp.GetRequiredService<BisectingOrdersReader>(),
-            sp.GetRequiredService<IOptions<WildberriesImportOptions>>()));
         services.AddScoped<IOrdersFetcherResolver, OrdersFetcherResolver>();
 
         services.AddScoped<OrdersContinuationScheduler>();
@@ -194,27 +134,8 @@ public static class ServiceCollectionExtensions
         // ниже, чтобы запись аудита не дублировалась в каждом API-клиенте или консьюмере.
         services.AddTransient<RawApiResponseCaptureHandler>();
 
-        // WildberriesApiClient для операций синхронизации — с retry
-        services.AddHttpClient<WildberriesApiClient>()
-            .AddHttpMessageHandler<WildberriesAuthHandler>()
-            .AddHttpMessageHandler<RawApiResponseCaptureHandler>()
-            .AddResilienceHandler("retry-policy", (builder, context) =>
-            {
-                ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<WildberriesApiClient>>();
-                ResiliencePipeline<HttpResponseMessage> retryPipeline = RetryPolicies.GetRetryPolicy(logger);
-                builder.AddPipeline(retryPipeline);
-            });
-
-        services.AddHttpClient<OzonApiClient>()
-            .AddHttpMessageHandler<OzonAuthHandler>()
-            .AddHttpMessageHandler<RawApiResponseCaptureHandler>()
-            .AddResilienceHandler("retry-policy", (builder, context) =>
-            {
-                ILogger logger = context.ServiceProvider.GetRequiredService<ILogger<OzonApiClient>>();
-                ResiliencePipeline<HttpResponseMessage> retryPipeline = RetryPolicies.GetRetryPolicy(logger);
-                builder.AddPipeline(retryPipeline);
-            });
-
+        // Wildberries and Ozon clients, rate limiters and validators are registered by their
+        // channel modules (see AddChannelModule calls above).
         services.AddHttpClient<YandexKitApiClient>()
             .AddHttpMessageHandler<YandexKitAuthHandler>()
             .AddHttpMessageHandler<RawApiResponseCaptureHandler>()
@@ -225,21 +146,17 @@ public static class ServiceCollectionExtensions
                  builder.AddPipeline(retryPipeline);
              });
 
-        // Валидаторы ключей — без retry, таймаут 10 сек
-        services.AddHttpClient<WildberriesApiKeyValidator>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
-
-        services.AddHttpClient<OzonApiKeyValidator>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
-
+        // Валидаторы ключей — без retry, таймаут 10 сек.
+        // Wildberries and Ozon validators are registered by their channel modules.
         services.AddHttpClient<YandexKitApiKeyValidator>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
         });
+
+        services.AddKeyedTransient<IChannelApiClient>(
+            "yandex.kit", (sp, _) => sp.GetRequiredService<YandexKitApiClient>());
+        services.AddKeyedTransient<IApiKeyValidator>(
+            "yandex.kit", (sp, _) => sp.GetRequiredService<YandexKitApiKeyValidator>());
 
         services.AddTransient<IApiKeyValidatorFactory, ApiKeyValidatorFactory>();
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();

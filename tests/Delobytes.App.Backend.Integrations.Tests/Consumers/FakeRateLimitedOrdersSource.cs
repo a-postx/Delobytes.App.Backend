@@ -14,17 +14,17 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 /// <summary>
 /// <see cref="IOrdersSource"/> double that serves fixtures instead of calling Wildberries over
 /// HTTP, but - like <c>WildberriesApiClient</c> - gates every call through a real
-/// <see cref="IWildberriesRateLimiter"/> and reports the outcome back to it. Lets a
+/// <see cref="IOrdersRateLimiter"/> and reports the outcome back to it. Lets a
 /// consumer-level test exercise the real adaptive pacing end to end without an HTTP transport.
 /// </summary>
 internal sealed class FakeRateLimitedOrdersSource : IChannelApiClient, IOrdersSource
 {
-    private readonly IWildberriesRateLimiter _rateLimiter;
+    private readonly IOrdersRateLimiter _rateLimiter;
     private readonly string _apiKey;
     private readonly Func<OrdersRequest, List<ChannelOrderSnapshot>> _fixtureProvider;
 
     public FakeRateLimitedOrdersSource(
-        IWildberriesRateLimiter rateLimiter,
+        IOrdersRateLimiter rateLimiter,
         string apiKey,
         Func<OrdersRequest, List<ChannelOrderSnapshot>> fixtureProvider)
     {
@@ -42,8 +42,10 @@ internal sealed class FakeRateLimitedOrdersSource : IChannelApiClient, IOrdersSo
     {
         CallCount++;
 
-        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(
-            _apiKey, WildberriesApiMethod.SupplierOrders, cancellationToken);
+        RateLimitScope scope = new RateLimitScope(
+            ChannelCode, _apiKey, OrdersRateLimiterMethods.WildberriesSupplierOrders);
+
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
 
         if (!acquireResult.Acquired)
         {
@@ -53,8 +55,7 @@ internal sealed class FakeRateLimitedOrdersSource : IChannelApiClient, IOrdersSo
         List<ChannelOrderSnapshot> orders = _fixtureProvider(request);
 
         await _rateLimiter.ReportSuccessAsync(
-            _apiKey,
-            WildberriesApiMethod.SupplierOrders,
+            scope,
             new RateLimitSignal { Limit = 10, Remaining = 9, StatusCode = 200 },
             cancellationToken);
 

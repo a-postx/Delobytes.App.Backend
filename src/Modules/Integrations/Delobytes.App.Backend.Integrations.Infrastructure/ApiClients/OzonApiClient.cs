@@ -4,13 +4,17 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon.Dtos;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -18,10 +22,9 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// <summary>
 /// Ozon marketplace API client. Reads FBO and FBS orders; product cards are not supported yet.
 /// </summary>
-public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
+public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder
 {
     private const string DefaultApiBaseUrl = "https://api-seller.ozon.ru";
-    private const string OzonChannelCode = "ozon";
     private const string FboListPath = "/v3/posting/fbo/list";
     private const string FbsListPath = "/v4/posting/fbs/list";
 
@@ -45,7 +48,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
     private string? _apiBaseUrl;
 
     /// <inheritdoc/>
-    public string ChannelCode => OzonChannelCode;
+    public string ChannelCode => ChannelCatalog.OzonCode;
 
     /// <summary>
     /// Gets the base URL of the bound system channel template, falling back to the Ozon public
@@ -74,7 +77,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
         HttpClient httpClient,
         IHttpClientFactory httpClientFactory,
         IConnectionResolver connectionResolver,
-        IOrdersRateLimiter ordersRateLimiter,
+        [FromKeyedServices(ChannelCatalog.OzonCode)] IOrdersRateLimiter ordersRateLimiter,
         ILogger<OzonApiClient> logger)
     {
         _httpClient = httpClient;
@@ -293,7 +296,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
     {
         Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
 
-        RateLimitScope scope = new RateLimitScope(OzonChannelCode, connection.ApiKey, rateLimiterMethod);
+        RateLimitScope scope = new RateLimitScope(ChannelCatalog.OzonCode, connection.ApiKey, rateLimiterMethod);
 
         RateLimitAcquireResult acquireResult = await _ordersRateLimiter.TryAcquireAsync(scope, cancellationToken);
 
@@ -369,7 +372,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource
 
         List<OzonPosting> postings = page?.Postings ?? new List<OzonPosting>();
 
-        List<ChannelOrderSnapshot> orders = OzonOrderMapper.Map(postings, sourceSchema, _logger, out int rowsWithoutIdentity);
+        OzonMappingResult mappingResult = OzonOrderMapper.Map(postings, sourceSchema, _logger);
+
+        List<ChannelOrderSnapshot> orders = mappingResult.Orders;
+        int rowsWithoutIdentity = mappingResult.RowsWithoutIdentity;
 
         if (rowsWithoutIdentity > 0)
         {

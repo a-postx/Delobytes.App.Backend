@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -10,7 +10,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -58,6 +58,7 @@ public class DeltaOrdersFetcherTests
         };
 
         IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+        OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.OrdersImport);
 
         OrdersImportCheckpointStore checkpointStore = new OrdersImportCheckpointStore(
             _jobCheckpointRepo.Object,
@@ -74,7 +75,7 @@ public class DeltaOrdersFetcherTests
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(
             pacedSource,
             _bisectingReaderLogger.Object,
-            wrappedOptions);
+            tuning);
 
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<OrdersBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
@@ -123,7 +124,7 @@ public class DeltaOrdersFetcherTests
             Id = Guid.NewGuid(),
             ConnectionId = connectionId,
             NextDayToFetch = todayStart,
-            OldestDayInScope = todayStart - OrdersImportConstants.BackfillWindow,
+            OldestDayInScope = todayStart - WildberriesImportOptions.DefaultBackfillWindow,
             IsCompleted = true,
             HandoverWatermark = handoverWatermark,
             CompletedAt = Now,
@@ -151,22 +152,26 @@ public class DeltaOrdersFetcherTests
             .ReturnsAsync((Guid _, OrdersRequest request, CancellationToken _) => pageProvider(request));
     }
 
-    private (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+    private (OrdersImportContext Context, RunCounters Progress) BuildRun(
         JobRun jobRun,
         Connection connection,
         OrdersBackfillState cursor,
-        DateTimeOffset windowTo)
+        DateTimeOffset windowTo,
+        int maxInProcessWaitSeconds = 300)
     {
-        var context = new OrdersImportContext(
-            jobRun,
-            connection,
-            _ordersSource.Object,
-            cursor,
-            _timeProvider.GetUtcNow().Add(OrdersImportConstants.BackfillWindow),
-            windowTo,
-            false);
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: _ordersSource.Object,
+            backfillState: cursor,
+            tuning: TestTunings.Wildberries(new WildberriesImportOptions
+            {
+                MaxInProcessWaitSeconds = maxInProcessWaitSeconds,
+            }),
+            deadline: _timeProvider.GetUtcNow().Add(WildberriesImportOptions.DefaultBackfillWindow),
+            windowTo: windowTo);
 
-        var progress = new OrdersRunProgress(0);
+        var progress = new RunCounters();
 
         return (context, progress);
     }
@@ -178,7 +183,7 @@ public class DeltaOrdersFetcherTests
         Connection connection = BuildConnection(jobRun);
         DateTimeOffset handover = Now.AddHours(-3);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, handover);
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, Now);
 
         _syncCheckpointRepo
             .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
@@ -186,13 +191,13 @@ public class DeltaOrdersFetcherTests
 
         UseOrdersSource(_ => new OrdersPage { Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1", Now.AddMinutes(-30)) } });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, new BatchSequence(0), CancellationToken.None);
 
-        outcome.StopReason.Should().Be(StopReason.Completed);
+        outcome.Delta().RequestsIssued.Should().BeGreaterThan(0);
         _issuedRequests.Should().ContainSingle();
         _issuedRequests[0].Selection.Should().Be(OrdersSelectionMode.LastChanged);
-        _issuedRequests[0].DateFrom.Should().Be(handover.ToOffset(OrdersWindowPlanner.MoscowOffset));
-        _issuedRequests[0].DateTo.Should().Be(Now.ToOffset(OrdersWindowPlanner.MoscowOffset));
+        _issuedRequests[0].DateFrom.Should().Be(handover.ToOffset(OrdersWindowPlanner.MoscowTime));
+        _issuedRequests[0].DateTo.Should().Be(Now.ToOffset(OrdersWindowPlanner.MoscowTime));
     }
 
     [Fact]
@@ -201,7 +206,7 @@ public class DeltaOrdersFetcherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, Now, maxInProcessWaitSeconds: 0);
         DateTimeOffset retryAt = Now.AddMinutes(5);
 
         _syncCheckpointRepo
@@ -211,13 +216,11 @@ public class DeltaOrdersFetcherTests
         UseOrdersSource(_ => new OrdersPage { Throttled = true, RetryAt = retryAt });
 
         // A max in-process wait of zero makes any throttle an immediate stop instead of a wait.
-        FetchOutcome outcome = await CreateFetcher(maxInProcessWaitSeconds: 0).FetchAsync(context, progress, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher(maxInProcessWaitSeconds: 0).FetchAsync(context, progress, new BatchSequence(0), CancellationToken.None);
 
-        outcome.StopReason.Should().Be(StopReason.Throttled);
-        outcome.ResumeAt.Should().Be(retryAt);
-        outcome.IsStopped.Should().BeTrue();
-        outcome.Orders.Should().BeEmpty();
-        outcome.MaxChangedAt.Should().BeNull();
+        FetchOutcome.Stopped stop = outcome.Stopped();
+        stop.Cause.Should().Be(StopCause.Throttle);
+        stop.ResumeAt.Should().Be(retryAt);
         _publishedBatches.Should().BeEmpty();
     }
 
@@ -227,7 +230,7 @@ public class DeltaOrdersFetcherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, Now);
         DateTimeOffset newest = Now.AddMinutes(-10);
 
         _syncCheckpointRepo
@@ -243,13 +246,12 @@ public class DeltaOrdersFetcherTests
             },
         });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, new BatchSequence(0), CancellationToken.None);
 
-        outcome.StopReason.Should().Be(StopReason.Completed);
-        outcome.OrdersFetched.Should().Be(2);
-        outcome.MaxChangedAt.Should().Be(newest.ToUniversalTime());
-        outcome.HandoverWatermark.Should().BeNull();
-        outcome.IsBackfillCompleted.Should().BeFalse();
+        FetchOutcome.DeltaRead read = outcome.Delta();
+
+        read.Orders.Should().HaveCount(2);
+        read.MaxChangedAt.Should().Be(newest.ToUniversalTime());
         _publishedBatches.Should().ContainSingle();
         _publishedBatches[0].Orders.Should().HaveCount(2);
     }
@@ -261,7 +263,7 @@ public class DeltaOrdersFetcherTests
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
         DateTimeOffset windowTo = Now.AddMinutes(-20);
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, windowTo);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, windowTo);
 
         _syncCheckpointRepo
             .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
@@ -272,9 +274,9 @@ public class DeltaOrdersFetcherTests
             Orders = new List<ChannelOrderSnapshot> { BuildOrder("ORD-1", Now.AddMinutes(-1)) },
         });
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, new BatchSequence(0), CancellationToken.None);
 
-        outcome.MaxChangedAt.Should().Be(windowTo);
+        outcome.Delta().MaxChangedAt.Should().Be(windowTo);
     }
 
     [Fact]
@@ -283,7 +285,7 @@ public class DeltaOrdersFetcherTests
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
         OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(jobRun, connection, cursor, Now);
+        (OrdersImportContext context, RunCounters progress) = BuildRun(jobRun, connection, cursor, Now);
 
         _syncCheckpointRepo
             .Setup(r => r.GetAsync(connection.Id, JobType.OrdersImport, It.IsAny<CancellationToken>()))
@@ -291,33 +293,29 @@ public class DeltaOrdersFetcherTests
 
         UseOrdersSource(_ => new OrdersPage());
 
-        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, CancellationToken.None);
+        FetchOutcome outcome = await CreateFetcher().FetchAsync(context, progress, new BatchSequence(0), CancellationToken.None);
 
-        outcome.StopReason.Should().Be(StopReason.Completed);
-        outcome.OrdersFetched.Should().Be(0);
-        outcome.MaxChangedAt.Should().BeNull();
+        FetchOutcome.DeltaRead read = outcome.Delta();
+
+        read.Orders.Should().BeEmpty();
+        read.MaxChangedAt.Should().BeNull();
         _publishedBatches.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task FetchAsync_RunWithoutResolvedSource_Throws()
+    public void Context_DerivedMembersComeFromTheirOwners()
     {
         JobRun jobRun = BuildJobRun();
         Connection connection = BuildConnection(jobRun);
-        OrdersBackfillState cursor = BuildCompletedCursor(connection.Id, Now.AddHours(-3));
+        OrdersImportTuning tuning = TestTunings.Wildberries();
 
-        Func<Task> act = () => CreateFetcher().FetchAsync(
-            new OrdersImportContext(
-                jobRun,
-                connection,
-                null!,
-                cursor,
-                _timeProvider.GetUtcNow().Add(OrdersImportConstants.BackfillWindow),
-                Now,
-                false),
-            new OrdersRunProgress(0),
-            CancellationToken.None);
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            tuning: tuning);
 
-        await act.Should().ThrowAsync<ArgumentNullException>();
+        context.JobType.Should().Be(jobRun.JobType);
+        context.MaxRequestsPerRun.Should().Be(tuning.MaxRequestsPerRun);
+        context.OrdersSource.Should().NotBeNull();
     }
 }

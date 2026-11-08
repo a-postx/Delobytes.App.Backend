@@ -1,3 +1,6 @@
+using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
+
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
@@ -17,6 +20,19 @@ public class WildberriesImportOptions
     public const int DefaultBackfillRunBudgetSeconds = 1200;
 
     public const int DefaultMaxInProcessWaitSeconds = 300;
+
+    /// <summary>
+    /// Hard bound on the number of HTTP requests one orders run may issue.
+    /// </summary>
+    public const int DefaultMaxRequestsPerRun = 1000;
+
+    public const int DefaultSafetyOverlapMinutes = 30;
+
+    public const int DefaultBackfillWindowDays = 180;
+
+    public static readonly TimeSpan DefaultSafetyOverlap = TimeSpan.FromMinutes(DefaultSafetyOverlapMinutes);
+
+    public static readonly TimeSpan DefaultBackfillWindow = TimeSpan.FromDays(DefaultBackfillWindowDays);
 
     /// <summary>
     /// Keep the run budget plus this wait below the 30-minute OrdersImport watchdog timeout.
@@ -47,4 +63,26 @@ public class WildberriesImportOptions
     /// MaxInProcessWaitSeconds must stay below the 30-minute OrdersImport watchdog timeout.
     /// </summary>
     public int BackfillRunBudgetSeconds { get; set; } = DefaultBackfillRunBudgetSeconds;
+
+    /// <summary>
+    /// Resolves the effective orders-import settings. This is the only place that knows which
+    /// configuration value is a sentinel and which is a deliberate zero.
+    /// </summary>
+    public OrdersImportTuning ToTuning(JobType jobType)
+    {
+        return new OrdersImportTuning
+        {
+            RunBudget = TimeSpan.FromSeconds(
+                BackfillRunBudgetSeconds < 1 ? DefaultBackfillRunBudgetSeconds : BackfillRunBudgetSeconds),
+            MaxInProcessWait = TimeSpan.FromSeconds(
+                MaxInProcessWaitSeconds < 0 ? DefaultMaxInProcessWaitSeconds : MaxInProcessWaitSeconds),
+            MaxRequestsPerRun = DefaultMaxRequestsPerRun,
+            BatchSize = OrdersImportTuning.DefaultBatchSize,
+            SafetyOverlap = DefaultSafetyOverlap,
+            BackfillWindow = DefaultBackfillWindow,
+            MinOrdersWindow = MinOrdersWindow > TimeSpan.Zero ? MinOrdersWindow : TimeSpan.FromHours(1),
+            PageSize = null,
+            MethodName = OrdersRateLimiterMethods.WildberriesSupplierOrders,
+        };
+    }
 }

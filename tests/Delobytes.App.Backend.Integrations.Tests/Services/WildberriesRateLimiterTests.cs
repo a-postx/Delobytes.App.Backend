@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
-using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,7 +34,8 @@ public class WildberriesRateLimiterTests
         return new WildberriesRateLimiter(
             repository,
             Options.Create(options ?? new WildberriesRateLimitOptions()),
-            logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<WildberriesRateLimiter>.Instance);
+            logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<WildberriesRateLimiter>.Instance,
+            TimeProvider.System);
     }
 
     private static RateLimitSignal BuildThrottledSignal(
@@ -93,12 +94,12 @@ public class WildberriesRateLimiterTests
     {
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
-        RateLimitAcquireResult first = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        RateLimitAcquireResult first = await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
         WildberriesMethodThrottle? afterFirst = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
-        RateLimitAcquireResult second = await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        RateLimitAcquireResult second = await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
         WildberriesMethodThrottle? afterSecond = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
         first.Acquired.Should().BeTrue();
@@ -110,30 +111,37 @@ public class WildberriesRateLimiterTests
         afterSecond.LastRequestAt.Should().Be(afterFirst.LastRequestAt);
     }
 
+    private static RateLimitScope Scope(
+        string apiKey = ApiKey, string methodName = OrdersRateLimiterMethods.WildberriesSupplierOrders)
+    {
+        return new RateLimitScope("wildberries", apiKey, methodName);
+    }
+
     [Fact]
     public async Task TryAcquireAsync_DifferentMethodSameKey_IsNotBlockedByTheOtherMethodsInterval()
     {
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
 
-        bool ordersAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None)).Acquired;
-        bool cardsAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.ContentCardsList, CancellationToken.None)).Acquired;
+        Func<Task> act = async () => await limiter.TryAcquireAsync(
+            Scope(methodName: "content/cards/list"), CancellationToken.None);
 
-        ordersAcquired.Should().BeTrue();
-        cardsAcquired.Should().BeTrue("the limit applies per path, not per base URL or per key alone");
+        // The orders limiter paces exactly one method; an unknown name must fail loudly rather
+        // than silently pace the wrong bucket.
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
     [Fact]
     public async Task TryAcquireAsync_SameKeyUsedByTwoConnections_ShareOneAllowance()
     {
         // The limiter is keyed by the API key fingerprint only - there is no connection id
-        // anywhere in IWildberriesRateLimiter - so two Connections configured with the same raw
+        // anywhere in IOrdersRateLimiter - so two Connections configured with the same raw
         // Wildberries key necessarily observe the same pacing row by construction.
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
 
-        bool connectionAAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None)).Acquired;
-        bool connectionBAcquired = (await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None)).Acquired;
+        bool connectionAAcquired = (await limiter.TryAcquireAsync(Scope(), CancellationToken.None)).Acquired;
+        bool connectionBAcquired = (await limiter.TryAcquireAsync(Scope(), CancellationToken.None)).Acquired;
 
         connectionAAcquired.Should().BeTrue();
         connectionBAcquired.Should().BeFalse();
@@ -150,15 +158,15 @@ public class WildberriesRateLimiterTests
             SpeedUpAfterSuccesses = 3,
         };
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         RateLimitSignal signal = BuildSuccessSignal(limit: 10, remaining: 9);
 
         Func<Task> act = async () =>
         {
-            await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, signal, CancellationToken.None);
-            await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, signal, CancellationToken.None);
-            await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, signal, CancellationToken.None);
+            await limiter.ReportSuccessAsync(Scope(), signal, CancellationToken.None);
+            await limiter.ReportSuccessAsync(Scope(), signal, CancellationToken.None);
+            await limiter.ReportSuccessAsync(Scope(), signal, CancellationToken.None);
         };
 
         await act.Should().NotThrowAsync();
@@ -183,16 +191,15 @@ public class WildberriesRateLimiterTests
             FallbackIntervalSeconds = 3600,
         };
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         await limiter.ReportRateLimitedAsync(
-            ApiKey,
-            WildberriesApiMethod.SupplierOrders,
+            Scope(),
             BuildThrottledSignal(limit: 10, remaining: 0, resetSeconds: 579, retrySeconds: 39),
             CancellationToken.None);
 
         await limiter.ReportSuccessAsync(
-            ApiKey, WildberriesApiMethod.SupplierOrders, BuildSuccessSignal(limit: 10, remaining: 9), CancellationToken.None);
+            Scope(), BuildSuccessSignal(limit: 10, remaining: 9), CancellationToken.None);
 
         WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
@@ -206,15 +213,15 @@ public class WildberriesRateLimiterTests
     {
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
-        await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
 
         WildberriesMethodThrottle? beforeReport = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
         DateTimeOffset nextRequestAllowedAtBefore = beforeReport!.NextRequestAllowedAt;
 
         await limiter.ReportSuccessAsync(
-            ApiKey, WildberriesApiMethod.SupplierOrders, BuildSuccessSignal(limit: 10, remaining: 0), CancellationToken.None);
+            Scope(), BuildSuccessSignal(limit: 10, remaining: 0), CancellationToken.None);
 
         WildberriesMethodThrottle? afterReport = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
@@ -228,13 +235,12 @@ public class WildberriesRateLimiterTests
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimitOptions options = new WildberriesRateLimitOptions { InitialIntervalSeconds = 60, BackoffPadSeconds = 5 };
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         DateTimeOffset before = DateTimeOffset.UtcNow;
 
         await limiter.ReportRateLimitedAsync(
-            ApiKey,
-            WildberriesApiMethod.SupplierOrders,
+            Scope(),
             BuildThrottledSignal(limit: 10, remaining: 0, resetSeconds: 579, retrySeconds: 39),
             CancellationToken.None);
 
@@ -263,12 +269,12 @@ public class WildberriesRateLimiterTests
             BackoffPadSeconds = 5,
         };
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         RateLimitSignal noWindowSuccess = BuildSuccessSignal(limit: null, remaining: null);
 
-        await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, noWindowSuccess, CancellationToken.None);
-        await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, noWindowSuccess, CancellationToken.None);
+        await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
+        await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
 
         WildberriesMethodThrottle? afterTwoSuccessesRow = await repository
             .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
@@ -277,8 +283,7 @@ public class WildberriesRateLimiterTests
         afterTwoSuccessesRow!.SuccessStreak.Should().Be(2);
 
         await limiter.ReportRateLimitedAsync(
-            ApiKey,
-            WildberriesApiMethod.SupplierOrders,
+            Scope(),
             BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: 10),
             CancellationToken.None);
 
@@ -288,8 +293,8 @@ public class WildberriesRateLimiterTests
 
         afterThrottleRow.SuccessStreak.Should().Be(0, "a 429 in the middle of a success streak must reset it");
 
-        await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, noWindowSuccess, CancellationToken.None);
-        await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, noWindowSuccess, CancellationToken.None);
+        await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
+        await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
 
         WildberriesMethodThrottle? afterTwoMoreSuccessesRow = await repository
             .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
@@ -299,7 +304,7 @@ public class WildberriesRateLimiterTests
             "the streak needed three fresh successes after the 429; two is still not enough to speed up again");
         afterTwoMoreSuccessesRow.SuccessStreak.Should().Be(2);
 
-        await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, noWindowSuccess, CancellationToken.None);
+        await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
 
         WildberriesMethodThrottle? afterThirdSuccessRow = await repository
             .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
@@ -318,10 +323,10 @@ public class WildberriesRateLimiterTests
         WildberriesRateLimiter limiter = CreateLimiter(
             repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 }, loggerMock.Object);
 
-        await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
-        await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
-        await limiter.ReportRateLimitedAsync(ApiKey, WildberriesApiMethod.SupplierOrders, BuildThrottledSignal(), CancellationToken.None);
-        await limiter.ReportSuccessAsync(ApiKey, WildberriesApiMethod.SupplierOrders, BuildSuccessSignal(), CancellationToken.None);
+        await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
+        await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
+        await limiter.ReportRateLimitedAsync(Scope(), BuildThrottledSignal(), CancellationToken.None);
+        await limiter.ReportSuccessAsync(Scope(), BuildSuccessSignal(), CancellationToken.None);
 
         loggedMessages.Should().NotBeEmpty();
         loggedMessages.Should().OnlyContain(message => !message.Contains(ApiKey), "pacing state and logs must address a key only through its fingerprint");
@@ -342,13 +347,12 @@ public class WildberriesRateLimiterTests
         // --- a 429 carrying the real capture's headers slows the limiter to ~44s, not ~579s ---
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         DateTimeOffset beforeThrottle = DateTimeOffset.UtcNow;
 
         await limiter.ReportRateLimitedAsync(
-            ApiKey,
-            WildberriesApiMethod.SupplierOrders,
+            Scope(),
             BuildThrottledSignal(limit: 10, remaining: 0, resetSeconds: 579, retrySeconds: 39),
             CancellationToken.None);
 
@@ -358,7 +362,7 @@ public class WildberriesRateLimiterTests
 
         // --- a subsequent 200 carrying only limit/remaining converges the pace to ~57s ---
         await limiter.ReportSuccessAsync(
-            ApiKey, WildberriesApiMethod.SupplierOrders, BuildSuccessSignal(limit: 10, remaining: 9), CancellationToken.None);
+            Scope(), BuildSuccessSignal(limit: 10, remaining: 9), CancellationToken.None);
 
         WildberriesMethodThrottle? afterConverge = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
         afterConverge!.CurrentIntervalSeconds.Should().Be(57);
@@ -368,13 +372,13 @@ public class WildberriesRateLimiterTests
         FakeWildberriesMethodThrottleRepository repositoryWithoutHeaders = new();
         WildberriesRateLimiter limiterWithoutHeaders = CreateLimiter(repositoryWithoutHeaders, options);
         const string otherKey = "wb-secret-key-no-headers";
-        string otherFingerprint = WildberriesKeyFingerprint.Compute(otherKey);
+        string otherFingerprint = ApiKeyFingerprint.Compute(otherKey);
 
         RateLimitSignal noHeaders = BuildSuccessSignal(limit: null, remaining: null);
 
         for (int i = 0; i < 3; i++)
         {
-            await limiterWithoutHeaders.ReportSuccessAsync(otherKey, WildberriesApiMethod.SupplierOrders, noHeaders, CancellationToken.None);
+            await limiterWithoutHeaders.ReportSuccessAsync(Scope(otherKey), noHeaders, CancellationToken.None);
         }
 
         WildberriesMethodThrottle? steppedDown = await repositoryWithoutHeaders.GetAsync(
@@ -395,11 +399,10 @@ public class WildberriesRateLimiterTests
             BackoffPadSeconds = 5,
         };
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         await limiter.ReportRateLimitedAsync(
-            ApiKey,
-            WildberriesApiMethod.SupplierOrders,
+            Scope(),
             BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: 10800),
             CancellationToken.None);
 
@@ -421,13 +424,12 @@ public class WildberriesRateLimiterTests
             BackoffPadSeconds = 5,
         };
         WildberriesRateLimiter limiter = CreateLimiter(repository, options);
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         // No RetrySeconds/ResetSeconds: the wait falls back to the current interval, and the
         // resulting CurrentIntervalSeconds must still respect the fallback cap.
         await limiter.ReportRateLimitedAsync(
-            ApiKey,
-            WildberriesApiMethod.SupplierOrders,
+            Scope(),
             BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: null),
             CancellationToken.None);
 
@@ -442,14 +444,14 @@ public class WildberriesRateLimiterTests
     {
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
-        string fingerprint = WildberriesKeyFingerprint.Compute(ApiKey);
+        string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
-        await limiter.TryAcquireAsync(ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
 
         WildberriesMethodThrottle? before = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
         DateTimeOffset? nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
-            ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            Scope(), CancellationToken.None);
 
         WildberriesMethodThrottle? after = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
 
@@ -465,7 +467,7 @@ public class WildberriesRateLimiterTests
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions());
 
         DateTimeOffset? nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
-            ApiKey, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            Scope(), CancellationToken.None);
 
         nextAllowed.Should().BeNull();
     }

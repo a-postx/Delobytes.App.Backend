@@ -12,7 +12,7 @@ using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
-using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using Delobytes.App.Backend.Integrations.Tests.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -46,7 +46,7 @@ public class WildberriesApiClientOrdersThrottlingTests
 
     private static WildberriesApiClient BuildClient(
         MockHttpMessageHandler mockHttp,
-        IWildberriesRateLimiter rateLimiter,
+        IOrdersRateLimiter rateLimiter,
         ILogger<WildberriesApiClient>? logger = null)
     {
         HttpClient typedClient = mockHttp.ToHttpClient();
@@ -78,7 +78,8 @@ public class WildberriesApiClientOrdersThrottlingTests
         return new WildberriesRateLimiter(
             repository,
             Options.Create(options ?? new WildberriesRateLimitOptions()),
-            NullLogger<WildberriesRateLimiter>.Instance);
+            NullLogger<WildberriesRateLimiter>.Instance,
+            TimeProvider.System);
     }
 
     private static OrdersRequest BuildDayRequest(DateTimeOffset day)
@@ -154,7 +155,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         second.Throttled.Should().BeTrue();
         second.RetryAt.Should().NotBeNull("a refused slot must carry the newly reserved next slot");
         WildberriesMethodThrottle? stored = await repository.GetAsync(
-            WildberriesKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
+            ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
             WildberriesApiMethod.SupplierOrders,
             CancellationToken.None);
         stored.Should().NotBeNull();
@@ -209,7 +210,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         page.Orders.Should().BeEmpty();
 
         WildberriesMethodThrottle? row = await repository.GetAsync(
-            WildberriesKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
+            ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
             WildberriesApiMethod.SupplierOrders,
             CancellationToken.None);
 
@@ -256,7 +257,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         await act.Should().NotThrowAsync();
 
         WildberriesMethodThrottle? row = await repository.GetAsync(
-            WildberriesKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
+            ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
             WildberriesApiMethod.SupplierOrders,
             CancellationToken.None);
 

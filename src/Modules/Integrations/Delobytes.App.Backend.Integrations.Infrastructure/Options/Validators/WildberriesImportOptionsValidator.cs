@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Options.Validators;
@@ -17,13 +18,10 @@ public class WildberriesImportOptionsValidator : IValidateOptions<WildberriesImp
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, WildberriesImportOptions options)
     {
-        TimeSpan budget = TimeSpan.FromSeconds(options.BackfillRunBudgetSeconds > 0
-            ? options.BackfillRunBudgetSeconds
-            : WildberriesImportOptions.DefaultBackfillRunBudgetSeconds);
+        OrdersImportTuning tuning = options.ToTuning(JobType.OrdersImport);
 
-        TimeSpan maxInProcessWait = TimeSpan.FromSeconds(options.MaxInProcessWaitSeconds >= 0
-            ? options.MaxInProcessWaitSeconds
-            : WildberriesImportOptions.DefaultMaxInProcessWaitSeconds);
+        TimeSpan budget = tuning.RunBudget;
+        TimeSpan maxInProcessWait = tuning.MaxInProcessWait;
 
         TimeSpan total = budget + maxInProcessWait;
 

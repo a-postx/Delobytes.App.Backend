@@ -1,8 +1,9 @@
+﻿using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Xunit;
 
@@ -43,13 +44,13 @@ public class OrdersWindowPlannerTests
 
         DateTimeOffset dayStart = OrdersWindowPlanner.GetMoscowDayStart(instant);
 
-        dayStart.Should().Be(new DateTimeOffset(2024, 6, 16, 0, 0, 0, OrdersWindowPlanner.MoscowOffset));
+        dayStart.Should().Be(new DateTimeOffset(2024, 6, 16, 0, 0, 0, OrdersWindowPlanner.MoscowTime));
     }
 
     [Fact]
     public void GetMoscowDayStart_IsIdempotentOnADayBoundary()
     {
-        DateTimeOffset dayStart = new DateTimeOffset(2024, 6, 16, 0, 0, 0, OrdersWindowPlanner.MoscowOffset);
+        DateTimeOffset dayStart = new DateTimeOffset(2024, 6, 16, 0, 0, 0, OrdersWindowPlanner.MoscowTime);
 
         OrdersWindowPlanner.GetMoscowDayStart(dayStart).Should().Be(dayStart);
     }
@@ -61,11 +62,11 @@ public class OrdersWindowPlannerTests
         SyncCheckpoint checkpoint = new SyncCheckpoint { LastChangedAt = lastChangedAt };
         OrdersBackfillState backfillState = BuildBackfillState();
 
-        DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
-            checkpoint, backfillState, out bool usedLegacyFallback);
+        DeltaWindow window = OrdersWindowPlanner.ResolveDeltaWindowFrom(
+            checkpoint, backfillState);
 
-        windowFrom.Should().Be(lastChangedAt - OrdersImportConstants.SafetyOverlap);
-        usedLegacyFallback.Should().BeFalse();
+        window.From.Should().Be(lastChangedAt - WildberriesImportOptions.DefaultSafetyOverlap);
+        window.UsedLegacyFallback.Should().BeFalse();
     }
 
     [Fact]
@@ -74,11 +75,11 @@ public class OrdersWindowPlannerTests
         DateTimeOffset handoverWatermark = DateTimeOffset.UtcNow;
         OrdersBackfillState backfillState = BuildBackfillState(handoverWatermark);
 
-        DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
-            null, backfillState, out bool usedLegacyFallback);
+        DeltaWindow window = OrdersWindowPlanner.ResolveDeltaWindowFrom(
+            null, backfillState);
 
-        windowFrom.Should().Be(handoverWatermark);
-        usedLegacyFallback.Should().BeFalse();
+        window.From.Should().Be(handoverWatermark);
+        window.UsedLegacyFallback.Should().BeFalse();
     }
 
     [Fact]
@@ -87,11 +88,11 @@ public class OrdersWindowPlannerTests
         DateTimeOffset oldestDayInScope = DateTimeOffset.UtcNow;
         OrdersBackfillState backfillState = BuildBackfillState(oldestDayInScope: oldestDayInScope);
 
-        DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
-            null, backfillState, out bool usedLegacyFallback);
+        DeltaWindow window = OrdersWindowPlanner.ResolveDeltaWindowFrom(
+            null, backfillState);
 
-        windowFrom.Should().Be(oldestDayInScope + OrdersImportConstants.BackfillWindow);
-        usedLegacyFallback.Should().BeTrue();
+        window.From.Should().Be(oldestDayInScope + WildberriesImportOptions.DefaultBackfillWindow);
+        window.UsedLegacyFallback.Should().BeTrue();
     }
 
     [Fact]
@@ -101,11 +102,11 @@ public class OrdersWindowPlannerTests
         DateTimeOffset handoverWatermark = DateTimeOffset.UtcNow;
         OrdersBackfillState backfillState = BuildBackfillState(handoverWatermark);
 
-        DateTimeOffset windowFrom = OrdersWindowPlanner.ResolveDeltaWindowFrom(
-            checkpoint, backfillState, out bool usedLegacyFallback);
+        DeltaWindow window = OrdersWindowPlanner.ResolveDeltaWindowFrom(
+            checkpoint, backfillState);
 
-        windowFrom.Should().Be(handoverWatermark);
-        usedLegacyFallback.Should().BeFalse();
+        window.From.Should().Be(handoverWatermark);
+        window.UsedLegacyFallback.Should().BeFalse();
     }
 
     [Fact]
@@ -122,20 +123,20 @@ public class OrdersWindowPlannerTests
             BuildOrder(later),
         };
 
-        DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(orders, windowTo, out DateTimeOffset? observedBeyondWindow);
+        WatermarkResolution watermark = OrdersWindowPlanner.GetMaxChangedAt(orders, windowTo);
 
-        maxChangedAt.Should().Be(later.ToUniversalTime());
-        observedBeyondWindow.Should().BeNull();
+        watermark.Value.Should().Be(later.ToUniversalTime());
+        watermark.ObservedBeyondWindow.Should().BeNull();
     }
 
     [Fact]
     public void GetMaxChangedAt_NoOrders_ReturnsNull()
     {
-        DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(
-            new List<ChannelOrderSnapshot>(), DateTimeOffset.UtcNow, out DateTimeOffset? observedBeyondWindow);
+        WatermarkResolution watermark = OrdersWindowPlanner.GetMaxChangedAt(
+            new List<ChannelOrderSnapshot>(), DateTimeOffset.UtcNow);
 
-        maxChangedAt.Should().BeNull();
-        observedBeyondWindow.Should().BeNull();
+        watermark.Value.Should().BeNull();
+        watermark.ObservedBeyondWindow.Should().BeNull();
     }
 
     [Fact]
@@ -146,9 +147,9 @@ public class OrdersWindowPlannerTests
 
         List<ChannelOrderSnapshot> orders = new List<ChannelOrderSnapshot> { BuildOrder(beyondWindow) };
 
-        DateTimeOffset? maxChangedAt = OrdersWindowPlanner.GetMaxChangedAt(orders, windowTo, out DateTimeOffset? observedBeyondWindow);
+        WatermarkResolution watermark = OrdersWindowPlanner.GetMaxChangedAt(orders, windowTo);
 
-        maxChangedAt.Should().Be(windowTo);
-        observedBeyondWindow.Should().Be(beyondWindow);
+        watermark.Value.Should().Be(windowTo);
+        watermark.ObservedBeyondWindow.Should().Be(beyondWindow);
     }
 }

@@ -36,6 +36,18 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
         _minimumRequestInterval = minimumRequestInterval;
     }
 
+    /// <summary>
+    /// Gets the number of buckets currently held. Exposed for tests asserting the dictionary stays
+    /// proportional to active keys.
+    /// </summary>
+    internal int BucketCount
+    {
+        get
+        {
+            return _buckets.Count;
+        }
+    }
+
     /// <inheritdoc/>
     public Task<RateLimitAcquireResult> TryAcquireAsync(RateLimitScope scope, CancellationToken cancellationToken)
     {
@@ -44,6 +56,7 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
 
         lock (bucket.Lock)
         {
+            bucket.LastSeenAt = now;
             if (bucket.PenaltyUntil is DateTimeOffset penaltyUntil && penaltyUntil > now)
             {
                 return Task.FromResult(new RateLimitAcquireResult
@@ -106,6 +119,7 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
 
         lock (bucket.Lock)
         {
+            bucket.LastSeenAt = now;
             bucket.PenaltyUntil = penaltyUntil;
         }
 
@@ -126,6 +140,8 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
 
         lock (bucket.Lock)
         {
+            bucket.LastSeenAt = now;
+
             if (bucket.PenaltyUntil is null || bucket.PenaltyUntil.Value < nextSecondBoundary)
             {
                 bucket.PenaltyUntil = nextSecondBoundary;
@@ -139,7 +155,9 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
     public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
         RateLimitScope scope, CancellationToken cancellationToken)
     {
-        if (!_buckets.TryGetValue(scope.ApiKey, out Bucket? bucket))
+        string fingerprint = ApiKeyFingerprint.Compute(scope.ApiKey);
+
+        if (!_buckets.TryGetValue(fingerprint, out Bucket? bucket))
         {
             return Task.FromResult((DateTimeOffset?)null);
         }
@@ -148,6 +166,7 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
 
         lock (bucket.Lock)
         {
+            bucket.LastSeenAt = now;
             if (bucket.PenaltyUntil is DateTimeOffset penaltyUntil && penaltyUntil > now)
             {
                 return Task.FromResult((DateTimeOffset?)penaltyUntil);
@@ -204,7 +223,39 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
 
     private Bucket GetOrCreateBucket(string apiKey)
     {
-        return _buckets.GetOrAdd(apiKey, _ => new Bucket(Capacity, _timeProvider.GetUtcNow()));
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        string fingerprint = ApiKeyFingerprint.Compute(apiKey);
+
+        EvictIdleBuckets(now);
+
+        return _buckets.GetOrAdd(fingerprint, _ => new Bucket(Capacity, now));
+    }
+
+    /// <summary>
+    /// Drops buckets that no request has touched for four minimum intervals (ten minutes when the
+    /// throttle is disabled), so the dictionary stays proportional to the keys in active use
+    /// instead of growing with every key ever seen.
+    /// </summary>
+    private void EvictIdleBuckets(DateTimeOffset now)
+    {
+        TimeSpan idleLimit = _minimumRequestInterval > TimeSpan.Zero
+            ? TimeSpan.FromTicks(_minimumRequestInterval.Ticks * 4)
+            : TimeSpan.FromMinutes(10);
+
+        foreach (KeyValuePair<string, Bucket> entry in _buckets)
+        {
+            DateTimeOffset lastSeenAt;
+
+            lock (entry.Value.Lock)
+            {
+                lastSeenAt = entry.Value.LastSeenAt;
+            }
+
+            if (now - lastSeenAt > idleLimit)
+            {
+                _buckets.TryRemove(entry.Key, out _);
+            }
+        }
     }
 
     private sealed class Bucket
@@ -213,6 +264,7 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
         {
             Tokens = tokens;
             LastRefillAt = lastRefillAt;
+            LastSeenAt = lastRefillAt;
         }
 
         public object Lock { get; } = new();
@@ -220,6 +272,8 @@ public sealed class OzonRateLimiter : IOrdersRateLimiter
         public double Tokens { get; set; }
 
         public DateTimeOffset LastRefillAt { get; set; }
+
+        public DateTimeOffset LastSeenAt { get; set; }
 
         public DateTimeOffset? PenaltyUntil { get; set; }
 

@@ -1,14 +1,15 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -104,7 +105,7 @@ public class CursorPagedOrdersReaderTests
         };
     }
 
-    private (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+    private (OrdersImportContext Context, RunCounters Progress) BuildRun(
         ScriptedOrdersSource source, DateTimeOffset deadline)
     {
         Connection connection = BuildConnection();
@@ -119,28 +120,27 @@ public class CursorPagedOrdersReaderTests
             Connection = connection,
         };
 
-        OrdersImportContext context = new OrdersImportContext(
-            jobRun,
-            connection,
-            source,
-            new OrdersBackfillState(),
-            deadline,
-            WindowFrom.AddDays(1),
-            false,
-            OrdersSchema.Fbo);
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: source,
+            tuning: TestTunings.Ozon(new Application.Options.OzonImportOptions { MaxInProcessWaitSeconds = 0 }),
+            deadline: deadline,
+            windowTo: WindowFrom.AddDays(1),
+            schema: OrdersSchema.Fbo);
 
-        return (context, new OrdersRunProgress(0));
+        return (context, new RunCounters());
     }
 
-    private CursorPagedOrdersReader CreateReader(TimeSpan? maxInProcessWait = null)
+    private CursorPagedOrdersReader CreateReader()
     {
         PacedOrdersSource pacedSource = new PacedOrdersSource(new AlwaysAllowOrdersRateLimiter(), _timeProvider);
 
         return new CursorPagedOrdersReader(
             pacedSource,
             NullLogger<CursorPagedOrdersReader>.Instance,
-            maxInProcessWait ?? TimeSpan.Zero,
-            OrdersRateLimiterMethods.OzonPostingFboList);
+            TestTunings.Ozon(new Application.Options.OzonImportOptions { MaxInProcessWaitSeconds = 0 }),
+            OrdersSchema.Fbo);
     }
 
     [Fact]
@@ -168,19 +168,19 @@ public class CursorPagedOrdersReaderTests
             };
         });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
 
         FetchOutcome outcome = await CreateReader().ReadWindowAsync(BuildRequest(), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeFalse();
-        outcome.StopReason.Should().Be(StopReason.Completed);
-        outcome.Orders.Select(o => o.ExternalOrderId).Should().BeEquivalentTo(new[] { "ORDER-1", "ORDER-2", "ORDER-3" });
-        outcome.Orders.Single(o => o.ExternalOrderId == "ORDER-2").Lines.Select(l => l.LineKey)
+        FetchOutcome.DeltaRead read = outcome.Delta();
+
+        read.Orders.Select(o => o.ExternalOrderId).Should().BeEquivalentTo(new[] { "ORDER-1", "ORDER-2", "ORDER-3" });
+        read.Orders.Single(o => o.ExternalOrderId == "ORDER-2").Lines.Select(l => l.LineKey)
             .Should().BeEquivalentTo(new[] { "LINE-2", "LINE-3" });
         source.Requests.Should().HaveCount(2);
         source.Requests[0].Cursor.Should().BeNull();
         source.Requests[1].Cursor.Should().Be("page-2");
-        outcome.RequestsIssued.Should().Be(2);
+        read.RequestsIssued.Should().Be(2);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class CursorPagedOrdersReaderTests
             NextCursor = " ",
         });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
 
         Func<Task> act = async () => await CreateReader().ReadWindowAsync(
             BuildRequest(), context, progress, CancellationToken.None);
@@ -212,7 +212,7 @@ public class CursorPagedOrdersReaderTests
             NextCursor = "page-1",
         });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
 
         Func<Task> act = async () => await CreateReader().ReadWindowAsync(
             BuildRequest("page-1"), context, progress, CancellationToken.None);
@@ -243,14 +243,11 @@ public class CursorPagedOrdersReaderTests
             };
         });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(60));
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(60));
 
         FetchOutcome outcome = await CreateReader().ReadWindowAsync(BuildRequest(), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeTrue();
-        outcome.StopReason.Should().Be(StopReason.Throttled);
-        outcome.Orders.Should().BeEmpty("a stopped window must publish nothing, even the page it already read");
-        outcome.OrdersFetched.Should().Be(0);
+        outcome.Stopped().Cause.Should().Be(StopCause.Throttle);
     }
 
     [Fact]
@@ -263,7 +260,7 @@ public class CursorPagedOrdersReaderTests
             RowsWithoutIdentity = 2,
         });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
+        (OrdersImportContext context, RunCounters progress) = BuildRun(source, _timeProvider.GetUtcNow().AddMinutes(10));
 
         Func<Task> act = async () => await CreateReader().ReadWindowAsync(
             BuildRequest(), context, progress, CancellationToken.None);
@@ -276,14 +273,12 @@ public class CursorPagedOrdersReaderTests
     {
         ScriptedOrdersSource source = new ScriptedOrdersSource(_ => throw new InvalidOperationException("no request may be issued past the run deadline"));
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
+        (OrdersImportContext context, RunCounters progress) = BuildRun(
             source, _timeProvider.GetUtcNow().AddSeconds(-1));
 
         FetchOutcome outcome = await CreateReader().ReadWindowAsync(BuildRequest(), context, progress, CancellationToken.None);
 
-        outcome.IsStopped.Should().BeTrue();
-        outcome.StopReason.Should().Be(StopReason.Budget);
-        outcome.Orders.Should().BeEmpty();
+        outcome.Stopped().Cause.Should().Be(StopCause.TimeBudget);
         source.Requests.Should().BeEmpty();
     }
 }

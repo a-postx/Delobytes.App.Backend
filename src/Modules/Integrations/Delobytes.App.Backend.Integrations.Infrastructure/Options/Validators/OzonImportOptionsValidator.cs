@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.Options.Validators;
@@ -15,13 +16,10 @@ public class OzonImportOptionsValidator : IValidateOptions<OzonImportOptions>
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, OzonImportOptions options)
     {
-        TimeSpan budget = TimeSpan.FromSeconds(options.BackfillRunBudgetSeconds > 0
-            ? options.BackfillRunBudgetSeconds
-            : OzonImportOptions.DefaultBackfillRunBudgetSeconds);
+        OrdersImportTuning tuning = options.ToTuning(JobType.OrdersImportFbo);
 
-        TimeSpan maxInProcessWait = TimeSpan.FromSeconds(options.MaxInProcessWaitSeconds >= 0
-            ? options.MaxInProcessWaitSeconds
-            : OzonImportOptions.DefaultMaxInProcessWaitSeconds);
+        TimeSpan budget = tuning.RunBudget;
+        TimeSpan maxInProcessWait = tuning.MaxInProcessWait;
 
         TimeSpan total = budget + maxInProcessWait;
 
@@ -34,9 +32,7 @@ public class OzonImportOptionsValidator : IValidateOptions<OzonImportOptions>
                 $"{MaximumAllowedTotal.TotalMinutes:F0} minutes, but got {total.TotalSeconds:F0}s.");
         }
 
-        TimeSpan minimumRequestInterval = TimeSpan.FromSeconds(options.MinimumRequestIntervalSeconds >= 0
-            ? options.MinimumRequestIntervalSeconds
-            : OzonImportOptions.DefaultMinimumRequestIntervalSeconds);
+        TimeSpan minimumRequestInterval = options.ResolveMinimumRequestInterval();
 
         // Only meaningful when an in-process wait is actually allowed: with MaxInProcessWaitSeconds = 0
         // the fetcher never waits, it stops the run and continues later, so a minimum interval above

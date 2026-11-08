@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -79,6 +80,13 @@ public class ChannelApiClientFactoryTests
             sp.GetRequiredService<IHttpClientFactory>(),
             NullLogger<YandexKitApiClient>.Instance));
 
+        services.AddKeyedTransient<IChannelApiClient>(
+            ChannelCatalog.WildberriesCode, (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
+        services.AddKeyedTransient<IChannelApiClient>(
+            ChannelCatalog.OzonCode, (sp, _) => sp.GetRequiredService<OzonApiClient>());
+        services.AddKeyedTransient<IChannelApiClient>(
+            "yandex.kit", (sp, _) => sp.GetRequiredService<YandexKitApiClient>());
+
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 
         return services.BuildServiceProvider();
@@ -119,6 +127,8 @@ public class ChannelApiClientFactoryTests
             new AlwaysAllowWildberriesRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance));
+        services.AddKeyedTransient<IChannelApiClient>(
+            ChannelCatalog.WildberriesCode, (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 
         using ServiceProvider provider = services.BuildServiceProvider();

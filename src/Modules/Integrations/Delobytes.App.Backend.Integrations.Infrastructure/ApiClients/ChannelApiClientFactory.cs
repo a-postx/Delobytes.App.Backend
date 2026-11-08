@@ -5,57 +5,38 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
 /// <summary>
-/// Factory for creating channel-specific API clients.
+/// Factory for creating channel-specific API clients. Each channel registers its client under its
+/// own key, so adding a channel needs no edit here.
 /// </summary>
 public class ChannelApiClientFactory : IChannelApiClientFactory
 {
     private readonly IServiceProvider _serviceProvider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ChannelApiClientFactory"/> class.
-    /// </summary>
-    /// <param name="serviceProvider">Service provider.</param>
     public ChannelApiClientFactory(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
     }
 
     /// <inheritdoc/>
-    ///
-    /// <remarks>
-    /// Клиент разрешается из контейнера при каждом вызове (регистрация типизированного
-    /// HttpClient — transient), поэтому настройка шаблона не расшаривается между вызовами.
-    /// </remarks>
     public IChannelApiClient Create(SystemChannelTemplate template)
     {
         ArgumentNullException.ThrowIfNull(template);
 
-        switch (template.Code.ToLowerInvariant())
+        string code = template.Code.ToLowerInvariant();
+        IChannelApiClient? client = _serviceProvider.GetKeyedService<IChannelApiClient>(code);
+
+        if (client == null)
         {
-            case "wildberries":
-                WildberriesApiClient wildberriesClient =
-                    _serviceProvider.GetRequiredService<WildberriesApiClient>();
-
-                // WildberriesApiClient резолвит адреса эндпоинтов по шаблону,
-                // поэтому клиент конфигурируется здесь, а не вызывающим кодом.
-                wildberriesClient.SetTemplate(template);
-
-                return wildberriesClient;
-
-            case "ozon":
-                OzonApiClient ozonClient = _serviceProvider.GetRequiredService<OzonApiClient>();
-
-                // OzonApiClient резолвит адрес API по шаблону, поэтому клиент конфигурируется
-                // здесь, а не вызывающим кодом.
-                ozonClient.SetTemplate(template);
-
-                return ozonClient;
-
-            case "yandex.kit":
-                return _serviceProvider.GetRequiredService<YandexKitApiClient>();
-
-            default:
-                throw new NotSupportedException($"Channel '{template.Code}' is not supported.");
+            throw new NotSupportedException($"Channel '{template.Code}' is not supported.");
         }
+
+        // A client that resolves its endpoints from the template is bound here, at the one place
+        // that hands clients out, so callers never configure it themselves.
+        if (client is IChannelApiClientTemplateBinder binder)
+        {
+            binder.SetTemplate(template);
+        }
+
+        return client;
     }
 }

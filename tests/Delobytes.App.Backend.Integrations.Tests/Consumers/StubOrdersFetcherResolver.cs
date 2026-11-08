@@ -1,16 +1,12 @@
-using System;
-using Delobytes.App.Backend.Integrations.Application.Options;
+﻿using System;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
-using Microsoft.Extensions.Options;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
 /// <summary>
-/// Resolver double for consumer tests that were written before channels were resolved by
-/// (channel code, job type): answers exactly one combination - built by <see cref="ForWildberries"/>
-/// or <see cref="ForOzon"/> from the test's own fetchers - and nothing else, so a test that
-/// previously could only run one channel keeps running that channel in isolation.
+/// Resolver double that answers exactly one (channel code, job type) pair from a caller-supplied
+/// fetcher set, so a consumer test runs one channel in isolation without building the container.
 /// </summary>
 internal sealed class StubOrdersFetcherResolver : IOrdersFetcherResolver
 {
@@ -26,51 +22,11 @@ internal sealed class StubOrdersFetcherResolver : IOrdersFetcherResolver
     }
 
     /// <summary>
-    /// Builds the Wildberries fetchers from already-constructed parts, so the resolution seam adds
-    /// no new dependency graph to a test that only cares about the fetch itself.
+    /// Builds a resolver over a caller-supplied fetcher set.
     /// </summary>
-    public static StubOrdersFetcherResolver ForWildberries(
-        BackfillOrdersFetcher backfill,
-        DeltaOrdersFetcher delta,
-        BisectingOrdersReader windowReader,
-        WildberriesImportOptions options)
+    public static StubOrdersFetcherResolver For(string channelCode, JobType jobType, IOrdersFetchers fetchers)
     {
-        return new StubOrdersFetcherResolver(
-            "wildberries",
-            JobType.OrdersImport,
-            new WildberriesOrdersFetchers(backfill, delta, windowReader, Options.Create(options)));
-    }
-
-    /// <summary>
-    /// Builds the Ozon FBO fetchers from already-constructed parts, for tests that exercise the
-    /// Ozon branch of the orchestrator in isolation from Wildberries.
-    /// </summary>
-    public static StubOrdersFetcherResolver ForOzon(
-        OzonBackfillOrdersFetcher backfill,
-        OzonDeltaOrdersFetcher delta,
-        IOrdersWindowReader windowReader,
-        OzonImportOptions options)
-    {
-        return new StubOrdersFetcherResolver(
-            "ozon",
-            JobType.OrdersImportFbo,
-            new OzonOrdersFetchers(backfill, delta, windowReader, Options.Create(options)));
-    }
-
-    /// <summary>
-    /// Builds the Ozon FBS fetchers from already-constructed parts, for tests that exercise the
-    /// seller-fulfilled schema through the same orchestrator.
-    /// </summary>
-    public static StubOrdersFetcherResolver ForOzonFbs(
-        OzonFbsBackfillOrdersFetcher backfill,
-        OzonFbsDeltaOrdersFetcher delta,
-        OzonFbsOrdersReader windowReader,
-        OzonImportOptions options)
-    {
-        return new StubOrdersFetcherResolver(
-            "ozon",
-            JobType.OrdersImportFbs,
-            new OzonFbsOrdersFetchers(backfill, delta, windowReader, Options.Create(options)));
+        return new StubOrdersFetcherResolver(channelCode, jobType, fetchers);
     }
 
     /// <summary>
@@ -82,17 +38,21 @@ internal sealed class StubOrdersFetcherResolver : IOrdersFetcherResolver
     }
 
     /// <inheritdoc/>
-    public bool TryResolve(string channelCode, JobType jobType, out IOrdersFetchers? fetchers)
+    public OrdersFetchersResolution Resolve(string channelCode, JobType jobType)
     {
         if (_fetchers != null
             && string.Equals(channelCode, _channelCode, StringComparison.OrdinalIgnoreCase)
             && jobType == _jobType)
         {
-            fetchers = _fetchers;
-            return true;
+            return new OrdersFetchersResolution.Supported
+            {
+                Fetchers = _fetchers,
+            };
         }
 
-        fetchers = null;
-        return false;
+        return new OrdersFetchersResolution.Unsupported
+        {
+            Reason = $"Channel '{channelCode}' does not support orders import for job type '{jobType}'",
+        };
     }
 }

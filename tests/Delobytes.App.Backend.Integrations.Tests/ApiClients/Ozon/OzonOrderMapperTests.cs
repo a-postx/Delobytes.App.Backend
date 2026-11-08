@@ -65,7 +65,7 @@ public class OzonOrderMapperTests
         OzonPosting posting = Posting(
             "post-1", "order-1", new List<OzonPostingProduct> { Product(111, "off-1", "Name 1", 2, 150.50m, "RUB") });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
         result.Should().HaveCount(1);
@@ -98,7 +98,7 @@ public class OzonOrderMapperTests
             "order-1",
             new List<OzonPostingProduct> { Product(111), Product(222) });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
         List<string> keys = result[0].Lines.Select(l => l.LineKey).ToList();
@@ -113,8 +113,8 @@ public class OzonOrderMapperTests
             "order-1",
             new List<OzonPostingProduct> { Product(111), Product(111), Product(222) });
 
-        List<ChannelOrderSnapshot> first = OzonOrderMapper.Map(new[] { posting }, out _);
-        List<ChannelOrderSnapshot> second = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> first = Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> second = Map(new[] { posting }, out _);
 
         List<string> firstKeys = first[0].Lines.Select(l => l.LineKey).ToList();
         List<string> secondKeys = second[0].Lines.Select(l => l.LineKey).ToList();
@@ -129,7 +129,7 @@ public class OzonOrderMapperTests
         OzonPosting postingA = Posting("post-1", "order-1", new List<OzonPostingProduct> { Product(111) });
         OzonPosting postingB = Posting("post-2", "order-1", new List<OzonPostingProduct> { Product(222) });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { postingA, postingB }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { postingA, postingB }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
         result.Should().HaveCount(1);
@@ -145,7 +145,7 @@ public class OzonOrderMapperTests
         OzonPosting live = Posting(
             "post-2", "order-1", new List<OzonPostingProduct> { Product(222) }, status: "awaiting_deliver", substatus: "sub-1");
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { cancelled, live }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { cancelled, live }, out _);
 
         ChannelOrderSnapshot snapshot = result[0];
         snapshot.ExternalStatus.Should().Be("awaiting_deliver");
@@ -169,7 +169,7 @@ public class OzonOrderMapperTests
             status: "cancelled",
             cancellation: new OzonCancellation { CancelReason = "buyer_cancelled" });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         result[0].ExternalStatus.Should().Be("cancelled");
         result[0].CancelReason.Should().Be("buyer_cancelled");
@@ -181,7 +181,7 @@ public class OzonOrderMapperTests
         OzonPosting posting = Posting(
             "post-1", "order-1", new List<OzonPostingProduct> { Product(111) }, status: "cancelled");
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         result[0].ExternalStatus.Should().Be("cancelled");
         result[0].CancelReason.Should().Be("cancel");
@@ -209,7 +209,7 @@ public class OzonOrderMapperTests
         OzonPosting posting = Posting(
             "post-1", "order-1", new List<OzonPostingProduct> { Product(111) }, financialData: financialData);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         ChannelOrderLineSnapshot line = result[0].Lines[0];
         line.UnitPriceBeforeDiscount.Should().Be(199.99m);
@@ -232,7 +232,7 @@ public class OzonOrderMapperTests
         OzonPosting posting = Posting(
             "post-1", "order-1", new List<OzonPostingProduct> { Product(111) }, financialData: financialData);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         ChannelOrderLineSnapshot line = result[0].Lines[0];
         line.UnitPriceBeforeDiscount.Should().BeNull();
@@ -246,7 +246,7 @@ public class OzonOrderMapperTests
     {
         OzonPosting posting = Posting(string.Empty, "order-1", new List<OzonPostingProduct> { Product(111) });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(1);
         result.Should().BeEmpty();
@@ -257,7 +257,7 @@ public class OzonOrderMapperTests
     {
         OzonPosting posting = Posting("post-1", "order-1", new List<OzonPostingProduct>());
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(1);
         result.Should().BeEmpty();
@@ -276,7 +276,7 @@ public class OzonOrderMapperTests
             CreatedAt = CreatedAt
         };
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(1);
         result.Should().BeEmpty();
@@ -288,7 +288,7 @@ public class OzonOrderMapperTests
         string longPostingNumber = new string('9', 101);
         OzonPosting posting = Posting(longPostingNumber, "order-1", new List<OzonPostingProduct> { Product(111) });
 
-        Action act = () => OzonOrderMapper.Map(new[] { posting }, out _);
+        Action act = () => Map(new[] { posting }, out _);
 
         act.Should().Throw<InvalidOperationException>();
     }
@@ -339,7 +339,7 @@ public class OzonOrderMapperTests
             body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
         page.Should().NotBeNull();
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(page!.Postings!, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(page!.Postings!, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
         result.Should().HaveCount(1);
@@ -391,7 +391,7 @@ public class OzonOrderMapperTests
         DateTimeOffset inProcessAt = CreatedAt.AddMinutes(7);
         OzonPosting posting = FbsPosting("post-1", "order-1", createdAt: null, inProcessAt: inProcessAt);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
         result.Should().HaveCount(1);
@@ -407,7 +407,7 @@ public class OzonOrderMapperTests
         OzonPosting posting = FbsPosting(
             "post-1", "order-1", createdAt: CreatedAt, inProcessAt: CreatedAt.AddMinutes(7));
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         result[0].OrderDate.Should().Be(CreatedAt);
         result[0].StatusChangedAt.Should().Be(CreatedAt.AddMinutes(7), "the change instant is in_process_at");
@@ -418,7 +418,7 @@ public class OzonOrderMapperTests
     {
         OzonPosting posting = FbsPosting("post-1", "order-1", createdAt: null, inProcessAt: null);
 
-        Action act = () => OzonOrderMapper.Map(new[] { posting }, out _);
+        Action act = () => Map(new[] { posting }, out _);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*no created_at or in_process_at*");
@@ -442,7 +442,7 @@ public class OzonOrderMapperTests
             financialData: financialData,
             deliveryMethod: new OzonDeliveryMethod { Warehouse = "Склад продавца", WarehouseId = 42 });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         ChannelOrderSnapshot snapshot = result[0];
         snapshot.DeliveryCity.Should().Be("Москва");
@@ -468,7 +468,7 @@ public class OzonOrderMapperTests
             financialData: new OzonPostingFinancialData { ClusterTo = "Москва", ClusterFrom = "Хоругвино" },
             deliveryMethod: new OzonDeliveryMethod { Warehouse = "Склад продавца" });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         ChannelOrderSnapshot snapshot = result[0];
         snapshot.DeliveryCity.Should().Be("Санкт-Петербург");
@@ -488,7 +488,7 @@ public class OzonOrderMapperTests
     {
         OzonPosting posting = FbsPosting("post-1", "order-1", schema: schema, inProcessAt: CreatedAt);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         result[0].Lines[0].FulfillmentSchema.Should().Be(expectedSchema);
     }
@@ -506,7 +506,7 @@ public class OzonOrderMapperTests
             inProcessAt: CreatedAt,
             products: new List<OzonPostingProduct> { Product(222) });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { fboPosting, fbsPosting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { fboPosting, fbsPosting }, out _);
 
         result.Should().HaveCount(1);
         ChannelOrderSnapshot snapshot = result[0];
@@ -526,7 +526,7 @@ public class OzonOrderMapperTests
             inProcessAt: CreatedAt,
             products: new List<OzonPostingProduct> { Product(222) });
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { first, second }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { first, second }, out _);
 
         result[0].Lines.Should().OnlyContain(l => l.FulfillmentSchema == "oz_fbo");
     }
@@ -579,7 +579,7 @@ public class OzonOrderMapperTests
 
         page.Should().NotBeNull();
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(page!.Postings!, out int rowsWithoutIdentity);
+        List<ChannelOrderSnapshot> result = Map(page!.Postings!, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
         result.Should().HaveCount(1);
@@ -609,7 +609,7 @@ public class OzonOrderMapperTests
         // instead, through sourceSchema, and the mapper must still resolve "fbo" from that alone.
         OzonPosting posting = FbsPosting("post-1", "order-1", schema: null, createdAt: CreatedAt);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+        List<ChannelOrderSnapshot> result = Map(
             new[] { posting }, OrdersSchema.Fbo, null, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
@@ -623,7 +623,7 @@ public class OzonOrderMapperTests
         // must win over the endpoint default.
         OzonPosting posting = FbsPosting("post-1", "order-1", schema: "fbo", createdAt: CreatedAt);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+        List<ChannelOrderSnapshot> result = Map(
             new[] { posting }, OrdersSchema.Fbo, null, out _);
 
         result[0].Lines[0].FulfillmentSchema.Should().Be("oz_fbo");
@@ -636,7 +636,7 @@ public class OzonOrderMapperTests
         // not guess: this is the behaviour every pre-fix caller relied on.
         OzonPosting posting = FbsPosting("post-1", "order-1", schema: null, createdAt: CreatedAt);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(new[] { posting }, out _);
+        List<ChannelOrderSnapshot> result = Map(new[] { posting }, out _);
 
         result[0].Lines[0].FulfillmentSchema.Should().BeNull();
     }
@@ -649,7 +649,7 @@ public class OzonOrderMapperTests
         // rFBS exists and must not be folded into it.
         OzonPosting posting = FbsPosting("post-1", "order-1", schema: null, createdAt: CreatedAt);
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+        List<ChannelOrderSnapshot> result = Map(
             new[] { posting }, OrdersSchema.Fbs, null, out _);
 
         result[0].Lines[0].FulfillmentSchema.Should().BeNull();
@@ -694,7 +694,7 @@ public class OzonOrderMapperTests
 
         page.Should().NotBeNull();
 
-        List<ChannelOrderSnapshot> result = OzonOrderMapper.Map(
+        List<ChannelOrderSnapshot> result = Map(
             page!.Postings!, OrdersSchema.Fbo, null, out int rowsWithoutIdentity);
 
         rowsWithoutIdentity.Should().Be(0);
@@ -708,5 +708,30 @@ public class OzonOrderMapperTests
         line.FulfillmentSchema.Should().Be("oz_fbo");
         line.UnitPrice.Should().Be(900m);
         line.Currency.Should().Be("RUB");
+    }
+
+    // The mapper now returns one value that carries both the orders and the diagnostics; these
+    // adapters keep the assertions focused on the facts each test checks.
+    private static List<ChannelOrderSnapshot> Map(
+        IReadOnlyList<OzonPosting> postings, out int rowsWithoutIdentity)
+    {
+        OzonMappingResult result = OzonOrderMapper.Map(postings, null, null);
+
+        rowsWithoutIdentity = result.RowsWithoutIdentity;
+
+        return result.Orders;
+    }
+
+    private static List<ChannelOrderSnapshot> Map(
+        IReadOnlyList<OzonPosting> postings,
+        OrdersSchema? sourceSchema,
+        Microsoft.Extensions.Logging.ILogger? logger,
+        out int rowsWithoutIdentity)
+    {
+        OzonMappingResult result = OzonOrderMapper.Map(postings, sourceSchema, logger);
+
+        rowsWithoutIdentity = result.RowsWithoutIdentity;
+
+        return result.Orders;
     }
 }

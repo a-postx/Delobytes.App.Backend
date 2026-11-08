@@ -1,9 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
-/// Operational configuration for the background job scheduler/worker (Stage 11).
-/// Tenant/connection-specific values (the cron expression of a given schedule, a tenant's
-/// parallelism) live in the database instead \u2014 see JobSchedule and Tenant.MaxBackgroundJobsParallelism.
+/// Operational configuration for the background job scheduler/worker.
 /// </summary>
 public class BackgroundJobsOptions
 {

@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers.OrdersImport;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Tests.ApiClients;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
@@ -46,21 +46,18 @@ public class PacedOrdersSourceTests
         return new JobRun { Id = Guid.NewGuid(), ConnectionId = connection.Id };
     }
 
-    private (OrdersImportContext Context, OrdersRunProgress Progress) BuildRun(
+    private (OrdersImportContext Context, RunCounters Counters) BuildRun(
         JobRun jobRun, Connection connection, DateTimeOffset deadline)
     {
-        OrdersImportContext context = new OrdersImportContext(
-            jobRun,
-            connection,
-            _ordersSource.Object,
-            new OrdersBackfillState(),
-            deadline,
-            DateTimeOffset.UtcNow,
-            false);
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: _ordersSource.Object,
+            deadline: deadline);
 
-        OrdersRunProgress progress = new OrdersRunProgress(0);
+        RunCounters counters = new RunCounters();
 
-        return (context, progress);
+        return (context, counters);
     }
 
     private PacedOrdersSource CreateSource()
@@ -69,7 +66,7 @@ public class PacedOrdersSourceTests
     }
 
     [Fact]
-    public async Task GetOrdersAsync_PageReceived_ReportsCompletedAttempt()
+    public async Task GetOrdersAsync_PageReceived_ReturnsThePage()
     {
         Connection connection = BuildConnection();
         JobRun jobRun = BuildJobRun(connection);
@@ -78,37 +75,62 @@ public class PacedOrdersSourceTests
             .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OrdersPage { HasMore = false });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
+        (OrdersImportContext context, RunCounters counters) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddMinutes(10));
-        OrdersAttempt attempt = await CreateSource().GetOrdersAsync(
-            context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.Zero, CancellationToken.None);
+        PageAttempt attempt = await CreateSource().GetOrdersAsync(
+            context, counters, BuildRequest(), CancellationToken.None);
 
-        attempt.IsStopped.Should().BeFalse();
-        attempt.Page.Should().NotBeNull();
-        attempt.StopReason.Should().Be(StopReason.Completed);
-        attempt.ResumeAt.Should().BeNull();
-        progress.RequestsIssued.Should().Be(1);
+        attempt.Should().BeOfType<PageAttempt.Page>();
+        counters.RequestsIssued.Should().Be(1);
     }
 
     [Fact]
-    public async Task GetOrdersAsync_BudgetExhausted_ReturnsBudgetStopInsteadOfThrowing()
+    public async Task GetOrdersAsync_TimeBudgetExhausted_ReturnsTimeBudgetStopInsteadOfThrowing()
     {
         Connection connection = BuildConnection();
         JobRun jobRun = BuildJobRun(connection);
 
-        // A deadline in the past models a run whose budget ran out before this request.
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
+        // A deadline in the past models a run whose time budget ran out before this request.
+        (OrdersImportContext context, RunCounters counters) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddSeconds(-1));
 
-        OrdersAttempt attempt = await CreateSource().GetOrdersAsync(
-            context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.Zero, CancellationToken.None);
+        PageAttempt attempt = await CreateSource().GetOrdersAsync(
+            context, counters, BuildRequest(), CancellationToken.None);
 
         // A stop is a value, not an exception: the caller decides whether to continue, finalise or
         // schedule a continuation, and an exception would skip that decision entirely.
-        attempt.IsStopped.Should().BeTrue();
-        attempt.StopReason.Should().Be(StopReason.Budget);
-        attempt.ResumeAt.Should().NotBeNull();
-        progress.RequestsIssued.Should().Be(0);
+        attempt.Should().BeOfType<PageAttempt.Stop>()
+            .Which.Cause.Should().Be(StopCause.TimeBudget);
+        counters.RequestsIssued.Should().Be(0);
+
+        _ordersSource.Verify(
+            s => s.GetOrdersAsync(It.IsAny<Guid>(), It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetOrdersAsync_RequestBudgetExhausted_ReturnsRequestBudgetStopInsteadOfThrowing()
+    {
+        Connection connection = BuildConnection();
+        JobRun jobRun = BuildJobRun(connection);
+
+        OrdersImportContext context = OrdersImportContextBuilder.Build(
+            jobRun: jobRun,
+            connection: connection,
+            ordersSource: _ordersSource.Object,
+            deadline: _timeProvider.GetUtcNow().AddMinutes(10));
+        RunCounters counters = new RunCounters
+        {
+            RequestsIssued = context.Tuning.MaxRequestsPerRun,
+        };
+
+        PageAttempt attempt = await CreateSource().GetOrdersAsync(
+            context, counters, BuildRequest(), CancellationToken.None);
+
+        PageAttempt.Stop stop = attempt.Should().BeOfType<PageAttempt.Stop>().Subject;
+        stop.Cause.Should().Be(StopCause.RequestBudget);
+        stop.ResumeAt.Should().Be(_timeProvider.GetUtcNow());
+        counters.RequestsIssued.Should().Be(context.Tuning.MaxRequestsPerRun);
 
         _ordersSource.Verify(
             s => s.GetOrdersAsync(It.IsAny<Guid>(), It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()),
@@ -126,16 +148,16 @@ public class PacedOrdersSourceTests
             .Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OrdersPage { Throttled = true, RetryAt = retryAt });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
+        (OrdersImportContext context, RunCounters counters) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddMinutes(10));
-        OrdersAttempt attempt = await CreateSource().GetOrdersAsync(
-            context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.Zero, CancellationToken.None);
+        PageAttempt attempt = await CreateSource().GetOrdersAsync(
+            context, counters, BuildRequest(), CancellationToken.None);
 
-        attempt.IsStopped.Should().BeTrue();
-        attempt.StopReason.Should().Be(StopReason.Throttled);
-        attempt.ResumeAt.Should().Be(retryAt);
-        progress.InProcessWaits.Should().Be(0);
-        progress.RequestsIssued.Should().Be(1);
+        PageAttempt.Stop stop = attempt.Should().BeOfType<PageAttempt.Stop>().Subject;
+        stop.Cause.Should().Be(StopCause.Throttle);
+        stop.ResumeAt.Should().Be(retryAt);
+        counters.InProcessWaits.Should().Be(0);
+        counters.RequestsIssued.Should().Be(1);
     }
 
     [Fact]
@@ -156,20 +178,20 @@ public class PacedOrdersSourceTests
                     : new OrdersPage { HasMore = false });
             });
 
-        (OrdersImportContext context, OrdersRunProgress progress) = BuildRun(
+        (OrdersImportContext context, RunCounters counters) = BuildRun(
             jobRun, connection, _timeProvider.GetUtcNow().AddMinutes(10));
-        Task<OrdersAttempt> pending = CreateSource()
-            .GetOrdersAsync(context, progress, BuildRequest(), OrdersRateLimiterMethods.WildberriesSupplierOrders, TimeSpan.FromMinutes(1), CancellationToken.None);
+        Task<PageAttempt> pending = CreateSource()
+            .GetOrdersAsync(context, counters, BuildRequest(), CancellationToken.None);
 
         pending.IsCompleted.Should().BeFalse();
 
         _timeProvider.Advance(TimeSpan.FromSeconds(30));
 
-        OrdersAttempt attempt = await pending;
+        PageAttempt attempt = await pending;
 
-        attempt.IsStopped.Should().BeFalse();
-        progress.InProcessWaits.Should().Be(1);
-        progress.TotalWaited.Should().Be(TimeSpan.FromSeconds(30));
-        progress.RequestsIssued.Should().Be(2);
+        attempt.Should().BeOfType<PageAttempt.Page>();
+        counters.InProcessWaits.Should().Be(1);
+        counters.TotalWaited.Should().Be(TimeSpan.FromSeconds(30));
+        counters.RequestsIssued.Should().Be(2);
     }
 }

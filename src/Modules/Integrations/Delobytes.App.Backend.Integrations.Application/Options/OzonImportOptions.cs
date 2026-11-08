@@ -1,3 +1,6 @@
+using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
+
 namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
@@ -58,4 +61,50 @@ public class OzonImportOptions
     /// 15 seconds. Set to 0 to disable.
     /// </summary>
     public int MinimumRequestIntervalSeconds { get; set; } = DefaultMinimumRequestIntervalSeconds;
+
+    /// <summary>
+    /// Resolves the effective minimum interval; a negative value falls back to the default.
+    /// </summary>
+    public TimeSpan ResolveMinimumRequestInterval()
+    {
+        int seconds = MinimumRequestIntervalSeconds < 0
+            ? DefaultMinimumRequestIntervalSeconds
+            : MinimumRequestIntervalSeconds;
+
+        return TimeSpan.FromSeconds(seconds);
+    }
+
+    /// <summary>
+    /// Resolves the effective orders-import settings for one Ozon job type. This is the only place
+    /// that knows which configuration value is a sentinel and which is a deliberate zero.
+    /// </summary>
+    public OrdersImportTuning ToTuning(JobType jobType)
+    {
+        string methodName = jobType switch
+        {
+            JobType.OrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
+            JobType.OrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(jobType),
+                jobType,
+                "Ozon orders import supports only the FBO and FBS job types."),
+        };
+
+        return new OrdersImportTuning
+        {
+            RunBudget = TimeSpan.FromSeconds(
+                BackfillRunBudgetSeconds < 1 ? DefaultBackfillRunBudgetSeconds : BackfillRunBudgetSeconds),
+            MaxInProcessWait = TimeSpan.FromSeconds(
+                MaxInProcessWaitSeconds < 0 ? DefaultMaxInProcessWaitSeconds : MaxInProcessWaitSeconds),
+            MaxRequestsPerRun = MaxRequestsPerRun > 0 ? MaxRequestsPerRun : DefaultMaxRequestsPerRun,
+            BatchSize = OrdersImportTuning.DefaultBatchSize,
+            SafetyOverlap = TimeSpan.FromMinutes(
+                SafetyOverlapMinutes < 0 ? DefaultSafetyOverlapMinutes : SafetyOverlapMinutes),
+            BackfillWindow = TimeSpan.FromDays(
+                BackfillWindowDays < 1 ? DefaultBackfillWindowDays : BackfillWindowDays),
+            MinOrdersWindow = TimeSpan.Zero,
+            PageSize = PageSize > 0 ? PageSize : DefaultPageSize,
+            MethodName = methodName,
+        };
+    }
 }

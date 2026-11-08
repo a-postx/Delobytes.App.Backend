@@ -23,6 +23,7 @@
 .git/
 .gitignore
 .gitattributes
+.gigatool
 
 # Docker
 Dockerfile

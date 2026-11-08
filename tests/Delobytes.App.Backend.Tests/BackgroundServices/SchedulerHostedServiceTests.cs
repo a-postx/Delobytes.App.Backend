@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -173,7 +174,7 @@ public partial class SchedulerHostedServiceTests
     {
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.OzonChannelCode));
+            .ReturnsAsync(BuildConnection(ChannelCatalog.OzonCode));
 
         JobSchedule schedule = BuildSchedule(JobType.OrdersImportFbo);
         SetupDueSchedules(schedule);
@@ -198,7 +199,7 @@ public partial class SchedulerHostedServiceTests
     {
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildConnection(OrdersJobTypeMap.WildberriesChannelCode));
+            .ReturnsAsync(BuildConnection(ChannelCatalog.WildberriesCode));
 
         JobSchedule schedule = BuildSchedule(JobType.OrdersImport);
         SetupDueSchedules(schedule);
@@ -245,8 +246,8 @@ public partial class SchedulerHostedServiceTests
     // ── Tick: rate limiter pre-check ────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(OrdersJobTypeMap.WildberriesChannelCode, JobType.OrdersImport)]
-    [InlineData(OrdersJobTypeMap.OzonChannelCode, JobType.OrdersImportFbo)]
+    [InlineData(ChannelCatalog.WildberriesCode, JobType.OrdersImport)]
+    [InlineData(ChannelCatalog.OzonCode, JobType.OrdersImportFbo)]
     public async Task Tick_RateLimiterRefusesSlot_SkipsScheduleAndDoesNotAdvanceNextRunAt(
         string channelCode, JobType jobType)
     {
@@ -599,7 +600,7 @@ public partial class SchedulerHostedServiceTests
         };
     }
 
-    private Connection BuildConnection(string channelCode = OrdersJobTypeMap.WildberriesChannelCode)
+    private Connection BuildConnection(string channelCode = ChannelCatalog.WildberriesCode)
     {
         Guid templateId = Guid.NewGuid();
 
