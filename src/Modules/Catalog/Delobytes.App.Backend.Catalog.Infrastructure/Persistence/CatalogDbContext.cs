@@ -26,8 +26,6 @@ public class CatalogDbContext : TenantScopedDbContext
     public DbSet<PackingUnit> PackingUnits => Set<PackingUnit>();
     public DbSet<ProductBarcode> ProductBarcodes => Set<ProductBarcode>();
     public DbSet<ProductPhoto> ProductPhotos => Set<ProductPhoto>();
-    public DbSet<CostType> CostTypes => Set<CostType>();
-    public DbSet<ProductChannelCost> ProductChannelCosts => Set<ProductChannelCost>();
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();
     public DbSet<WorkRateVersion> WorkRateVersions => Set<WorkRateVersion>();
     public DbSet<ProductWorkRate> ProductWorkRates => Set<ProductWorkRate>();

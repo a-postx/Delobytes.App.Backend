@@ -20,7 +20,7 @@ public class MarginCalculationSnapshot : ITenantScoped
     // ── Calculated cost components ───────────────────────────────────────────
 
     /// <summary>
-    /// Aggregate of all ProductChannelCost entries for the product+channel pair
+    /// Aggregate of all channel-level cost entries for the product+channel pair
     /// at the time of calculation.
     /// </summary>
     public decimal ChannelCostTotal { get; set; }
