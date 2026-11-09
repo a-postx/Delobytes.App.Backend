@@ -52,7 +52,7 @@ internal static class MassTransitExtensions
 
                     cfg.ReceiveEndpoint("catalog-products-import", e =>
                     {
-                        e.ConfigureConsumer<ImportProductBatchMassTransitConsumer>(ctx);
+                        e.ConfigureConsumer<ProductBatchImportConsumer>(ctx);
 
                         e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
                     });
@@ -70,7 +70,7 @@ internal static class MassTransitExtensions
                     // Configure product batch import endpoint
                     cfg.ReceiveEndpoint("catalog-products-import", e =>
                     {
-                        e.ConfigureConsumer<ImportProductBatchMassTransitConsumer>(ctx);
+                        e.ConfigureConsumer<ProductBatchImportConsumer>(ctx);
 
                         e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
 
@@ -110,7 +110,7 @@ internal static class MassTransitExtensions
         // Configure products import orchestration endpoint
         cfg.ReceiveEndpoint("integrations-products-import", e =>
         {
-            e.ConfigureConsumer<ProcessProductsImportMassTransitConsumer>(ctx);
+            e.ConfigureConsumer<ProductsImportConsumer>(ctx);
 
             // Retry policy with exponential backoff
             e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
@@ -122,7 +122,7 @@ internal static class MassTransitExtensions
         // Configure product import batch completion endpoint
         cfg.ReceiveEndpoint("integrations-products-import-results", e =>
         {
-            e.ConfigureConsumer<ProcessProductImportBatchCompletedMassTransitConsumer>(ctx);
+            e.ConfigureConsumer<ProductImportBatchCompletedConsumer>(ctx);
 
             // Retry policy with exponential backoff
             e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));

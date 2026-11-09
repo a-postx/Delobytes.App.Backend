@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -106,6 +107,7 @@ public class SchedulerHostedService : BackgroundService
             IJobRunRepository jobRunRepository = scope.ServiceProvider.GetRequiredService<IJobRunRepository>();
             IJobScheduleRepository scheduleRepository = scope.ServiceProvider.GetRequiredService<IJobScheduleRepository>();
             ITenantSettingsProvider tenantSettingsProvider = scope.ServiceProvider.GetRequiredService<ITenantSettingsProvider>();
+            JobRunStarter jobRunStarter = scope.ServiceProvider.GetRequiredService<JobRunStarter>();
 
             Connection? connection = await connectionRepository.FindByIdWithTemplateAsync(schedule.ConnectionId, cancellationToken);
 
@@ -200,41 +202,11 @@ public class SchedulerHostedService : BackgroundService
                 return;
             }
 
-            JobRun jobRun = new JobRun
-            {
-                Id = Guid.NewGuid(),
-                ConnectionId = schedule.ConnectionId,
-                JobType = schedule.JobType,
-                Status = JobStatus.Pending,
-                RequestedByUserId = null,
-                CreatedAt = now,
-            };
-
-            await jobRunRepository.CreateAsync(jobRun, cancellationToken);
-
-            switch (schedule.JobType)
-            {
-                case JobType.ProductsImport:
-                    await jobRunRepository.CreateProductsImportJobAsync(
-                        new ProductsImportJob { JobRunId = jobRun.Id },
-                        cancellationToken);
-                    break;
-
-                // Orders import keeps its cursor in OrdersBackfillState/SyncCheckpoint rather than
-                // in a type-specific JobRun row, so nothing is created here on purpose.
-                case JobType.WbOrdersImport:
-                case JobType.OzonOrdersImportFbo:
-                case JobType.OzonOrdersImportFbs:
-                    break;
-
-                default:
-                    _logger.LogWarning(
-                        "SchedulerHostedService: schedule {ScheduleId} has unsupported JobType {JobType}; JobRun {JobRunId} created without type-specific data.",
-                        schedule.Id,
-                        schedule.JobType,
-                        jobRun.Id);
-                    break;
-            }
+            JobRun jobRun = await jobRunStarter.CreatePendingAsync(
+                schedule.ConnectionId,
+                schedule.JobType,
+                requestedByUserId: null,
+                cancellationToken);
 
             _logger.LogInformation(
                 "SchedulerHostedService: created JobRun {JobRunId} ({JobType}) for connection {ConnectionId} from schedule {ScheduleId}.",

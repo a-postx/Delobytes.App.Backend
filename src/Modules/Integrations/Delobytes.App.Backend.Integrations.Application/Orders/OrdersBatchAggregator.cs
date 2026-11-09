@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -22,7 +23,7 @@ public sealed class OrdersBatchAggregator
 {
     private readonly IJobRunRepository _jobRunRepository;
     private readonly IJobCheckpointRepository _jobCheckpointRepository;
-    private readonly OrdersImportFinalizer _finalizer;
+    private readonly BatchImportFinalizer _finalizer;
     private readonly OrdersImportWatermarkWriter _watermarkWriter;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OrdersBatchAggregator> _logger;
@@ -39,7 +40,7 @@ public sealed class OrdersBatchAggregator
     public OrdersBatchAggregator(
         IJobRunRepository jobRunRepository,
         IJobCheckpointRepository jobCheckpointRepository,
-        OrdersImportFinalizer finalizer,
+        BatchImportFinalizer finalizer,
         OrdersImportWatermarkWriter watermarkWriter,
         TimeProvider timeProvider,
         ILogger<OrdersBatchAggregator> logger)
@@ -106,9 +107,9 @@ public sealed class OrdersBatchAggregator
             jobRunId,
             batchId);
 
-        OrdersImportFinalizationResult result = await TryFinalizeAsync(jobRun, cancellationToken);
+        BatchImportFinalizationResult result = await TryFinalizeAsync(jobRun, cancellationToken);
 
-        return new OrdersImportCompletion(jobRun, result == OrdersImportFinalizationResult.Finalized);
+        return new OrdersImportCompletion(jobRun, result == BatchImportFinalizationResult.Finalized);
     }
 
     /// <summary>
@@ -165,9 +166,9 @@ public sealed class OrdersBatchAggregator
             }
         }
 
-        OrdersImportFinalizationResult result = await TryFinalizeAsync(jobRun, cancellationToken);
+        BatchImportFinalizationResult result = await TryFinalizeAsync(jobRun, cancellationToken);
 
-        return new OrdersImportCompletion(jobRun, result == OrdersImportFinalizationResult.Finalized);
+        return new OrdersImportCompletion(jobRun, result == BatchImportFinalizationResult.Finalized);
     }
 
     /// <summary>
@@ -175,7 +176,7 @@ public sealed class OrdersBatchAggregator
     /// been recorded. Reached from both kinds of delivery, because either one can be the delivery that
     /// brings the recorded count up to the expected total.
     /// </summary>
-    private async Task<OrdersImportFinalizationResult> TryFinalizeAsync(
+    private async Task<BatchImportFinalizationResult> TryFinalizeAsync(
         JobRun jobRun, CancellationToken cancellationToken)
     {
         // Re-read rather than trusting the instance loaded by the caller: the completion event can
@@ -213,7 +214,7 @@ public sealed class OrdersBatchAggregator
                 recordedBatches,
                 expectedBatchCount);
 
-            return OrdersImportFinalizationResult.NotReady;
+            return BatchImportFinalizationResult.NotReady;
         }
 
         // The instance being finalised may predate the completion event, so carry the re-read
@@ -234,12 +235,12 @@ public sealed class OrdersBatchAggregator
                 "JobRun {JobRunId}: checkpoint payload is unavailable (missing or unreadable), not finalising",
                 jobRun.Id);
 
-            return OrdersImportFinalizationResult.CheckpointUnavailable;
+            return BatchImportFinalizationResult.CheckpointUnavailable;
         }
 
-        OrdersImportFinalizationResult result = await _finalizer.FinalizeAsync(jobRun, cancellationToken);
+        BatchImportFinalizationResult result = await _finalizer.FinalizeAsync(jobRun, cancellationToken);
 
-        if (result == OrdersImportFinalizationResult.Finalized)
+        if (result == BatchImportFinalizationResult.Finalized)
         {
             await _watermarkWriter.WriteAsync(jobRun, payload, cancellationToken);
         }
@@ -268,7 +269,7 @@ public sealed class OrdersBatchAggregator
                 "JobRun {JobRunId}: no checkpoint yet (the run is still starting), not finalising",
                 jobRun.Id);
 
-            return new CheckpointThreshold(null, 0, OrdersImportFinalizationResult.NotReady);
+            return new CheckpointThreshold(null, 0, BatchImportFinalizationResult.NotReady);
         }
 
         OrdersImportCheckpointPayload? payload = OrdersImportCheckpointStore
@@ -280,7 +281,7 @@ public sealed class OrdersBatchAggregator
                 "JobRun {JobRunId}: checkpoint payload is unreadable, not finalising",
                 jobRun.Id);
 
-            return new CheckpointThreshold(null, 0, OrdersImportFinalizationResult.CheckpointUnavailable);
+            return new CheckpointThreshold(null, 0, BatchImportFinalizationResult.CheckpointUnavailable);
         }
 
         if (payload.Phase != OrdersImportCheckpointPhase.FetchCompleted)
@@ -294,7 +295,7 @@ public sealed class OrdersBatchAggregator
                 jobRun.Id,
                 payload.TotalBatches);
 
-            return new CheckpointThreshold(null, 0, OrdersImportFinalizationResult.NotReady);
+            return new CheckpointThreshold(null, 0, BatchImportFinalizationResult.NotReady);
         }
 
         // The fetch finished, yet the JobRun carries no threshold: the completion event was delayed
@@ -305,7 +306,7 @@ public sealed class OrdersBatchAggregator
             jobRun.Id,
             payload.TotalBatches);
 
-        return new CheckpointThreshold(payload, payload.TotalBatches, OrdersImportFinalizationResult.NotReady);
+        return new CheckpointThreshold(payload, payload.TotalBatches, BatchImportFinalizationResult.NotReady);
     }
 
     private async Task<JobRun?> GetJobRunAsync(Guid jobRunId, string reason, CancellationToken cancellationToken)
@@ -328,7 +329,7 @@ public sealed class OrdersBatchAggregator
     private readonly record struct CheckpointThreshold(
         OrdersImportCheckpointPayload? Payload,
         int ExpectedBatchCount,
-        OrdersImportFinalizationResult Outcome)
+        BatchImportFinalizationResult Outcome)
     {
         public bool IsKnown => Payload != null;
     }

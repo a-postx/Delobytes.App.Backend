@@ -1,10 +1,11 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
-using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
+using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using FluentAssertions;
@@ -17,10 +18,10 @@ using Xunit;
 namespace Delobytes.App.Backend.Tests.Infrastructure.Catalog;
 
 /// <summary>
-/// Covers <see cref="ChannelProductFullSetReconciliationConsumer"/>: the sweep that marks a
+/// Covers <see cref="ChannelProductReconciliationService"/>: the sweep that marks a
 /// channel's links inactive when the finished import run never observed them.
 ///
-/// These tests are deliberately written against the consumer directly rather than through the batch
+/// These tests are deliberately written against the service directly rather than through the batch
 /// import. The bug this design replaced lived precisely in that coupling: the sweep used to run
 /// inside a batch transaction, where its siblings' committed-but-not-yet-visible rows looked like
 /// dropped cards. Exercising the sweep in isolation pins the contract it actually has — it is given
@@ -49,9 +50,9 @@ public class ChannelProductFullSetReconciliationTests
         // Seen by this run: stamped at or after its start.
         Guid liveLinkId = await SeedLinkAsync(context, _channelId, "111", runStartedAt.AddSeconds(5));
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
-        int deactivated = await consumer.ProcessAsync(
+        int deactivated = await service.ReconciliateAsync(
             BuildMessage(runStartedAt),
             CancellationToken.None);
 
@@ -75,9 +76,9 @@ public class ChannelProductFullSetReconciliationTests
         // it as older would deactivate cards imported in the first milliseconds of every run.
         await SeedLinkAsync(context, _channelId, "111", runStartedAt);
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
-        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+        int deactivated = await service.ReconciliateAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
         deactivated.Should().Be(0);
         (await IsLinkActiveAsync(context, _channelId, "111")).Should().BeTrue();
@@ -93,9 +94,9 @@ public class ChannelProductFullSetReconciliationTests
         await CreateChannelAsync(context, _channelId);
         await SeedLinkAsync(context, _channelId, "999", runStartedAt.AddDays(-1), isActive: false);
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
-        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+        int deactivated = await service.ReconciliateAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
         // Idempotency matters: a redelivered request must not report work it did not do, and must
         // not resurrect or re-touch rows a previous delivery already handled.
@@ -115,9 +116,9 @@ public class ChannelProductFullSetReconciliationTests
         // Created outside any import: no stamp, so no run can claim to have observed its absence.
         await SeedLinkAsync(context, _channelId, "999", lastSyncedAt: null);
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
-        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+        int deactivated = await service.ReconciliateAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
         deactivated.Should().Be(0);
         (await IsLinkActiveAsync(context, _channelId, "999")).Should().BeTrue();
@@ -134,9 +135,9 @@ public class ChannelProductFullSetReconciliationTests
         await CreateChannelAsync(context, _otherChannelId);
         await SeedLinkAsync(context, _otherChannelId, "999", runStartedAt.AddDays(-1));
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
-        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+        int deactivated = await service.ReconciliateAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
         // A listing import describes one channel; another channel's cards are not evidence of
         // anything about it.
@@ -153,11 +154,11 @@ public class ChannelProductFullSetReconciliationTests
         await CreateChannelAsync(context, _channelId);
         await SeedLinkAsync(context, _channelId, "999", DateTimeOffset.UtcNow.AddDays(-30));
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
         // default(DateTimeOffset) is what an event with no boundary deserialises to. Read literally
         // it is "the beginning of time", which would deactivate every link of the channel.
-        int deactivated = await consumer.ProcessAsync(
+        int deactivated = await service.ReconciliateAsync(
             BuildMessage(default(DateTimeOffset)),
             CancellationToken.None);
 
@@ -180,18 +181,18 @@ public class ChannelProductFullSetReconciliationTests
         Guid linkId = await SeedLinkAsync(
             context, _channelId, "111", runStartedAt.AddSeconds(1), isActive: true);
 
-        ChannelProductFullSetReconciliationConsumer consumer = BuildConsumer(context);
+        ChannelProductReconciliationService service = BuildConsumer(context);
 
-        int deactivated = await consumer.ProcessAsync(BuildMessage(runStartedAt), CancellationToken.None);
+        int deactivated = await service.ReconciliateAsync(BuildMessage(runStartedAt), CancellationToken.None);
 
         deactivated.Should().Be(0);
         (await IsActiveAsync(context, linkId)).Should().BeTrue(
             "the card is listed again, so the sweep of the run that saw it must not deactivate it");
     }
 
-    private ChannelProductFullSetReconciliationRequestedEvent BuildMessage(DateTimeOffset runStartedAt)
+    private ChannelProductReconciliationRequestedEvent BuildMessage(DateTimeOffset runStartedAt)
     {
-        return new ChannelProductFullSetReconciliationRequestedEvent
+        return new ChannelProductReconciliationRequestedEvent
         {
             JobRunId = _jobRunId,
             ConnectionId = _connectionId,
@@ -286,11 +287,11 @@ public class ChannelProductFullSetReconciliationTests
         return new CatalogDbContext(options, tenantContextMock.Object);
     }
 
-    private static ChannelProductFullSetReconciliationConsumer BuildConsumer(CatalogDbContext context)
+    private static ChannelProductReconciliationService BuildConsumer(CatalogDbContext context)
     {
-        return new ChannelProductFullSetReconciliationConsumer(
-            context,
-            Mock.Of<ILogger<ChannelProductFullSetReconciliationConsumer>>(),
+        return new ChannelProductReconciliationService(
+            new ChannelProductRepository(context),
+            Mock.Of<ILogger<ChannelProductReconciliationService>>(),
             TimeProvider.System);
     }
 }

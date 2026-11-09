@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Integrations.ProcessOrdersImportConsumer after it has finished fetching a run and
+/// Published by Integrations.OrdersImportOrchestrator after it has finished fetching a run and
 /// persisted the final checkpoint. Replaces the empty terminal
 /// <see cref="OrdersBatchImportRequestedEvent"/> as the signal that tells
 /// Integrations.ProcessOrdersBatchImportCompletedConsumer (aggregator) to re-check the run, without

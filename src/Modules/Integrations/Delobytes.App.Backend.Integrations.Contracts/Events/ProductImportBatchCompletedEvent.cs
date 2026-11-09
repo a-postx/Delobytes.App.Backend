@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Catalog.ImportProductBatchConsumer after processing a batch of product cards.
+/// Published by Catalog.ProductBatchImporter after processing a batch of product cards.
 /// Consumed by Integrations.ProcessProductsImportConsumer to update progress counters.
 /// </summary>
 public record ProductImportBatchCompletedEvent

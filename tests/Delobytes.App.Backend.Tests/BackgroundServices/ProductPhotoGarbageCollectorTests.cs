@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.BackgroundServices;
+using Delobytes.App.Backend.Catalog.Infrastructure.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Application.Options;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -55,6 +55,7 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         ServiceCollection services = new ServiceCollection();
 
         services.AddSingleton<ITenantContext>(_tenantContext);
+        services.AddSingleton<ITenantContextSetter>(_tenantContext);
         services.AddSingleton(_tenantContext);
         services.AddSingleton(_storageMock.Object);
         services.AddScoped(_ => _tenantRepositoryMock.Object);

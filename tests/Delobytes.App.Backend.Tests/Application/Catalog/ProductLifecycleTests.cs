@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Catalog.Application.Commands.Products;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
+using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -17,8 +18,10 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Contracts.Events;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 using Delobytes.App.Backend.Sales.Domain.Enums;
-using Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Sales.Application.Services;
+using Delobytes.App.Backend.Sales.Infrastructure.Messaging;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
+using Delobytes.App.Backend.Sales.Infrastructure.Persistence.Repositories;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +34,7 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog;
 /// <summary>
 /// Lifecycle tests for Products: archiving, restore, and the two-phase deletion flow
 /// (RequestProductDeletionCommand -> ProductDeletionRequestedEvent -> orders check in Sales ->
-/// ProductOrdersCheckCompletedEvent -> ProductOrdersCheckCompletedConsumer -> Deleted or DeletionFailed).
+/// ProductOrdersCheckCompletedEvent -> ProductDeletionService -> Deleted or DeletionFailed).
 ///
 /// The cross-module steps are exercised against real DbContexts (InMemory) because the
 /// contract between the Catalog and Sales modules is expressed in EF queries, not in
@@ -255,10 +258,10 @@ public class ProductLifecycleTests
         using SalesDbContext salesContext = BuildSalesContext(tenantContextMock);
 
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductDeletionRequestedConsumer consumer = new ProductDeletionRequestedConsumer(
-            salesContext,
-            publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+        ProductOrdersChecker consumer = new ProductOrdersChecker(
+            new ProductOrdersRepository(salesContext),
+            new MassTransitEventPublisher(publishEndpointMock.Object),
+            Mock.Of<ILogger<ProductOrdersChecker>>(),
             TimeProvider.System);
 
         ProductDeletionRequestedEvent message = new ProductDeletionRequestedEvent
@@ -300,10 +303,10 @@ public class ProductLifecycleTests
             BuildOrder(unrelatedChannelProductId));
 
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductDeletionRequestedConsumer consumer = new ProductDeletionRequestedConsumer(
-            salesContext,
-            publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+        ProductOrdersChecker consumer = new ProductOrdersChecker(
+            new ProductOrdersRepository(salesContext),
+            new MassTransitEventPublisher(publishEndpointMock.Object),
+            Mock.Of<ILogger<ProductOrdersChecker>>(),
             TimeProvider.System);
 
         ProductDeletionRequestedEvent message = new ProductDeletionRequestedEvent
@@ -342,27 +345,24 @@ public class ProductLifecycleTests
         ProductRepository repository = new ProductRepository(catalogContext);
 
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductDeletionRequestedConsumer salesConsumer = new ProductDeletionRequestedConsumer(
-            salesContext,
-            publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+        ProductOrdersChecker salesConsumer = new ProductOrdersChecker(
+            new ProductOrdersRepository(salesContext),
+            new MassTransitEventPublisher(publishEndpointMock.Object),
+            Mock.Of<ILogger<ProductOrdersChecker>>(),
             TimeProvider.System);
+
+        ProductDeletionService deletionService = BuildDeletionService(
+            repository,
+            new Mock<IEventPublisher>().Object,
+            BuildPhotoServiceMock().Object);
 
         // The Sales consumer re-publishes onto a no-op endpoint: we drive the Catalog side explicitly.
         publishEndpointMock
             .Setup(p => p.Publish(It.IsAny<ProductOrdersCheckCompletedEvent>(), It.IsAny<CancellationToken>()))
             .Returns((ProductOrdersCheckCompletedEvent e, CancellationToken ct) =>
-                new ProductOrdersCheckCompletedConsumer(
-                    repository,
-                    BuildPhotoServiceMock().Object,
-                    Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-                    TimeProvider.System).ProcessAsync(e, ct));
+                deletionService.CompleteOrdersCheckAsync(e, ct));
 
-        RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(
-            repository,
-            new Mock<IEventPublisher>().Object,
-            tenantContextMock.Object,
-            Mock.Of<ILogger<RequestProductDeletionCommandHandler>>());
+        RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(deletionService);
 
         // Act
         RequestProductDeletionResponse response = await requestHandler.Handle(
@@ -410,26 +410,24 @@ public class ProductLifecycleTests
         ProductRepository repository = new ProductRepository(catalogContext);
 
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+
+        ProductDeletionService deletionService = BuildDeletionService(
+            repository,
+            new Mock<IEventPublisher>().Object,
+            BuildPhotoServiceMock().Object);
+
         publishEndpointMock
             .Setup(p => p.Publish(It.IsAny<ProductOrdersCheckCompletedEvent>(), It.IsAny<CancellationToken>()))
             .Returns((ProductOrdersCheckCompletedEvent e, CancellationToken ct) =>
-                new ProductOrdersCheckCompletedConsumer(
-                    repository,
-                    BuildPhotoServiceMock().Object,
-                    Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-                    TimeProvider.System).ProcessAsync(e, ct));
+                deletionService.CompleteOrdersCheckAsync(e, ct));
 
-        ProductDeletionRequestedConsumer salesConsumer = new ProductDeletionRequestedConsumer(
-            salesContext,
-            publishEndpointMock.Object,
-            Mock.Of<ILogger<ProductDeletionRequestedConsumer>>(),
+        ProductOrdersChecker salesConsumer = new ProductOrdersChecker(
+            new ProductOrdersRepository(salesContext),
+            new MassTransitEventPublisher(publishEndpointMock.Object),
+            Mock.Of<ILogger<ProductOrdersChecker>>(),
             TimeProvider.System);
 
-        RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(
-            repository,
-            new Mock<IEventPublisher>().Object,
-            tenantContextMock.Object,
-            Mock.Of<ILogger<RequestProductDeletionCommandHandler>>());
+        RequestProductDeletionCommandHandler requestHandler = new RequestProductDeletionCommandHandler(deletionService);
 
         // Act
         await requestHandler.Handle(
@@ -455,20 +453,19 @@ public class ProductLifecycleTests
         reloaded.ChannelProducts.Should().OnlyContain(cp => cp.IsActive, "the product remains sellable after a failed deletion");
     }
 
-    // ---------------------------------------------- ProductOrdersCheckCompletedConsumer
+    // ---------------------------------------------- ProductDeletionService.CompleteOrdersCheckAsync
 
     [Fact]
-    public async Task ProductOrdersCheckCompletedConsumer_NoOrders_CompletesDelete()
+    public async Task ProductDeletionService_CompleteOrdersCheck_NoOrders_CompletesDelete()
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
         product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
-        ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
+        ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
-            BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-            TimeProvider.System);
+            new Mock<IEventPublisher>().Object,
+            BuildPhotoServiceMock().Object);
 
         ProductOrdersCheckCompletedEvent message = new ProductOrdersCheckCompletedEvent
         {
@@ -479,7 +476,7 @@ public class ProductLifecycleTests
         };
 
         // Act
-        await handler.ProcessAsync(message, CancellationToken.None);
+        await service.CompleteOrdersCheckAsync(message, CancellationToken.None);
 
         // Assert
         product.Status.Should().Be(ProductStatus.Deleted);
@@ -491,17 +488,16 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task ProductOrdersCheckCompletedConsumer_WithOrders_CancelsDelete()
+    public async Task ProductDeletionService_CompleteOrdersCheck_WithOrders_CancelsDelete()
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
         product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
-        ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
+        ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
-            BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-            TimeProvider.System);
+            new Mock<IEventPublisher>().Object,
+            BuildPhotoServiceMock().Object);
 
         ProductOrdersCheckCompletedEvent message = new ProductOrdersCheckCompletedEvent
         {
@@ -512,7 +508,7 @@ public class ProductLifecycleTests
         };
 
         // Act
-        await handler.ProcessAsync(message, CancellationToken.None);
+        await service.CompleteOrdersCheckAsync(message, CancellationToken.None);
 
         // Assert
         product.Status.Should().Be(ProductStatus.DeletionFailed);
@@ -522,16 +518,15 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task ProductOrdersCheckCompletedConsumer_ProductNotPending_IsIgnored()
+    public async Task ProductDeletionService_CompleteOrdersCheck_ProductNotPending_IsIgnored()
     {
         // Arrange: a late or duplicated check result must not resurrect a deleted product.
         Product product = BuildProduct(ProductStatus.Active);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
-        ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
+        ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
-            BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-            TimeProvider.System);
+            new Mock<IEventPublisher>().Object,
+            BuildPhotoServiceMock().Object);
 
         ProductOrdersCheckCompletedEvent message = new ProductOrdersCheckCompletedEvent
         {
@@ -542,7 +537,7 @@ public class ProductLifecycleTests
         };
 
         // Act
-        await handler.ProcessAsync(message, CancellationToken.None);
+        await service.CompleteOrdersCheckAsync(message, CancellationToken.None);
 
         // Assert
         product.Status.Should().Be(ProductStatus.Active);
@@ -551,7 +546,7 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task ProductOrdersCheckCompletedConsumer_UnknownProduct_DoesNotThrow()
+    public async Task ProductDeletionService_CompleteOrdersCheck_UnknownProduct_DoesNotThrow()
     {
         // Arrange
         Mock<IProductRepository> repositoryMock = new Mock<IProductRepository>();
@@ -559,14 +554,13 @@ public class ProductLifecycleTests
             .Setup(r => r.GetWithChannelProductsByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Product?)null);
 
-        ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
+        ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
-            BuildPhotoServiceMock().Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-            TimeProvider.System);
+            new Mock<IEventPublisher>().Object,
+            BuildPhotoServiceMock().Object);
 
         // Act
-        Func<Task> act = () => handler.ProcessAsync(
+        Func<Task> act = () => service.CompleteOrdersCheckAsync(
             new ProductOrdersCheckCompletedEvent
             {
                 ProductId = Guid.NewGuid(),
@@ -791,7 +785,7 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task ProductOrdersCheckCompletedConsumer_NoOrders_DeletesPhotoBlobsBeforeMarkingDeleted()
+    public async Task ProductDeletionService_CompleteOrdersCheck_NoOrders_DeletesPhotoBlobsBeforeMarkingDeleted()
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
@@ -839,14 +833,13 @@ public class ProductLifecycleTests
             .Callback<IReadOnlyList<ProductPhoto>, CancellationToken>((photos, _) => deletedPhotos.AddRange(photos))
             .Returns(Task.CompletedTask);
 
-        ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
+        ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
-            photoServiceMock.Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-            TimeProvider.System);
+            new Mock<IEventPublisher>().Object,
+            photoServiceMock.Object);
 
         // Act
-        await handler.ProcessAsync(
+        await service.CompleteOrdersCheckAsync(
             new ProductOrdersCheckCompletedEvent
             {
                 ProductId = product.Id,
@@ -872,7 +865,7 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task ProductOrdersCheckCompletedConsumer_PhotoDeleteFails_ProductStillMarkedDeleted()
+    public async Task ProductDeletionService_CompleteOrdersCheck_PhotoDeleteFails_ProductStillMarkedDeleted()
     {
         // Storage failures must not block the soft-delete: a stale blob is cheaper than
         // a product stuck in DeletionPending forever.
@@ -901,14 +894,13 @@ public class ProductLifecycleTests
             .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("bucket unreachable"));
 
-        ProductOrdersCheckCompletedConsumer handler = new ProductOrdersCheckCompletedConsumer(
+        ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
-            photoServiceMock.Object,
-            Mock.Of<ILogger<ProductOrdersCheckCompletedConsumer>>(),
-            TimeProvider.System);
+            new Mock<IEventPublisher>().Object,
+            photoServiceMock.Object);
 
         // Act — must not throw
-        Func<Task> act = () => handler.ProcessAsync(
+        Func<Task> act = () => service.CompleteOrdersCheckAsync(
             new ProductOrdersCheckCompletedEvent
             {
                 ProductId = product.Id,
@@ -999,10 +991,21 @@ public class ProductLifecycleTests
         Mock<IEventPublisher> eventPublisherMock)
     {
         return new RequestProductDeletionCommandHandler(
-            repositoryMock.Object,
-            eventPublisherMock.Object,
+            BuildDeletionService(repositoryMock.Object, eventPublisherMock.Object, BuildPhotoServiceMock().Object));
+    }
+
+    private ProductDeletionService BuildDeletionService(
+        IProductRepository repository,
+        IEventPublisher eventPublisher,
+        IProductPhotoService photoService)
+    {
+        return new ProductDeletionService(
+            repository,
+            eventPublisher,
             BuildTenantContext().Object,
-            Mock.Of<ILogger<RequestProductDeletionCommandHandler>>());
+            photoService,
+            Mock.Of<ILogger<ProductDeletionService>>(),
+            TimeProvider.System);
     }
 
     /// <summary>

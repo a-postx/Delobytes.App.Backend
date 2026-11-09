@@ -1,0 +1,1078 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Integrations.Contracts.Events;
+using Delobytes.App.Backend.Integrations.Contracts.Models;
+using Delobytes.App.Backend.Sales.Application.Interfaces;
+using Delobytes.App.Backend.Sales.Application.Orders;
+using Delobytes.App.Backend.Sales.Domain.Entities;
+using Delobytes.App.Backend.Sales.Domain.Enums;
+using Delobytes.App.Backend.Sales.Infrastructure.Messaging;
+using Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
+using FluentAssertions;
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Npgsql;
+using Xunit;
+
+namespace Delobytes.App.Backend.Tests.Infrastructure;
+
+/// <summary>
+/// Tests for OrdersBatchImporter. Covers idempotent order/line upsert, the
+/// (ChannelId, ExternalProductId) resolution against the ChannelProductRef projection, counter
+/// reporting back to Integrations, tenant isolation and per-order failure containment.
+/// </summary>
+public class OrdersBatchImporterTests
+{
+    private readonly Guid _tenantId = Guid.NewGuid();
+    private readonly Guid _channelId = Guid.NewGuid();
+    private readonly Guid _connectionId = Guid.NewGuid();
+    private readonly Guid _jobRunId = Guid.NewGuid();
+
+    [Fact]
+    public async Task ProcessAsync_CreatesOrderAndLine_WhenNoMatchExists()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot snapshot = BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1", price: 1500m);
+
+        // Act
+        await importer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Assert
+        Order? order = await consumerContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-1");
+
+        order.Should().NotBeNull();
+        order!.ChannelId.Should().Be(_channelId);
+        order.ConnectionId.Should().Be(_connectionId);
+        order.Currency.Should().Be("RUB");
+        order.Status.Should().Be(OrderStatus.Processing);
+        order.ExternalStatus.Should().Be("active");
+        order.ChannelReportedTotal.Should().Be(1700m);
+        order.FirstImportedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+        order.UpdatedAt.Should().BeNull();
+
+        order.Lines.Should().HaveCount(1);
+        OrderLine line = order.Lines.First();
+        line.LineKey.Should().Be("SRID-1");
+        line.ExternalProductId.Should().Be("nm-100");
+        line.UnitPrice.Should().Be(1500m);
+        line.Quantity.Should().Be(1);
+        line.ChannelProductId.Should().BeNull();
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.JobRunId == _jobRunId &&
+                    e.Created == 1 &&
+                    e.Updated == 0 &&
+                    e.Skipped == 0 &&
+                    e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ResolvesChannelProductId_WhenProjectionHasMatchingRef()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid channelProductId = Guid.NewGuid();
+
+        SalesDbContext setupContext = BuildSalesDbContext(_tenantId, databaseName);
+        await setupContext.ChannelProductRefs.AddAsync(BuildChannelProductRef(channelProductId, "nm-100"));
+        await setupContext.SaveChangesAsync();
+
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        // Act
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        // Assert
+        OrderLine? line = await consumerContext.OrderLines
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.LineKey == "SRID-1");
+
+        line.Should().NotBeNull();
+        line!.ChannelProductId.Should().Be(channelProductId);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_LeavesChannelProductIdNull_WhenProjectionHasNoMatch()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext setupContext = BuildSalesDbContext(_tenantId, databaseName);
+        await setupContext.ChannelProductRefs.AddAsync(BuildChannelProductRef(Guid.NewGuid(), "nm-other"));
+        await setupContext.SaveChangesAsync();
+
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        // Act
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        // Assert
+        OrderLine? line = await consumerContext.OrderLines
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.LineKey == "SRID-1");
+
+        line.Should().NotBeNull();
+        line!.ChannelProductId.Should().BeNull();
+
+        // The channel identity is retained regardless, so a later catalogue link can be backfilled.
+        line.ExternalProductId.Should().Be("nm-100");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReimportingIdenticalOrder_CountsAsSkippedWithoutDuplicating()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        ChannelOrderSnapshot snapshot = BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1");
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, firstPublishMock.Object, _tenantId);
+        await firstImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Act: the same channel data arrives again
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, secondPublishMock.Object, _tenantId);
+        await secondImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Assert
+        List<Order> orders = await secondContext.Orders.IgnoreQueryFilters().Include(o => o.Lines).ToListAsync();
+        orders.Should().HaveCount(1);
+        orders[0].Lines.Should().HaveCount(1);
+
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 &&
+                    e.Updated == 0 &&
+                    e.Skipped == 1 &&
+                    e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ChangedChannelData_CountsAsUpdatedAndOverwritesFields()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, firstPublishMock.Object, _tenantId);
+        await firstImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1", price: 1500m) }),
+            CancellationToken.None);
+
+        // Act: the channel reports a new status and price for the same order
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, secondPublishMock.Object, _tenantId);
+
+        ChannelOrderSnapshot changed = BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1", price: 999m);
+        changed = changed with
+        {
+            ExternalStatus = "cancelled",
+            CancelReason = "cancel",
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                changed.Lines.Single() with { IsCancelled = true },
+            },
+        };
+
+        await secondImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { changed }), CancellationToken.None);
+
+        // Assert
+        Order? order = await secondContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-1");
+
+        order.Should().NotBeNull();
+        order!.Status.Should().Be(OrderStatus.Cancelled);
+        order.ExternalStatus.Should().Be("cancelled");
+        order.UpdatedAt.Should().NotBeNull();
+        order.Lines.First().UnitPrice.Should().Be(999m);
+
+        List<Order> allOrders = await secondContext.Orders.IgnoreQueryFilters().ToListAsync();
+        allOrders.Should().HaveCount(1);
+
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 &&
+                    e.Updated == 1 &&
+                    e.Skipped == 0 &&
+                    e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DeltaRunReportingOnlyTheCancelledUnit_CancelsTheOrderAndKeepsBothLines()
+    {
+        // Arrange: a two-unit cart, both units live.
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, firstPublishMock.Object, _tenantId);
+        await firstImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCartSnapshot("G-1", "SRID-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Act: a later delta run sees only unit 2, and sees it cancelled.
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, secondPublishMock.Object, _tenantId);
+
+        ChannelOrderSnapshot delta = BuildCartSnapshot("G-1", "SRID-2") with
+        {
+            ExternalStatus = "cancelled",
+            CancelReason = "cancel",
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                BuildCartSnapshot("G-1", "SRID-2").Lines.Single() with { IsCancelled = true },
+            },
+        };
+
+        await secondImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { delta }), CancellationToken.None);
+
+        // Assert: unit 1 was live and stays live, so the cart is not cancelled even though the only
+        // unit this run saw was.
+        Order? order = await secondContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.ExternalStatus.Should().Be("active");
+        order.Status.Should().Be(OrderStatus.Processing);
+        order.CancelReason.Should().BeNull();
+        order.Lines.Single(l => l.LineKey == "SRID-2").IsCancelled.Should().BeTrue();
+        order.Lines.Single(l => l.LineKey == "SRID-1").IsCancelled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_BothPersistedLinesCancelled_IsCancelled()
+    {
+        // Arrange: a two-unit cart, both live.
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, firstPublishMock.Object, _tenantId);
+        await firstImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCartSnapshot("G-1", "SRID-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Act: unit 1 is cancelled first, then unit 2.
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await secondImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCancelledUnitSnapshot("G-1", "SRID-1") }),
+            CancellationToken.None);
+
+        SalesDbContext thirdContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImporter thirdImporter = BuildImporter(thirdContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await thirdImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCancelledUnitSnapshot("G-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Assert: after the second cancellation every persisted line is cancelled, which is the only
+        // state in which the cart itself is cancelled.
+        SalesDbContext readContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? order = await readContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.ExternalStatus.Should().Be("cancelled");
+        order.Status.Should().Be(OrderStatus.Cancelled);
+        order.CancelReason.Should().Be("cancel");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CancelledUnitLaterReportedLive_ReturnsToActive()
+    {
+        // Arrange: unit 1 is cancelled on the first import.
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await firstImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCancelledUnitSnapshot("G-1", "SRID-1") }),
+            CancellationToken.None);
+
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? cancelled = await secondContext.Orders
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        cancelled!.Status.Should().Be(OrderStatus.Cancelled);
+
+        // Act: the channel reports unit 2, and it is live.
+        SalesDbContext thirdContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImporter thirdImporter = BuildImporter(thirdContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await thirdImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildCartSnapshot("G-1", "SRID-2") }),
+            CancellationToken.None);
+
+        // Assert: a live unit replaces the cancelled-only state; the cancelled line is not dropped
+        // and not duplicated.
+        SalesDbContext readContext = BuildSalesDbContext(_tenantId, databaseName);
+        Order? order = await readContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Status.Should().Be(OrderStatus.Processing);
+        order.ExternalStatus.Should().Be("active");
+        order.CancelReason.Should().BeNull();
+        order.Lines.Should().HaveCount(2);
+        order.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        order.Lines.Single(l => l.LineKey == "SRID-1").IsCancelled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_IdenticalDataWithLineCancelFlag_StillCountsAsSkipped()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        ChannelOrderSnapshot snapshot = BuildCartSnapshot("G-1", "SRID-1", "SRID-2");
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, new Mock<IPublishEndpoint>().Object, _tenantId);
+        await firstImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Act: byte-identical re-import
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, secondPublishMock.Object, _tenantId);
+        await secondImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        // Assert: IsCancelled and the line's StatusChangedAt are imported facts, so they take part in
+        // change detection; writing the same values must therefore still produce no update.
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 && e.Updated == 0 && e.Skipped == 1 && e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NewLineInExistingOrder_CountsAsUpdated()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, firstPublishMock.Object, _tenantId);
+        await firstImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        // Act: the same order now carries an extra line
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, secondPublishMock.Object, _tenantId);
+
+        ChannelOrderSnapshot withExtraLine = BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1");
+        withExtraLine.Lines.Add(new ChannelOrderLineSnapshot
+        {
+            LineKey = "SRID-2",
+            ExternalProductId = "nm-200",
+            Quantity = 1,
+            Currency = "RUB",
+        });
+
+        await secondImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { withExtraLine }), CancellationToken.None);
+
+        // Assert
+        Order? order = await secondContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Updated == 1 && e.Skipped == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MultiLineCart_PersistsOneOrderWithOneLinePerUnit()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot cart = BuildCartSnapshot("G-1", "SRID-1", "SRID-2");
+
+        // Act
+        await importer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { cart }), CancellationToken.None);
+
+        // Assert
+        Order? order = await consumerContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "G-1");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.Lines.Select(l => l.LineKey).Should().BeEquivalentTo(new[] { "SRID-1", "SRID-2" });
+        order.Lines.Should().OnlyContain(l => l.LineKey != order.ExternalOrderId);
+        order.Lines.Should().OnlyContain(l => l.Quantity == 1);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Created == 1 && e.Updated == 0 && e.Skipped == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MultiLineCartReimported_CountsAsSkippedWithoutDuplicatingLines()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        ChannelOrderSnapshot cart = BuildCartSnapshot("G-1", "SRID-1", "SRID-2");
+
+        SalesDbContext firstContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> firstPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter firstImporter = BuildImporter(firstContext, firstPublishMock.Object, _tenantId);
+        await firstImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { cart }), CancellationToken.None);
+
+        // Act: the same channel data arrives again
+        SalesDbContext secondContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> secondPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter secondImporter = BuildImporter(secondContext, secondPublishMock.Object, _tenantId);
+        await secondImporter.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot> { cart }), CancellationToken.None);
+
+        // Assert
+        List<Order> orders = await secondContext.Orders.IgnoreQueryFilters().Include(o => o.Lines).ToListAsync();
+        orders.Should().HaveCount(1);
+        orders[0].Lines.Should().HaveCount(2);
+
+        secondPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 && e.Updated == 0 && e.Skipped == 1 && e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MultipleOrders_ReportsIndependentCounters()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext seedContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> seedPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter seedImporter = BuildImporter(seedContext, seedPublishMock.Object, _tenantId);
+        await seedImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-EXISTING", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        // Act: one unchanged order, one genuinely new order
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot>
+            {
+                BuildOrderSnapshot("ORDER-EXISTING", "nm-100", "SRID-1"),
+                BuildOrderSnapshot("ORDER-NEW", "nm-500", "SRID-9"),
+            }),
+            CancellationToken.None);
+
+        // Assert
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 1 &&
+                    e.Skipped == 1 &&
+                    e.Updated == 0 &&
+                    e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_OneFailingOrder_DoesNotAbortTheBatch()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName, failOnSaveCall: 1);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        // Act
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot>
+            {
+                BuildOrderSnapshot("ORDER-FAIL", "nm-100", "SRID-1"),
+                BuildOrderSnapshot("ORDER-OK", "nm-200", "SRID-2"),
+            }),
+            CancellationToken.None);
+
+        // Assert
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Failed == 1 &&
+                    e.Created == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // The poisoned order must have been detached, not partially flushed alongside its sibling.
+        SalesDbContext verificationContext = BuildSalesDbContext(_tenantId, databaseName);
+        List<Order> orders = await verificationContext.Orders.IgnoreQueryFilters().ToListAsync();
+        orders.Should().HaveCount(1);
+        orders[0].ExternalOrderId.Should().Be("ORDER-OK");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_OrderOfAnotherTenant_IsNotVisibleThroughQueryFilter()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid otherTenantId = Guid.NewGuid();
+
+        SalesDbContext otherTenantContext = BuildSalesDbContext(otherTenantId, databaseName);
+        Mock<IPublishEndpoint> otherTenantPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter otherTenantImporter = BuildImporter(otherTenantContext, otherTenantPublishMock.Object, otherTenantId);
+        await otherTenantImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-SHARED", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        SalesDbContext currentTenantContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> currentTenantPublishMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter currentTenantImporter = BuildImporter(currentTenantContext, currentTenantPublishMock.Object, _tenantId);
+
+        // Act: the current tenant imports an order with the very same channel-side identifier
+        await currentTenantImporter.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-SHARED", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        // Assert: the two rows coexist, one per tenant
+        List<Order> allOrders = await currentTenantContext.Orders.IgnoreQueryFilters().ToListAsync();
+        allOrders.Should().HaveCount(2);
+
+        List<Order> visibleOrders = await currentTenantContext.Orders.ToListAsync();
+        visibleOrders.Should().HaveCount(1);
+        visibleOrders[0].ExternalOrderId.Should().Be("ORDER-SHARED");
+
+        // The second tenant's import created its own row rather than updating the first tenant's.
+        currentTenantPublishMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Created == 1 && e.Updated == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_TenantScopedRows_ReceiveTheContextTenantId()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        // Act
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        // Assert: the shadow TenantId is populated on every written row, order and line alike.
+        Order order = await consumerContext.Orders.IgnoreQueryFilters().FirstAsync();
+        object orderTenantId = consumerContext.Entry(order).Property("TenantId").CurrentValue!;
+        orderTenantId.Should().Be(_tenantId);
+
+        OrderLine line = await consumerContext.OrderLines.IgnoreQueryFilters().FirstAsync();
+        object lineTenantId = consumerContext.Entry(line).Property("TenantId").CurrentValue!;
+        lineTenantId.Should().Be(_tenantId);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_EmptyBatch_PublishesZeroCounters()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        // Act
+        await importer.ProcessAsync(BuildMessage(new List<ChannelOrderSnapshot>()), CancellationToken.None);
+
+        // Assert
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e =>
+                    e.Created == 0 &&
+                    e.Updated == 0 &&
+                    e.Skipped == 0 &&
+                    e.Failed == 0 &&
+                    e.JobRunId == _jobRunId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NonEmptyBatch_PropagatesBatchIdUnchanged()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        Guid batchId = Guid.NewGuid();
+
+        OrdersBatchImportRequestedEvent message = new OrdersBatchImportRequestedEvent
+        {
+            JobRunId = _jobRunId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            BatchId = batchId,
+            Orders = new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-1", "nm-100", "SRID-1") },
+        };
+
+        // Act
+        await importer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert: the aggregator deduplicates by BatchId, so it must survive the round trip.
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.BatchId == batchId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ConcurrentInsertConflict_RetriesAndSucceedsOnASubsequentAttempt()
+    {
+        // Defense-in-depth for the rare case where MassTransit dispatches the FBO and FBS batches
+        // concurrently: the second writer loses the unique (ChannelId, ExternalOrderId) race and
+        // must retry rather than report the order as failed.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(
+            _tenantId, databaseName, uniqueViolationsBeforeSuccess: 1);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-RACE", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Created == 1 && e.Failed == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "a unique violation inside the retry budget is retried, not counted as a failure");
+
+        SalesDbContext verificationContext = BuildSalesDbContext(_tenantId, databaseName);
+        List<Order> orders = await verificationContext.Orders.IgnoreQueryFilters().ToListAsync();
+        orders.Should().ContainSingle();
+        orders[0].ExternalOrderId.Should().Be("ORDER-RACE");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UniqueViolationsBeyondTheRetryBudget_CountsTheOrderAsFailed()
+    {
+        // The budget is three attempts; a conflict that never clears must surface as a failure
+        // instead of retrying forever.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(
+            _tenantId, databaseName, uniqueViolationsBeforeSuccess: 10);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-RACE", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<OrdersBatchImportCompletedEvent>(e => e.Failed == 1 && e.Created == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NonRetryableFailure_IsNotRetried()
+    {
+        // Only a unique/concurrency violation is retryable; any other failure would fail the same way
+        // three times and merely delay the batch.
+        string databaseName = Guid.NewGuid().ToString();
+        FailingSalesDbContext consumerContext = (FailingSalesDbContext)BuildSalesDbContext(
+            _tenantId, databaseName, failOnSaveCall: 1);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { BuildOrderSnapshot("ORDER-FAIL", "nm-100", "SRID-1") }),
+            CancellationToken.None);
+
+        consumerContext.SaveCalls.Should().Be(1, "a non-retryable failure must not be attempted again");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FbsSnapshot_PersistsFulfillmentSchemaOnTheLine()
+    {
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot snapshot = BuildOrderSnapshot("ORDER-FBS", "nm-100", "SRID-1");
+        snapshot = snapshot with
+        {
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                snapshot.Lines[0] with { FulfillmentSchema = "oz_rfbs" },
+            },
+        };
+
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        OrderLine? line = await consumerContext.OrderLines
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.LineKey == "SRID-1");
+
+        line.Should().NotBeNull();
+        line!.FulfillmentSchema.Should().Be("oz_rfbs");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MixedFboAndFbsLinesWithinOneSnapshot_EachLineKeepsItsOwnSchema()
+    {
+        // One order_number split into an FBO posting and an FBS posting is one order that is neither
+        // wholly Ozon-fulfilled nor wholly seller-fulfilled; each persisted line must keep its own
+        // fact regardless of what the rest of the cart reports.
+        string databaseName = Guid.NewGuid().ToString();
+        SalesDbContext consumerContext = BuildSalesDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        OrdersBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, _tenantId);
+
+        ChannelOrderSnapshot fboLine = BuildOrderSnapshot("ORDER-MIXED", "nm-100", "SRID-FBO");
+        ChannelOrderSnapshot fbsLine = BuildOrderSnapshot("ORDER-MIXED", "nm-200", "SRID-FBS");
+        ChannelOrderSnapshot snapshot = fboLine with
+        {
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                fboLine.Lines[0] with { FulfillmentSchema = "oz_fbo" },
+                fbsLine.Lines[0] with { FulfillmentSchema = "oz_fbs" },
+            },
+        };
+
+        await importer.ProcessAsync(
+            BuildMessage(new List<ChannelOrderSnapshot> { snapshot }), CancellationToken.None);
+
+        Order? order = await consumerContext.Orders
+            .IgnoreQueryFilters()
+            .Include(o => o.Lines)
+            .FirstOrDefaultAsync(o => o.ExternalOrderId == "ORDER-MIXED");
+
+        order.Should().NotBeNull();
+        order!.Lines.Should().HaveCount(2);
+        order.Lines.Select(l => l.FulfillmentSchema).Should().BeEquivalentTo(new[] { "oz_fbo", "oz_fbs" });
+    }
+
+    private OrdersBatchImporter BuildImporter(
+        SalesDbContext context,
+        IPublishEndpoint publishEndpoint,
+        Guid tenantId)
+    {
+        OrdersImportStore store = new OrdersImportStore(context, NullLogger<OrdersImportStore>.Instance);
+        MassTransitEventPublisher eventPublisher = new MassTransitEventPublisher(publishEndpoint);
+        Mock<ILogger<OrdersBatchImporter>> loggerMock = new Mock<ILogger<OrdersBatchImporter>>();
+        Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
+        tenantContextMock.Setup(tc => tc.TenantId).Returns(tenantId);
+
+        return new OrdersBatchImporter(store, eventPublisher, tenantContextMock.Object, loggerMock.Object, TimeProvider.System);
+    }
+
+    private SalesDbContext BuildSalesDbContext(
+        Guid tenantId, string databaseName, int failOnSaveCall = 0, int uniqueViolationsBeforeSuccess = 0)
+    {
+        DbContextOptions<SalesDbContext> options = new DbContextOptionsBuilder<SalesDbContext>()
+            .UseInMemoryDatabase(databaseName: databaseName)
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
+        tenantContextMock.Setup(tc => tc.TenantId).Returns(tenantId);
+
+        if (uniqueViolationsBeforeSuccess > 0)
+        {
+            return new UniqueViolatingSalesDbContext(options, tenantContextMock.Object, uniqueViolationsBeforeSuccess);
+        }
+
+        if (failOnSaveCall > 0)
+        {
+            return new FailingSalesDbContext(options, tenantContextMock.Object, failOnSaveCall);
+        }
+
+        return new SalesDbContext(options, tenantContextMock.Object);
+    }
+
+    private OrdersBatchImportRequestedEvent BuildMessage(List<ChannelOrderSnapshot> orders)
+    {
+        return new OrdersBatchImportRequestedEvent
+        {
+            JobRunId = _jobRunId,
+            ConnectionId = _connectionId,
+            ChannelId = _channelId,
+            BatchId = Guid.NewGuid(),
+            Orders = orders,
+        };
+    }
+
+    // Fixed rather than DateTimeOffset.UtcNow: two BuildOrderSnapshot calls for what a test
+    // considers "the same channel data" must produce byte-identical snapshots, otherwise the
+    // consumer's change detection correctly reports Updated instead of the Skipped the test expects.
+    private static readonly DateTimeOffset FixedOrderDate = new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset FixedStatusChangedAt = new DateTimeOffset(2026, 1, 1, 11, 0, 0, TimeSpan.Zero);
+
+    private static ChannelOrderSnapshot BuildOrderSnapshot(
+        string externalOrderId,
+        string externalProductId,
+        string lineKey,
+        decimal price = 1500m)
+    {
+        return new ChannelOrderSnapshot
+        {
+            ExternalOrderId = externalOrderId,
+            ExternalOrderNumber = externalOrderId,
+            OrderDate = FixedOrderDate,
+            StatusChangedAt = FixedStatusChangedAt,
+            ExternalStatus = "active",
+            ExternalSubstatus = "normal",
+            Currency = "RUB",
+            DeliveryRegion = "Moscow",
+            WarehouseName = "Warehouse 1",
+            IsB2b = false,
+            IsTestOrder = false,
+            ChannelReportedTotal = 1700m,
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                new ChannelOrderLineSnapshot
+                {
+                    LineKey = lineKey,
+                    ExternalLineId = lineKey,
+                    ExternalProductId = externalProductId,
+                    OfferId = "SKU-" + externalProductId,
+                    ProductName = "Test Product",
+                    Quantity = 1,
+                    UnitPrice = price,
+                    BuyerUnitPrice = price,
+                    UnitPriceBeforeDiscount = price + 200m,
+                    Currency = "RUB",
+                    IsCancelled = false,
+                    StatusChangedAt = FixedStatusChangedAt,
+                    ChannelReportedTotal = 1700m,
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds a snapshot of one cart as a delta run sees it: a single line, and that line cancelled.
+    /// The header still claims "cancelled", which is what makes the test meaningful - Sales must not
+    /// adopt it while another persisted line of the same cart is live.
+    /// </summary>
+    private static ChannelOrderSnapshot BuildCancelledUnitSnapshot(string externalOrderId, string lineKey)
+    {
+        ChannelOrderSnapshot cart = BuildCartSnapshot(externalOrderId, lineKey);
+
+        return cart with
+        {
+            ExternalStatus = "cancelled",
+            CancelReason = "cancel",
+            Lines = new List<ChannelOrderLineSnapshot>
+            {
+                cart.Lines.Single() with { IsCancelled = true },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Builds a cart snapshot: one order identity carrying one line per ordered unit. A cart has no
+    /// cart-level total in the channel payload, so ChannelReportedTotal stays null here.
+    /// </summary>
+    private static ChannelOrderSnapshot BuildCartSnapshot(string externalOrderId, params string[] lineKeys)
+    {
+        ChannelOrderSnapshot cart = BuildOrderSnapshot(externalOrderId, "nm-100", lineKeys[0]);
+
+        List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>();
+
+        for (int i = 0; i < lineKeys.Length; i++)
+        {
+            lines.Add(new ChannelOrderLineSnapshot
+            {
+                LineKey = lineKeys[i],
+                ExternalLineId = lineKeys[i],
+                ExternalProductId = $"nm-{100 + i}",
+                OfferId = $"SKU-nm-{100 + i}",
+                ProductName = "Test Product",
+                Quantity = 1,
+                UnitPrice = 1500m,
+                BuyerUnitPrice = 1500m,
+                UnitPriceBeforeDiscount = 1700m,
+                Currency = "RUB",
+                IsCancelled = false,
+                StatusChangedAt = FixedStatusChangedAt,
+                ChannelReportedTotal = 1700m,
+            });
+        }
+
+        return cart with
+        {
+            Lines = lines,
+            ChannelReportedTotal = lineKeys.Length == 1 ? 1700m : null,
+        };
+    }
+
+    private ChannelProductRef BuildChannelProductRef(Guid channelProductId, string externalProductId)    {
+        return new ChannelProductRef
+        {
+            ChannelProductId = channelProductId,
+            ProductId = Guid.NewGuid(),
+            ChannelId = _channelId,
+            ExternalProductId = externalProductId,
+            ExternalSku = "SKU-" + externalProductId,
+            ProductName = "Test Product",
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+    }
+
+    /// <summary>
+    /// Makes the Nth SaveChangesAsync throw, so the per-order failure containment can be observed
+    /// deterministically. A real SaveChanges failure cannot be provoked through the InMemory
+    /// provider, which enforces neither constraints nor transactions.
+    /// </summary>
+    private sealed class FailingSalesDbContext : SalesDbContext
+    {
+        private readonly int _failOnCall;
+        private int _saveCalls;
+
+        public FailingSalesDbContext(
+            DbContextOptions<SalesDbContext> options,
+            ITenantContext tenantContext,
+            int failOnCall)
+            : base(options, tenantContext)
+        {
+            _failOnCall = failOnCall;
+        }
+
+        public int SaveCalls => _saveCalls;
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            _saveCalls++;
+
+            if (_saveCalls == _failOnCall)
+            {
+                throw new InvalidOperationException("Simulated persistence failure for a single order.");
+            }
+
+            return base.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Makes the first N SaveChangesAsync calls fail the way a concurrent insert of the same order
+    /// does: a <see cref="DbUpdateException"/> wrapping a Postgres unique violation. The InMemory
+    /// provider enforces no unique constraints, so the collision has to be simulated to exercise the
+    /// consumer's retry path at all.
+    /// </summary>
+    private sealed class UniqueViolatingSalesDbContext : SalesDbContext
+    {
+        private const string UniqueViolationSqlState = "23505";
+
+        private readonly int _violationsBeforeSuccess;
+        private int _saveCalls;
+
+        public UniqueViolatingSalesDbContext(
+            DbContextOptions<SalesDbContext> options,
+            ITenantContext tenantContext,
+            int violationsBeforeSuccess)
+            : base(options, tenantContext)
+        {
+            _violationsBeforeSuccess = violationsBeforeSuccess;
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            _saveCalls++;
+
+            if (_saveCalls <= _violationsBeforeSuccess)
+            {
+                throw new DbUpdateException(
+                    "duplicate key value violates unique constraint",
+                    new PostgresException(
+                        "duplicate key value violates unique constraint \"IX_Orders_ChannelId_ExternalOrderId\"",
+                        "ERROR",
+                        "ERROR",
+                        UniqueViolationSqlState));
+            }
+
+            return base.SaveChangesAsync(cancellationToken);
+        }
+    }
+}

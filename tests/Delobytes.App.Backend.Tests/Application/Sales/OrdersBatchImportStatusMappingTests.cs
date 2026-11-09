@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
 using Delobytes.App.Backend.Sales.Domain.Enums;
-using Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Sales.Application.Orders;
 using FluentAssertions;
 using Xunit;
 
 namespace Delobytes.App.Backend.Tests.Application.Sales;
 
 /// <summary>
-/// Pins <see cref="OrdersBatchImportRequestedConsumer.MapStatus"/> for both wired channels.
+/// Pins <see cref="OrdersBatchImporter.MapStatus"/> for both wired channels.
 /// The projection is the only place where a verbatim channel status becomes a canonical
 /// OrderStatus, so a missing Ozon arm silently degrades to Unknown and skews revenue reporting;
 /// the Wildberries table is asserted alongside it so widening the vocabulary for one channel
@@ -77,7 +77,7 @@ public class OrdersBatchImportStatusMappingTests
     [MemberData(nameof(OzonStatuses))]
     public void MapStatus_OzonStatus_ProjectsToExpectedOrderStatus(string externalStatus, OrderStatus expected)
     {
-        OrderStatus actual = OrdersBatchImportRequestedConsumer.MapStatus(externalStatus);
+        OrderStatus actual = OrdersBatchImporter.MapStatus(externalStatus);
 
         actual.Should().Be(expected);
     }
@@ -91,7 +91,7 @@ public class OrdersBatchImportStatusMappingTests
     [MemberData(nameof(WildberriesStatuses))]
     public void MapStatus_WildberriesSynonym_StillProjectsToExpectedOrderStatus(string externalStatus, OrderStatus expected)
     {
-        OrderStatus actual = OrdersBatchImportRequestedConsumer.MapStatus(externalStatus);
+        OrderStatus actual = OrdersBatchImporter.MapStatus(externalStatus);
 
         actual.Should().Be(expected);
     }
@@ -107,7 +107,7 @@ public class OrdersBatchImportStatusMappingTests
     [InlineData("some_future_ozon_status")]
     public void MapStatus_UnknownOzonStatus_ProjectsToUnknown(string externalStatus)
     {
-        OrderStatus actual = OrdersBatchImportRequestedConsumer.MapStatus(externalStatus);
+        OrderStatus actual = OrdersBatchImporter.MapStatus(externalStatus);
 
         actual.Should().Be(OrderStatus.Unknown);
     }
@@ -123,7 +123,7 @@ public class OrdersBatchImportStatusMappingTests
     [InlineData("\tawaiting_packaging\n")]
     public void MapStatus_OzonStatusWithNoise_StillProjectsCorrectly(string externalStatus)
     {
-        OrderStatus actual = OrdersBatchImportRequestedConsumer.MapStatus(externalStatus);
+        OrderStatus actual = OrdersBatchImporter.MapStatus(externalStatus);
 
         actual.Should().Be(OrderStatus.Processing);
     }
@@ -139,7 +139,7 @@ public class OrdersBatchImportStatusMappingTests
     [InlineData("   ")]
     public void MapStatus_MissingStatus_ProjectsToUnknown(string? externalStatus)
     {
-        OrderStatus actual = OrdersBatchImportRequestedConsumer.MapStatus(externalStatus!);
+        OrderStatus actual = OrdersBatchImporter.MapStatus(externalStatus!);
 
         actual.Should().Be(OrderStatus.Unknown);
     }

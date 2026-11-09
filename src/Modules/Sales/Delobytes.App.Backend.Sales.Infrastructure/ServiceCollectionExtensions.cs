@@ -1,5 +1,9 @@
 using System.Reflection;
+using Delobytes.App.Backend.Sales.Application.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Sales.Application.Orders;
+using Delobytes.App.Backend.Sales.Application.Services;
+using Delobytes.App.Backend.Sales.Infrastructure.Messaging;
 using Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence.Repositories;
@@ -33,9 +37,13 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__SalesMigrationsHistory", "sales")));
 
-        services.AddScoped<OrdersBatchImportRequestedConsumer>();
-        services.AddScoped<ProductDeletionRequestedConsumer>();
-        services.AddScoped<ChannelProductLinkedConsumer>();
+        services.AddScoped<IOrdersImportStore, OrdersImportStore>();
+        services.AddScoped<OrdersBatchImporter>();
+        services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+        services.AddScoped<IChannelProductRefRepository, ChannelProductRefRepository>();
+        services.AddScoped<IProductOrdersRepository, ProductOrdersRepository>();
+        services.AddScoped<ProductOrdersChecker>();
+        services.AddScoped<ChannelProductLinker>();
         services.AddScoped<IOrderStatsRepository, OrderStatsRepository>();
 
         // Registered independently of Integrations' own TryAddSingleton call: Sales must not

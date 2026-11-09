@@ -9,6 +9,7 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -554,6 +555,10 @@ public partial class SchedulerHostedServiceTests
         services.AddSingleton(_connectionRepositoryMock.Object);
         services.AddSingleton(_tenantSettingsProviderMock.Object);
         services.AddSingleton(_tenantContext);
+        services.AddSingleton<JobRunStarter>(new JobRunStarter(
+            _jobRunRepositoryMock.Object,
+            TimeProvider.System,
+            NullLogger<JobRunStarter>.Instance));
 
         IOrdersRateLimiter limiter = ordersRateLimiter ?? BuildOrdersRateLimiter().Object;
         services.AddKeyedSingleton<IOrdersRateLimiter>(ChannelCatalog.WildberriesCode, limiter);

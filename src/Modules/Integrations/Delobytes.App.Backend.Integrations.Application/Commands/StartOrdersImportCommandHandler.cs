@@ -1,6 +1,7 @@
 using MediatR;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -19,24 +20,27 @@ public class StartOrdersImportResponse
 
 /// <summary>
 /// Creates a JobRun for an orders import cycle and publishes the internal event that triggers
-/// ProcessOrdersImportConsumer (Stage 9). Orders import has no manual HTTP trigger (decision 14):
+/// OrdersImportOrchestrator (Stage 9). Orders import has no manual HTTP trigger (decision 14):
 /// the scheduler (Stage 11) is the sole caller, so RequestedByUserId is always null here.
 /// </summary>
 public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImportCommand, StartOrdersImportResponse>
 {
     private readonly IConnectionRepository _connectionRepository;
     private readonly IJobRunRepository _jobRunRepository;
+    private readonly JobRunStarter _jobRunStarter;
     private readonly IEventPublisher _eventPublisher;
     private readonly ILogger<StartOrdersImportCommandHandler> _logger;
 
     public StartOrdersImportCommandHandler(
         IConnectionRepository connectionRepository,
         IJobRunRepository jobRunRepository,
+        JobRunStarter jobRunStarter,
         IEventPublisher eventPublisher,
         ILogger<StartOrdersImportCommandHandler> logger)
     {
         _connectionRepository = connectionRepository;
         _jobRunRepository = jobRunRepository;
+        _jobRunStarter = jobRunStarter;
         _eventPublisher = eventPublisher;
         _logger = logger;
     }
@@ -67,19 +71,13 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
                 "Для этого подключения уже есть активная задача импорта заказов (Pending или Running).");
         }
 
-        JobRun jobRun = new JobRun
-        {
-            Id = Guid.NewGuid(),
-            ConnectionId = request.ConnectionId,
-            JobType = JobType.WbOrdersImport,
-            Status = JobStatus.Pending,
-            RequestedByUserId = null,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+        JobRun jobRun = await _jobRunStarter.CreatePendingAsync(
+            request.ConnectionId,
+            JobType.WbOrdersImport,
+            requestedByUserId: null,
+            cancellationToken);
 
-        await _jobRunRepository.CreateAsync(jobRun, cancellationToken);
-
-        // SyncCheckpoint is intentionally not bootstrapped here: ProcessOrdersImportConsumer
+        // SyncCheckpoint is intentionally not bootstrapped here: OrdersImportOrchestrator
         // (Stage 9) treats a missing checkpoint as "first run" and derives the 30-day backfill
         // window itself, so there is nothing for this handler to pre-create.
         _logger.LogInformation(

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
@@ -29,8 +30,8 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
 /// <summary>
 /// End-to-end tests for the Ozon FBO branch of the orders orchestrator, mirroring
-/// <see cref="ProcessOrdersImportConsumerBackfillTests"/> and
-/// <see cref="ProcessOrdersImportConsumerBackfillStopTests"/> but exercised through
+/// <see cref="OrdersImportOrchestratorBackfillTests"/> and
+/// <see cref="OrdersImportOrchestratorBackfillStopTests"/> but exercised through
 /// <see cref="OzonOrdersFetchers"/>/<see cref="OzonBackfillOrdersFetcher"/>/<see cref="OzonDeltaOrdersFetcher"/>
 /// resolved by (channel, job type) instead of the Wildberries pair.
 /// </summary>
@@ -46,7 +47,7 @@ public class OzonOrdersImportEndToEndTests
     private readonly Mock<IOrdersBackfillStateRepository> _backfillStateRepo = new();
     private readonly Mock<IChannelApiClientFactory> _clientFactory = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
-    private readonly Mock<ILogger<ProcessOrdersImportConsumer>> _logger = new();
+    private readonly Mock<ILogger<OrdersImportOrchestrator>> _logger = new();
     private readonly Mock<IOrdersChannelClient> _ordersSource = new();
 
     public interface IOrdersChannelClient : IChannelApiClient, IOrdersSource { }
@@ -57,12 +58,12 @@ public class OzonOrdersImportEndToEndTests
 
     private OrdersBackfillState? _persistedState;
 
-    private ProcessOrdersImportConsumer CreateConsumer(int backfillRunBudgetSeconds = 1200)
+    private OrdersImportOrchestrator CreateConsumer(int backfillRunBudgetSeconds = 1200)
     {
         return CreateOzonConsumer(JobType.OzonOrdersImportFbo, backfillRunBudgetSeconds);
     }
 
-    private ProcessOrdersImportConsumer CreateOzonConsumer(
+    private OrdersImportOrchestrator CreateOzonConsumer(
         JobType jobType, int backfillRunBudgetSeconds = 1200)
     {
         OzonImportOptions options = new OzonImportOptions
@@ -123,7 +124,7 @@ public class OzonOrdersImportEndToEndTests
                         OzonPostingStatuses.FboStatuses),
                     TestTunings.Ozon(options)));
 
-        return new ProcessOrdersImportConsumer(
+        return new OrdersImportOrchestrator(
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,
@@ -338,7 +339,7 @@ public class OzonOrdersImportEndToEndTests
             .Returns(Task.CompletedTask);
     }
 
-    private async Task RunAsync(JobRun jobRun, Connection connection, ProcessOrdersImportConsumer consumer)
+    private async Task RunAsync(JobRun jobRun, Connection connection, OrdersImportOrchestrator consumer)
     {
         await consumer.ProcessAsync(
             new OrdersImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
@@ -574,7 +575,7 @@ public class OzonOrdersImportEndToEndTests
             new Mock<ILogger<OrdersBackfillWalker>>().Object,
             _timeProvider);
 
-        ProcessOrdersImportConsumer consumer = new ProcessOrdersImportConsumer(
+        OrdersImportOrchestrator consumer = new OrdersImportOrchestrator(
             _jobRunRepo.Object,
             checkpointStore,
             backfillWalker,

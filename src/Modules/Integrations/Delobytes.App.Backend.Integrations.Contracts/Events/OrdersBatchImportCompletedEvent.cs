@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Sales.OrdersBatchImportRequestedConsumer after processing a batch of orders.
+/// Published by Sales.OrdersBatchImporter after processing a batch of orders.
 /// Consumed by Integrations.ProcessOrdersBatchImportCompletedConsumer (aggregator) to update
 /// progress counters and, on the terminal batch, finalize the JobRun.
 /// </summary>

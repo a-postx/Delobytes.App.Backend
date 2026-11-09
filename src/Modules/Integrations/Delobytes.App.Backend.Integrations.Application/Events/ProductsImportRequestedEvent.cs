@@ -2,7 +2,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Events;
 
 /// <summary>
 /// Published by Integrations when a products import job is initiated.
-/// Consumed by Integrations.ProcessProductsImportConsumer to orchestrate cursor-based pagination.
+/// Consumed by Integrations.ProductsImportOrchestrator to orchestrate cursor-based pagination.
 /// Internal to the Integrations module (not a cross-module contract), so it lives in
 /// Application rather than Contracts.
 /// </summary>

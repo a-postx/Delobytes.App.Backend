@@ -70,7 +70,7 @@ public class JobRunConfiguration : IEntityTypeConfiguration<JobRun>
         // current run of the same (ConnectionId, JobType) is still Running/Pending: without this
         // exclusion that insert violates the index, because two rows then satisfy "Status IN (0,
         // 1)" at once. The continuation re-enters the index as soon as it becomes due and its
-        // NotBefore is cleared on dispatch (see ProcessOrdersImportConsumer.ProcessAsync).
+        // NotBefore is cleared on dispatch (see OrdersImportOrchestrator.ProcessAsync).
         builder.HasIndex(j => new { j.ConnectionId, j.JobType })
             .IsUnique()
             .HasDatabaseName("IX_JobRuns_ActivePerConnectionType")

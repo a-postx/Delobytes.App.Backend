@@ -5,12 +5,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using FluentAssertions;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -42,15 +44,19 @@ public class ConnectionCreatedEventConsumerTests
         _tenantContext.TenantId = _tenantId;
     }
 
-    private ConnectionCreatedEventConsumer CreateConsumer(string cronExpression = "0 * * * *")
+    private ConnectionCreatedConsumer CreateConsumer(string cronExpression = "0 * * * *")
     {
-        return new ConnectionCreatedEventConsumer(
+        ConnectionScheduleProvisioner provisioner = new ConnectionScheduleProvisioner(
             _connectionRepo.Object,
             _scheduleRepo.Object,
             _tenantContext,
             Options.Create(new BackgroundJobsOptions { DefaultOrdersImportCronExpression = cronExpression }),
-            NullLogger<ConnectionCreatedEventConsumer>.Instance,
+            NullLogger<ConnectionScheduleProvisioner>.Instance,
             _timeProvider);
+
+        return new ConnectionCreatedConsumer(
+            provisioner,
+            NullLogger<ConnectionCreatedConsumer>.Instance);
     }
 
     private static Connection BuildConnection(string channelCode, bool isActive = true)
@@ -137,14 +143,23 @@ public class ConnectionCreatedEventConsumerTests
         };
     }
 
+    private static ConsumeContext<ConnectionCreatedEvent> CreateContext(ConnectionCreatedEvent message)
+    {
+        Mock<ConsumeContext<ConnectionCreatedEvent>> context = new();
+        context.SetupGet(c => c.Message).Returns(message);
+        context.SetupGet(c => c.CancellationToken).Returns(CancellationToken.None);
+
+        return context.Object;
+    }
+
     [Fact]
-    public async Task ProcessAsync_OzonConnection_CreatesFboAndFbsSchedulesDueImmediately()
+    public async Task Consume_OzonConnection_CreatesFboAndFbsSchedulesDueImmediately()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
         List<JobSchedule> proposed = CaptureProposedSchedules();
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         proposed.Select(s => s.JobType).Should().BeEquivalentTo(
             new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs },
@@ -159,25 +174,25 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_WildberriesConnection_CreatesOrdersImportSchedule()
+    public async Task Consume_WildberriesConnection_CreatesOrdersImportSchedule()
     {
         Connection connection = BuildConnection("wildberries");
         SetupConnection(connection);
         List<JobSchedule> proposed = CaptureProposedSchedules();
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         proposed.Should().ContainSingle();
         proposed[0].JobType.Should().Be(JobType.WbOrdersImport);
     }
 
     [Fact]
-    public async Task ProcessAsync_ChannelWithoutOrdersImport_CreatesNoSchedules()
+    public async Task Consume_ChannelWithoutOrdersImport_CreatesNoSchedules()
     {
         Connection connection = BuildConnection("yandex.kit");
         SetupConnection(connection);
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         _scheduleRepo.Verify(
             r => r.AddMissingAsync(It.IsAny<Guid>(), It.IsAny<IReadOnlyList<JobSchedule>>(), It.IsAny<CancellationToken>()),
@@ -185,13 +200,13 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_SchedulesCarryNoTenantId_SoTheContextStampsThem()
+    public async Task Consume_SchedulesCarryNoTenantId_SoTheContextStampsThem()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
         List<JobSchedule> proposed = CaptureProposedSchedules();
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         proposed.Should().OnlyContain(
             s => s.TenantId == Guid.Empty,
@@ -199,13 +214,13 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_EveryProposedScheduleHasDistinctJobType()
+    public async Task Consume_EveryProposedScheduleHasDistinctJobType()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
         List<JobSchedule> proposed = CaptureProposedSchedules();
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         proposed.Select(s => s.JobType).Should().OnlyHaveUniqueItems(
             "the unique (ConnectionId, JobType) index would reject a duplicate inside a single save");
@@ -213,12 +228,12 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_MessageWithoutTenant_DoNotAddAnything()
+    public async Task Consume_MessageWithoutTenant_DoNotAddAnything()
     {
         _tenantContext.TenantId = null;
         Connection connection = BuildConnection("ozon");
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         _connectionRepo.Verify(
             r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
@@ -229,13 +244,12 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_ConnectionNotFound_CreatesNoSchedules()
+    public async Task Consume_ConnectionNotFound_CreatesNoSchedules()
     {
         SetupConnection(null);
 
-        await CreateConsumer().ProcessAsync(
-            new ConnectionCreatedEvent { ConnectionId = Guid.NewGuid(), ChannelId = Guid.NewGuid() },
-            CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(
+            new ConnectionCreatedEvent { ConnectionId = Guid.NewGuid(), ChannelId = Guid.NewGuid() }));
 
         _scheduleRepo.Verify(
             r => r.AddMissingAsync(It.IsAny<Guid>(), It.IsAny<IReadOnlyList<JobSchedule>>(), It.IsAny<CancellationToken>()),
@@ -243,12 +257,12 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_InactiveConnection_CreatesNoSchedules()
+    public async Task Consume_InactiveConnection_CreatesNoSchedules()
     {
         Connection connection = BuildConnection("ozon", isActive: false);
         SetupConnection(connection);
 
-        await CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         _scheduleRepo.Verify(
             r => r.AddMissingAsync(It.IsAny<Guid>(), It.IsAny<IReadOnlyList<JobSchedule>>(), It.IsAny<CancellationToken>()),
@@ -256,20 +270,20 @@ public class ConnectionCreatedEventConsumerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_RedeliveryWhenSchedulesAlreadyExist_CompletesWithoutError()
+    public async Task Consume_RedeliveryWhenSchedulesAlreadyExist_CompletesWithoutError()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
         SetupAddMissingResult(0);
 
-        Func<Task> act = () => CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        Func<Task> act = () => CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         await act.Should().NotThrowAsync(
             "a repeated delivery must be a no-op, not a failure that MassTransit keeps retrying");
     }
 
     [Fact]
-    public async Task ProcessAsync_UniqueViolationFromConcurrentInsert_IsAbsorbed()
+    public async Task Consume_UniqueViolationFromConcurrentInsert_IsAbsorbed()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
@@ -281,14 +295,14 @@ public class ConnectionCreatedEventConsumerTests
                 "ERROR",
                 "23505")));
 
-        Func<Task> act = () => CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        Func<Task> act = () => CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         await act.Should().NotThrowAsync(
             "the startup seeder can insert the same rows between the existence check and the save");
     }
 
     [Fact]
-    public async Task ProcessAsync_OtherDatabaseFailure_Propagates()
+    public async Task Consume_OtherDatabaseFailure_Propagates()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
@@ -300,21 +314,21 @@ public class ConnectionCreatedEventConsumerTests
                 "ERROR",
                 "23503")));
 
-        Func<Task> act = () => CreateConsumer().ProcessAsync(BuildEvent(connection), CancellationToken.None);
+        Func<Task> act = () => CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         await act.Should().ThrowAsync<DbUpdateException>(
             "only a duplicate is benign; every other failure has to reach MassTransit so the message is retried");
     }
 
     [Fact]
-    public async Task ProcessAsync_CustomCronExpression_IsUsedForTheSchedule()
+    public async Task Consume_CustomCronExpression_IsUsedForTheSchedule()
     {
         Connection connection = BuildConnection("ozon");
         SetupConnection(connection);
         List<JobSchedule> proposed = CaptureProposedSchedules();
 
         await CreateConsumer(cronExpression: "15 * * * *")
-            .ProcessAsync(BuildEvent(connection), CancellationToken.None);
+            .Consume(CreateContext(BuildEvent(connection)));
 
         proposed.Should().OnlyContain(s => s.CronExpression == "15 * * * *");
     }

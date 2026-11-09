@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Orders;
 /// The backfill fetcher, delta fetcher and run-level tuning one channel needs to run an orders
 /// import job type end to end. Resolved by <see cref="IOrdersFetcherResolver"/> from the
 /// connection's channel code and the <see cref="Domain.Enums.JobType"/> of the job run, so
-/// <c>ProcessOrdersImportConsumer</c> stays channel-agnostic.
+/// <c>OrdersImportOrchestrator</c> stays channel-agnostic.
 /// </summary>
 public interface IOrdersFetchers
 {

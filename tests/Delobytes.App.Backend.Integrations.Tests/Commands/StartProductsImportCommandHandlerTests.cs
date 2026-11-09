@@ -6,10 +6,12 @@ using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -26,11 +28,17 @@ public class StartProductsImportCommandHandlerTests
 
     private StartProductsImportCommandHandler CreateHandler()
     {
+        JobRunStarter jobRunStarter = new JobRunStarter(
+            _jobRunRepo.Object,
+            TimeProvider.System,
+            NullLogger<JobRunStarter>.Instance);
+
         return new StartProductsImportCommandHandler(
             _connectionRepo.Object,
             _jobRunRepo.Object,
             _syncCheckpointRepo.Object,
             _eventPublisher.Object,
+            jobRunStarter,
             _userContext.Object,
             _logger.Object);
     }

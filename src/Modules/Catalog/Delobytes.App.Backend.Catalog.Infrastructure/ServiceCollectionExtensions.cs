@@ -1,12 +1,14 @@
 using System.Reflection;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Products;
+using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
+using Delobytes.App.Backend.Catalog.Infrastructure.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
-using Delobytes.App.Backend.Catalog.Infrastructure.Storage;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Persistence.Interceptors;
 using MassTransit;
@@ -59,6 +61,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductWorkRateRepository, ProductWorkRateRepository>();
         services.AddScoped<IBomLineRepository, BomLineRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<IChannelProductRepository, ChannelProductRepository>();
         services.AddScoped<IProductCostSnapshotRepository, ProductCostSnapshotRepository>();
 
         // Scoped because the repositories it reads through are bound to the scoped DbContext.
@@ -78,9 +81,13 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
-        services.AddScoped<ImportProductBatchConsumer>();
+        services.AddScoped<IProductImportStore, ProductImportStore>();
+        services.AddScoped<ProductBatchImporter>();
+        services.AddScoped<ProductDeletionService>();
         services.AddScoped<ProductOrdersCheckCompletedConsumer>();
-        services.AddScoped<ChannelProductFullSetReconciliationConsumer>();
+        services.AddScoped<ChannelProductReconciliationService>();
+
+        services.AddHostedService<ProductPhotoGarbageCollector>();
 
         return services;
     }

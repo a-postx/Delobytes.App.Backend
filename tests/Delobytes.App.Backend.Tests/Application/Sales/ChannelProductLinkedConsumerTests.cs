@@ -5,8 +5,9 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Domain.Entities;
-using Delobytes.App.Backend.Sales.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Sales.Application.Services;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
+using Delobytes.App.Backend.Sales.Infrastructure.Persistence.Repositories;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -33,11 +34,11 @@ public class ChannelProductLinkedConsumerTests
     {
         string databaseName = Guid.NewGuid().ToString();
         using SalesDbContext context = BuildSalesDbContext(databaseName);
-        ChannelProductLinkedConsumer consumer = BuildConsumer(context);
+        ChannelProductLinker consumer = BuildConsumer(context);
 
         DateTimeOffset before = DateTimeOffset.UtcNow;
 
-        await consumer.ProcessAsync(
+        await consumer.UpdateChannelProductRefAsync(
             BuildLinkedEvent(photoUrl: "https://cdn.example/photo.jpg"),
             CancellationToken.None);
 
@@ -61,12 +62,12 @@ public class ChannelProductLinkedConsumerTests
     {
         string databaseName = Guid.NewGuid().ToString();
         using SalesDbContext context = BuildSalesDbContext(databaseName);
-        ChannelProductLinkedConsumer consumer = BuildConsumer(context);
+        ChannelProductLinker consumer = BuildConsumer(context);
 
-        await consumer.ProcessAsync(BuildLinkedEvent(), CancellationToken.None);
+        await consumer.UpdateChannelProductRefAsync(BuildLinkedEvent(), CancellationToken.None);
 
         // The next import of the same card re-publishes the link with refreshed card data.
-        await consumer.ProcessAsync(
+        await consumer.UpdateChannelProductRefAsync(
             BuildLinkedEvent(productName: "Renamed product", photoUrl: "https://cdn.example/new.jpg"),
             CancellationToken.None);
 
@@ -86,16 +87,16 @@ public class ChannelProductLinkedConsumerTests
     {
         string databaseName = Guid.NewGuid().ToString();
         using SalesDbContext context = BuildSalesDbContext(databaseName);
-        ChannelProductLinkedConsumer consumer = BuildConsumer(context);
+        ChannelProductLinker consumer = BuildConsumer(context);
 
-        await consumer.ProcessAsync(BuildLinkedEvent(), CancellationToken.None);
+        await consumer.UpdateChannelProductRefAsync(BuildLinkedEvent(), CancellationToken.None);
 
         // A relink issues a new ChannelProduct identity for the same marketplace item. The unique
         // index on (TenantId, ChannelId, ExternalProductId) would reject the insert while the old
         // row still occupies it, so the old row has to go in the same pass.
         Guid relinkedChannelProductId = Guid.NewGuid();
 
-        await consumer.ProcessAsync(
+        await consumer.UpdateChannelProductRefAsync(
             BuildLinkedEvent(channelProductId: relinkedChannelProductId, productName: "Relinked product"),
             CancellationToken.None);
 
@@ -115,12 +116,12 @@ public class ChannelProductLinkedConsumerTests
     {
         string databaseName = Guid.NewGuid().ToString();
         using SalesDbContext context = BuildSalesDbContext(databaseName);
-        ChannelProductLinkedConsumer consumer = BuildConsumer(context);
+        ChannelProductLinker consumer = BuildConsumer(context);
 
         Guid otherChannelId = Guid.NewGuid();
 
-        await consumer.ProcessAsync(BuildLinkedEvent(), CancellationToken.None);
-        await consumer.ProcessAsync(
+        await consumer.UpdateChannelProductRefAsync(BuildLinkedEvent(), CancellationToken.None);
+        await consumer.UpdateChannelProductRefAsync(
             BuildLinkedEvent(channelProductId: Guid.NewGuid(), channelId: otherChannelId),
             CancellationToken.None);
 
@@ -133,9 +134,9 @@ public class ChannelProductLinkedConsumerTests
     {
         string databaseName = Guid.NewGuid().ToString();
         using SalesDbContext context = BuildSalesDbContext(databaseName);
-        ChannelProductLinkedConsumer consumer = BuildConsumer(context);
+        ChannelProductLinker consumer = BuildConsumer(context);
 
-        await consumer.ProcessAsync(BuildLinkedEvent(), CancellationToken.None);
+        await consumer.UpdateChannelProductRefAsync(BuildLinkedEvent(), CancellationToken.None);
 
         // The exact query OrdersBatchImportRequestedConsumer.LoadChannelProductIdsAsync issues.
         var resolved = await context.ChannelProductRefs
@@ -166,11 +167,11 @@ public class ChannelProductLinkedConsumerTests
         };
     }
 
-    private static ChannelProductLinkedConsumer BuildConsumer(SalesDbContext context)
+    private static ChannelProductLinker BuildConsumer(SalesDbContext context)
     {
-        return new ChannelProductLinkedConsumer(
-            context,
-            Mock.Of<ILogger<ChannelProductLinkedConsumer>>(),
+        return new ChannelProductLinker(
+            new ChannelProductRefRepository(context),
+            Mock.Of<ILogger<ChannelProductLinker>>(),
             TimeProvider.System);
     }
 

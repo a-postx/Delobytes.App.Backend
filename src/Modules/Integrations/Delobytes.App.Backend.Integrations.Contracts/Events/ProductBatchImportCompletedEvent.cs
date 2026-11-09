@@ -1,8 +1,8 @@
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Catalog.ImportProductBatchConsumer after processing a batch of product cards.
-/// Consumed by Integrations.ProcessProductsImportConsumer to update progress counters.
+/// Published by Catalog.ProductBatchImporter after processing a batch of product cards.
+/// Consumed by Integrations.ProductsImportBatchAggregator to update progress counters.
 /// </summary>
 public record ProductBatchImportCompletedEvent
 {
@@ -45,7 +45,7 @@ public record ProductBatchImportCompletedEvent
     /// True if this is the last batch in the import job.
     /// When true, it carries <see cref="TotalBatches"/> — the aggregator finalises the JobRun
     /// once it has recorded that many batch results in total, which may happen on this event
-    /// or on a later-arriving one (see ProcessProductImportBatchCompletedConsumer).
+    /// or on a later-arriving one (see ProductsImportBatchAggregator).
     /// </summary>
     public bool IsLastBatch { get; init; }
 

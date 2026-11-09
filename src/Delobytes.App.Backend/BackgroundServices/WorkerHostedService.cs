@@ -15,8 +15,8 @@ namespace Delobytes.App.Backend.BackgroundServices;
 /// Ticks on a fixed interval and, for every active tenant, dispatches as many Pending
 /// <see cref="JobRun"/> rows as fit within the tenant's configured background job
 /// parallelism (Tenant.MaxBackgroundJobsParallelism). Dispatch means publishing the internal
-/// event that triggers the corresponding orchestration consumer (ProcessProductsImportConsumer,
-/// ProcessOrdersImportConsumer); the consumer itself transitions the JobRun to Running.
+/// event that triggers the corresponding orchestration handler (ProductsImportOrchestrator,
+/// OrdersImportOrchestrator); the orchestrator itself transitions the JobRun to Running.
 /// </summary>
 public class WorkerHostedService : BackgroundService
 {

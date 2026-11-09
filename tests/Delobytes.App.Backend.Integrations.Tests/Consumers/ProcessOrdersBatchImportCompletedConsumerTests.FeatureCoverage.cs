@@ -8,7 +8,7 @@ using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -104,7 +104,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         run.ExpectedBatchCount = null;
         _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(3, 1, 1, 0));
         OrdersBatchImportCompletedEvent batchMessage = BuildEvent(run.Id);
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(batchMessage, batchMessage.BatchId, CancellationToken.None);
         run.Status.Should().Be(JobStatus.Success, "the checkpoint announced the only batch of this run");
@@ -131,7 +131,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         int recorded = 0;
         _jobRunRepo.Setup(r => r.CountBatchResultsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(() => recorded);
         _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(2, 0, 0, 0));
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         for (int index = 0; index < 3; index++)
         {
@@ -222,7 +222,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         run.ExpectedBatchCount = null;
         _jobRunRepo.Setup(r => r.GetBatchResultTotalsAsync(run.Id, It.IsAny<CancellationToken>())).ReturnsAsync(BuildTotals(2, 0, 0, 0));
         OrdersImportFetchCompletedEvent message = BuildFetchCompletedEvent(run.Id, totalBatches: 1);
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessFetchCompletedAsync(message, CancellationToken.None);
         await consumer.ProcessFetchCompletedAsync(message, CancellationToken.None);
@@ -312,7 +312,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
         OrdersBatchImportCompletedEvent batchMessage = BuildEvent(run.Id);
 
         await consumer.ProcessAsync(batchMessage, batchMessage.BatchId, CancellationToken.None);

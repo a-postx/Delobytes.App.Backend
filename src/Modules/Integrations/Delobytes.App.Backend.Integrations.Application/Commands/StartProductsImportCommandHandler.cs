@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
@@ -25,6 +26,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
     private readonly IJobRunRepository _jobRunRepository;
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IEventPublisher _eventPublisher;
+    private readonly JobRunStarter _jobRunStarter;
     private readonly IUserContext _userContext;
     private readonly ILogger<StartProductsImportCommandHandler> _logger;
 
@@ -33,6 +35,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         IJobRunRepository jobRunRepository,
         ISyncCheckpointRepository syncCheckpointRepository,
         IEventPublisher eventPublisher,
+        JobRunStarter jobRunStarter,
         IUserContext userContext,
         ILogger<StartProductsImportCommandHandler> logger)
     {
@@ -40,6 +43,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         _jobRunRepository = jobRunRepository;
         _syncCheckpointRepository = syncCheckpointRepository;
         _eventPublisher = eventPublisher;
+        _jobRunStarter = jobRunStarter;
         _userContext = userContext;
         _logger = logger;
     }
@@ -80,20 +84,10 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
                 "Для этого подключения уже есть активная задача импорта (Pending или Running).");
         }
 
-        JobRun jobRun = new JobRun
-        {
-            Id = Guid.NewGuid(),
-            ConnectionId = request.ConnectionId,
-            JobType = JobType.ProductsImport,
-            Status = JobStatus.Pending,
-            RequestedByUserId = _userContext.UserId,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-
-        await _jobRunRepository.CreateAsync(jobRun, cancellationToken);
-
-        await _jobRunRepository.CreateProductsImportJobAsync(
-            new ProductsImportJob { JobRunId = jobRun.Id },
+        JobRun jobRun = await _jobRunStarter.CreatePendingAsync(
+            request.ConnectionId,
+            JobType.ProductsImport,
+            _userContext.UserId,
             cancellationToken);
 
         // Bootstraps the watermark only on the very first run for this (ConnectionId, JobType):

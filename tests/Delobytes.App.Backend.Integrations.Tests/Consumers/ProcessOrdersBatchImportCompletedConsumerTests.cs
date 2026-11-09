@@ -4,11 +4,13 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -38,15 +40,15 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
     private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
-    private readonly Mock<ILogger<ProcessOrdersBatchImportCompletedConsumer>> _logger = new();
+    private readonly Mock<ILogger<OrdersImportFinisher>> _logger = new();
     private readonly Mock<ILogger<OrdersBatchAggregator>> _aggregatorLogger = new();
 
-    private ProcessOrdersBatchImportCompletedConsumer CreateConsumer()
+    private OrdersImportFinisher CreateConsumer()
     {
-        OrdersImportFinalizer finalizer = new OrdersImportFinalizer(
+        BatchImportFinalizer finalizer = new BatchImportFinalizer(
             _jobRunRepo.Object,
             TimeProvider.System,
-            NullLogger<OrdersImportFinalizer>.Instance);
+            NullLogger<BatchImportFinalizer>.Instance);
 
         OrdersImportWatermarkWriter watermarkWriter = new OrdersImportWatermarkWriter(
             _syncCheckpointRepo.Object,
@@ -62,7 +64,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             TimeProvider.System,
             _aggregatorLogger.Object);
 
-        return new ProcessOrdersBatchImportCompletedConsumer(
+        return new OrdersImportFinisher(
             aggregator,
             _eventPublisher.Object,
             _logger.Object);
@@ -238,7 +240,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.GetByIdAsync(jobRunId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((JobRun?)null);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRunId), Guid.NewGuid(), CancellationToken.None);
 
@@ -262,7 +264,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), messageId, CancellationToken.None);
 
@@ -289,7 +291,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(p => p.PublishAsync(It.IsAny<OrdersImportCompletedEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), messageId, CancellationToken.None);
 
@@ -321,7 +323,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
             BuildEvent(jobRun.Id, created: 3, updated: 1, skipped: 1, failed: 0),
@@ -351,7 +353,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.GetBatchResultTotalsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildTotals(created: 2, updated: 1, skipped: 0, failed: 2, errors: "Error 1; Error 2"));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
             BuildEvent(jobRun.Id, created: 2, updated: 1, skipped: 0, failed: 2),
@@ -387,7 +389,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Callback<SyncCheckpoint, CancellationToken>((c, _) => savedCheckpoint = c)
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), messageId, CancellationToken.None);
 
@@ -428,7 +430,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Callback<OrdersImportCompletedEvent, CancellationToken>((e, _) => publishedEvent = e)
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
             BuildEvent(jobRun.Id, created: 6, updated: 3, skipped: 1, failed: 0),
@@ -454,7 +456,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.GetBatchResultTotalsAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildTotals(created: 0, updated: 0, skipped: 0, failed: 5, errors: "Multiple errors"));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(
             BuildEvent(jobRun.Id, created: 0, updated: 0, skipped: 0, failed: 5),
@@ -488,7 +490,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.TryUpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), messageId, CancellationToken.None);
 
@@ -537,7 +539,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Callback<SyncCheckpoint, CancellationToken>((c, _) => savedCheckpoint = c)
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), messageId, CancellationToken.None);
 
@@ -558,7 +560,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
 
         SetupDefaults(jobRun, totalBatches: 3, recordedBatches: 1);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -608,7 +610,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id, created: 10, updated: 0, skipped: 0), Guid.NewGuid(), CancellationToken.None);
         jobRun.Status.Should().Be(JobStatus.Running, "batch 1 of 3");
@@ -654,7 +656,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -697,7 +699,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -725,7 +727,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync((JobCheckpoint?)null);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -754,7 +756,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -842,7 +844,7 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             .Callback<SyncCheckpoint, CancellationToken>((c, _) => savedCheckpoint = c)
             .Returns(Task.CompletedTask);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id, created: 0, updated: 0, skipped: 0), Guid.NewGuid(), CancellationToken.None);
 
@@ -888,8 +890,8 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         context.SetupGet(c => c.MessageId).Returns(transportMessageId);
         context.SetupGet(c => c.CancellationToken).Returns(CancellationToken.None);
 
-        ProcessOrdersBatchImportCompletedMassTransitConsumer adapter =
-            new ProcessOrdersBatchImportCompletedMassTransitConsumer(CreateConsumer());
+        OrdersBatchImportCompletedConsumer adapter =
+            new OrdersBatchImportCompletedConsumer(CreateConsumer());
 
         await adapter.Consume(context.Object);
 

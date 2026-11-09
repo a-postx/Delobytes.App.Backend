@@ -61,7 +61,7 @@ public class UpdateProductResponse
 /// packing unit. Only fields the caller actually supplied are written.
 ///
 /// SKU changes are safe for marketplace-linked products. The import matches cards by nmID and by
-/// barcode and never consults Product.Sku (see ImportProductBatchConsumer.FindProductByBarcodeAsync),
+/// barcode and never consults Product.Sku (see ProductBatchImporter.FindProductByBarcodeAsync),
 /// so renaming the internal SKU cannot re-route or duplicate a later import. The channel's own
 /// vendor code is kept separately on ChannelProduct.ExternalSku and continues to be refreshed on
 /// every sync.

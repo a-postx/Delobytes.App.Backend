@@ -4,7 +4,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Orders;
 
 /// <summary>
 /// Resolves the <see cref="IOrdersFetchers"/> for one (channel code, orders job type) pair, the
-/// last seam between <c>ProcessOrdersImportConsumer</c> and the channel-specific fetch pipeline.
+/// last seam between <c>OrdersImportOrchestrator</c> and the channel-specific fetch pipeline.
 /// </summary>
 public interface IOrdersFetcherResolver
 {

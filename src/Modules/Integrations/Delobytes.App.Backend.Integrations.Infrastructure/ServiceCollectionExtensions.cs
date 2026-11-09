@@ -2,9 +2,11 @@ using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Application.Products;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
@@ -97,12 +99,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISystemChannelTemplateRepository, SystemChannelTemplateRepository>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
-        services.AddScoped<ProcessProductsImportConsumer>();
-        services.AddScoped<ProcessProductImportBatchCompletedConsumer>();
+        services.AddScoped<ProductsImportOrchestrator>();
+        services.AddScoped<ProductsImportBatchAggregator>();
         services.AddScoped<OrdersImportCheckpointStore>();
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<OrdersBackfillWalker>();
-        services.AddScoped<OrdersImportFinalizer>();
+        services.AddScoped<BatchImportFinalizer>();
         services.AddScoped<OrdersImportWatermarkWriter>();
         services.AddScoped<OrdersBatchAggregator>();
 
@@ -113,15 +115,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrdersFetcherResolver, OrdersFetcherResolver>();
 
         services.AddScoped<OrdersContinuationScheduler>();
-        services.AddScoped<ProcessOrdersImportConsumer>();
-        services.AddScoped<ProcessOrdersBatchImportCompletedConsumer>();
+        services.AddScoped<OrdersImportOrchestrator>();
+        services.AddScoped<OrdersImportFinisher>();
 
         // Creates the orders JobSchedule for a connection added while the application is running.
-        // The MassTransit adapter (ConnectionCreatedEventMassTransitConsumer) is registered by
-        // AddIntegrationsConsumers, which scans this assembly.
-        services.AddScoped<ConnectionCreatedEventConsumer>();
+        // The consumer implements IConsumer and is registered by AddIntegrationsConsumers, which
+        // scans this assembly.
+        services.AddScoped<ConnectionCreatedConsumer>();
+        services.AddScoped<ConnectionScheduleProvisioner>();
 
         services.AddScoped<JobRunLifecycle>();
+        services.AddScoped<JobRunStarter>();
         services.AddScoped<IConnectionResolver, ConnectionResolver>();
         services.AddScoped<IEndpointResolver, EndpointResolver>();
 
@@ -129,6 +133,7 @@ public static class ServiceCollectionExtensions
         // чтобы привязать перехваченный сырой ответ к задаче синхронизации, которая его вызвала.
         services.AddScoped<JobRunExecutionContext>();
         services.AddScoped<IJobRunExecutionContext>(sp => sp.GetRequiredService<JobRunExecutionContext>());
+        services.AddScoped<IJobRunExecutionScope>(sp => sp.GetRequiredService<JobRunExecutionContext>());
 
         services.AddTransient<OzonAuthHandler>();
         services.AddTransient<WildberriesAuthHandler>();
@@ -168,7 +173,7 @@ public static class ServiceCollectionExtensions
 
         // Products sync is still Wildberries-only. Orders are NOT registered this way: an orders
         // run must reach the client of its own connection's channel, and it gets one through
-        // IChannelApiClientFactory (see ProcessOrdersImportConsumer).
+        // IChannelApiClientFactory (see OrdersImportOrchestrator).
         services.AddScoped<IProductsSource>(sp => sp.GetRequiredService<WildberriesApiClient>());
 
         return services;

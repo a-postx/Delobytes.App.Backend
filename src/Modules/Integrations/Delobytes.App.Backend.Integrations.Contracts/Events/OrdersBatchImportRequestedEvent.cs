@@ -3,8 +3,8 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Integrations.ProcessOrdersImportConsumer for each batch of fetched orders.
-/// Consumed by Sales.OrdersBatchImportRequestedConsumer to upsert orders and order lines.
+/// Published by Integrations.OrdersImportOrchestrator for each batch of fetched orders.
+/// Consumed by Sales.OrdersBatchImporter to upsert orders and order lines.
 /// </summary>
 public record OrdersBatchImportRequestedEvent
 {

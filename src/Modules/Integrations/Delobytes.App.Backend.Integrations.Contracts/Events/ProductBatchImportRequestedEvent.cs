@@ -3,8 +3,8 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Integrations.ProcessProductsImportConsumer for each batch of product cards.
-/// Consumed by Catalog.ImportProductBatchConsumer to upsert products and channel products.
+/// Published by Integrations.ProductsImportOrchestrator for each batch of product cards.
+/// Consumed by Catalog.ProductBatchImporter to upsert products and channel products.
 /// </summary>
 public record ProductBatchImportRequestedEvent
 {
@@ -35,7 +35,7 @@ public record ProductBatchImportRequestedEvent
 
     /// <summary>
     /// Total number of batches published for this import job. Only meaningful when
-    /// <see cref="IsLastBatch"/> is true — the publisher (ProcessProductsImportConsumer) only
+    /// <see cref="IsLastBatch"/> is true — the publisher (ProductsImportOrchestrator) only
     /// knows the final count once it has produced the terminal batch. Carried through to
     /// <see cref="ProductBatchImportCompletedEvent.TotalBatches"/> so the aggregator can tell
     /// how many batch results it must wait for, instead of finalising as soon as any batch

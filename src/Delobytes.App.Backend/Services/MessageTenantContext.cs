@@ -6,7 +6,7 @@ namespace Delobytes.App.Backend.Services;
 /// ITenantContext implementation for message-based execution contexts (MassTransit consumers).
 /// Uses AsyncLocal to store TenantId across async calls within the same logical flow.
 /// </summary>
-public class MessageTenantContext : ITenantContext
+public class MessageTenantContext : ITenantContext, ITenantContextSetter
 {
     private static readonly AsyncLocal<Guid?> _asyncLocalTenantId = new AsyncLocal<Guid?>();
 

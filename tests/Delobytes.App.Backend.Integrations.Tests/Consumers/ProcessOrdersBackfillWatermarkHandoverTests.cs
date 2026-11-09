@@ -7,13 +7,14 @@ using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 
@@ -35,16 +36,16 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
     private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
     private readonly Mock<IConnectionRepository> _connectionRepo = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
-    private readonly Mock<ILogger<ProcessOrdersBatchImportCompletedConsumer>> _logger = new();
+    private readonly Mock<ILogger<OrdersImportFinisher>> _logger = new();
 
     private SyncCheckpoint? _savedCheckpoint;
 
-    private ProcessOrdersBatchImportCompletedConsumer CreateConsumer()
+    private OrdersImportFinisher CreateConsumer()
     {
-        OrdersImportFinalizer finalizer = new OrdersImportFinalizer(
+        BatchImportFinalizer finalizer = new BatchImportFinalizer(
             _jobRunRepo.Object,
             TimeProvider.System,
-            NullLogger<OrdersImportFinalizer>.Instance);
+            NullLogger<BatchImportFinalizer>.Instance);
 
         OrdersImportWatermarkWriter watermarkWriter = new OrdersImportWatermarkWriter(
             _syncCheckpointRepo.Object,
@@ -60,7 +61,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
             TimeProvider.System,
             NullLogger<OrdersBatchAggregator>.Instance);
 
-        return new ProcessOrdersBatchImportCompletedConsumer(
+        return new OrdersImportFinisher(
             aggregator,
             _eventPublisher.Object,
             _logger.Object);
@@ -211,7 +212,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, existingWatermark));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -240,7 +241,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, existing);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -263,7 +264,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, existingCheckpoint: null);
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -288,7 +289,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, existingWatermark));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -308,7 +309,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, ReferenceInstant.AddDays(-30)));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -329,7 +330,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, previousWatermark));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -352,7 +353,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, previousWatermark));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -377,7 +378,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, existingWatermark));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -409,7 +410,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
                 CombinedErrors = "one order was rejected",
             });
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 
@@ -435,7 +436,7 @@ public class ProcessOrdersBackfillWatermarkHandoverTests
 
         SetupFinalisingRun(jobRun, payload, BuildExistingCheckpoint(jobRun, ReferenceInstant.AddDays(-30)));
 
-        ProcessOrdersBatchImportCompletedConsumer consumer = CreateConsumer();
+        OrdersImportFinisher consumer = CreateConsumer();
 
         await consumer.ProcessAsync(BuildEvent(jobRun.Id), Guid.NewGuid(), CancellationToken.None);
 

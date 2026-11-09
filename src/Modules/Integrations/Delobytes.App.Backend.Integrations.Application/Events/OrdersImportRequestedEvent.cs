@@ -2,7 +2,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Events;
 
 /// <summary>
 /// Published by Integrations when an orders import job is initiated by the scheduler (Stage 11).
-/// Consumed by Integrations.ProcessOrdersImportConsumer (Stage 9) to orchestrate the delta/backfill
+/// Consumed by Integrations.OrdersImportOrchestrator (Stage 9) to orchestrate the delta/backfill
 /// fetch cycle. Internal to the Integrations module (not a cross-module contract), so it lives in
 /// Application rather than Contracts, matching ProductsImportRequestedEvent.
 /// </summary>

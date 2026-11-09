@@ -4,7 +4,7 @@ namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
 /// Published by Integrations.ProcessProductsImportConsumer for each batch of product cards.
-/// Consumed by Catalog.ImportProductBatchConsumer to upsert products and channel products.
+/// Consumed by Catalog.ProductBatchImporter to upsert products and channel products.
 /// </summary>
 public record ProductImportBatchRequestedEvent
 {

@@ -16,7 +16,7 @@ public class EndpointResolver : IEndpointResolver
     private readonly IntegrationsDbContext _context;
     private readonly IMemoryCache _cache;
     private readonly ILogger<EndpointResolver> _logger;
-    private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(1);
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(6);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EndpointResolver"/> class.

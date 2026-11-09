@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
-/// Published by Integrations.ProcessProductsImportConsumer when the entire products import job completes.
+/// Published by Integrations.ProductsImportOrchestrator when the entire products import job completes.
 /// Consumed by Integrations to update the JobRun final status.
 /// </summary>
 public record ProductsImportCompletedEvent

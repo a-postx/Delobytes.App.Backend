@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using FluentAssertions;
 using Xunit;
 
