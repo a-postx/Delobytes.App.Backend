@@ -41,7 +41,7 @@ public class MarginCalculationSnapshot : ITenantScoped
 
     public decimal TaxAmount { get; set; }
 
-    /// <summary>Revenue net of commission, acquiring, and tax.</summary>
+    /// <summary>Чистая выручка (сырая - комиссия - эквайринг - логистика).</summary>
     public decimal NetRevenue { get; set; }
 
     // ── Margin ────────────────────────────────────────────────────────────────

@@ -10,7 +10,6 @@ using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Identity.Api;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Integrations.Api;
-using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Messaging.Events;
 using Delobytes.App.Backend.Middleware;
 using Delobytes.App.Backend.Options;
@@ -187,10 +186,10 @@ public partial class Program
             // Separate IHostedServices: the scheduler only creates Pending JobRun rows per cron
             // schedule, the worker is the sole place that enforces per-tenant parallelism and
             // publishes the event that actually triggers the orchestration consumer.
-        builder.Services.AddHostedService<SchedulerHostedService>();
-        builder.Services.AddHostedService<WorkerHostedService>();
-        builder.Services.AddHostedService<WatchdogHostedService>();
-        builder.Services.AddHostedService<RawApiResponseCleanupHostedService>();
+            builder.Services.AddHostedService<SchedulerHostedService>();
+            builder.Services.AddHostedService<WorkerHostedService>();
+            builder.Services.AddHostedService<WatchdogHostedService>();
+            builder.Services.AddHostedService<RawApiResponseCleanupHostedService>();
 
             // ── CORS ─────────────────────────────────────────────────────────────────────
             builder.Services.AddCustomCors();
