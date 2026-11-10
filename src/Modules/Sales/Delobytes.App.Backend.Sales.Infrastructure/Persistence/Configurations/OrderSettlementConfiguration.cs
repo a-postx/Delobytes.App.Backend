@@ -81,7 +81,6 @@ public class OrderSettlementConfiguration : IEntityTypeConfiguration<OrderSettle
         builder.Property(s => s.FinancialPeriodFrom);
         builder.Property(s => s.FinancialPeriodTo);
 
-        builder.Property(s => s.RawDataId);
         builder.Property(s => s.ResolvedAt);
 
         builder.Property(s => s.CreatedAt)

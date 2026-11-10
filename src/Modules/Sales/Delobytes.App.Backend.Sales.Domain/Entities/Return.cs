@@ -59,11 +59,6 @@ public class Return : ITenantScoped
     public ValueSource RefundSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the identifier of the raw payload this return was built from.
-    /// </summary>
-    public Guid? RawDataId { get; set; }
-
-    /// <summary>
     /// Gets or sets the creation timestamp.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }

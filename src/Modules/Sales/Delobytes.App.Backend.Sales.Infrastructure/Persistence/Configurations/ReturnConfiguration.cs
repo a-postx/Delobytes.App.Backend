@@ -47,8 +47,6 @@ public class ReturnConfiguration : IEntityTypeConfiguration<Return>
             .HasConversion<string>()
             .HasMaxLength(32);
 
-        builder.Property(r => r.RawDataId);
-
         builder.Property(r => r.CreatedAt)
             .IsRequired();
 

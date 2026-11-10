@@ -19,6 +19,14 @@ public class RawApiResponseConfiguration : IEntityTypeConfiguration<RawApiRespon
         builder.Property(r => r.JobRunId)
             .IsRequired();
 
+        // No FK to Connection: the connection is mutable configuration, while this row must keep
+        // pointing at the cabinet it was captured for even after that cabinet is deleted.
+        builder.Property(r => r.ConnectionId);
+        builder.Property(r => r.ChannelId);
+
+        builder.Property(r => r.ChannelRequestId)
+            .HasMaxLength(100);
+
         builder.Property(r => r.Endpoint)
             .IsRequired()
             .HasMaxLength(500);
@@ -40,6 +48,8 @@ public class RawApiResponseConfiguration : IEntityTypeConfiguration<RawApiRespon
         builder.HasIndex(r => r.JobRunId);
         builder.HasIndex(r => r.ReceivedAt);
         builder.HasIndex(r => r.HttpStatusCode);
+        builder.HasIndex(r => r.ConnectionId);
+        builder.HasIndex(r => r.ChannelRequestId);
 
         // Cascade: an audit trail with no JobRun to attribute it to carries no meaning
         // (decision 54 — the raw capture dies together with the job it was recorded for).

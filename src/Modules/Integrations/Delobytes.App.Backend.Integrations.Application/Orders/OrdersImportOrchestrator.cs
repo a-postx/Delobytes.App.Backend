@@ -130,7 +130,7 @@ public class OrdersImportOrchestrator
 
         await _jobRunLifecycle.StartAsync(jobRun, cancellationToken);
 
-        using (IDisposable scope = _executionScope.EnterScope(jobRun.Id))
+        using (IDisposable scope = _executionScope.EnterScope(jobRun.Id, connection.Id, connection.ChannelId))
         {
             try
             {

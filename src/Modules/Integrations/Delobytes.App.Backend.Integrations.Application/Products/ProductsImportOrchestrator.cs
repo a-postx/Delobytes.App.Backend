@@ -136,7 +136,7 @@ public class ProductsImportOrchestrator
         // Correlates every HTTP call made through apiClient below with this JobRun, so
         // RawApiResponseCaptureHandler can attribute captured rows to it. Restored on dispose
         // regardless of outcome.
-        using (IDisposable scope = _executionScope.EnterScope(jobRun.Id))
+        using (IDisposable scope = _executionScope.EnterScope(jobRun.Id, connection.Id, connection.ChannelId))
         {
             try
             {

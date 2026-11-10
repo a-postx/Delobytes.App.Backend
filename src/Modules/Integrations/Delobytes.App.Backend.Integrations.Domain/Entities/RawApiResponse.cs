@@ -18,6 +18,26 @@ public class RawApiResponse : ITenantScoped
     public Guid JobRunId { get; set; }
 
     /// <summary>
+    /// Gets or sets the identifier of the connection (marketplace cabinet) the call was made
+    /// through. Null for rows captured before attribution was recorded.
+    /// </summary>
+    public Guid? ConnectionId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the channel of <see cref="ConnectionId"/>. Denormalised on purpose: the
+    /// connection may be reconfigured or removed, while the row must still say which channel it
+    /// came from. Null for rows captured before attribution was recorded.
+    /// </summary>
+    public Guid? ChannelId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the channel's own request id (<c>x-request-id</c>), the value a marketplace
+    /// support team asks for when a call has to be traced. Null when the channel did not send one,
+    /// or when the call failed before a response existed.
+    /// </summary>
+    public string? ChannelRequestId { get; set; }
+
+    /// <summary>
     /// Gets or sets the API endpoint.
     /// </summary>
     public string Endpoint { get; set; } = default!;

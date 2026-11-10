@@ -103,7 +103,7 @@ public class RawApiResponseCaptureHandlerTests
         }
 
         JobRunExecutionContext jobRunExecutionContext = new JobRunExecutionContext();
-        jobRunExecutionContext.SetCurrent(jobRun.Id);
+        jobRunExecutionContext.SetCurrent(jobRun.Id, connection.Id, connection.ChannelId);
 
         try
         {
@@ -140,6 +140,8 @@ public class RawApiResponseCaptureHandlerTests
             RawApiResponse captured = await readContext.RawApiResponses.SingleAsync();
 
             captured.JobRunId.Should().Be(jobRun.Id);
+            captured.ConnectionId.Should().Be(connection.Id);
+            captured.ChannelId.Should().Be(connection.ChannelId);
             captured.Endpoint.Should().Contain("/api/v1/supplier/orders");
             captured.ResponsePayload.Should().Be(responseJson);
             captured.HttpStatusCode.Should().Be(200);

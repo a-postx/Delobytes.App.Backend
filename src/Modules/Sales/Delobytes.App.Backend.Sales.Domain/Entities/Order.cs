@@ -110,11 +110,6 @@ public class Order : ITenantScoped, IRowVersionedEntity
     public decimal? ChannelReportedDeliveryFee { get; set; }
 
     /// <summary>
-    /// Gets or sets the identifier of the raw API payload this version was built from.
-    /// </summary>
-    public Guid? RawDataId { get; set; }
-
-    /// <summary>
     /// Gets or sets the time of the first import. Set once and never moved.
     /// </summary>
     public DateTimeOffset FirstImportedAt { get; set; }

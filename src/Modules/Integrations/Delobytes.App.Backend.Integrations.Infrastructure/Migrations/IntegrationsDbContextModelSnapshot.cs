@@ -372,6 +372,16 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChannelRequestId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("ConnectionId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Endpoint")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -398,6 +408,10 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ChannelRequestId");
+
+                    b.HasIndex("ConnectionId");
 
                     b.HasIndex("HttpStatusCode");
 

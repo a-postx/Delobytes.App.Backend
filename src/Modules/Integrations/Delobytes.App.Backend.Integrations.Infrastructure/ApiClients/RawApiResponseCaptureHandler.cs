@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +21,8 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 public class RawApiResponseCaptureHandler : DelegatingHandler
 {
     private const int MaxEndpointLength = 500;
+    private const int MaxRequestIdLength = 100;
+    private const string RequestIdHeaderName = "x-request-id";
 
     private readonly IJobRunExecutionContext _jobRunExecutionContext;
     private readonly IRawApiResponseRepository _rawApiResponseRepository;
@@ -73,6 +74,8 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
 
             await CaptureAsync(
                 jobRunId.Value,
+                request,
+                response,
                 endpoint,
                 requestBody,
                 responseBody,
@@ -93,6 +96,8 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             // so this is the only place able to record that the call was attempted at all.
             await CaptureAsync(
                 jobRunId.Value,
+                request,
+                response: null,
                 endpoint,
                 requestBody,
                 $"{ex.GetType().Name}: {ex.Message}",
@@ -113,8 +118,41 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             : endpoint;
     }
 
+    /// <summary>
+    /// Reads the channel's correlation id. Taken from the response where one exists, otherwise from
+    /// the request headers: the retry policy copies headers onto every attempt, so the value stays
+    /// recoverable on a call that failed before a response existed.
+    /// </summary>
+    private static string? ReadRequestId(HttpRequestMessage request, HttpResponseMessage? response)
+    {
+        string? value = null;
+
+        if (response is not null)
+        {
+            response.Headers.TryGetValues(RequestIdHeaderName, out IEnumerable<string>? fromResponse);
+            value = fromResponse?.FirstOrDefault();
+        }
+
+        if (string.IsNullOrEmpty(value))
+        {
+            request.Headers.TryGetValues(RequestIdHeaderName, out IEnumerable<string>? fromRequest);
+            value = fromRequest?.FirstOrDefault();
+        }
+
+        if (string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+
+        return value.Length > MaxRequestIdLength
+            ? value[..MaxRequestIdLength]
+            : value;
+    }
+
     private async Task CaptureAsync(
         Guid jobRunId,
+        HttpRequestMessage request,
+        HttpResponseMessage? response,
         string endpoint,
         string requestBody,
         string responseBody,
@@ -126,6 +164,9 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
         {
             Id = Guid.NewGuid(),
             JobRunId = jobRunId,
+            ConnectionId = _jobRunExecutionContext.ConnectionId,
+            ChannelId = _jobRunExecutionContext.ChannelId,
+            ChannelRequestId = ReadRequestId(request, response),
             Endpoint = endpoint,
             RequestPayload = requestBody,
             ResponsePayload = responseBody,

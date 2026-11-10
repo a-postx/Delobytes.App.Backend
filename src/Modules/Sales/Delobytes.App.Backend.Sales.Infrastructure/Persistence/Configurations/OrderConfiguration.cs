@@ -70,8 +70,6 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ChannelReportedDeliveryFee)
             .HasPrecision(18, 2);
 
-        builder.Property(o => o.RawDataId);
-
         builder.Property(o => o.FirstImportedAt)
             .IsRequired();
 

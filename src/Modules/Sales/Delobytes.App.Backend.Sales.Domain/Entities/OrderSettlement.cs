@@ -16,7 +16,7 @@ namespace Delobytes.App.Backend.Sales.Domain.Entities;
 /// <para>
 /// Amounts are stored as money, never as a rate: the channel bills a fixed sum per line, a rate
 /// would have to be re-applied and could drift away from what was actually charged. A rate belongs
-/// in the raw payload, which <see cref="RawDataId"/> keeps.
+/// in the raw payload, which the Integrations module retains in its RawApiResponses table.
 /// </para>
 /// <para>
 /// Tax is deliberately absent. It is charged on revenue rather than per sale, cannot be attributed
@@ -26,8 +26,9 @@ namespace Delobytes.App.Backend.Sales.Domain.Entities;
 /// <para>
 /// Upgrade path, not implemented: if per-revision audit of financial facts is required later,
 /// promote immutable <c>OrderSettlementEntry</c> rows — one per fact, per source, per financial
-/// period — and recompute this entity from them. Today the immutable trail is preserved by the
-/// raw API payload referenced from <see cref="RawDataId"/>.
+/// period — and recompute this entity from them. Today the immutable trail is the raw API payload
+/// retained in the Integrations module, attributable through the JobRun of the import that produced
+/// the amounts.
 /// </para>
 /// </remarks>
 public class OrderSettlement : ITenantScoped, IRowVersionedEntity
@@ -122,11 +123,6 @@ public class OrderSettlement : ITenantScoped, IRowVersionedEntity
     /// Gets or sets the end of the financial period the amounts belong to, where known.
     /// </summary>
     public DateOnly? FinancialPeriodTo { get; set; }
-
-    /// <summary>
-    /// Gets or sets the identifier of the raw payload the amounts were resolved from.
-    /// </summary>
-    public Guid? RawDataId { get; set; }
 
     /// <summary>
     /// Gets or sets the time the amounts were last resolved. Moves on every re-resolve, because a

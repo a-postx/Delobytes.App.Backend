@@ -9,10 +9,12 @@ namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 public interface IJobRunExecutionScope
 {
     /// <summary>
-    /// Sets the current JobRun id for the lifetime of the returned scope and restores the previous
+    /// Sets the current run for the lifetime of the returned scope and restores the previous
     /// value on dispose — the previous value, not null, so a nested scope cannot clobber an outer run.
     /// </summary>
     /// <param name="jobRunId">JobRun identifier.</param>
+    /// <param name="connectionId">Connection the run imports through, where known.</param>
+    /// <param name="channelId">Channel of that connection, where known.</param>
     /// <returns>Scope that restores the previous value when disposed.</returns>
-    public IDisposable EnterScope(Guid jobRunId);
+    public IDisposable EnterScope(Guid jobRunId, Guid? connectionId = null, Guid? channelId = null);
 }

@@ -13,4 +13,17 @@ public interface IJobRunExecutionContext
     /// or null outside of JobRun processing (e.g. connection validation calls).
     /// </summary>
     public Guid? JobRunId { get; }
+
+    /// <summary>
+    /// Gets the connection the current run imports through, so a captured raw response can be
+    /// attributed to a marketplace cabinet without a lookup of its own. Null outside of JobRun
+    /// processing.
+    /// </summary>
+    public Guid? ConnectionId { get; }
+
+    /// <summary>
+    /// Gets the channel of the connection the current run imports through. Null outside of JobRun
+    /// processing.
+    /// </summary>
+    public Guid? ChannelId { get; }
 }

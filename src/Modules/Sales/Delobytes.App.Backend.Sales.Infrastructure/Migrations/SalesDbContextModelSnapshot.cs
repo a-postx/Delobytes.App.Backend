@@ -147,9 +147,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("OrderDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("RawDataId")
-                        .HasColumnType("uuid");
-
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -351,9 +348,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<Guid?>("RawDataId")
-                        .HasColumnType("uuid");
-
                     b.Property<decimal?>("RefundAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -422,9 +416,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
-
-                    b.Property<Guid?>("RawDataId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
