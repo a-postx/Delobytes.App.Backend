@@ -1,4 +1,6 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Options;
+﻿using Delobytes.App.Backend.Integrations.Application.Models;
+
+namespace Delobytes.App.Backend.Integrations.Application.Options;
 
 /// <summary>
 /// Adaptive pacing configuration for <see cref="Interfaces.IChannelRateLimiter"/>. The real
@@ -36,16 +38,44 @@ public class WildberriesRateLimitOptions
 
     /// <summary>
     /// Gets the per-method overrides, keyed by a <c>WildberriesApiMethodRegistry</c> method name.
-    /// Every field left unset falls back to the root-level value above, so an entry may override
-    /// only the settings that actually differ for that method. An absent method uses the root
+    /// Every field left unset falls back to the method's built-in default when it has one, and to
+    /// the root-level value otherwise. An absent method uses its built-in default or the root
     /// values unchanged, which is why this section is additive: existing configuration keeps its
     /// meaning.
     /// </summary>
     public Dictionary<string, MethodRateLimitPolicy> Methods { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Resolves the effective pacing policy for <paramref name="method"/>: the method's own
-    /// overrides where present, the root-level defaults everywhere else.
+    /// Built-in pacing defaults for methods whose budget differs from the orders feed the
+    /// root-level values were written for.
+    /// </summary>
+    /// <remarks>
+    /// The root defaults start at one request per minute and speed up only 20% per three
+    /// successes, which is the right shape for an endpoint with an unknown, tiny allowance. The
+    /// content cards endpoint has a much larger documented allowance, so pacing it with the root
+    /// defaults turned every 50-card page into a minute of wall clock — a catalog of a few
+    /// thousand cards took hours and blew the run budget. These defaults keep the adaptive
+    /// algorithm but start it near the endpoint's real pace; a 429 still slows it down through
+    /// <c>ReportRateLimitedAsync</c>. They live in code rather than configuration because the
+    /// method name contains a slash and therefore cannot be overridden through environment
+    /// variables, and because a missing configuration section must not silently restore the
+    /// orders pace.
+    /// </remarks>
+    private static readonly Dictionary<string, MethodRateLimitPolicy> BuiltInMethodDefaults =
+        new Dictionary<string, MethodRateLimitPolicy>(StringComparer.Ordinal)
+        {
+            [WildberriesApiMethodRegistry.ContentCardsList] = new MethodRateLimitPolicy
+            {
+                InitialIntervalSeconds = 1,
+                MinIntervalSeconds = 1,
+                FallbackIntervalSeconds = 60,
+            },
+        };
+
+    /// <summary>
+    /// Resolves the effective pacing policy for <paramref name="method"/>. Precedence per field:
+    /// the configuration's own override, then the method's built-in default, then the root-level
+    /// value.
     /// </summary>
     /// <param name="method">Method name, see <c>WildberriesApiMethodRegistry</c>.</param>
     /// <returns>A policy with every field populated.</returns>
@@ -53,23 +83,28 @@ public class WildberriesRateLimitOptions
     {
         ArgumentNullException.ThrowIfNull(method);
 
-        if (!Methods.TryGetValue(method, out MethodRateLimitPolicy? overrides) || overrides is null)
-        {
-            return ToResolvedPolicy(new MethodRateLimitPolicy());
-        }
+        Methods.TryGetValue(method, out MethodRateLimitPolicy? overrides);
+        BuiltInMethodDefaults.TryGetValue(method, out MethodRateLimitPolicy? defaults);
 
-        return ToResolvedPolicy(overrides);
+        return ToResolvedPolicy(overrides, defaults);
     }
 
-    private ResolvedRateLimitPolicy ToResolvedPolicy(MethodRateLimitPolicy overrides)
+    private ResolvedRateLimitPolicy ToResolvedPolicy(
+        MethodRateLimitPolicy? overrides,
+        MethodRateLimitPolicy? defaults)
     {
         return new ResolvedRateLimitPolicy
         {
-            InitialIntervalSeconds = overrides.InitialIntervalSeconds ?? InitialIntervalSeconds,
-            MinIntervalSeconds = overrides.MinIntervalSeconds ?? MinIntervalSeconds,
-            FallbackIntervalSeconds = overrides.FallbackIntervalSeconds ?? FallbackIntervalSeconds,
-            BackoffPadSeconds = overrides.BackoffPadSeconds ?? BackoffPadSeconds,
-            SpeedUpAfterSuccesses = overrides.SpeedUpAfterSuccesses ?? SpeedUpAfterSuccesses,
+            InitialIntervalSeconds =
+                overrides?.InitialIntervalSeconds ?? defaults?.InitialIntervalSeconds ?? InitialIntervalSeconds,
+            MinIntervalSeconds =
+                overrides?.MinIntervalSeconds ?? defaults?.MinIntervalSeconds ?? MinIntervalSeconds,
+            FallbackIntervalSeconds =
+                overrides?.FallbackIntervalSeconds ?? defaults?.FallbackIntervalSeconds ?? FallbackIntervalSeconds,
+            BackoffPadSeconds =
+                overrides?.BackoffPadSeconds ?? defaults?.BackoffPadSeconds ?? BackoffPadSeconds,
+            SpeedUpAfterSuccesses =
+                overrides?.SpeedUpAfterSuccesses ?? defaults?.SpeedUpAfterSuccesses ?? SpeedUpAfterSuccesses,
         };
     }
 

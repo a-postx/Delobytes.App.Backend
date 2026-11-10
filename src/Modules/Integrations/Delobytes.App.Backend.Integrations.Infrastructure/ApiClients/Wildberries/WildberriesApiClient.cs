@@ -33,6 +33,15 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     /// </summary>
     private const int MaxIdentityLength = 100;
     private const int ResponseBodyLogLimit = 500;
+
+    /// <summary>
+    /// How many times a refusal that points at an already-due slot is re-asked before it is
+    /// treated as final. A refusal of that shape is a clock-skew artefact between the limiter's
+    /// own read and this process's later read, not a real absence of a slot, so the normal case
+    /// succeeds on the first re-ask; the bound only stops a broken limiter from spinning.
+    /// </summary>
+    private const int MaxStaleSlotRetries = 5;
+
     private const string StickerIdentityPrefix = "wb-stk:";
     private const string WildberriesSellerWarehouseSchema = "wb_fbs";
     private const string WildberriesOwnWarehouseSchema = "wb_fbw";
@@ -783,6 +792,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         CancellationToken cancellationToken)
     {
         TimeSpan tolerance = TimeSpan.FromSeconds(Math.Max(0, _options.MaxInProcessWaitSeconds));
+        int staleRefusals = 0;
 
         RateLimitAcquireResult result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
 
@@ -790,7 +800,25 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         {
             TimeSpan wait = result.NextRequestAllowedAt - _timeProvider.GetUtcNow();
 
-            if (wait <= TimeSpan.Zero || wait > tolerance)
+            if (wait <= TimeSpan.Zero)
+            {
+                // A refusal whose slot is already due is not a refusal: the limiter read the clock
+                // before the deadline and this process read it after, which one database round-trip
+                // is enough to cause. Re-asking is the only correct move here; reporting a refusal
+                // would end the whole products run on a slot that is available right now.
+                if (staleRefusals >= MaxStaleSlotRetries)
+                {
+                    return result;
+                }
+
+                staleRefusals++;
+                result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
+                continue;
+            }
+
+            staleRefusals = 0;
+
+            if (wait > tolerance)
             {
                 return result;
             }

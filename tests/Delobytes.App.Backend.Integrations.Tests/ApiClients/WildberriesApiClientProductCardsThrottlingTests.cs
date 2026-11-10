@@ -211,6 +211,110 @@ public class WildberriesApiClientProductCardsThrottlingTests
         limiter.TryAcquireCalls.Should().Be(2);
     }
 
+    [Fact]
+    public async Task GetProductCardsAsync_SlotBecomesDueWhileChecking_RetriesInsteadOfFailing()
+    {
+        // Production regression: the limiter refused with a deadline that was still a fraction of
+        // a millisecond ahead when it read the clock, and already in the past by the time the
+        // client read it after one database round-trip. That is "the slot is due now", not
+        // "wait an hour", and must not end the run.
+        int httpCallCount = 0;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl).Respond(_ =>
+        {
+            httpCallCount++;
+
+            return CardsResponse(HttpStatusCode.OK);
+        });
+
+        StaleSlotRateLimiter limiter = new(refusalCount: 1, offset: TimeSpan.FromMilliseconds(-10));
+        WildberriesApiClient client = BuildClient(mockHttp, limiter);
+
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(
+            Guid.NewGuid(), null, 50, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue("a refusal whose slot has already passed is re-asked, not reported");
+        limiter.TryAcquireCalls.Should().Be(2);
+        httpCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_LimiterKeepsRefusingWithAPastSlot_GivesUpAfterBoundedRetries()
+    {
+        int httpCallCount = 0;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl).Respond(_ =>
+        {
+            httpCallCount++;
+
+            return CardsResponse(HttpStatusCode.OK);
+        });
+
+        StaleSlotRateLimiter limiter = new(refusalCount: int.MaxValue, offset: TimeSpan.FromMilliseconds(-10));
+        WildberriesApiClient client = BuildClient(mockHttp, limiter);
+
+        ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(
+            Guid.NewGuid(), null, 50, CancellationToken.None);
+
+        // A limiter that never stops claiming an already-due slot must not spin the importer
+        // forever: the client gives up after a small, bounded number of immediate re-asks.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Rate limit");
+        limiter.TryAcquireCalls.Should().BeGreaterThan(1);
+        limiter.TryAcquireCalls.Should().BeLessThanOrEqualTo(6);
+        httpCallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Refuses the first <c>refusalCount</c> slots with a deadline offset by <c>offset</c> (negative
+    /// makes it already due), then grants every slot.
+    /// </summary>
+    private sealed class StaleSlotRateLimiter : IChannelRateLimiter
+    {
+        private readonly int _refusalCount;
+        private readonly TimeSpan _offset;
+
+        public StaleSlotRateLimiter(int refusalCount, TimeSpan offset)
+        {
+            _refusalCount = refusalCount;
+            _offset = offset;
+        }
+
+        public int TryAcquireCalls { get; private set; }
+
+        public Task<RateLimitAcquireResult> TryAcquireAsync(
+            RateLimitScope scope, CancellationToken cancellationToken)
+        {
+            TryAcquireCalls++;
+
+            return Task.FromResult(new RateLimitAcquireResult
+            {
+                Acquired = TryAcquireCalls > _refusalCount,
+                NextRequestAllowedAt = DateTimeOffset.UtcNow.Add(_offset),
+            });
+        }
+
+        public Task<DateTimeOffset> ReportRateLimitedAsync(
+            RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(DateTimeOffset.UtcNow);
+        }
+
+        public Task ReportSuccessAsync(
+            RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
+            RateLimitScope scope, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<DateTimeOffset?>(null);
+        }
+    }
+
     /// <summary>
     /// Refuses every slot with a next-allowed instant far beyond the in-process wait tolerance, so
     /// the client must report the refusal rather than sleep for an hour.
