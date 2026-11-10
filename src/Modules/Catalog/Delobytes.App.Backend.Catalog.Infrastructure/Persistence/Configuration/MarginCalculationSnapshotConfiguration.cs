@@ -20,12 +20,34 @@ public class MarginCalculationSnapshotConfiguration : IEntityTypeConfiguration<M
 
         builder.Property(mcs => mcs.ChannelCostTotal).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.BuyerPrice).HasPrecision(18, 4).IsRequired();
+        builder.Property(mcs => mcs.TaxBaseAmount).HasPrecision(18, 4).IsRequired();
+
+        builder.Property(mcs => mcs.TaxBase)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.Property(mcs => mcs.CommissionAmount).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.AcquiringAmount).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.TaxAmount).HasPrecision(18, 4).IsRequired();
+        builder.Property(mcs => mcs.TaxRatePercent).HasPrecision(8, 6).IsRequired();
+
+        builder.Property(mcs => mcs.AppliedTaxRegime)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        builder.Property(mcs => mcs.VatAmount).HasPrecision(18, 4).IsRequired();
+
+        builder.Property(mcs => mcs.Vat)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.Property(mcs => mcs.NetRevenue).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.Margin).HasPrecision(18, 4).IsRequired();
         builder.Property(mcs => mcs.MarginPercent).HasPrecision(8, 6).IsRequired();
+        builder.Property(mcs => mcs.MarginAfterTax).HasPrecision(18, 4).IsRequired();
 
         builder.Property(mcs => mcs.CalculatedAt)
             .IsRequired();

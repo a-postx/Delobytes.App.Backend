@@ -86,7 +86,6 @@ public class OzonOrderMapperTests
         line.Currency.Should().Be("RUB");
         line.IsCancelled.Should().BeFalse();
         line.ExternalSizeId.Should().BeNull();
-        line.Vat.Should().BeNull();
         line.ChannelReportedTotal.Should().BeNull();
     }
 

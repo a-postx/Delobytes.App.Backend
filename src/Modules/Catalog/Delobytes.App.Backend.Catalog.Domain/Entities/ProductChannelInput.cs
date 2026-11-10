@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
@@ -17,6 +18,16 @@ public class ProductChannelInput : ITenantScoped
 
     /// <summary>Listing price before any discounts, in currency.</summary>
     public decimal PriceWithoutDiscount { get; set; }
+
+    /// <summary>
+    /// Gets or sets which reported price the tax is calculated from.
+    /// </summary>
+    /// <remarks>
+    /// Belongs here rather than to the channel: the same channel reports a platform-funded
+    /// promotion for one product and a seller-funded one for another, so the correct base is a
+    /// property of the sale, not of the marketplace.
+    /// </remarks>
+    public TaxBase TaxBase { get; set; } = TaxBase.BuyerPrice;
 
     /// <summary>Date from which this input version is effective.</summary>
     public DateOnly ValidFrom { get; set; }

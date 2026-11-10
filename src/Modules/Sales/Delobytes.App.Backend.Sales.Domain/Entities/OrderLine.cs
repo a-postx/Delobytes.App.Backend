@@ -51,11 +51,6 @@ public class OrderLine : ITenantScoped
     public string? ProductName { get; set; }
 
     /// <summary>
-    /// Gets or sets the VAT code as reported by the channel.
-    /// </summary>
-    public string? Vat { get; set; }
-
-    /// <summary>
     /// Gets or sets the quantity of units.
     /// </summary>
     public int Quantity { get; set; } = 1;

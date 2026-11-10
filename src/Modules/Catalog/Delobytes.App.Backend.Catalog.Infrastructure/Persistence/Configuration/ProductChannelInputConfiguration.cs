@@ -23,6 +23,11 @@ public class ProductChannelInputConfiguration : IEntityTypeConfiguration<Product
             .HasPrecision(18, 4)
             .IsRequired();
 
+        builder.Property(pci => pci.TaxBase)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.Property(pci => pci.ValidFrom)
             .IsRequired();
 

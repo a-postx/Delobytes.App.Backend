@@ -343,42 +343,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.ToTable("ComponentPrices", "catalog");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.CostType", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsActive");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("CostTypes", "catalog");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.MarginCalculationSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -388,6 +352,11 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<decimal>("AcquiringAmount")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("AppliedTaxRegime")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<decimal>("BuyerPrice")
                         .HasPrecision(18, 4)
@@ -405,6 +374,10 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                         .HasColumnType("numeric(18,4)");
 
                     b.Property<decimal>("Margin")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("MarginAfterTax")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
 
@@ -426,8 +399,30 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
 
+                    b.Property<string>("TaxBase")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("TaxBaseAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("TaxRatePercent")
+                        .HasPrecision(8, 6)
+                        .HasColumnType("numeric(8,6)");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Vat")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("VatAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
 
                     b.Property<Guid>("WorkRateId")
                         .HasColumnType("uuid");
@@ -626,50 +621,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.ToTable("ProductBarcodes", "catalog");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelCost", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<Guid>("ChannelId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CostTypeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChannelId");
-
-                    b.HasIndex("CostTypeId");
-
-                    b.HasIndex("TenantId");
-
-                    b.HasIndex("ProductId", "ChannelId");
-
-                    b.HasIndex("ProductId", "ChannelId", "CostTypeId")
-                        .IsUnique();
-
-                    b.ToTable("ProductChannelCosts", "catalog");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelInput", b =>
                 {
                     b.Property<Guid>("Id")
@@ -689,6 +640,11 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<decimal>("RawMaterialCost")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("TaxBase")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
@@ -1206,33 +1162,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Navigation("Product");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelCost", b =>
-                {
-                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", "Channel")
-                        .WithMany()
-                        .HasForeignKey("ChannelId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.CostType", "CostType")
-                        .WithMany("ProductChannelCosts")
-                        .HasForeignKey("CostTypeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Channel");
-
-                    b.Navigation("CostType");
-
-                    b.Navigation("Product");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ProductChannelInput", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
@@ -1306,11 +1235,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Navigation("BomLines");
 
                     b.Navigation("Prices");
-                });
-
-            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.CostType", b =>
-                {
-                    b.Navigation("ProductChannelCosts");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Product", b =>

@@ -29,6 +29,14 @@ public class OrderSettlementConfiguration : IEntityTypeConfiguration<OrderSettle
             .HasConversion<string>()
             .HasMaxLength(32);
 
+        builder.Property(s => s.AcquiringAmount)
+            .HasPrecision(18, 2);
+
+        builder.Property(s => s.AcquiringSource)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.Property(s => s.PayoutAmount)
             .HasPrecision(18, 2);
 

@@ -39,9 +39,6 @@ public class OrderLineConfiguration : IEntityTypeConfiguration<OrderLine>
         builder.Property(l => l.ProductName)
             .HasMaxLength(500);
 
-        builder.Property(l => l.Vat)
-            .HasMaxLength(32);
-
         builder.Property(l => l.Quantity)
             .IsRequired();
 

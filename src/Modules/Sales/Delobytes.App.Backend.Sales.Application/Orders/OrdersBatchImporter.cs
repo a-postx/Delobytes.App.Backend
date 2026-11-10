@@ -353,7 +353,6 @@ public class OrdersBatchImporter
         line.OfferId = snapshot.OfferId;
         line.ExternalSizeId = snapshot.ExternalSizeId;
         line.ProductName = snapshot.ProductName;
-        line.Vat = snapshot.Vat;
         line.Quantity = snapshot.Quantity;
         line.UnitPrice = snapshot.UnitPrice;
         line.BuyerUnitPrice = snapshot.BuyerUnitPrice;

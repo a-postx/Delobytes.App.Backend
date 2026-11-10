@@ -243,7 +243,6 @@ internal static class OzonOrderMapper
                 OfferId = product.OfferId,
                 ExternalSizeId = null,
                 ProductName = product.Name,
-                Vat = null,
                 Quantity = product.Quantity,
                 UnitPrice = product.Price?.Amount,
                 BuyerUnitPrice = financialProduct?.CustomerPrice?.Amount,

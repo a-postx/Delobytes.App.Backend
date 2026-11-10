@@ -14,6 +14,16 @@ namespace Delobytes.App.Backend.Sales.Domain.Entities;
 /// instance Wildberries and Yandex Market supply no commission in their order APIs) and must be
 /// surfaced as "not calculated" rather than substituted with a zero.
 /// <para>
+/// Amounts are stored as money, never as a rate: the channel bills a fixed sum per line, a rate
+/// would have to be re-applied and could drift away from what was actually charged. A rate belongs
+/// in the raw payload, which <see cref="RawDataId"/> keeps.
+/// </para>
+/// <para>
+/// Tax is deliberately absent. It is charged on revenue rather than per sale, cannot be attributed
+/// to one line before the reporting period closes, and is derived from the versioned tenant profile
+/// instead.
+/// </para>
+/// <para>
 /// Upgrade path, not implemented: if per-revision audit of financial facts is required later,
 /// promote immutable <c>OrderSettlementEntry</c> rows — one per fact, per source, per financial
 /// period — and recompute this entity from them. Today the immutable trail is preserved by the
@@ -41,6 +51,16 @@ public class OrderSettlement : ITenantScoped, IRowVersionedEntity
     /// Gets or sets where <see cref="CommissionAmount"/> came from.
     /// </summary>
     public ValueSource CommissionSource { get; set; } = ValueSource.Unknown;
+
+    /// <summary>
+    /// Gets or sets the acquiring fee. Null when not reported.
+    /// </summary>
+    public decimal? AcquiringAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets where <see cref="AcquiringAmount"/> came from.
+    /// </summary>
+    public ValueSource AcquiringSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
     /// Gets or sets the payout amount. Null when not reported.

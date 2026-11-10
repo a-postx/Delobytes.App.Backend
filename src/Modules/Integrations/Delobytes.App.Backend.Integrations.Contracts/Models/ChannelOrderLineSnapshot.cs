@@ -40,11 +40,6 @@ public record ChannelOrderLineSnapshot
     public string? ProductName { get; init; }
 
     /// <summary>
-    /// Gets the VAT value as reported by the channel.
-    /// </summary>
-    public string? Vat { get; init; }
-
-    /// <summary>
     /// Gets the quantity of units in this line.
     /// </summary>
     public int Quantity { get; init; } = 1;
