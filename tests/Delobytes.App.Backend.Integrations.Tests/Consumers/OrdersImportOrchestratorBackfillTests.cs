@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -94,7 +94,7 @@ public partial class OrdersImportOrchestratorBackfillTests
         OrdersImportTuning tuning = wrappedOptions.Value.ToTuning(JobType.WbOrdersImport);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(

@@ -21,7 +21,7 @@ public class OrdersImportTuningTests
         tuning.SafetyOverlap.Should().Be(WildberriesImportOptions.DefaultSafetyOverlap);
         tuning.BackfillWindow.Should().Be(WildberriesImportOptions.DefaultBackfillWindow);
         tuning.MinOrdersWindow.Should().Be(TimeSpan.FromHours(1));
-        tuning.MethodName.Should().Be(OrdersRateLimiterMethods.WildberriesSupplierOrders);
+        tuning.MethodName.Should().Be(WildberriesApiMethodRegistry.SupplierOrders);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -81,7 +81,7 @@ public class OzonApiClientGetOrdersTests
     private static OzonApiClient BuildClient(
         MockHttpMessageHandler mockHttp,
         IConnectionResolver resolver,
-        IOrdersRateLimiter rateLimiter)
+        IChannelRateLimiter rateLimiter)
     {
         // The real auth handler is kept in the pipeline: the credentials on the wire are what the
         // stage is about, so a stub that injects headers would prove nothing.
@@ -214,7 +214,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         await client.GetOrdersAsync(connectionId, BuildRequest(limit: 50), CancellationToken.None);
 
@@ -263,7 +263,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersRequest request = BuildRequest();
         request.DateFrom = new DateTimeOffset(2024, 3, 1, 3, 0, 0, TimeSpan.FromHours(3));
@@ -290,7 +290,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersRequest request = BuildRequest();
         request.Statuses = new List<string> { "delivered" };
@@ -321,7 +321,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         await client.GetOrdersAsync(connectionId, BuildRequest(limit: requested), CancellationToken.None);
 
@@ -354,7 +354,7 @@ public class OzonApiClientGetOrdersTests
             BuildConnection(firstId, "key-first", "seller-first"),
             BuildConnection(secondId, "key-second", "seller-second"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         await client.GetOrdersAsync(secondId, BuildRequest(), CancellationToken.None);
 
@@ -373,7 +373,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersPage page = await client.GetOrdersAsync(connectionId, BuildRequest(), CancellationToken.None);
 
@@ -397,7 +397,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         await client.GetOrdersAsync(
             connectionId, BuildRequest(cursor: "cursor-from-previous-page"), CancellationToken.None);
@@ -435,7 +435,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersPage page = await client.GetOrdersAsync(connectionId, BuildRequest(), CancellationToken.None);
 
@@ -472,7 +472,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersPage page = await client.GetOrdersAsync(connectionId, BuildRequest(), CancellationToken.None);
 
@@ -505,7 +505,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        Mock<IOrdersRateLimiter> rateLimiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> rateLimiter = new Mock<IChannelRateLimiter>();
         rateLimiter
             .Setup(r => r.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RateLimitAcquireResult
@@ -561,7 +561,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         Func<Task> act = async () =>
             await client.GetOrdersAsync(connectionId, BuildRequest(), CancellationToken.None);
@@ -595,7 +595,7 @@ public class OzonApiClientGetOrdersTests
 
         DateTimeOffset nextSlot = DateTimeOffset.UtcNow.AddSeconds(2);
 
-        Mock<IOrdersRateLimiter> rateLimiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> rateLimiter = new Mock<IChannelRateLimiter>();
         rateLimiter
             .Setup(r => r.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RateLimitAcquireResult { Acquired = false, NextRequestAllowedAt = nextSlot });
@@ -622,7 +622,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-of-this-connection", "seller-1"));
 
-        Mock<IOrdersRateLimiter> rateLimiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> rateLimiter = new Mock<IChannelRateLimiter>();
         rateLimiter
             .Setup(r => r.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RateLimitAcquireResult
@@ -682,7 +682,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-of-this-connection", "seller-1"));
 
-        Mock<IOrdersRateLimiter> rateLimiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> rateLimiter = new Mock<IChannelRateLimiter>();
         rateLimiter
             .Setup(r => r.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RateLimitAcquireResult
@@ -757,7 +757,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersRequest request = BuildRequest();
         request.Schema = (OrdersSchema)99;
@@ -790,7 +790,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowOrdersRateLimiter());
+        OzonApiClient client = BuildClient(mockHttp, resolver.Object, new AlwaysAllowRateLimiter());
 
         OrdersRequest request = BuildRequest();
         request.DateFrom = WindowTo;
@@ -812,7 +812,7 @@ public class OzonApiClientGetOrdersTests
         Mock<IConnectionResolver> resolver =
             BuildResolver(BuildConnection(connectionId, "key-1", "seller-1"));
 
-        Mock<IOrdersRateLimiter> rateLimiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> rateLimiter = new Mock<IChannelRateLimiter>();
         rateLimiter
             .Setup(r => r.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RateLimitAcquireResult
@@ -849,7 +849,7 @@ public class OzonApiClientGetOrdersTests
             new HttpClient(new MockHttpMessageHandler()),
             Mock.Of<IHttpClientFactory>(),
             resolver.Object,
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             NullLogger<OzonApiClient>.Instance);
 
         Func<Task> act = async () =>

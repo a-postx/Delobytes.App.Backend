@@ -1,8 +1,7 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -14,7 +13,12 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimit
 /// pushes back; see <see cref="WildberriesRateLimitOptions"/> for the exact algorithm this
 /// implements. Pacing state is persisted, so the instance is scoped with the request that writes it.
 /// </summary>
-public class WildberriesRateLimiter : IOrdersRateLimiter
+/// <remarks>
+/// The method is carried as a registry string rather than an enum: the limiter validates it
+/// against <see cref="WildberriesApiMethodRegistry"/> and otherwise treats it as an opaque bucket
+/// key, so a new Wildberries endpoint needs no change here.
+/// </remarks>
+public class WildberriesRateLimiter : IChannelRateLimiter
 {
     private readonly IWildberriesMethodThrottleRepository _repository;
     private readonly WildberriesRateLimitOptions _options;
@@ -41,14 +45,15 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
         RateLimitScope scope,
         CancellationToken cancellationToken)
     {
-        WildberriesApiMethod method = WildberriesApiMethods.FromRateLimitMethod(scope.Method);
+        string method = ResolveMethod(scope.Method);
+        WildberriesRateLimitOptions.ResolvedRateLimitPolicy policy = _options.ResolvePolicy(method);
         string fingerprint = ApiKeyFingerprint.Compute(scope.ApiKey);
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
         RateLimitAcquireResult result = await _repository.MutateAsync(
             fingerprint,
             method,
-            () => CreateDefault(now),
+            () => CreateDefault(now, policy),
             throttle =>
             {
                 if (throttle.NextRequestAllowedAt > now)
@@ -88,14 +93,15 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {
-        WildberriesApiMethod method = WildberriesApiMethods.FromRateLimitMethod(scope.Method);
+        string method = ResolveMethod(scope.Method);
+        WildberriesRateLimitOptions.ResolvedRateLimitPolicy policy = _options.ResolvePolicy(method);
         string fingerprint = ApiKeyFingerprint.Compute(scope.ApiKey);
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
         DateTimeOffset nextAttempt = await _repository.MutateAsync(
             fingerprint,
             method,
-            () => CreateDefault(now),
+            () => CreateDefault(now, policy),
             throttle =>
             {
                 // §1.2 fact 3: `retry` is the server's advice for the next call; `reset`
@@ -104,14 +110,14 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
                 int? serverWait = signal.RetrySeconds ?? signal.ResetSeconds;
                 int wait = serverWait ?? throttle.CurrentIntervalSeconds;
 
-                throttle.NextRequestAllowedAt = now.AddSeconds(wait + _options.BackoffPadSeconds);
+                throttle.NextRequestAllowedAt = now.AddSeconds(wait + policy.BackoffPadSeconds);
 
                 // A server-advised wait is ground truth and must never be clamped down to
                 // FallbackIntervalSeconds: that cap exists only for the no-headers case, where
                 // the real allowance is unknown and a bounded guess is all there is.
                 throttle.CurrentIntervalSeconds = serverWait.HasValue
                     ? Math.Max(throttle.CurrentIntervalSeconds, wait)
-                    : Math.Min(Math.Max(throttle.CurrentIntervalSeconds, wait), _options.FallbackIntervalSeconds);
+                    : Math.Min(Math.Max(throttle.CurrentIntervalSeconds, wait), policy.FallbackIntervalSeconds);
 
                 throttle.SuccessStreak = 0;
                 throttle.LastLimit = signal.Limit;
@@ -150,7 +156,7 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
         RateLimitScope scope,
         CancellationToken cancellationToken)
     {
-        WildberriesApiMethod method = WildberriesApiMethods.FromRateLimitMethod(scope.Method);
+        string method = ResolveMethod(scope.Method);
         string fingerprint = ApiKeyFingerprint.Compute(scope.ApiKey);
 
         WildberriesMethodThrottle? throttle = await _repository.GetAsync(fingerprint, method, cancellationToken);
@@ -164,14 +170,15 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
         RateLimitSignal signal,
         CancellationToken cancellationToken)
     {
-        WildberriesApiMethod method = WildberriesApiMethods.FromRateLimitMethod(scope.Method);
+        string method = ResolveMethod(scope.Method);
+        WildberriesRateLimitOptions.ResolvedRateLimitPolicy policy = _options.ResolvePolicy(method);
         string fingerprint = ApiKeyFingerprint.Compute(scope.ApiKey);
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
         return _repository.MutateAsync(
             fingerprint,
             method,
-            () => CreateDefault(now),
+            () => CreateDefault(now, policy),
             throttle =>
             {
                 throttle.LastLimit = signal.Limit;
@@ -192,11 +199,11 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
                 if (signal.Limit.HasValue && signal.Limit.Value > 0 && throttle.ObservedWindowSeconds.HasValue)
                 {
                     int derived = Math.Max(
-                        _options.MinIntervalSeconds,
+                        policy.MinIntervalSeconds,
                         throttle.ObservedWindowSeconds.Value / signal.Limit.Value);
 
                     throttle.CurrentIntervalSeconds = Math.Max(
-                        _options.MinIntervalSeconds,
+                        policy.MinIntervalSeconds,
                         Math.Min(throttle.CurrentIntervalSeconds, derived));
 
                     return true;
@@ -204,10 +211,10 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
 
                 throttle.SuccessStreak++;
 
-                if (throttle.SuccessStreak >= _options.SpeedUpAfterSuccesses)
+                if (throttle.SuccessStreak >= policy.SpeedUpAfterSuccesses)
                 {
                     throttle.CurrentIntervalSeconds = Math.Max(
-                        _options.MinIntervalSeconds,
+                        policy.MinIntervalSeconds,
                         (int)(throttle.CurrentIntervalSeconds * 0.8));
                     throttle.SuccessStreak = 0;
                 }
@@ -217,34 +224,34 @@ public class WildberriesRateLimiter : IOrdersRateLimiter
             cancellationToken);
     }
 
-    private WildberriesMethodThrottle CreateDefault(DateTimeOffset now)
+    /// <summary>
+    /// Rejects a method the registry does not know. Silently pacing an unregistered name would
+    /// create a bucket nobody declared while the method the caller meant to pace goes unwatched,
+    /// so this is a programming error rather than a runtime condition.
+    /// </summary>
+    private static string ResolveMethod(string method)
+    {
+        if (!WildberriesApiMethodRegistry.IsKnown(method))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(method),
+                method,
+                "Unknown Wildberries rate-limit method. Known methods are declared in WildberriesApiMethodRegistry.");
+        }
+
+        return method;
+    }
+
+    private static WildberriesMethodThrottle CreateDefault(
+        DateTimeOffset now,
+        WildberriesRateLimitOptions.ResolvedRateLimitPolicy policy)
     {
         return new WildberriesMethodThrottle
         {
             NextRequestAllowedAt = now,
-            CurrentIntervalSeconds = _options.InitialIntervalSeconds,
+            CurrentIntervalSeconds = policy.InitialIntervalSeconds,
             SuccessStreak = 0,
             LastRequestAt = now
-        };
-    }
-}
-
-/// <summary>
-/// Maps the channel-neutral <see cref="RateLimitScope.Method"/> to the limiter's own method enum.
-/// An unknown name is a programming error: silently pacing the wrong bucket would let a new method
-/// run unthrottled while a busy one is delayed.
-/// </summary>
-internal static class WildberriesApiMethods
-{
-    public static WildberriesApiMethod FromRateLimitMethod(string methodName)
-    {
-        return methodName switch
-        {
-            OrdersRateLimiterMethods.WildberriesSupplierOrders => WildberriesApiMethod.SupplierOrders,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(methodName),
-                methodName,
-                "Unknown Wildberries rate-limit method."),
         };
     }
 }

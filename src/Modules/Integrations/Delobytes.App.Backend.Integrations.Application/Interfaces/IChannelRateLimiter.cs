@@ -3,22 +3,17 @@ using Delobytes.App.Backend.Integrations.Application.Models;
 namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 
 /// <summary>
-/// Identifies the pacing bucket a request belongs to: a channel, the key the channel enforces its
-/// own limit against (e.g. a Wildberries API key or an Ozon Client-Id), and the API method, since
-/// one channel may budget several of its methods independently.
+/// Channel-neutral pacing contract: one instance per channel, keyed in DI by the channel code.
+/// Each channel paces differently (Wildberries learns its allowance from response headers per
+/// (key, method) and persists it; Ozon enforces a fixed budget per key in memory plus
+/// <c>Retry-After</c>), but every caller needs the same four operations regardless of channel.
 /// </summary>
-/// <param name="ChannelCode">The channel code (e.g. <c>"wildberries"</c>, <c>"ozon"</c>).</param>
-/// <param name="ApiKey">The key the channel enforces its limit against.</param>
-/// <param name="Method">The API method, see <see cref="OrdersRateLimiterMethods"/>.</param>
-public readonly record struct RateLimitScope(string ChannelCode, string ApiKey, string Method);
-
-/// <summary>
-/// Channel-neutral pacing abstraction for orders requests. Each channel paces differently (Wildberries
-/// learns its allowance from response headers per (key, method); Ozon enforces a fixed 50 requests per
-/// second per key plus <c>Retry-After</c>), but every caller of an orders source needs the same three
-/// operations regardless of which channel it is talking to.
-/// </summary>
-public interface IOrdersRateLimiter
+/// <remarks>
+/// The interface deliberately carries no algorithm and no ordering notion: pacing state, scope
+/// and signal types are all channel-agnostic. Per-channel implementations are selected by DI key,
+/// never by the static type, so a channel that needs a different algorithm adds no interface.
+/// </remarks>
+public interface IChannelRateLimiter
 {
     /// <summary>
     /// Attempts to reserve the next request slot for <paramref name="scope"/>. Returns a result with

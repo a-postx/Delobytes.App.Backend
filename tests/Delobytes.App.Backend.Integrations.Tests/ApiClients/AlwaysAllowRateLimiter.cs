@@ -1,16 +1,17 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 
 namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 
 /// <summary>
-/// Orders limiter double that never refuses a slot and records nothing. Tests whose subject is
-/// request shape or response mapping use it so pacing cannot decide whether the request goes out.
+/// Limiter double that never refuses a slot and records nothing. Tests whose subject is request
+/// shape or response mapping use it so pacing cannot decide whether the request goes out.
 /// </summary>
-internal sealed class AlwaysAllowOrdersRateLimiter : IOrdersRateLimiter
+internal sealed class AlwaysAllowRateLimiter : IChannelRateLimiter
 {
     public Task<RateLimitAcquireResult> TryAcquireAsync(
         RateLimitScope scope, CancellationToken cancellationToken)
@@ -37,8 +38,7 @@ internal sealed class AlwaysAllowOrdersRateLimiter : IOrdersRateLimiter
     public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(
         RateLimitScope scope, CancellationToken cancellationToken)
     {
-        DateTimeOffset? result = null;
-
-        return Task.FromResult(result);
+        // Null is the contract's "a request may be issued right away": the double never paces.
+        return Task.FromResult<DateTimeOffset?>(null);
     }
 }

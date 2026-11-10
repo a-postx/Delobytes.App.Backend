@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Services;
 
@@ -20,10 +19,10 @@ namespace Delobytes.App.Backend.Integrations.Tests.Services;
 internal sealed class FakeWildberriesMethodThrottleRepository : IWildberriesMethodThrottleRepository
 {
     private readonly object _gate = new();
-    private readonly Dictionary<(string KeyFingerprint, WildberriesApiMethod Method), WildberriesMethodThrottle> _rows = new();
+    private readonly Dictionary<(string KeyFingerprint, string Method), WildberriesMethodThrottle> _rows = new();
 
     public Task<WildberriesMethodThrottle?> GetAsync(
-        string keyFingerprint, WildberriesApiMethod method, CancellationToken cancellationToken)
+        string keyFingerprint, string method, CancellationToken cancellationToken)
     {
         lock (_gate)
         {
@@ -45,14 +44,14 @@ internal sealed class FakeWildberriesMethodThrottleRepository : IWildberriesMeth
 
     public Task<TResult> MutateAsync<TResult>(
         string keyFingerprint,
-        WildberriesApiMethod method,
+        string method,
         Func<WildberriesMethodThrottle> createDefault,
         Func<WildberriesMethodThrottle, TResult> mutate,
         CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            (string, WildberriesApiMethod) key = (keyFingerprint, method);
+            (string, string) key = (keyFingerprint, method);
 
             if (!_rows.TryGetValue(key, out WildberriesMethodThrottle? throttle))
             {

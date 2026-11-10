@@ -69,7 +69,7 @@ public class DeltaOrdersFetcherTests
             checkpointStore);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             _timeProvider);
 
         BisectingOrdersReader bisectingReader = new BisectingOrdersReader(

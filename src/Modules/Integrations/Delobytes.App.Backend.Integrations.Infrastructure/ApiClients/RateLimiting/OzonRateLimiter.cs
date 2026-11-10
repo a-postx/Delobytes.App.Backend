@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 
@@ -12,7 +12,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimit
 /// Per-process only; horizontal scale-out of the service needs a distributed limiter (see Appendix C
 /// of the Ozon orders import specification).
 /// </summary>
-public sealed class OzonRateLimiter : IOrdersRateLimiter
+public sealed class OzonRateLimiter : IChannelRateLimiter
 {
     private const int Capacity = 50;
     private const double RefillTokensPerSecond = 50.0;

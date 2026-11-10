@@ -62,7 +62,7 @@ public class PacedOrdersSourceTests
 
     private PacedOrdersSource CreateSource()
     {
-        return new PacedOrdersSource(new AlwaysAllowOrdersRateLimiter(), _timeProvider);
+        return new PacedOrdersSource(new AlwaysAllowRateLimiter(), _timeProvider);
     }
 
     [Fact]

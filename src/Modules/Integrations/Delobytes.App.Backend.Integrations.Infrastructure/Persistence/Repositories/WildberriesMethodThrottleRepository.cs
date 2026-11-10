@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -26,7 +25,7 @@ public class WildberriesMethodThrottleRepository : IWildberriesMethodThrottleRep
     /// <inheritdoc/>
     public Task<WildberriesMethodThrottle?> GetAsync(
         string keyFingerprint,
-        WildberriesApiMethod method,
+        string method,
         CancellationToken cancellationToken)
     {
         return _context.WildberriesMethodThrottles
@@ -71,7 +70,7 @@ public class WildberriesMethodThrottleRepository : IWildberriesMethodThrottleRep
     /// <inheritdoc/>
     public async Task<TResult> MutateAsync<TResult>(
         string keyFingerprint,
-        WildberriesApiMethod method,
+        string method,
         Func<WildberriesMethodThrottle> createDefault,
         Func<WildberriesMethodThrottle, TResult> mutate,
         CancellationToken cancellationToken)
@@ -115,9 +114,9 @@ public class WildberriesMethodThrottleRepository : IWildberriesMethodThrottleRep
         return result;
     }
 
-    private static long ComputeAdvisoryLockKey(string keyFingerprint, WildberriesApiMethod method)
+    private static long ComputeAdvisoryLockKey(string keyFingerprint, string method)
     {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{keyFingerprint}:{(int)method}"));
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{keyFingerprint}:{method}"));
         return BitConverter.ToInt64(hash, 0);
     }
 }

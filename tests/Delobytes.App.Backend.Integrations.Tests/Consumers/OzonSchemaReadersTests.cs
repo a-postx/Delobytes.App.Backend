@@ -34,7 +34,7 @@ public class OzonSchemaReadersTests
     /// reserve a slot itself - the API client does - so the scope it paces on is observable only
     /// through <see cref="GetNextRequestAllowedAtAsync"/>, which it consults on the budget path.
     /// </summary>
-    private sealed class RecordingRateLimiter : IOrdersRateLimiter
+    private sealed class RecordingRateLimiter : IChannelRateLimiter
     {
         public List<RateLimitScope> Scopes { get; } = new List<RateLimitScope>();
 

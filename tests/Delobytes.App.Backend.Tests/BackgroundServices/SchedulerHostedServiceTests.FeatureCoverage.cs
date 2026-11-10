@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -36,7 +36,7 @@ public partial class SchedulerHostedServiceTests
         DateTimeOffset? originalNextRunAt = schedule.NextRunAt;
         SetupDueSchedules(schedule);
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
-        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>();
         limiter.SetupSequence(r => r.GetNextRequestAllowedAtAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(DateTimeOffset.UtcNow.AddHours(3))
             .ReturnsAsync(DateTimeOffset.MinValue);
@@ -64,7 +64,7 @@ public partial class SchedulerHostedServiceTests
         Connection connection = BuildConnection(ChannelCatalog.WildberriesCode);
         SetupDueSchedules(schedule);
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
-        Mock<IOrdersRateLimiter> limiter = BuildOrdersRateLimiter();
+        Mock<IChannelRateLimiter> limiter = BuildOrdersRateLimiter();
         SchedulerHostedService scheduler = BuildGateScheduler(limiter);
 
         await RunSingleTickAsync(scheduler);
@@ -74,7 +74,7 @@ public partial class SchedulerHostedServiceTests
                 It.Is<RateLimitScope>(s =>
                     s.ChannelCode == ChannelCatalog.WildberriesCode
                     && s.ApiKey == connection.ApiKey
-                    && s.Method == OrdersRateLimiterMethods.WildberriesSupplierOrders),
+                    && s.Method == WildberriesApiMethodRegistry.SupplierOrders),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -86,7 +86,7 @@ public partial class SchedulerHostedServiceTests
         Connection connection = BuildConnection(ChannelCatalog.OzonCode);
         SetupDueSchedules(schedule);
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
-        Mock<IOrdersRateLimiter> limiter = BuildOrdersRateLimiter();
+        Mock<IChannelRateLimiter> limiter = BuildOrdersRateLimiter();
         SchedulerHostedService scheduler = BuildGateScheduler(limiter);
 
         await RunSingleTickAsync(scheduler);
@@ -116,7 +116,7 @@ public partial class SchedulerHostedServiceTests
         connection.SystemChannelTemplate = new SystemChannelTemplate { Id = connection.SystemChannelTemplateId, Code = code, DisplayName = code, ApiBaseUrl = "https://example.test", ApiVersion = "v3" };
         _connectionRepositoryMock.Setup(r => r.FindByIdWithTemplateAsync(_connectionId, It.IsAny<CancellationToken>())).ReturnsAsync(connection);
         SetupDueSchedules(BuildSchedule(type));
-        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>(MockBehavior.Strict);
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>(MockBehavior.Strict);
 
         await RunSingleTickAsync(BuildGateScheduler(limiter));
 
@@ -128,7 +128,7 @@ public partial class SchedulerHostedServiceTests
     {
         SetupDueSchedules(BuildSchedule(JobType.WbOrdersImport));
         _jobRunRepositoryMock.Setup(r => r.HasActiveJobAsync(_connectionId, JobType.WbOrdersImport, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>(MockBehavior.Strict);
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>(MockBehavior.Strict);
 
         await RunSingleTickAsync(BuildGateScheduler(limiter));
 
@@ -136,7 +136,7 @@ public partial class SchedulerHostedServiceTests
         _jobRunRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private SchedulerHostedService BuildGateScheduler(Mock<IOrdersRateLimiter> limiter)
+    private SchedulerHostedService BuildGateScheduler(Mock<IChannelRateLimiter> limiter)
     {
         return BuildScheduler(ordersRateLimiter: limiter.Object);
     }
@@ -268,7 +268,7 @@ public partial class SchedulerHostedServiceTests
             .Setup(r => r.CountRunningJobsAsync(_tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
 
-        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>(MockBehavior.Strict);
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>(MockBehavior.Strict);
 
         await RunSingleTickAsync(BuildGateScheduler(limiter));
 

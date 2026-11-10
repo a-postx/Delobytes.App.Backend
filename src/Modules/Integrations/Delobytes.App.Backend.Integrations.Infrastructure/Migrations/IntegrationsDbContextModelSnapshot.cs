@@ -573,8 +573,10 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.Property<int?>("LastStatusCode")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Method")
-                        .HasColumnType("integer");
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTimeOffset>("NextRequestAllowedAt")
                         .HasColumnType("timestamp with time zone");

@@ -82,7 +82,7 @@ public class WildberriesImportOptions
             BackfillWindow = DefaultBackfillWindow,
             MinOrdersWindow = MinOrdersWindow > TimeSpan.Zero ? MinOrdersWindow : TimeSpan.FromHours(1),
             PageSize = null,
-            MethodName = OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            MethodName = WildberriesApiMethodRegistry.SupplierOrders,
         };
     }
 }

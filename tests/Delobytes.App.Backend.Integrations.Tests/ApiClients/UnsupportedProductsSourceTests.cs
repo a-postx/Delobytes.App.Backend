@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,7 +28,7 @@ public class UnsupportedProductsSourceTests
             new HttpClient(),
             httpClientFactory.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             NullLogger<OzonApiClient>.Instance);
 
         IProductsSource productsSource = client;

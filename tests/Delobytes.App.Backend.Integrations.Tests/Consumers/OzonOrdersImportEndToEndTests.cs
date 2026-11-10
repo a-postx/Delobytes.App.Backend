@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -81,7 +81,7 @@ public class OzonOrdersImportEndToEndTests
             checkpointStore);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             _timeProvider);
 
         OrdersBackfillWalker backfillWalker = new OrdersBackfillWalker(

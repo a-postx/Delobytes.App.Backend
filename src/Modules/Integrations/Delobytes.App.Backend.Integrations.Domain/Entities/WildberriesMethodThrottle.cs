@@ -1,12 +1,9 @@
-using Delobytes.App.Backend.Integrations.Domain.Enums;
-
 namespace Delobytes.App.Backend.Integrations.Domain.Entities;
 
 /// <summary>
 /// Adaptive rate-limit pacing state for one (API key, Wildberries method) pair. Deliberately not
 /// <see cref="Contracts.Interfaces.ITenantScoped"/>: the limit is enforced by Wildberries against
-/// the raw API key, which can be shared across tenants, so pacing state must be visible and
-/// enforced across the whole key regardless of which tenant's job run issues the next request.
+/// the raw API key, which can be shared across tenants.
 /// </summary>
 public class WildberriesMethodThrottle
 {
@@ -21,9 +18,11 @@ public class WildberriesMethodThrottle
     public string KeyFingerprint { get; set; } = default!;
 
     /// <summary>
-    /// Gets or sets the Wildberries API method this pacing state applies to.
+    /// Gets or sets the Wildberries API method name (e.g. <c>"supplier/orders"</c>). Stored as the
+    /// name itself, not as an enum value, so a new method needs no schema change. See
+    /// <c>WildberriesApiMethodRegistry</c> for the known values.
     /// </summary>
-    public WildberriesApiMethod Method { get; set; }
+    public string Method { get; set; } = default!;
 
     /// <summary>
     /// Gets or sets the earliest instant the next request may be issued.

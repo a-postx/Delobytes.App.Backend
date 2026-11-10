@@ -54,7 +54,7 @@ public class BackfillOrdersFetcherTests
             checkpointStore);
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             _timeProvider);
 
         SinglePageOrdersReader windowReader = new SinglePageOrdersReader(

@@ -134,7 +134,7 @@ public class CursorPagedOrdersReaderTests
 
     private CursorPagedOrdersReader CreateReader()
     {
-        PacedOrdersSource pacedSource = new PacedOrdersSource(new AlwaysAllowOrdersRateLimiter(), _timeProvider);
+        PacedOrdersSource pacedSource = new PacedOrdersSource(new AlwaysAllowRateLimiter(), _timeProvider);
 
         return new CursorPagedOrdersReader(
             pacedSource,

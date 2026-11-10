@@ -1,5 +1,5 @@
-using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Application.Extensions;
@@ -40,7 +40,10 @@ public static class OrdersJobTypeMap
 
     /// <summary>
     /// Returns the rate-limit method the job type paces on the channel, or <c>null</c> when the
-    /// pair is unsupported (and therefore needs no limiter pre-check).
+    /// pair is unsupported (and therefore needs no limiter pre-check). This is a compatibility
+    /// facade for <c>SchedulerHostedService</c>; API clients should reference
+    /// <see cref="WildberriesApiMethodRegistry"/> or <see cref="OrdersRateLimiterMethods"/> as
+    /// appropriate.
     /// </summary>
     public static string? GetRateLimitMethod(string? channelCode, JobType jobType)
     {
@@ -52,7 +55,7 @@ public static class OrdersJobTypeMap
 
         return jobType switch
         {
-            JobType.WbOrdersImport => OrdersRateLimiterMethods.WildberriesSupplierOrders,
+            JobType.WbOrdersImport => WildberriesApiMethodRegistry.SupplierOrders,
             JobType.OzonOrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
             JobType.OzonOrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
             _ => null,

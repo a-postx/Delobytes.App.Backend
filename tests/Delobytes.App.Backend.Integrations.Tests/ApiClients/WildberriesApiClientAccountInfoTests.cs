@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -56,7 +56,7 @@ public class WildberriesApiClientAccountInfoTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System);

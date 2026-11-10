@@ -174,9 +174,9 @@ public partial class OrdersImportOrchestratorTests
         DateTimeOffset start = _timeProvider.GetUtcNow();
         DateTimeOffset stoppedAt = start.AddSeconds(1200);
         DateTimeOffset slot = stoppedAt.AddSeconds(slotOffsetSeconds);
-        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>();
         RateLimitScope stopScope = new RateLimitScope(
-            "wildberries", connection.ApiKey, OrdersRateLimiterMethods.WildberriesSupplierOrders);
+            "wildberries", connection.ApiKey, WildberriesApiMethodRegistry.SupplierOrders);
         limiter.Setup(l => l.GetNextRequestAllowedAtAsync(stopScope, It.IsAny<CancellationToken>())).ReturnsAsync(slot);
         _ordersSource.Setup(s => s.GetOrdersAsync(connection.Id, It.IsAny<OrdersRequest>(), It.IsAny<CancellationToken>()))
             .Returns((Guid id, OrdersRequest request, CancellationToken token) =>

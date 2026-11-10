@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
@@ -34,7 +34,7 @@ public sealed class OzonChannelModule : ChannelModule
 
     public override void RegisterApiClient(IServiceCollection services)
     {
-        services.AddKeyedSingleton<IOrdersRateLimiter>(ChannelCatalog.OzonCode, (sp, _) =>
+        services.AddKeyedSingleton<IChannelRateLimiter>(ChannelCatalog.OzonCode, (sp, _) =>
         {
             OzonImportOptions ozonImportOptions = sp.GetRequiredService<IOptions<OzonImportOptions>>().Value;
 
@@ -78,7 +78,7 @@ public sealed class OzonChannelModule : ChannelModule
 
         services.AddKeyedScoped<OrdersImportTuning>(fetchersKey, (sp, _) => GetOzonTuning(sp, jobType));
         services.AddKeyedScoped<PacedOrdersSource>(ChannelCatalog.OzonCode, (sp, _) => new PacedOrdersSource(
-            sp.GetRequiredKeyedService<IOrdersRateLimiter>(ChannelCatalog.OzonCode),
+            sp.GetRequiredKeyedService<IChannelRateLimiter>(ChannelCatalog.OzonCode),
             sp.GetRequiredService<TimeProvider>()));
         services.AddKeyedScoped<CursorPagedOrdersReader>(readerKey, (sp, _) => new CursorPagedOrdersReader(
             sp.GetRequiredKeyedService<PacedOrdersSource>(ChannelCatalog.OzonCode),

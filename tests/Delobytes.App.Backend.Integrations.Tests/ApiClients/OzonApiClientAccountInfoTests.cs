@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -30,7 +30,7 @@ public class OzonApiClientAccountInfoTests
             typedClient,
             factory.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             NullLogger<OzonApiClient>.Instance);
     }
 

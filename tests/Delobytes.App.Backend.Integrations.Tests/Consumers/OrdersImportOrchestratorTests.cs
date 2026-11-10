@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -51,7 +51,7 @@ public partial class OrdersImportOrchestratorTests
     private OrdersImportOrchestrator CreateConsumer(
         int maxOrdersPerResponse = 80000,
         TimeSpan? minOrdersWindow = null,
-        IOrdersRateLimiter? rateLimiter = null,
+        IChannelRateLimiter? rateLimiter = null,
         IOrdersFetcherResolver? fetcherResolver = null)
     {
         WildberriesImportOptions options = new WildberriesImportOptions
@@ -71,7 +71,7 @@ public partial class OrdersImportOrchestratorTests
             _eventPublisher.Object,
             checkpointStore);
 
-        IOrdersRateLimiter effectiveRateLimiter = rateLimiter ?? new AlwaysAllowWildberriesRateLimiter();
+        IChannelRateLimiter effectiveRateLimiter = rateLimiter ?? new AlwaysAllowRateLimiter();
 
         PacedOrdersSource pacedSource = new PacedOrdersSource(
             effectiveRateLimiter,

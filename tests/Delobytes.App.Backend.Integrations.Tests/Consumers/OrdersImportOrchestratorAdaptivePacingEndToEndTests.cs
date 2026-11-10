@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -194,7 +194,7 @@ public class OrdersImportOrchestratorAdaptivePacingEndToEndTests
             .Returns(source);
     }
 
-    private OrdersImportOrchestrator CreateConsumer(IOrdersRateLimiter rateLimiter, int backfillRunBudgetSeconds = 1200)
+    private OrdersImportOrchestrator CreateConsumer(IChannelRateLimiter rateLimiter, int backfillRunBudgetSeconds = 1200)
     {
         WildberriesImportOptions options = new WildberriesImportOptions
         {
@@ -327,7 +327,7 @@ public class OrdersImportOrchestratorAdaptivePacingEndToEndTests
         int expectedDays = GetDayCountInScope();
 
         WildberriesMethodThrottle? throttle = await throttleRepository.GetAsync(
-            ApiKeyFingerprint.Compute(ApiKey), WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            ApiKeyFingerprint.Compute(ApiKey), WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
         throttle.Should().NotBeNull();
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         // The limiter uses wall time; move its persisted slot instead of sleeping in the test.

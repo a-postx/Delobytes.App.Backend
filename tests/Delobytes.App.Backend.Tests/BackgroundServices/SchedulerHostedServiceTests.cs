@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -260,7 +260,7 @@ public partial class SchedulerHostedServiceTests
         SetupDueSchedules(schedule);
 
         DateTimeOffset? nextRunAtBeforeTick = schedule.NextRunAt;
-        Mock<IOrdersRateLimiter> refusingLimiter = BuildOrdersRateLimiter(DateTimeOffset.UtcNow.AddMinutes(5));
+        Mock<IChannelRateLimiter> refusingLimiter = BuildOrdersRateLimiter(DateTimeOffset.UtcNow.AddMinutes(5));
         SchedulerHostedService scheduler = BuildScheduler(ordersRateLimiter: refusingLimiter.Object);
 
         await RunSingleTickAsync(scheduler);
@@ -547,7 +547,7 @@ public partial class SchedulerHostedServiceTests
 
     private SchedulerHostedService BuildScheduler(
         int tickIntervalSeconds = 3600,
-        IOrdersRateLimiter? ordersRateLimiter = null)
+        IChannelRateLimiter? ordersRateLimiter = null)
     {
         ServiceCollection services = new ServiceCollection();
         services.AddSingleton(_scheduleRepositoryMock.Object);
@@ -560,9 +560,9 @@ public partial class SchedulerHostedServiceTests
             TimeProvider.System,
             NullLogger<JobRunStarter>.Instance));
 
-        IOrdersRateLimiter limiter = ordersRateLimiter ?? BuildOrdersRateLimiter().Object;
-        services.AddKeyedSingleton<IOrdersRateLimiter>(ChannelCatalog.WildberriesCode, limiter);
-        services.AddKeyedSingleton<IOrdersRateLimiter>(ChannelCatalog.OzonCode, limiter);
+        IChannelRateLimiter limiter = ordersRateLimiter ?? BuildOrdersRateLimiter().Object;
+        services.AddKeyedSingleton<IChannelRateLimiter>(ChannelCatalog.WildberriesCode, limiter);
+        services.AddKeyedSingleton<IChannelRateLimiter>(ChannelCatalog.OzonCode, limiter);
 
         ServiceProvider provider = services.BuildServiceProvider();
 
@@ -577,9 +577,9 @@ public partial class SchedulerHostedServiceTests
     /// Limiter double that never refuses the tick: the scheduler only asks for the next allowed
     /// instant, and a refusal would silently change what these tests assert.
     /// </summary>
-    private static Mock<IOrdersRateLimiter> BuildOrdersRateLimiter(DateTimeOffset? nextAllowedAt = null)
+    private static Mock<IChannelRateLimiter> BuildOrdersRateLimiter(DateTimeOffset? nextAllowedAt = null)
     {
-        Mock<IOrdersRateLimiter> limiter = new Mock<IOrdersRateLimiter>();
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>();
         limiter
             .Setup(l => l.GetNextRequestAllowedAtAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(nextAllowedAt);

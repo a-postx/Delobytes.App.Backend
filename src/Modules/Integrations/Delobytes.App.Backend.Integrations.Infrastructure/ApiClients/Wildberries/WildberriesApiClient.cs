@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -47,7 +47,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private readonly HttpClient _httpClient;
     private readonly IEndpointResolver _endpointResolver;
     private readonly IConnectionResolver _connectionResolver;
-    private readonly IOrdersRateLimiter _rateLimiter;
+    private readonly IChannelRateLimiter _rateLimiter;
     private readonly ILogger<WildberriesApiClient> _logger;
     private readonly WildberriesImportOptions _options;
     private readonly TimeProvider _timeProvider;
@@ -80,7 +80,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         HttpClient httpClient,
         IEndpointResolver endpointResolver,
         IConnectionResolver connectionResolver,
-        [FromKeyedServices(ChannelCatalog.WildberriesCode)] IOrdersRateLimiter rateLimiter,
+        [FromKeyedServices(ChannelCatalog.WildberriesCode)] IChannelRateLimiter rateLimiter,
         IOptions<WildberriesImportOptions> options,
         ILogger<WildberriesApiClient> logger,
         TimeProvider timeProvider)
@@ -127,6 +127,29 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             ChannelEndpointType.Common,
             ct);
 
+        // The explicit header below is what the request actually authenticates with, so it is also
+        // what the limiter must pace on: resolving the persisted Connection here would pace a
+        // different key whenever the caller validates a candidate key that is not stored yet.
+        RateLimitScope scope = new RateLimitScope(
+            ChannelCode,
+            apiKey,
+            WildberriesApiMethodRegistry.SellerInfo);
+
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, ct);
+
+        if (!acquireResult.Acquired)
+        {
+            // Account info is optional context, so a deferred call reports "unknown" rather than
+            // burning a request the shared key budget has not released.
+            _logger.LogInformation(
+                "Wildberries seller-info request was not issued: the rate limiter has not released " +
+                "the next slot for method {Method} until {NextAllowed:O}.",
+                scope.Method,
+                acquireResult.NextRequestAllowedAt);
+
+            return null;
+        }
+
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Get,
             $"{baseUrl}/api/v1/seller-info");
@@ -145,11 +168,34 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         {
             using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
 
-            if (!response.IsSuccessStatusCode)
+            RateLimitSignal rateLimitSignal = WildberriesRateLimitHeaders.Parse(response);
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                _logger.LogWarning("Wildberries seller-info returned {StatusCode}.", (int)response.StatusCode);
+                DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
+                    scope, rateLimitSignal, ct);
+
+                _logger.LogWarning(
+                    "Wildberries seller-info was throttled (429, x-request-id {RequestId}); " +
+                    "the next attempt is not due before {NextAttempt:O}.",
+                    rateLimitSignal.RequestId,
+                    retryAt);
+
                 return null;
             }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "Wildberries seller-info returned {StatusCode} (x-request-id {RequestId}).",
+                    (int)response.StatusCode,
+                    rateLimitSignal.RequestId);
+                return null;
+            }
+
+            // Reported before the body is read: the counters describe this response, and a body
+            // that fails to deserialize must not cost the limiter its only feedback on the allowance.
+            await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, ct);
 
             WildberriesSellerInfoResponse? body =
                 await response.Content.ReadFromJsonAsync<WildberriesSellerInfoResponse>(ct);
@@ -247,10 +293,25 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         string requestUrl = $"{baseUrl}/content/v2/get/cards/list";
 
+        Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, ct);
+
+        RateLimitScope scope = new RateLimitScope(
+            ChannelCode,
+            connection.ApiKey,
+            WildberriesApiMethodRegistry.ContentCardsList);
+
         for (int attempt = 1; ; attempt++)
         {
             try
             {
+                RateLimitAcquireResult? refusedSlot =
+                    await AcquireSlotOrWaitAsync(scope, ct);
+
+                if (refusedSlot is not null)
+                {
+                    return CreateDeferredCardsResponse(refusedSlot.NextRequestAllowedAt);
+                }
+
                 StringContent content = new StringContent(requestJson, Encoding.UTF8, "application/json");
 
                 using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
@@ -289,13 +350,24 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    string retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds.ToString() ?? "unknown";
+                    RateLimitSignal throttledSignal = WildberriesRateLimitHeaders.Parse(response);
+
+                    DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
+                        scope, throttledSignal, ct);
+
                     _logger.LogWarning(
-                        "Wildberries cards API rate limit exceeded. Retry after {RetryAfter} seconds.",
-                        retryAfter);
+                        "Wildberries cards API rate limit exceeded (x-request-id {RequestId}, " +
+                        "limit={Limit}, remaining={Remaining}, retry={RetrySeconds}s, reset={ResetSeconds}s). " +
+                        "The next attempt is not due before {NextAttempt:O}.",
+                        throttledSignal.RequestId,
+                        throttledSignal.Limit,
+                        throttledSignal.Remaining,
+                        throttledSignal.RetrySeconds,
+                        throttledSignal.ResetSeconds,
+                        retryAt);
 
                     apiResponse.IsSuccess = false;
-                    apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAfter} seconds.";
+                    apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAt:O}.";
                     apiResponse.Data = new ProductCardsData
                     {
                         Cards = new List<WildberriesCardSnapshot>(),
@@ -323,6 +395,12 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
                     return apiResponse;
                 }
+
+                // Reported before the body is read: the counters describe this response, and a
+                // body that fails to deserialize must not cost the limiter its only feedback on
+                // the real allowance.
+                await _rateLimiter.ReportSuccessAsync(
+                    scope, WildberriesRateLimitHeaders.Parse(response), ct);
 
                 WildberriesGetCardsResponse? cardsResponse =
                     await response.Content.ReadFromJsonAsync<WildberriesGetCardsResponse>(ct);
@@ -690,10 +768,72 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         };
     }
 
+    /// <summary>
+    /// Reserves a pacing slot for one request, waiting in-process while the limiter's next slot is
+    /// within <see cref="WildberriesImportOptions.MaxInProcessWaitSeconds"/>. Returns <c>null</c>
+    /// once a slot is held, or the refusal when waiting that long is not acceptable.
+    /// </summary>
+    /// <remarks>
+    /// The products import has no continuation of its own: it walks a cursor page by page inside a
+    /// single run, so a refusal it cannot wait out ends the run. Waiting here is what keeps a
+    /// multi-page import alive under the same adaptive budget the orders path respects.
+    /// </remarks>
+    private async Task<RateLimitAcquireResult?> AcquireSlotOrWaitAsync(
+        RateLimitScope scope,
+        CancellationToken cancellationToken)
+    {
+        TimeSpan tolerance = TimeSpan.FromSeconds(Math.Max(0, _options.MaxInProcessWaitSeconds));
+
+        RateLimitAcquireResult result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
+
+        while (!result.Acquired)
+        {
+            TimeSpan wait = result.NextRequestAllowedAt - _timeProvider.GetUtcNow();
+
+            if (wait <= TimeSpan.Zero || wait > tolerance)
+            {
+                return result;
+            }
+
+            _logger.LogDebug(
+                "Wildberries {Method} request waits {WaitSeconds:F1}s in-process for the next rate-limiter slot.",
+                scope.Method,
+                wait.TotalSeconds);
+
+            await Task.Delay(wait, _timeProvider, cancellationToken);
+
+            result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
+        }
+
+        return null;
+    }
+
+    private ApiResponse<ProductCardsData> CreateDeferredCardsResponse(DateTimeOffset nextAllowedAt)
+    {
+        _logger.LogInformation(
+            "Wildberries cards request was not issued: the rate limiter has not released the " +
+            "next slot for method {Method} until {NextAllowed:O}.",
+            WildberriesApiMethodRegistry.ContentCardsList,
+            nextAllowedAt);
+
+        return new ApiResponse<ProductCardsData>
+        {
+            IsSuccess = false,
+            ErrorMessage = $"Rate limit: slot not available until {nextAllowedAt:O}.",
+            StatusCode = 429,
+            Timestamp = _timeProvider.GetUtcNow(),
+            Data = new ProductCardsData
+            {
+                Cards = new List<WildberriesCardSnapshot>(),
+                TotalCount = 0
+            }
+        };
+    }
+
     private RateLimitScope BuildOrdersScope(string apiKey)
     {
         return new RateLimitScope(
-            ChannelCode, apiKey, OrdersRateLimiterMethods.WildberriesSupplierOrders);
+            ChannelCode, apiKey, WildberriesApiMethodRegistry.SupplierOrders);
     }
 
     private async Task<OrdersPage> HandleThrottledResponseAsync(
@@ -717,7 +857,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             "x-ratelimit-retry {RetrySeconds}s, x-ratelimit-reset {ResetSeconds}s. " +
             "Retry is taken from x-ratelimit-retry, not from x-ratelimit-reset. Response: {Response}",
             connectionId,
-            WildberriesApiMethod.SupplierOrders,
+            WildberriesApiMethodRegistry.SupplierOrders,
             ApiKeyFingerprint.Compute(apiKey),
             signal.RequestId,
             signal.Limit,

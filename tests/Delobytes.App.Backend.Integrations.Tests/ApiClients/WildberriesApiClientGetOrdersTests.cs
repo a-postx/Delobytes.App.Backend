@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -58,7 +58,7 @@ public class WildberriesApiClientGetOrdersTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(options),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System);
@@ -676,7 +676,7 @@ public class WildberriesApiClientGetOrdersTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System);

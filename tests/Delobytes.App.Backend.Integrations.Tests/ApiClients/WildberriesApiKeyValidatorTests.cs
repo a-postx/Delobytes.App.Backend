@@ -1,3 +1,4 @@
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -6,6 +7,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
 using FluentAssertions;
+using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
 
@@ -15,10 +17,11 @@ public class WildberriesApiKeyValidatorTests
 {
     private const string TestUrl = "https://content-api.wildberries.ru/content/v2/get/cards/list";
 
-    private static WildberriesApiKeyValidator BuildValidator(MockHttpMessageHandler handler)
+    private static WildberriesApiKeyValidator BuildValidator(
+        MockHttpMessageHandler handler, IChannelRateLimiter? rateLimiter = null)
     {
         HttpClient client = handler.ToHttpClient();
-        return new WildberriesApiKeyValidator(client);
+        return new WildberriesApiKeyValidator(client, rateLimiter ?? new AlwaysAllowRateLimiter());
     }
 
     [Fact]
@@ -115,5 +118,100 @@ public class WildberriesApiKeyValidatorTests
             "my-secret-key", null, null, CancellationToken.None);
 
         result.IsValid.Should().BeTrue();
+    }
+
+    private static Mock<IChannelRateLimiter> BuildAcquiringLimiter()
+    {
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>();
+
+        limiter
+            .Setup(l => l.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RateLimitAcquireResult
+            {
+                Acquired = true,
+                NextRequestAllowedAt = DateTimeOffset.UtcNow,
+            });
+
+        return limiter;
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SlotRefused_ReturnsFailureWithoutIssuingTheRequest()
+    {
+        int httpCallCount = 0;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(TestUrl).Respond(_ =>
+        {
+            httpCallCount++;
+
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        Mock<IChannelRateLimiter> limiter = new Mock<IChannelRateLimiter>();
+        limiter
+            .Setup(l => l.TryAcquireAsync(It.IsAny<RateLimitScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RateLimitAcquireResult
+            {
+                Acquired = false,
+                NextRequestAllowedAt = DateTimeOffset.UtcNow.AddMinutes(5),
+            });
+
+        ApiKeyValidationResult result = await BuildValidator(mockHttp, limiter.Object).ValidateAsync(
+            "some-key", null, null, CancellationToken.None);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Валидация отложена");
+        httpCallCount.Should().Be(0, "validation must not spend a request the key's budget has not released");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_Returns429_ReportsTheThrottleOnTheCardsBucket()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(TestUrl).Respond(HttpStatusCode.TooManyRequests);
+
+        Mock<IChannelRateLimiter> limiter = BuildAcquiringLimiter();
+
+        limiter
+            .Setup(l => l.ReportRateLimitedAsync(
+                It.IsAny<RateLimitScope>(), It.IsAny<RateLimitSignal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DateTimeOffset.UtcNow.AddMinutes(1));
+
+        ApiKeyValidationResult result = await BuildValidator(mockHttp, limiter.Object).ValidateAsync(
+            "some-key", null, null, CancellationToken.None);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("временно ограничил");
+
+        limiter.Verify(
+            l => l.ReportRateLimitedAsync(
+                It.Is<RateLimitScope>(s =>
+                    s.Method == WildberriesApiMethodRegistry.ContentCardsList
+                    && s.ApiKey == "some-key"),
+                It.IsAny<RateLimitSignal>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_Returns200_ReportsSuccessOnTheCardsBucket()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(TestUrl).Respond(HttpStatusCode.OK);
+
+        Mock<IChannelRateLimiter> limiter = BuildAcquiringLimiter();
+
+        ApiKeyValidationResult result = await BuildValidator(mockHttp, limiter.Object).ValidateAsync(
+            "some-key", null, null, CancellationToken.None);
+
+        result.IsValid.Should().BeTrue();
+
+        limiter.Verify(
+            l => l.ReportSuccessAsync(
+                It.Is<RateLimitScope>(s => s.Method == WildberriesApiMethodRegistry.ContentCardsList),
+                It.IsAny<RateLimitSignal>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

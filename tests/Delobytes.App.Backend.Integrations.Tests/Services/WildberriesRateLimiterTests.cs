@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,7 +7,6 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -97,10 +96,10 @@ public class WildberriesRateLimiterTests
         string fingerprint = ApiKeyFingerprint.Compute(ApiKey);
 
         RateLimitAcquireResult first = await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
-        WildberriesMethodThrottle? afterFirst = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? afterFirst = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         RateLimitAcquireResult second = await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
-        WildberriesMethodThrottle? afterSecond = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? afterSecond = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         first.Acquired.Should().BeTrue();
         second.Acquired.Should().BeFalse();
@@ -112,22 +111,38 @@ public class WildberriesRateLimiterTests
     }
 
     private static RateLimitScope Scope(
-        string apiKey = ApiKey, string methodName = OrdersRateLimiterMethods.WildberriesSupplierOrders)
+        string apiKey = ApiKey, string methodName = WildberriesApiMethodRegistry.SupplierOrders)
     {
         return new RateLimitScope("wildberries", apiKey, methodName);
     }
 
     [Fact]
-    public async Task TryAcquireAsync_DifferentMethodSameKey_IsNotBlockedByTheOtherMethodsInterval()
+    public async Task TryAcquireAsync_DifferentMethodSameKey_PacesItsOwnBucket()
+    {
+        FakeWildberriesMethodThrottleRepository repository = new();
+        WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
+
+        RateLimitAcquireResult ordersResult = await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
+
+        RateLimitAcquireResult cardsResult = await limiter.TryAcquireAsync(
+            Scope(methodName: WildberriesApiMethodRegistry.ContentCardsList), CancellationToken.None);
+
+        ordersResult.Acquired.Should().BeTrue();
+        cardsResult.Acquired.Should().BeTrue(
+            "each (key, method) pair carries its own interval: a fresh method has not spent its slot yet");
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_UnknownMethod_ThrowsInsteadOfPacingTheWrongBucket()
     {
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
 
         Func<Task> act = async () => await limiter.TryAcquireAsync(
-            Scope(methodName: "content/cards/list"), CancellationToken.None);
+            Scope(methodName: "unknown/method"), CancellationToken.None);
 
-        // The orders limiter paces exactly one method; an unknown name must fail loudly rather
-        // than silently pace the wrong bucket.
+        // An unregistered name must fail loudly: pacing it would create a bucket nobody declared
+        // while the method the caller meant to pace goes unwatched.
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
@@ -135,7 +150,7 @@ public class WildberriesRateLimiterTests
     public async Task TryAcquireAsync_SameKeyUsedByTwoConnections_ShareOneAllowance()
     {
         // The limiter is keyed by the API key fingerprint only - there is no connection id
-        // anywhere in IOrdersRateLimiter - so two Connections configured with the same raw
+        // anywhere in IChannelRateLimiter - so two Connections configured with the same raw
         // Wildberries key necessarily observe the same pacing row by construction.
         FakeWildberriesMethodThrottleRepository repository = new();
         WildberriesRateLimiter limiter = CreateLimiter(repository, new WildberriesRateLimitOptions { InitialIntervalSeconds = 60 });
@@ -171,7 +186,7 @@ public class WildberriesRateLimiterTests
 
         await act.Should().NotThrowAsync();
 
-        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         row.Should().NotBeNull();
         row!.ObservedWindowSeconds.Should().BeNull("a 200 never carries reset, so the window length must still be unknown");
@@ -201,7 +216,7 @@ public class WildberriesRateLimiterTests
         await limiter.ReportSuccessAsync(
             Scope(), BuildSuccessSignal(limit: 10, remaining: 9), CancellationToken.None);
 
-        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         row.Should().NotBeNull();
         row!.ObservedWindowSeconds.Should().Be(579);
@@ -217,13 +232,13 @@ public class WildberriesRateLimiterTests
 
         await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
 
-        WildberriesMethodThrottle? beforeReport = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? beforeReport = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
         DateTimeOffset nextRequestAllowedAtBefore = beforeReport!.NextRequestAllowedAt;
 
         await limiter.ReportSuccessAsync(
             Scope(), BuildSuccessSignal(limit: 10, remaining: 0), CancellationToken.None);
 
-        WildberriesMethodThrottle? afterReport = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? afterReport = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         afterReport.Should().NotBeNull();
         afterReport!.NextRequestAllowedAt.Should().Be(nextRequestAllowedAtBefore, "the window length is unknown when remaining=0, so no wait can be computed");
@@ -246,7 +261,7 @@ public class WildberriesRateLimiterTests
 
         DateTimeOffset after = DateTimeOffset.UtcNow;
 
-        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         row.Should().NotBeNull();
 
@@ -277,7 +292,7 @@ public class WildberriesRateLimiterTests
         await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
 
         WildberriesMethodThrottle? afterTwoSuccessesRow = await repository
-            .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            .GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         afterTwoSuccessesRow!.CurrentIntervalSeconds.Should().Be(60, "two successes are one short of the three required to speed up");
         afterTwoSuccessesRow!.SuccessStreak.Should().Be(2);
@@ -288,7 +303,7 @@ public class WildberriesRateLimiterTests
             CancellationToken.None);
 
         WildberriesMethodThrottle? afterThrottleRow = await repository
-            .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            .GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
         int afterThrottleInterval = afterThrottleRow!.CurrentIntervalSeconds;
 
         afterThrottleRow.SuccessStreak.Should().Be(0, "a 429 in the middle of a success streak must reset it");
@@ -297,7 +312,7 @@ public class WildberriesRateLimiterTests
         await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
 
         WildberriesMethodThrottle? afterTwoMoreSuccessesRow = await repository
-            .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            .GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         afterTwoMoreSuccessesRow!.CurrentIntervalSeconds.Should().Be(
             afterThrottleInterval,
@@ -307,7 +322,7 @@ public class WildberriesRateLimiterTests
         await limiter.ReportSuccessAsync(Scope(), noWindowSuccess, CancellationToken.None);
 
         WildberriesMethodThrottle? afterThirdSuccessRow = await repository
-            .GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            .GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         afterThirdSuccessRow!.CurrentIntervalSeconds.Should().Be((int)(afterThrottleInterval * 0.8));
         afterThirdSuccessRow.SuccessStreak.Should().Be(0);
@@ -356,7 +371,7 @@ public class WildberriesRateLimiterTests
             BuildThrottledSignal(limit: 10, remaining: 0, resetSeconds: 579, retrySeconds: 39),
             CancellationToken.None);
 
-        WildberriesMethodThrottle? afterThrottle = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? afterThrottle = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
         TimeSpan waitUntilNextAttempt = afterThrottle!.NextRequestAllowedAt - beforeThrottle;
         waitUntilNextAttempt.TotalSeconds.Should().BeApproximately(44, 2);
 
@@ -364,7 +379,7 @@ public class WildberriesRateLimiterTests
         await limiter.ReportSuccessAsync(
             Scope(), BuildSuccessSignal(limit: 10, remaining: 9), CancellationToken.None);
 
-        WildberriesMethodThrottle? afterConverge = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? afterConverge = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
         afterConverge!.CurrentIntervalSeconds.Should().Be(57);
 
         // --- a different key/method pair with no usable headers steps down toward
@@ -382,7 +397,7 @@ public class WildberriesRateLimiterTests
         }
 
         WildberriesMethodThrottle? steppedDown = await repositoryWithoutHeaders.GetAsync(
-            otherFingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+            otherFingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         steppedDown!.CurrentIntervalSeconds.Should().Be((int)(options.InitialIntervalSeconds * 0.8));
         steppedDown.CurrentIntervalSeconds.Should().BeLessThan(options.InitialIntervalSeconds);
@@ -406,7 +421,7 @@ public class WildberriesRateLimiterTests
             BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: 10800),
             CancellationToken.None);
 
-        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         row.Should().NotBeNull();
         row!.CurrentIntervalSeconds.Should().Be(
@@ -433,7 +448,7 @@ public class WildberriesRateLimiterTests
             BuildThrottledSignal(limit: null, remaining: null, resetSeconds: null, retrySeconds: null),
             CancellationToken.None);
 
-        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? row = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         row.Should().NotBeNull();
         row!.CurrentIntervalSeconds.Should().BeLessOrEqualTo(options.FallbackIntervalSeconds);
@@ -448,12 +463,12 @@ public class WildberriesRateLimiterTests
 
         await limiter.TryAcquireAsync(Scope(), CancellationToken.None);
 
-        WildberriesMethodThrottle? before = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? before = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         DateTimeOffset? nextAllowed = await limiter.GetNextRequestAllowedAtAsync(
             Scope(), CancellationToken.None);
 
-        WildberriesMethodThrottle? after = await repository.GetAsync(fingerprint, WildberriesApiMethod.SupplierOrders, CancellationToken.None);
+        WildberriesMethodThrottle? after = await repository.GetAsync(fingerprint, WildberriesApiMethodRegistry.SupplierOrders, CancellationToken.None);
 
         nextAllowed.Should().Be(before!.NextRequestAllowedAt);
         after!.NextRequestAllowedAt.Should().Be(before.NextRequestAllowedAt);

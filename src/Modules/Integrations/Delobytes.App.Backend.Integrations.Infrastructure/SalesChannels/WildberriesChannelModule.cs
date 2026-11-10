@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
@@ -16,6 +16,8 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 
 public sealed class WildberriesChannelModule : ChannelModule
 {
+    private const string ValidatorHttpClientName = nameof(WildberriesApiKeyValidator);
+
     public override ChannelDescriptor Descriptor
     {
         get
@@ -36,7 +38,7 @@ public sealed class WildberriesChannelModule : ChannelModule
 
         services.AddKeyedScoped<OrdersImportTuning>(fetchersKey, (sp, _) => GetWildberriesTuning(sp));
         services.AddKeyedScoped<PacedOrdersSource>(ChannelCatalog.WildberriesCode, (sp, _) => new PacedOrdersSource(
-            sp.GetRequiredKeyedService<IOrdersRateLimiter>(ChannelCatalog.WildberriesCode),
+            sp.GetRequiredKeyedService<IChannelRateLimiter>(ChannelCatalog.WildberriesCode),
             sp.GetRequiredService<TimeProvider>()));
         services.AddKeyedScoped<SinglePageOrdersReader>(backfillReaderKey, (sp, _) => new SinglePageOrdersReader(
             sp.GetRequiredKeyedService<PacedOrdersSource>(ChannelCatalog.WildberriesCode),
@@ -68,7 +70,10 @@ public sealed class WildberriesChannelModule : ChannelModule
     public override void RegisterApiClient(IServiceCollection services)
     {
         services.AddScoped<WildberriesRateLimiter>();
-        services.AddKeyedScoped<IOrdersRateLimiter, WildberriesRateLimiter>(ChannelCatalog.WildberriesCode);
+
+        // One contract, one registration: orders consumers, the scheduler pre-check, product
+        // cards and the validator all resolve this same keyed limiter.
+        services.AddKeyedScoped<IChannelRateLimiter, WildberriesRateLimiter>(ChannelCatalog.WildberriesCode);
 
         services.AddHttpClient<WildberriesApiClient>()
             .AddHttpMessageHandler<WildberriesAuthHandler>()
@@ -87,14 +92,16 @@ public sealed class WildberriesChannelModule : ChannelModule
 
     public override void RegisterApiKeyValidator(IServiceCollection services)
     {
-        services.AddHttpClient<WildberriesApiKeyValidator>(client =>
+        services.AddHttpClient(ValidatorHttpClientName, client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
         services.AddKeyedTransient<IApiKeyValidator>(
             ChannelCatalog.WildberriesCode,
-            (sp, _) => sp.GetRequiredService<WildberriesApiKeyValidator>());
+            (sp, _) => new WildberriesApiKeyValidator(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(ValidatorHttpClientName),
+                sp.GetRequiredKeyedService<IChannelRateLimiter>(ChannelCatalog.WildberriesCode)));
     }
 
     private static OrdersImportTuning GetWildberriesTuning(IServiceProvider serviceProvider)

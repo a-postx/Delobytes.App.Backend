@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,17 +14,17 @@ namespace Delobytes.App.Backend.Integrations.Tests.Consumers;
 /// <summary>
 /// <see cref="IOrdersSource"/> double that serves fixtures instead of calling Wildberries over
 /// HTTP, but - like <c>WildberriesApiClient</c> - gates every call through a real
-/// <see cref="IOrdersRateLimiter"/> and reports the outcome back to it. Lets a
+/// <see cref="IChannelRateLimiter"/> and reports the outcome back to it. Lets a
 /// consumer-level test exercise the real adaptive pacing end to end without an HTTP transport.
 /// </summary>
 internal sealed class FakeRateLimitedOrdersSource : IChannelApiClient, IOrdersSource
 {
-    private readonly IOrdersRateLimiter _rateLimiter;
+    private readonly IChannelRateLimiter _rateLimiter;
     private readonly string _apiKey;
     private readonly Func<OrdersRequest, List<ChannelOrderSnapshot>> _fixtureProvider;
 
     public FakeRateLimitedOrdersSource(
-        IOrdersRateLimiter rateLimiter,
+        IChannelRateLimiter rateLimiter,
         string apiKey,
         Func<OrdersRequest, List<ChannelOrderSnapshot>> fixtureProvider)
     {
@@ -43,7 +43,7 @@ internal sealed class FakeRateLimitedOrdersSource : IChannelApiClient, IOrdersSo
         CallCount++;
 
         RateLimitScope scope = new RateLimitScope(
-            ChannelCode, _apiKey, OrdersRateLimiterMethods.WildberriesSupplierOrders);
+            ChannelCode, _apiKey, WildberriesApiMethodRegistry.SupplierOrders);
 
         RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
 

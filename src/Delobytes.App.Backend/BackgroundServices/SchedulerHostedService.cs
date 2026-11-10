@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Contracts.Accounting;
+﻿using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -257,8 +257,8 @@ public class SchedulerHostedService : BackgroundService
 
         // Limiters are keyed by the catalogue's canonical code, which is also what keys their
         // buckets: the template's stored code is not guaranteed to match its casing.
-        IOrdersRateLimiter rateLimiter = scope.ServiceProvider
-            .GetRequiredKeyedService<IOrdersRateLimiter>(descriptor.Code);
+        IChannelRateLimiter rateLimiter = scope.ServiceProvider
+            .GetRequiredKeyedService<IChannelRateLimiter>(descriptor.Code);
 
         RateLimitScope rateLimitScope = new RateLimitScope(
             descriptor.Code,

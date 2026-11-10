@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -40,7 +40,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
     // только для метода GetAccountInfoAsync
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConnectionResolver _connectionResolver;
-    private readonly IOrdersRateLimiter _ordersRateLimiter;
+    private readonly IChannelRateLimiter _ordersRateLimiter;
     private readonly ILogger<OzonApiClient> _logger;
 
     private Guid? _templateId;
@@ -76,7 +76,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
         HttpClient httpClient,
         IHttpClientFactory httpClientFactory,
         IConnectionResolver connectionResolver,
-        [FromKeyedServices(ChannelCatalog.OzonCode)] IOrdersRateLimiter ordersRateLimiter,
+        [FromKeyedServices(ChannelCatalog.OzonCode)] IChannelRateLimiter ordersRateLimiter,
         ILogger<OzonApiClient> logger)
     {
         _httpClient = httpClient;

@@ -1,7 +1,7 @@
-namespace Delobytes.App.Backend.Integrations.Application.Models;
+﻿namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
-/// Outcome of <see cref="Interfaces.IOrdersRateLimiter.TryAcquireAsync"/>.
+/// Outcome of <see cref="Interfaces.IChannelRateLimiter.TryAcquireAsync"/>.
 /// </summary>
 public sealed record RateLimitAcquireResult
 {

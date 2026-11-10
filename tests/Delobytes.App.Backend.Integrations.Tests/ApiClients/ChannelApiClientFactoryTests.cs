@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -67,7 +67,7 @@ public class ChannelApiClientFactoryTests
             httpClient,
             sp.GetRequiredService<IEndpointResolver>(),
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System));
@@ -76,7 +76,7 @@ public class ChannelApiClientFactoryTests
             httpClient,
             sp.GetRequiredService<IHttpClientFactory>(),
             new FixedConnectionResolver(),
-            new AlwaysAllowOrdersRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             NullLogger<OzonApiClient>.Instance));
 
         services.AddTransient(sp => new YandexKitApiClient(
@@ -128,7 +128,7 @@ public class ChannelApiClientFactoryTests
             httpClient,
             sp.GetRequiredService<IEndpointResolver>(),
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System));

@@ -25,7 +25,7 @@ public class WildberriesMethodThrottleConfiguration : IEntityTypeConfiguration<W
 
         builder.Property(t => t.Method)
             .IsRequired()
-            .HasConversion<int>();
+            .HasMaxLength(100);
 
         builder.Property(t => t.NextRequestAllowedAt)
             .IsRequired();

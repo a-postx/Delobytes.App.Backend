@@ -84,7 +84,7 @@ public class OrdersJobTypeMapTests
     [Theory]
     [InlineData("ozon", JobType.OzonOrdersImportFbo, OrdersRateLimiterMethods.OzonPostingFboList)]
     [InlineData("ozon", JobType.OzonOrdersImportFbs, OrdersRateLimiterMethods.OzonPostingFbsList)]
-    [InlineData("wildberries", JobType.WbOrdersImport, OrdersRateLimiterMethods.WildberriesSupplierOrders)]
+    [InlineData("wildberries", JobType.WbOrdersImport, WildberriesApiMethodRegistry.SupplierOrders)]
     public void GetRateLimitMethod_SupportedPair_ReturnsTheChannelMethod(
         string channelCode, JobType jobType, string expectedMethod)
     {

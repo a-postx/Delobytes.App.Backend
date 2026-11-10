@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Application.Interfaces;
 
@@ -13,9 +12,12 @@ public interface IWildberriesMethodThrottleRepository
     /// <summary>
     /// Finds the pacing state for the given key fingerprint and method.
     /// </summary>
+    /// <param name="keyFingerprint">Truncated SHA-256 of the raw API key.</param>
+    /// <param name="method">Method name, see <c>WildberriesApiMethodRegistry</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<WildberriesMethodThrottle?> GetAsync(
         string keyFingerprint,
-        WildberriesApiMethod method,
+        string method,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -33,7 +35,7 @@ public interface IWildberriesMethodThrottleRepository
     /// </summary>
     public Task<TResult> MutateAsync<TResult>(
         string keyFingerprint,
-        WildberriesApiMethod method,
+        string method,
         Func<WildberriesMethodThrottle> createDefault,
         Func<WildberriesMethodThrottle, TResult> mutate,
         CancellationToken cancellationToken);

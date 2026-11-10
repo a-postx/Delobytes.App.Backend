@@ -10,10 +10,10 @@ namespace Delobytes.App.Backend.Integrations.Application.Orders;
 /// </summary>
 public sealed class PacedOrdersSource
 {
-    private readonly IOrdersRateLimiter _rateLimiter;
+    private readonly IChannelRateLimiter _rateLimiter;
     private readonly TimeProvider _timeProvider;
 
-    public PacedOrdersSource(IOrdersRateLimiter rateLimiter, TimeProvider timeProvider)
+    public PacedOrdersSource(IChannelRateLimiter rateLimiter, TimeProvider timeProvider)
     {
         _rateLimiter = rateLimiter;
         _timeProvider = timeProvider;

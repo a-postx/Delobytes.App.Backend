@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -46,7 +46,7 @@ public class WildberriesApiClientOrdersThrottlingTests
 
     private static WildberriesApiClient BuildClient(
         MockHttpMessageHandler mockHttp,
-        IOrdersRateLimiter rateLimiter,
+        IChannelRateLimiter rateLimiter,
         ILogger<WildberriesApiClient>? logger = null)
     {
         HttpClient typedClient = mockHttp.ToHttpClient();
@@ -157,7 +157,7 @@ public class WildberriesApiClientOrdersThrottlingTests
         second.RetryAt.Should().NotBeNull("a refused slot must carry the newly reserved next slot");
         WildberriesMethodThrottle? stored = await repository.GetAsync(
             ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
-            WildberriesApiMethod.SupplierOrders,
+            WildberriesApiMethodRegistry.SupplierOrders,
             CancellationToken.None);
         stored.Should().NotBeNull();
         second.RetryAt.Should().Be(stored!.NextRequestAllowedAt);
@@ -212,7 +212,7 @@ public class WildberriesApiClientOrdersThrottlingTests
 
         WildberriesMethodThrottle? row = await repository.GetAsync(
             ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
-            WildberriesApiMethod.SupplierOrders,
+            WildberriesApiMethodRegistry.SupplierOrders,
             CancellationToken.None);
 
         row.Should().NotBeNull();
@@ -259,7 +259,7 @@ public class WildberriesApiClientOrdersThrottlingTests
 
         WildberriesMethodThrottle? row = await repository.GetAsync(
             ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey),
-            WildberriesApiMethod.SupplierOrders,
+            WildberriesApiMethodRegistry.SupplierOrders,
             CancellationToken.None);
 
         row.Should().NotBeNull();

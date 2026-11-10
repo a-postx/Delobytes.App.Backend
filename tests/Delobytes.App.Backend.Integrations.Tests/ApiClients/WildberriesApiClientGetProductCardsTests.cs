@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -70,7 +70,7 @@ public class WildberriesApiClientGetProductCardsTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             logger ?? NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System);
@@ -584,7 +584,7 @@ public class WildberriesApiClientGetProductCardsTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             loggerMock.Object,
             TimeProvider.System);
@@ -657,7 +657,7 @@ public class WildberriesApiClientGetProductCardsTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             loggerMock.Object,
             TimeProvider.System);
@@ -726,7 +726,7 @@ public class WildberriesApiClientGetProductCardsTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowWildberriesRateLimiter(),
+            new AlwaysAllowRateLimiter(),
             Options.Create(new WildberriesImportOptions()),
             loggerMock.Object,
             TimeProvider.System);
