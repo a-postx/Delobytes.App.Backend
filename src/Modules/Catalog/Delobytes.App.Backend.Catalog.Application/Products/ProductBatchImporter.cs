@@ -15,8 +15,6 @@ namespace Delobytes.App.Backend.Catalog.Application.Products;
 /// </summary>
 public class ProductBatchImporter
 {
-    private const string WildberriesBarcodeType = "wildberries";
-
     /// <summary>
     /// Mirrors ProductConfiguration: Product.Description is varchar(20000). WB allows
     /// descriptions up to 5000 characters, so a longer card would otherwise be rejected by
@@ -108,7 +106,7 @@ public class ProductBatchImporter
                 }
                 else
                 {
-                    foreach (WildberriesCardSnapshot card in message.Cards)
+                    foreach (ChannelProductCard card in message.Cards)
                     {
                         using (IProductImportCardScope cardScope = await transaction.BeginCardAsync(cancellationToken))
                         {
@@ -136,7 +134,7 @@ public class ProductBatchImporter
                                         recordsFailed++;
                                         if (!string.IsNullOrEmpty(result.ErrorMessage))
                                         {
-                                            errors.Add($"NmId={card.NmId}: {result.ErrorMessage}");
+                                            errors.Add($"NmId={card.ExternalProductId}: {result.ErrorMessage}");
                                         }
 
                                         break;
@@ -149,8 +147,8 @@ public class ProductBatchImporter
 
                                 recordsProcessed++;
                                 recordsFailed++;
-                                errors.Add($"NmId={card.NmId}: {ex.Message}");
-                                _logger.LogError(ex, "Failed to process card NmId={NmId}", card.NmId);
+                                errors.Add($"NmId={card.ExternalProductId}: {ex.Message}");
+                                _logger.LogError(ex, "Failed to process card NmId={NmId}", card.ExternalProductId);
                             }
                         }
                     }
@@ -249,8 +247,8 @@ public class ProductBatchImporter
                 if (photoResult.Failed > 0 || photoResult.Removed > 0)
                 {
                     _logger.LogWarning(
-                        "NmId={NmId}, ChannelId={ChannelId}: {Imported} photo(s) imported, {Replaced} replaced, {Skipped} skipped, {Removed} removed, {Failed} failed",
-                        pending.NmId,
+                        "ExternalProductId={ExternalProductId}, ChannelId={ChannelId}: {Imported} photo(s) imported, {Replaced} replaced, {Skipped} skipped, {Removed} removed, {Failed} failed",
+                        pending.ExternalProductId,
                         pending.ChannelId,
                         photoResult.Imported,
                         photoResult.Replaced,
@@ -267,13 +265,13 @@ public class ProductBatchImporter
             {
                 _logger.LogError(
                     ex,
-                    "Failed to import photos for NmId={NmId}, ProductId={ProductId}",
-                    pending.NmId,
+                    "Failed to import photos for ExternalProductId={ExternalProductId}, ProductId={ProductId}",
+                    pending.ExternalProductId,
                     pending.Product.Id);
             }
         }
 
-        // Test/design note: the photo service deliberately does not call SaveChanges —
+        // Test/design note: the photo service deliberately does not call SaveChanges Р Р†Р вЂљРІР‚Сњ
         // it adds ProductPhoto rows to the tracked product and leaves the transaction boundary
         // to the caller. This is that boundary.
         await _store.SaveChangesAsync(cancellationToken);
@@ -284,13 +282,13 @@ public class ProductBatchImporter
     /// product by barcode. A card that matches neither is imported as a new product.
     /// </summary>
     private async Task<ImportResult> ProcessCardAsync(
-        WildberriesCardSnapshot card,
+        ChannelProductCard card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
-        string externalProductId = card.NmId.ToString();
+        string externalProductId = card.ExternalProductId;
 
         ChannelProduct? existingChannelProduct = await _store
             .FindChannelProductWithProductAsync(channelId, externalProductId, cancellationToken);
@@ -317,7 +315,7 @@ public class ProductBatchImporter
     /// Returns null when the card carries no barcodes or when the match is ambiguous.
     /// </summary>
     private async Task<Product?> FindProductByBarcodeAsync(
-        WildberriesCardSnapshot card,
+        ChannelProductCard card,
         CancellationToken cancellationToken)
     {
         if (card.Barcodes.Count == 0)
@@ -340,7 +338,7 @@ public class ProductBatchImporter
         {
             _logger.LogWarning(
                 "Multiple products found with barcodes matching NmId={NmId}. Skipping automatic matching.",
-                card.NmId);
+                card.ExternalProductId);
         }
 
         return null;
@@ -348,7 +346,7 @@ public class ProductBatchImporter
 
     private async Task<ImportResult> UpdateExistingProductAsync(
         ChannelProduct channelProduct,
-        WildberriesCardSnapshot card,
+        ChannelProductCard card,
         List<PendingPhotoImport> pendingPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
@@ -372,9 +370,9 @@ public class ProductBatchImporter
             hasChanges = true;
         }
 
-        if (channelProduct.ExternalSku != card.VendorCode)
+        if (channelProduct.ExternalSku != (card.OfferId ?? string.Empty))
         {
-            channelProduct.ExternalSku = card.VendorCode;
+            channelProduct.ExternalSku = (card.OfferId ?? string.Empty);
             hasChanges = true;
         }
 
@@ -395,6 +393,7 @@ public class ProductBatchImporter
         bool barcodesChanged = await SynchronizeBarcodesAsync(
             channelProduct.Product,
             card.Barcodes,
+            ResolveBarcodeType(card),
             cancellationToken);
 
         if (barcodesChanged)
@@ -433,7 +432,7 @@ public class ProductBatchImporter
     /// </summary>
     private async Task<ImportResult> LinkExistingProductAsync(
         Product product,
-        WildberriesCardSnapshot card,
+        ChannelProductCard card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
@@ -446,7 +445,7 @@ public class ProductBatchImporter
         {
             _logger.LogWarning(
                 "NmId={NmId} matched ProductId={ProductId} by barcode, but that product is already linked to ChannelId={ChannelId} via nmID={LinkedNmId}. Skipping the card: one product can hold only one link per channel.",
-                card.NmId,
+                card.ExternalProductId,
                 product.Id,
                 channelId,
                 existingLink.ExternalProductId);
@@ -459,8 +458,8 @@ public class ProductBatchImporter
             Id = Guid.NewGuid(),
             ProductId = product.Id,
             ChannelId = channelId,
-            ExternalProductId = card.NmId.ToString(),
-            ExternalSku = card.VendorCode,
+            ExternalProductId = card.ExternalProductId,
+            ExternalSku = (card.OfferId ?? string.Empty),
             ChannelSpecificData = card.ChannelSpecificData,
             IsActive = true,
             LastSyncedAt = _timeProvider.GetUtcNow(),
@@ -472,7 +471,7 @@ public class ProductBatchImporter
         product.Name = TrimName(card.Name);
         product.Description = TrimDescription(card.Description);
 
-        await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
+        await SynchronizeBarcodesAsync(product, card.Barcodes, ResolveBarcodeType(card), cancellationToken);
         SynchronizePackingUnit(product, card, _timeProvider.GetUtcNow());
 
         QueuePhotos(product, card, channelId, pendingPhotoImports);
@@ -483,7 +482,7 @@ public class ProductBatchImporter
     }
 
     private async Task<ImportResult> CreateNewProductAsync(
-        WildberriesCardSnapshot card,
+        ChannelProductCard card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
@@ -493,28 +492,28 @@ public class ProductBatchImporter
         // vendor code. A second card presenting the same vendor code therefore cannot become a
         // second internal product. It must not fall through to the insert either: the unique index
         // would reject it at SaveChanges and take the whole batch down with it.
-        if (await _store.IsSkuTakenAsync(card.VendorCode, cancellationToken))
+        if (await _store.IsSkuTakenAsync((card.OfferId ?? string.Empty), cancellationToken))
         {
             _logger.LogWarning(
                 "NmId={NmId}: cannot import. Internal SKU {VendorCode} is already used by another product in this tenant.",
-                card.NmId,
-                card.VendorCode);
+                card.ExternalProductId,
+                (card.OfferId ?? string.Empty));
 
             return new ImportResult
             {
                 Status = ImportStatus.Failed,
-                ErrorMessage = $"SKU '{card.VendorCode}' is already assigned to another product.",
+                ErrorMessage = $"SKU '{(card.OfferId ?? string.Empty)}' is already assigned to another product.",
             };
         }
 
         Product product = new Product
         {
             Id = Guid.NewGuid(),
-            Sku = card.VendorCode,
+            Sku = (card.OfferId ?? string.Empty),
             Name = TrimName(card.Name),
             Description = TrimDescription(card.Description),
             Status = ProductStatus.Active,
-            CreationSource = CreationSource.WildberriesImport,
+            CreationSource = ResolveCreationSource(card),
             CreatedAt = _timeProvider.GetUtcNow()
         };
 
@@ -525,8 +524,8 @@ public class ProductBatchImporter
             Id = Guid.NewGuid(),
             ProductId = product.Id,
             ChannelId = channelId,
-            ExternalProductId = card.NmId.ToString(),
-            ExternalSku = card.VendorCode,
+            ExternalProductId = card.ExternalProductId,
+            ExternalSku = (card.OfferId ?? string.Empty),
             ChannelSpecificData = card.ChannelSpecificData,
             IsActive = true,
             LastSyncedAt = _timeProvider.GetUtcNow(),
@@ -535,7 +534,7 @@ public class ProductBatchImporter
 
         _store.AddChannelProduct(channelProduct);
 
-        await SynchronizeBarcodesAsync(product, card.Barcodes, cancellationToken);
+        await SynchronizeBarcodesAsync(product, card.Barcodes, ResolveBarcodeType(card), cancellationToken);
         SynchronizePackingUnit(product, card, _timeProvider.GetUtcNow());
 
         QueuePhotos(product, card, channelId, pendingPhotoImports);
@@ -654,7 +653,7 @@ public class ProductBatchImporter
     /// </summary>
     private static void QueuePhotos(
         Product product,
-        WildberriesCardSnapshot card,
+        ChannelProductCard card,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports)
     {
@@ -665,51 +664,57 @@ public class ProductBatchImporter
             Product = product,
             ChannelId = channelId,
             Sources = photoSources,
-            NmId = card.NmId,
+            ExternalProductId = card.ExternalProductId,
         });
     }
 
     /// <summary>
-    /// Maps marketplace photo variants to import sources. Display order follows the
-    /// marketplace array order; both variants of one photo share the same order.
+    /// Projects the card's photo variants onto the importer's sources. Display order and variant
+    /// names come from the channel mapper, so this stays independent of one marketplace's sizes.
     /// </summary>
-    private static List<MarketplacePhotoSource> BuildPhotoSources(WildberriesCardSnapshot card)
+    private static List<MarketplacePhotoSource> BuildPhotoSources(ChannelProductCard card)
     {
-        List<MarketplacePhotoSource> sources = new List<MarketplacePhotoSource>();
-        int displayOrder = 1;
+        List<MarketplacePhotoSource> sources = new List<MarketplacePhotoSource>(card.Photos.Count);
 
-        foreach (WildberriesPhotoUrls photo in card.Photos)
+        foreach (ChannelProductPhoto photo in card.Photos)
         {
-            if (!string.IsNullOrEmpty(photo.C246x328))
+            if (string.IsNullOrEmpty(photo.Url))
             {
-                sources.Add(new MarketplacePhotoSource
-                {
-                    Url = photo.C246x328,
-                    ExternalId = $"{card.NmId}_{displayOrder}_thumbnail",
-                    DisplayOrder = displayOrder,
-                    SizeVariant = "thumbnail",
-                    Width = 246,
-                    Height = 328
-                });
+                continue;
             }
 
-            if (!string.IsNullOrEmpty(photo.C516x688))
+            sources.Add(new MarketplacePhotoSource
             {
-                sources.Add(new MarketplacePhotoSource
-                {
-                    Url = photo.C516x688,
-                    ExternalId = $"{card.NmId}_{displayOrder}_large",
-                    DisplayOrder = displayOrder,
-                    SizeVariant = "large",
-                    Width = 516,
-                    Height = 688
-                });
-            }
-
-            displayOrder++;
+                Url = photo.Url,
+                ExternalId = $"{card.ExternalProductId}_{photo.DisplayOrder}_{photo.SizeVariant}",
+                DisplayOrder = photo.DisplayOrder,
+                SizeVariant = photo.SizeVariant,
+                Width = photo.Width,
+                Height = photo.Height,
+                Source = ResolvePhotoSource(card)
+            });
         }
 
         return sources;
+    }
+
+    private static string ResolveBarcodeType(ChannelProductCard card)
+    {
+        return card.BarcodeType ?? card.ChannelCode;
+    }
+
+    private static string ResolvePhotoSource(ChannelProductCard card)
+    {
+        return card.ChannelCode == ChannelCodes.Wildberries
+            ? MarketplacePhotoSources.Wildberries
+            : card.ChannelCode;
+    }
+
+    private static CreationSource ResolveCreationSource(ChannelProductCard card)
+    {
+        return card.ChannelCode == ChannelCodes.Wildberries
+            ? CreationSource.WildberriesImport
+            : CreationSource.Manual;
     }
 
     /// <summary>
@@ -717,7 +722,7 @@ public class ProductBatchImporter
     /// Length/width/height are required on PackingUnit, so a card without all three
     /// leaves any existing packing unit untouched.
     /// </summary>
-    private static bool SynchronizePackingUnit(Product product, WildberriesCardSnapshot card, DateTimeOffset now)
+    private static bool SynchronizePackingUnit(Product product, ChannelProductCard card, DateTimeOffset now)
     {
         if (card.LengthCm == null || card.WidthCm == null || card.HeightCm == null)
         {
@@ -780,6 +785,7 @@ public class ProductBatchImporter
     private async Task<bool> SynchronizeBarcodesAsync(
         Product product,
         List<string> newBarcodes,
+        string barcodeType,
         CancellationToken cancellationToken)
     {
         if (newBarcodes.Count == 0)
@@ -791,7 +797,7 @@ public class ProductBatchImporter
 
         List<ProductBarcode> existingBarcodes = product.Barcodes.ToList();
         HashSet<string> existingBarcodeValues = existingBarcodes
-            .Where(b => b.Type == WildberriesBarcodeType)
+            .Where(b => b.Type == barcodeType)
             .Select(b => b.Value)
             .ToHashSet();
 
@@ -804,7 +810,7 @@ public class ProductBatchImporter
                     Id = Guid.NewGuid(),
                     ProductId = product.Id,
                     Value = barcodeValue,
-                    Type = WildberriesBarcodeType,
+                    Type = barcodeType,
                     IsDefault = false,
                     CreatedAt = _timeProvider.GetUtcNow()
                 };
@@ -857,7 +863,7 @@ public class ProductBatchImporter
 
         public List<MarketplacePhotoSource> Sources { get; set; } = new();
 
-        public long NmId { get; set; }
+        public string ExternalProductId { get; set; } = default!;
     }
 
     private class ImportResult

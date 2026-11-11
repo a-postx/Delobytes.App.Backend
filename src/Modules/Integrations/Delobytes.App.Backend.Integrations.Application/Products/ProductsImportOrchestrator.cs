@@ -24,7 +24,7 @@ public class ProductsImportOrchestrator
     private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
     private readonly IJobRunExecutionScope _executionScope;
-    private readonly WildberriesImportOptions _options;
+    private readonly IProductsImportTuningResolver _tunings;
     private readonly ILogger<ProductsImportOrchestrator> _logger;
     private readonly TimeProvider _timeProvider;
 
@@ -36,7 +36,7 @@ public class ProductsImportOrchestrator
     /// <param name="clientFactory">Resolves the API client of the run's channel.</param>
     /// <param name="eventPublisher">Event publisher.</param>
     /// <param name="executionScope">Ambient scope correlating the run's HTTP calls with the JobRun.</param>
-    /// <param name="options">Products import options.</param>
+    /// <param name="tunings">Resolves the products import tuning of the run's channel.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="timeProvider">Clock source.</param>
     public ProductsImportOrchestrator(
@@ -45,7 +45,7 @@ public class ProductsImportOrchestrator
         IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
         IJobRunExecutionScope executionScope,
-        IOptions<WildberriesImportOptions> options,
+        IProductsImportTuningResolver tunings,
         ILogger<ProductsImportOrchestrator> logger,
         TimeProvider timeProvider)
     {
@@ -54,7 +54,7 @@ public class ProductsImportOrchestrator
         _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
         _executionScope = executionScope;
-        _options = options.Value;
+        _tunings = tunings;
         _logger = logger;
         _timeProvider = timeProvider;
     }
@@ -79,7 +79,7 @@ public class ProductsImportOrchestrator
             return;
         }
 
-        // Idempotent: already running means redelivery — safe to continue from the saved checkpoint.
+        // Idempotent: already running means redelivery РІР‚вЂќ safe to continue from the saved checkpoint.
         if (jobRun.Status == JobStatus.Cancelled)
         {
             _logger.LogInformation("JobRun {JobRunId} is Cancelled, skipping", message.JobRunId);
@@ -109,7 +109,7 @@ public class ProductsImportOrchestrator
             return;
         }
 
-        // Transition Pending → Running (idempotent: Running stays Running).
+        // Transition Pending РІвЂ вЂ™ Running (idempotent: Running stays Running).
         if (jobRun.Status == JobStatus.Pending)
         {
             jobRun.Status = JobStatus.Running;
@@ -119,7 +119,8 @@ public class ProductsImportOrchestrator
 
         IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
-        int batchSize = _options.BatchSize > 0 ? _options.BatchSize : 50;
+        int configuredBatchSize = _tunings.Resolve(connection.SystemChannelTemplate.Code).BatchSize;
+        int batchSize = configuredBatchSize > 0 ? configuredBatchSize : ProductsImportTuning.DefaultBatchSize;
         int batchNumber = 0;
 
         // Resume from the saved checkpoint cursor when redelivered mid-import.
@@ -129,7 +130,7 @@ public class ProductsImportOrchestrator
         // Look-ahead buffer: a non-empty page is held back until the next API response proves
         // whether it was terminal. Without this, WB's empty trailing page (returned once the
         // cursor is exhausted) becomes its own instant batch that reaches the aggregator with
-        // IsLastBatch=true and zero counters — before the previous batch, still busy
+        // IsLastBatch=true and zero counters РІР‚вЂќ before the previous batch, still busy
         // downloading photos, has had a chance to report.
         PendingBatch? bufferedBatch = null;
 
@@ -165,7 +166,7 @@ public class ProductsImportOrchestrator
                     }
 
                     ProductCardsData data = apiResponse.Data!;
-                    List<WildberriesCardSnapshot> cards = data.Cards.ToList();
+                    List<ChannelProductCard> cards = data.Cards.ToList();
 
                     bool apiReportsMore = data.NextCursor != null;
 
@@ -176,7 +177,7 @@ public class ProductsImportOrchestrator
                     bool cancelled = await _jobRunRepository.GetStatusAsync(jobRun.Id, cancellationToken) == JobStatus.Cancelled;
 
                     // Forces the current page to be treated as terminal when cancelled, regardless of
-                    // whether WB's cursor still reports more data — the loop must stop after this page.
+                    // whether WB's cursor still reports more data РІР‚вЂќ the loop must stop after this page.
                     bool isTerminalPage = !apiReportsMore || cancelled;
 
                     // A page carrying no cards but advertising a cursor is meaningless for the
@@ -203,8 +204,8 @@ public class ProductsImportOrchestrator
                         // the buffer was the real last one and is published as such; if nothing was ever
                         // buffered the job genuinely has no (more) records, and a single empty terminal
                         // batch is still published so the aggregator can finalise it.
-                        List<WildberriesCardSnapshot> terminalCards =
-                            bufferedBatch != null ? bufferedBatch.Cards : new List<WildberriesCardSnapshot>();
+                        List<ChannelProductCard> terminalCards =
+                            bufferedBatch != null ? bufferedBatch.Cards : new List<ChannelProductCard>();
 
                         batchNumber++;
 
@@ -229,7 +230,7 @@ public class ProductsImportOrchestrator
 
                     // Non-terminal non-empty page: the buffered page is now known not to be terminal
                     // (or cancellation has forced an early stop), so it can be published as a regular
-                    // batch, and the current page takes its place in the buffer — or is published
+                    // batch, and the current page takes its place in the buffer РІР‚вЂќ or is published
                     // itself as the terminal batch when this is the stop point.
                     if (bufferedBatch != null)
                     {
@@ -244,7 +245,7 @@ public class ProductsImportOrchestrator
                             totalBatches: 0,
                             cancellationToken);
 
-                        // Checkpoint the cursor of the page just published — not of the page just
+                        // Checkpoint the cursor of the page just published РІР‚вЂќ not of the page just
                         // fetched. A redelivery then refetches the page still sitting in the buffer,
                         // which at worst duplicates one batch that batch idempotency absorbs, instead
                         // of skipping it outright.
@@ -293,7 +294,7 @@ public class ProductsImportOrchestrator
             {
                 _logger.LogWarning("JobRun {JobRunId}: processing was cancelled", jobRun.Id);
 
-                // Do not change status — let MassTransit redeliver. Checkpoint is already persisted.
+                // Do not change status - let MassTransit redeliver. Checkpoint is already persisted.
                 throw;
             }
             catch (Exception ex)
@@ -307,7 +308,7 @@ public class ProductsImportOrchestrator
     private async Task PublishBatchAsync(
         JobRun jobRun,
         Connection connection,
-        List<WildberriesCardSnapshot> cards,
+        List<ChannelProductCard> cards,
         bool isLastBatch,
         int batchNumber,
         int totalBatches,
@@ -409,7 +410,7 @@ public class ProductsImportOrchestrator
     /// </summary>
     private class PendingBatch
     {
-        public List<WildberriesCardSnapshot> Cards { get; set; } = new();
+        public List<ChannelProductCard> Cards { get; set; } = new();
 
         public ProductCardsCursor? NextCursor { get; set; }
     }

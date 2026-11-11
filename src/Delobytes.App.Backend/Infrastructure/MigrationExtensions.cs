@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
@@ -129,8 +130,9 @@ public static class MigrationExtensions
 
             MessageTenantContext tenantContext = scope.ServiceProvider.GetRequiredService<MessageTenantContext>();
             BackgroundJobsOptions backgroundJobsOptions = scope.ServiceProvider.GetRequiredService<IOptions<BackgroundJobsOptions>>().Value;
+            IChannelJobTypeRegistry jobTypes = scope.ServiceProvider.GetRequiredService<IChannelJobTypeRegistry>();
 
-            await DataSeeder.SeedJobSchedulesAsync(context, tenantContext, backgroundJobsOptions, logger);
+            await DataSeeder.SeedJobSchedulesAsync(context, tenantContext, backgroundJobsOptions, jobTypes, logger);
         }
         catch (Exception ex)
         {

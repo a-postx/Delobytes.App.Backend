@@ -10,7 +10,7 @@ public class ProductCardsData
     /// <summary>
     /// Gets or sets the collection of product card snapshots.
     /// </summary>
-    public ICollection<WildberriesCardSnapshot> Cards { get; set; } = new List<WildberriesCardSnapshot>();
+    public ICollection<ChannelProductCard> Cards { get; set; } = new List<ChannelProductCard>();
 
     /// <summary>
     /// Gets or sets the pagination cursor for retrieving the next page.

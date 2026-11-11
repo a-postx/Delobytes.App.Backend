@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
@@ -22,11 +23,11 @@ internal static class WildberriesCardMapper
     {
         ArgumentNullException.ThrowIfNull(response);
 
-        List<WildberriesCardSnapshot> snapshots = new List<WildberriesCardSnapshot>(response.Cards.Count);
+        List<ChannelProductCard> cards = new List<ChannelProductCard>(response.Cards.Count);
 
         foreach (WildberriesCardDto card in response.Cards)
         {
-            snapshots.Add(MapToSnapshot(card, logger));
+            cards.Add(MapToCard(card, logger));
         }
 
         ProductCardsCursor? nextCursor = null;
@@ -42,13 +43,13 @@ internal static class WildberriesCardMapper
 
         return new ProductCardsData
         {
-            Cards = snapshots,
+            Cards = cards,
             NextCursor = nextCursor,
-            TotalCount = response.Cursor?.Total ?? snapshots.Count
+            TotalCount = response.Cursor?.Total ?? cards.Count
         };
     }
 
-    private static WildberriesCardSnapshot MapToSnapshot(WildberriesCardDto dto, ILogger? logger)
+    private static ChannelProductCard MapToCard(WildberriesCardDto dto, ILogger? logger)
     {
         List<string> barcodes = new List<string>();
 
@@ -90,21 +91,70 @@ internal static class WildberriesCardMapper
             logger?.LogWarning(ex, "Failed to serialize channel-specific data for nmID {NmId}.", dto.NmId);
         }
 
-        return new WildberriesCardSnapshot
+        return new ChannelProductCard
         {
-            NmId = dto.NmId,
+            ExternalProductId = dto.NmId.ToString(CultureInfo.InvariantCulture),
+            OfferId = dto.VendorCode ?? string.Empty,
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = dto.Title ?? string.Empty,
-            VendorCode = dto.VendorCode ?? string.Empty,
-            Barcodes = barcodes,
             Description = dto.Description,
+            Barcodes = barcodes,
             LengthCm = dto.Dimensions?.Length,
             WidthCm = dto.Dimensions?.Width,
             HeightCm = dto.Dimensions?.Height,
             WeightKg = dto.Dimensions?.WeightBrutto,
             ChannelSpecificData = channelSpecificData,
-            Photos = dto.Photos?
-                .Select(p => new WildberriesPhotoUrls { C246x328 = p.C246x328, C516x688 = p.C516x688 })
-                .ToList() ?? new List<WildberriesPhotoUrls>()
+            Photos = BuildPhotos(dto.Photos)
         };
+    }
+
+    /// <summary>
+    /// Expands the two variants the importer downloads into neutral photo entries, keeping the
+    /// gallery order: both variants of one photo share its display order.
+    /// </summary>
+    private static List<ChannelProductPhoto> BuildPhotos(List<WildberriesPhoto>? photos)
+    {
+        List<ChannelProductPhoto> result = new List<ChannelProductPhoto>();
+
+        if (photos == null)
+        {
+            return result;
+        }
+
+        int displayOrder = 1;
+
+        foreach (WildberriesPhoto photo in photos)
+        {
+            AddPhoto(result, photo.C246x328, "thumbnail", 246, 328, displayOrder);
+            AddPhoto(result, photo.C516x688, "large", 516, 688, displayOrder);
+
+            displayOrder++;
+        }
+
+        return result;
+    }
+
+    private static void AddPhoto(
+        List<ChannelProductPhoto> photos,
+        string? url,
+        string sizeVariant,
+        int width,
+        int height,
+        int displayOrder)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            return;
+        }
+
+        photos.Add(new ChannelProductPhoto
+        {
+            Url = url,
+            SizeVariant = sizeVariant,
+            Width = width,
+            Height = height,
+            DisplayOrder = displayOrder
+        });
     }
 }

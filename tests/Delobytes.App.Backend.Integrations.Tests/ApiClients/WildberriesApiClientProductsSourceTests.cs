@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -91,7 +91,7 @@ public class WildberriesApiClientProductsSourceTests
 
         page.Should().NotBeNull();
         page.Cards.Should().HaveCount(1);
-        page.Cards.Single().NmId.Should().Be(111);
+        page.Cards.Single().ExternalProductId.Should().Be("111");
         page.TotalCount.Should().Be(1);
         page.NextCursor.Should().NotBeNull();
         page.NextCursor!.ProductId.Should().Be(111);

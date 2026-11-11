@@ -1,4 +1,5 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
@@ -24,6 +25,28 @@ public sealed class OzonChannelModule : ChannelModule
             return ChannelCatalog.All.Single(
                 descriptor => string.Equals(descriptor.Code, ChannelCatalog.OzonCode, StringComparison.Ordinal));
         }
+    }
+
+    public override IReadOnlyList<(JobType JobType, ChannelJobKind Kind)> JobTypes { get; } = new[]
+    {
+        (JobType.OzonOrdersImportFbo, ChannelJobKind.OrdersImport),
+        (JobType.OzonOrdersImportFbs, ChannelJobKind.OrdersImport),
+    };
+
+    public override string? GetRateLimitMethod(JobType jobType)
+    {
+        return jobType switch
+        {
+            JobType.OzonOrdersImportFbo => OrdersRateLimiterMethods.OzonPostingFboList,
+            JobType.OzonOrdersImportFbs => OrdersRateLimiterMethods.OzonPostingFbsList,
+            _ => null,
+        };
+    }
+
+    public override void RegisterProducts(IServiceCollection services)
+    {
+        // Ozon does not expose product cards through this system yet; when it does, its tuning and
+        // products source are registered here, next to the orders wiring below.
     }
 
     public override void RegisterOrders(IServiceCollection services)

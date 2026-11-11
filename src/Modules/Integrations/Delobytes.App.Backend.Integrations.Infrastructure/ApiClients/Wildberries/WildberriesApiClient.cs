@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -240,7 +240,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         return new ProductCardsPage
         {
-            Cards = response.Data?.Cards.ToList() ?? new List<WildberriesCardSnapshot>(),
+            Cards = response.Data?.Cards.ToList() ?? new List<ChannelProductCard>(),
             NextCursor = response.Data?.NextCursor,
             TotalCount = response.Data?.TotalCount ?? 0
         };
@@ -345,7 +345,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     apiResponse.ErrorMessage = $"Authentication failed: {response.StatusCode}";
                     apiResponse.Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     };
 
@@ -374,7 +374,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAt:O}.";
                     apiResponse.Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     };
 
@@ -393,7 +393,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     apiResponse.ErrorMessage = $"API error: {response.StatusCode}";
                     apiResponse.Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     };
 
@@ -417,7 +417,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     apiResponse.ErrorMessage = "Empty response from API.";
                     apiResponse.Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     };
 
@@ -463,7 +463,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     Timestamp = _timeProvider.GetUtcNow(),
                     Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     }
                 };
@@ -480,7 +480,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     Timestamp = _timeProvider.GetUtcNow(),
                     Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     }
                 };
@@ -497,7 +497,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     Timestamp = _timeProvider.GetUtcNow(),
                     Data = new ProductCardsData
                     {
-                        Cards = new List<WildberriesCardSnapshot>(),
+                        Cards = new List<ChannelProductCard>(),
                         TotalCount = 0
                     }
                 };
@@ -662,7 +662,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             Timestamp = _timeProvider.GetUtcNow(),
             Data = new ProductCardsData
             {
-                Cards = new List<WildberriesCardSnapshot>(),
+                Cards = new List<ChannelProductCard>(),
                 TotalCount = 0
             }
         };

@@ -11,6 +11,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
+using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -52,7 +53,8 @@ public class ConnectionCreatedEventConsumerTests
             _tenantContext,
             Options.Create(new BackgroundJobsOptions { DefaultOrdersImportCronExpression = cronExpression }),
             NullLogger<ConnectionScheduleProvisioner>.Instance,
-            _timeProvider);
+            _timeProvider,
+            new ChannelJobTypeRegistry(new ChannelModule[] { new WildberriesChannelModule(), new OzonChannelModule() }));
 
         return new ConnectionCreatedConsumer(
             provisioner,

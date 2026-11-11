@@ -1,6 +1,5 @@
 ﻿using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
-using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
@@ -25,17 +24,20 @@ public class SchedulerHostedService : BackgroundService
     private readonly BackgroundJobsOptions _options;
     private readonly ILogger<SchedulerHostedService> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IChannelJobTypeRegistry _jobTypes;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<BackgroundJobsOptions> options,
         ILogger<SchedulerHostedService> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IChannelJobTypeRegistry jobTypes)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider;
+        _jobTypes = jobTypes;
     }
 
     /// <inheritdoc/>
@@ -126,8 +128,8 @@ public class SchedulerHostedService : BackgroundService
 
             // A schedule left over from a previous channel mapping (e.g. an OrdersImport schedule
             // on an Ozon connection) would make every tick create a job the consumer cannot run.
-            if (OrdersJobTypeMap.IsScheduledOrdersJobType(schedule.JobType)
-                && !OrdersJobTypeMap.GetOrdersJobTypes(channelCode).Contains(schedule.JobType))
+            if (_jobTypes.ResolveKind(schedule.JobType) == ChannelJobKind.OrdersImport
+                && !_jobTypes.IsServedByChannel(channelCode, schedule.JobType))
             {
                 // NextRunAt is deliberately not advanced: the schedule stays visible as due, so an
                 // operator (or the seeder, which disables it) sees that it is wrong.
@@ -247,7 +249,7 @@ public class SchedulerHostedService : BackgroundService
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        string? method = OrdersJobTypeMap.GetRateLimitMethod(channelCode, schedule.JobType);
+        string? method = _jobTypes.GetRateLimitMethod(channelCode, schedule.JobType);
 
         if (method == null
             || !ChannelCatalog.TryGet(channelCode, out ChannelDescriptor descriptor))

@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
@@ -111,6 +112,7 @@ public class DataSeederSeedJobSchedulesTests
             ctx,
             tenantContext,
             backgroundJobsOptions ?? new BackgroundJobsOptions(),
+            new ChannelJobTypeRegistry(new ChannelModule[] { new WildberriesChannelModule(), new OzonChannelModule() }),
             logger ?? NullLogger.Instance);
     }
 
@@ -358,7 +360,7 @@ public class DataSeederSeedJobSchedulesTests
         schedules.Should().BeEmpty();
     }
 
-    // ── Channel → orders job type ────────────────────────────────────────────────────────────────
+    // в”Ђв”Ђ Channel в†’ orders job type в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     [Fact]
     public async Task SeedJobSchedulesAsync_OzonConnection_SeedsBothOzonOrdersTypes()
@@ -474,7 +476,7 @@ public class DataSeederSeedJobSchedulesTests
         schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
-    // ── Cleanup of what earlier versions of the seeder created ──────────────────────────────────
+    // в”Ђв”Ђ Cleanup of what earlier versions of the seeder created в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     [Fact]
     public async Task SeedJobSchedulesAsync_StaleOrdersImportOnOzonConnection_IsDisabledAndLoggedAsWarning()

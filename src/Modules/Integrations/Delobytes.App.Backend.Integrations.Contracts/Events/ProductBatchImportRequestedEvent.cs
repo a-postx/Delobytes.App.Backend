@@ -26,7 +26,7 @@ public record ProductBatchImportRequestedEvent
     /// <summary>
     /// Batch of product card snapshots from the external marketplace.
     /// </summary>
-    public List<WildberriesCardSnapshot> Cards { get; init; } = new();
+    public List<ChannelProductCard> Cards { get; init; } = new();
 
     /// <summary>
     /// True if this is the last batch in the current import job.
@@ -35,7 +35,7 @@ public record ProductBatchImportRequestedEvent
 
     /// <summary>
     /// Total number of batches published for this import job. Only meaningful when
-    /// <see cref="IsLastBatch"/> is true — the publisher (ProductsImportOrchestrator) only
+    /// <see cref="IsLastBatch"/> is true - the publisher (ProductsImportOrchestrator) only
     /// knows the final count once it has produced the terminal batch. Carried through to
     /// <see cref="ProductBatchImportCompletedEvent.TotalBatches"/> so the aggregator can tell
     /// how many batch results it must wait for, instead of finalising as soon as any batch

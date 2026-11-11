@@ -1,4 +1,7 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
+using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Application.Products;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
@@ -25,6 +28,29 @@ public sealed class WildberriesChannelModule : ChannelModule
             return ChannelCatalog.All.Single(
                 descriptor => string.Equals(descriptor.Code, ChannelCatalog.WildberriesCode, StringComparison.Ordinal));
         }
+    }
+
+    public override IReadOnlyList<(JobType JobType, ChannelJobKind Kind)> JobTypes { get; } = new[]
+    {
+        (JobType.ProductsImport, ChannelJobKind.ProductsImport),
+        (JobType.WbOrdersImport, ChannelJobKind.OrdersImport),
+    };
+
+    public override string? GetRateLimitMethod(JobType jobType)
+    {
+        return jobType == JobType.WbOrdersImport ? WildberriesApiMethodRegistry.SupplierOrders : null;
+    }
+
+    public override void RegisterProducts(IServiceCollection services)
+    {
+        services.AddKeyedScoped<ProductsImportTuning>(
+            ChannelCatalog.WildberriesCode,
+            (sp, _) => new ProductsImportTuning(
+                sp.GetRequiredService<IOptions<WildberriesImportOptions>>().Value.BatchSize));
+
+        services.AddKeyedScoped<IProductsSource>(
+            ChannelCatalog.WildberriesCode,
+            (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
     }
 
     public override void RegisterOrders(IServiceCollection services)

@@ -39,8 +39,7 @@ public class ProductsImportOrchestratorTests
 
     private ProductsImportOrchestrator CreateOrchestrator(int batchSize = 50)
     {
-        WildberriesImportOptions options = new WildberriesImportOptions { BatchSize = batchSize };
-        IOptions<WildberriesImportOptions> wrappedOptions = Options.Create(options);
+        IProductsImportTuningResolver tunings = new FixedTuningResolver(batchSize);
 
         return new ProductsImportOrchestrator(
             _jobRunRepo.Object,
@@ -48,9 +47,24 @@ public class ProductsImportOrchestratorTests
             _clientFactory.Object,
             _eventPublisher.Object,
             _jobRunExecutionContext,
-            wrappedOptions,
+            tunings,
             _logger.Object,
             TimeProvider.System);
+    }
+
+    private sealed class FixedTuningResolver : IProductsImportTuningResolver
+    {
+        private readonly int _batchSize;
+
+        public FixedTuningResolver(int batchSize)
+        {
+            _batchSize = batchSize;
+        }
+
+        public ProductsImportTuning Resolve(string channelCode)
+        {
+            return new ProductsImportTuning(_batchSize);
+        }
     }
 
     private static SystemChannelTemplate BuildWildberriesTemplate()
@@ -96,7 +110,7 @@ public class ProductsImportOrchestratorTests
     }
 
     private static ApiResponse<ProductCardsData> BuildSuccessResponse(
-        List<WildberriesCardSnapshot> cards,
+        List<ChannelProductCard> cards,
         ProductCardsCursor? nextCursor = null)
     {
         return new ApiResponse<ProductCardsData>
@@ -121,23 +135,25 @@ public class ProductsImportOrchestratorTests
             StatusCode = statusCode,
             ErrorMessage = errorMessage,
             Timestamp = DateTimeOffset.UtcNow,
-            Data = new ProductCardsData { Cards = new List<WildberriesCardSnapshot>() },
+            Data = new ProductCardsData { Cards = new List<ChannelProductCard>() },
         };
     }
 
-    private static WildberriesCardSnapshot BuildCard(long nmId = 1)
+    private static ChannelProductCard BuildCard(long nmId = 1)
     {
-        return new WildberriesCardSnapshot
+        return new ChannelProductCard
         {
-            NmId = nmId,
+            ExternalProductId = nmId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Name = $"Product {nmId}",
-            VendorCode = $"SKU-{nmId}",
+            OfferId = $"SKU-{nmId}",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
         };
     }
 
-    private static List<WildberriesCardSnapshot> BuildCards(long firstNmId, int count)
+    private static List<ChannelProductCard> BuildCards(long firstNmId, int count)
     {
-        List<WildberriesCardSnapshot> cards = new List<WildberriesCardSnapshot>();
+        List<ChannelProductCard> cards = new List<ChannelProductCard>();
 
         for (int i = 0; i < count; i++)
         {
@@ -272,7 +288,7 @@ public class ProductsImportOrchestratorTests
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
@@ -403,7 +419,7 @@ public class ProductsImportOrchestratorTests
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
@@ -457,7 +473,7 @@ public class ProductsImportOrchestratorTests
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
@@ -514,7 +530,7 @@ public class ProductsImportOrchestratorTests
                 It.Is<ProductCardsCursor>(x => x.ProductId == 999),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot> { BuildCard(1000) }, nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard> { BuildCard(1000) }, nextCursor: null));
 
         List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
         _eventPublisher
@@ -667,7 +683,7 @@ public class ProductsImportOrchestratorTests
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         List<JobCheckpoint> savedCheckpoints = new List<JobCheckpoint>();
         _jobCheckpointRepo
@@ -709,7 +725,7 @@ public class ProductsImportOrchestratorTests
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         _eventPublisher
             .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
@@ -945,7 +961,7 @@ public class ProductsImportOrchestratorTests
         _apiClient
             .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Callback(() => observedJobRunId = _jobRunExecutionContext.JobRunId)
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         ProductsImportOrchestrator orchestrator = CreateOrchestrator();
 
@@ -971,7 +987,7 @@ public class ProductsImportOrchestratorTests
 
         _apiClient
             .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildSuccessResponse(new List<WildberriesCardSnapshot>(), nextCursor: null));
+            .ReturnsAsync(BuildSuccessResponse(new List<ChannelProductCard>(), nextCursor: null));
 
         ProductsImportOrchestrator orchestrator = CreateOrchestrator();
 

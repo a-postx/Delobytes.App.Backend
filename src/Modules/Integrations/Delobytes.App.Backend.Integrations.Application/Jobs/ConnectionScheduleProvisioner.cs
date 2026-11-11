@@ -23,6 +23,7 @@ public class ConnectionScheduleProvisioner
     private readonly BackgroundJobsOptions _backgroundJobsOptions;
     private readonly ILogger<ConnectionScheduleProvisioner> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IChannelJobTypeRegistry _jobTypes;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConnectionScheduleProvisioner"/> class.
@@ -33,13 +34,15 @@ public class ConnectionScheduleProvisioner
     /// <param name="backgroundJobsOptions">Background jobs options.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="timeProvider">Time provider.</param>
+    /// <param name="jobTypes">Registry of the job types each channel serves.</param>
     public ConnectionScheduleProvisioner(
         IConnectionRepository connectionRepository,
         IJobScheduleRepository scheduleRepository,
         ITenantContext tenantContext,
         IOptions<BackgroundJobsOptions> backgroundJobsOptions,
         ILogger<ConnectionScheduleProvisioner> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IChannelJobTypeRegistry jobTypes)
     {
         _connectionRepository = connectionRepository;
         _scheduleRepository = scheduleRepository;
@@ -47,6 +50,7 @@ public class ConnectionScheduleProvisioner
         _backgroundJobsOptions = backgroundJobsOptions.Value;
         _logger = logger;
         _timeProvider = timeProvider;
+        _jobTypes = jobTypes;
     }
 
     /// <summary>
@@ -78,7 +82,7 @@ public class ConnectionScheduleProvisioner
         }
 
         string? channelCode = connection.SystemChannelTemplate?.Code;
-        IReadOnlyList<JobType> jobTypes = OrdersJobTypeMap.GetOrdersJobTypes(channelCode);
+        IReadOnlyList<JobType> jobTypes = _jobTypes.GetJobTypes(channelCode, ChannelJobKind.OrdersImport);
 
         if (jobTypes.Count == 0)
         {

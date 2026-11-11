@@ -52,11 +52,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description"
         };
@@ -66,7 +68,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -123,11 +125,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description",
             LengthCm = 30,
@@ -141,7 +145,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -178,11 +182,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description"
         };
@@ -192,7 +198,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -261,11 +267,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Updated Name",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Updated Description",
             LengthCm = 40,
@@ -279,7 +287,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -350,11 +358,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Updated Name",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Updated Description"
         };
@@ -364,7 +374,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -405,11 +415,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description"
         };
@@ -419,7 +431,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -486,11 +498,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Product from WB",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" }
         };
 
@@ -499,7 +513,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -565,11 +579,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Product from WB",
-            VendorCode = "WB-SKU-001",
+            OfferId = "WB-SKU-001",
             Barcodes = new List<string> { "9876543210987", "1111111111111" }
         };
 
@@ -578,7 +594,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -639,11 +655,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Ambiguous Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string>()
         };
 
@@ -652,7 +670,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -728,11 +746,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1111111111111", "2222222222222" }
         };
 
@@ -741,7 +761,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -784,11 +804,13 @@ public class ProductBatchImporterTests
         ProductBatchImporter importerTenant1 = BuildImporter(consumerContext1, publishEndpointMock1.Object);
         ProductBatchImporter importerTenant2 = BuildImporter(consumerContext2, publishEndpointMock2.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Shared Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" }
         };
 
@@ -797,7 +819,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -806,7 +828,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -833,11 +855,13 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Product Without Channel",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string>()
         };
 
@@ -846,7 +870,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -887,7 +911,7 @@ public class ProductBatchImporterTests
             Id = Guid.NewGuid(),
             ProductId = existingProduct.Id,
             ChannelId = _channelId,
-            ExternalProductId = "123456789", // nmID остаётся тем же
+            ExternalProductId = "123456789", // nmID Р В Р’В Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР’ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’ВµР В Р’В Р РЋР’В Р В Р’В Р вЂ™Р’В¶Р В Р’В Р вЂ™Р’Вµ
             ExternalSku = "OLD-VENDOR-CODE",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
@@ -902,12 +926,14 @@ public class ProductBatchImporterTests
         Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
 
-        // Новая карточка с тем же nmID, но другим vendorCode
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        // Р В Р’В Р РЋРЎС™Р В Р’В Р РЋРІР‚СћР В Р’В Р В РІР‚В Р В Р’В Р вЂ™Р’В°Р В Р Р‹Р В Р РЏ Р В Р’В Р РЋРІР‚СњР В Р’В Р вЂ™Р’В°Р В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљР Р‹Р В Р’В Р РЋРІР‚СњР В Р’В Р вЂ™Р’В° Р В Р Р‹Р В РЎвЂњ Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’ВµР В Р’В Р РЋР’В Р В Р’В Р вЂ™Р’В¶Р В Р’В Р вЂ™Р’Вµ nmID, Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚Сћ Р В Р’В Р СћРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В Р’В Р РЋРІР‚вЂњР В Р’В Р РЋРІР‚ВР В Р’В Р РЋР’В vendorCode
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Updated Product Name",
-            VendorCode = "NEW-VENDOR-CODE", // Изменился!
+            OfferId = "NEW-VENDOR-CODE", // Р В Р’В Р вЂ™Р’ВР В Р’В Р вЂ™Р’В·Р В Р’В Р РЋР’ВР В Р’В Р вЂ™Р’ВµР В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚ВР В Р’В Р вЂ™Р’В»Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ!
             Barcodes = new List<string> { "1234567890123" },
             Description = "Updated Description"
         };
@@ -917,7 +943,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -931,14 +957,14 @@ public class ProductBatchImporterTests
             .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
 
         product.Should().NotBeNull();
-        product!.Sku.Should().Be("OLD-VENDOR-CODE", "Product.Sku не обновляется при импорте");
+        product!.Sku.Should().Be("OLD-VENDOR-CODE", "Product.Sku Р В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’Вµ Р В Р’В Р РЋРІР‚СћР В Р’В Р вЂ™Р’В±Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚СћР В Р’В Р В РІР‚В Р В Р’В Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В Р’В Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р’В Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В Р’В Р РЋРІР‚В Р В Р’В Р РЋРІР‚ВР В Р’В Р РЋР’ВР В Р’В Р РЋРІР‚вЂќР В Р’В Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’Вµ");
         product.Name.Should().Be("Updated Product Name");
         product.Description.Should().Be("Updated Description");
 
         ChannelProduct? channelProduct = product.ChannelProducts.FirstOrDefault();
         channelProduct.Should().NotBeNull();
-        channelProduct!.ExternalProductId.Should().Be("123456789", "nmID должен остаться неизменным");
-        channelProduct.ExternalSku.Should().Be("NEW-VENDOR-CODE", "ExternalSku должен обновиться на новый vendorCode");
+        channelProduct!.ExternalProductId.Should().Be("123456789", "nmID Р В Р’В Р СћРІР‚ВР В Р’В Р РЋРІР‚СћР В Р’В Р вЂ™Р’В»Р В Р’В Р вЂ™Р’В¶Р В Р’В Р вЂ™Р’ВµР В Р’В Р В РІР‚В¦ Р В Р’В Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’ВµР В Р’В Р РЋРІР‚ВР В Р’В Р вЂ™Р’В·Р В Р’В Р РЋР’ВР В Р’В Р вЂ™Р’ВµР В Р’В Р В РІР‚В¦Р В Р’В Р В РІР‚В¦Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р’В Р РЋР’В");
+        channelProduct.ExternalSku.Should().Be("NEW-VENDOR-CODE", "ExternalSku Р В Р’В Р СћРІР‚ВР В Р’В Р РЋРІР‚СћР В Р’В Р вЂ™Р’В»Р В Р’В Р вЂ™Р’В¶Р В Р’В Р вЂ™Р’ВµР В Р’В Р В РІР‚В¦ Р В Р’В Р РЋРІР‚СћР В Р’В Р вЂ™Р’В±Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚СћР В Р’В Р В РІР‚В Р В Р’В Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ°Р В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’В° Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚СћР В Р’В Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРІвЂћвЂ“Р В Р’В Р Р†РІР‚С›РІР‚вЂњ vendorCode");
 
         publishEndpointMock.Verify(
             p => p.Publish(
@@ -992,15 +1018,17 @@ public class ProductBatchImporterTests
             })
             .ReturnsAsync(new ProductPhotoImportResult { Imported = 1 });
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Product With Photos",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
-            Photos = new List<WildberriesPhotoUrls>
+            Photos = new List<ChannelProductPhoto>
             {
-                new WildberriesPhotoUrls { C246x328 = "https://example.test/t.webp", C516x688 = "https://example.test/l.webp" },
+                new ChannelProductPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 }, new ChannelProductPhoto { Url = "https://example.test/l.webp", SizeVariant = "large", Width = 516, Height = 688, DisplayOrder = 1 },
             },
         };
 
@@ -1009,7 +1037,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = true,
         };
 
@@ -1066,15 +1094,17 @@ public class ProductBatchImporterTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("storage unavailable"));
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Product With Broken Photos",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
-            Photos = new List<WildberriesPhotoUrls>
+            Photos = new List<ChannelProductPhoto>
             {
-                new WildberriesPhotoUrls { C246x328 = "https://example.test/t.webp" },
+                new ChannelProductPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 },
             },
         };
 
@@ -1083,7 +1113,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false,
         };
 
@@ -1146,14 +1176,14 @@ public class ProductBatchImporterTests
 
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, photoServiceMock);
 
-        WildberriesCardSnapshot card = BuildCardWithPhotos();
+        ChannelProductCard card = BuildCardWithPhotos();
 
         ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
         {
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = true
         };
 
@@ -1162,7 +1192,7 @@ public class ProductBatchImporterTests
 
         // Assert
         committedBeforePhotoImport.Should().BeTrue(
-            "фото загружаются после коммита транзакции");
+            "Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р’В Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚Сћ Р В Р’В Р вЂ™Р’В·Р В Р’В Р вЂ™Р’В°Р В Р’В Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В Р’В Р вЂ™Р’В¶Р В Р’В Р вЂ™Р’В°Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р’В Р РЋРІР‚вЂќР В Р’В Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р’В Р вЂ™Р’В»Р В Р’В Р вЂ™Р’Вµ Р В Р’В Р РЋРІР‚СњР В Р’В Р РЋРІР‚СћР В Р’В Р РЋР’ВР В Р’В Р РЋР’ВР В Р’В Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’В° Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В Р’В Р вЂ™Р’В°Р В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’В·Р В Р’В Р вЂ™Р’В°Р В Р’В Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљР’В Р В Р’В Р РЋРІР‚ВР В Р’В Р РЋРІР‚В");
 
         photoServiceMock.Verify(
             s => s.ImportPhotosAsync(
@@ -1200,11 +1230,13 @@ public class ProductBatchImporterTests
 
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, photoServiceMock);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description"
         };
@@ -1214,7 +1246,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = false
         };
 
@@ -1283,11 +1315,13 @@ public class ProductBatchImporterTests
             Mock.Of<ILogger<ProductBatchImporter>>(),
             TimeProvider.System);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
         };
 
@@ -1296,7 +1330,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = true,
         };
 
@@ -1375,15 +1409,17 @@ public class ProductBatchImporterTests
 
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, photoServiceMock);
 
-        WildberriesCardSnapshot card = new WildberriesCardSnapshot
+        ChannelProductCard card = new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
-            Photos = new List<WildberriesPhotoUrls>
+            Photos = new List<ChannelProductPhoto>
             {
-                new WildberriesPhotoUrls { C246x328 = "https://example.test/t.webp" },
+                new ChannelProductPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 },
             },
         };
 
@@ -1392,7 +1428,7 @@ public class ProductBatchImporterTests
             JobRunId = _syncJobId,
             ConnectionId = _connectionId,
             ChannelId = _channelId,
-            Cards = new List<WildberriesCardSnapshot> { card },
+            Cards = new List<ChannelProductCard> { card },
             IsLastBatch = true,
         };
 
@@ -1470,7 +1506,7 @@ public class ProductBatchImporterTests
         Channel channel = BuildChannel();
         await context.Channels.AddAsync(channel);
 
-        // НЕ встановлюємо TenantId явно - SaveChanges зробить це автоматично
+        // Р В Р’В Р РЋРЎС™Р В Р’В Р Р†Р вЂљРЎС› Р В Р’В Р В РІР‚В Р В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’В°Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚СћР В Р’В Р В РІР‚В Р В Р’В Р вЂ™Р’В»Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљРЎСљР В Р’В Р РЋР’ВР В Р’В Р РЋРІР‚Сћ TenantId Р В Р Р‹Р В Р РЏР В Р’В Р В РІР‚В Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚Сћ - SaveChanges Р В Р’В Р вЂ™Р’В·Р В Р Р‹Р В РІР‚С™Р В Р’В Р РЋРІР‚СћР В Р’В Р вЂ™Р’В±Р В Р’В Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В Р вЂ° Р В Р Р‹Р Р†Р вЂљР’В Р В Р’В Р вЂ™Р’Вµ Р В Р’В Р вЂ™Р’В°Р В Р’В Р В РІР‚В Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚СћР В Р’В Р РЋР’ВР В Р’В Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљР Р‹Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚Сћ
         // context.Entry(channel).Property("TenantId").CurrentValue = tenantId;
 
         await context.SaveChangesAsync();
@@ -1517,22 +1553,20 @@ public class ProductBatchImporterTests
         return photoServiceMock;
     }
 
-    private static WildberriesCardSnapshot BuildCardWithPhotos()
+    private static ChannelProductCard BuildCardWithPhotos()
     {
-        return new WildberriesCardSnapshot
+        return new ChannelProductCard
         {
-            NmId = 123456789,
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
             Name = "Test Product",
-            VendorCode = "SKU-001",
+            OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description",
-            Photos = new List<WildberriesPhotoUrls>
+            Photos = new List<ChannelProductPhoto>
             {
-                new WildberriesPhotoUrls
-                {
-                    C246x328 = "https://cdn.wb.ru/photo-thumb.webp",
-                    C516x688 = "https://cdn.wb.ru/photo-large.webp",
-                },
+                new ChannelProductPhoto { Url = "https://cdn.wb.ru/photo-thumb.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 }, new ChannelProductPhoto { Url = "https://cdn.wb.ru/photo-large.webp", SizeVariant = "large", Width = 516, Height = 688, DisplayOrder = 1 },
             },
         };
     }

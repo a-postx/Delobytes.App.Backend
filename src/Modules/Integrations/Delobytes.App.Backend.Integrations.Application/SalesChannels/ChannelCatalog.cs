@@ -1,10 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 
 namespace Delobytes.App.Backend.Integrations.Application.SalesChannels;
 
 /// <summary>
-/// The only place that knows which channel runs which orders job types.
+/// The channels this system integrates with, described by code, name, supported import kinds and
+/// scheduling policy. Concrete job types are owned by each channel module.
 /// </summary>
 public static class ChannelCatalog
 {
@@ -17,7 +18,7 @@ public static class ChannelCatalog
         new ChannelDescriptor(
             WildberriesCode,
             "Wildberries",
-            new[] { JobType.WbOrdersImport },
+            new HashSet<ChannelJobKind> { ChannelJobKind.ProductsImport, ChannelJobKind.OrdersImport },
             SerializesOrdersJobTypes: false),
 
         // Both Ozon schemas are always scheduled: they share one connection and one rate limiter, so
@@ -25,7 +26,7 @@ public static class ChannelCatalog
         new ChannelDescriptor(
             OzonCode,
             "Ozon",
-            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs },
+            new HashSet<ChannelJobKind> { ChannelJobKind.OrdersImport },
             SerializesOrdersJobTypes: true),
     };
 

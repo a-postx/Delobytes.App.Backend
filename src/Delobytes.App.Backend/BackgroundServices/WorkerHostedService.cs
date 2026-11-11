@@ -3,9 +3,9 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Services;
 using Microsoft.Extensions.Options;
 
@@ -24,17 +24,20 @@ public class WorkerHostedService : BackgroundService
     private readonly BackgroundJobsOptions _options;
     private readonly ILogger<WorkerHostedService> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IChannelJobTypeRegistry _jobTypes;
 
     public WorkerHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<BackgroundJobsOptions> options,
         ILogger<WorkerHostedService> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IChannelJobTypeRegistry jobTypes)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider;
+        _jobTypes = jobTypes;
     }
 
     /// <inheritdoc/>
@@ -130,17 +133,17 @@ public class WorkerHostedService : BackgroundService
     {
         using (correlationScope.BeginNew())
         {
-            switch (jobRun.JobType)
+            ChannelJobKind? kind = _jobTypes.ResolveKind(jobRun.JobType);
+
+            switch (kind)
             {
-                case JobType.ProductsImport:
+                case ChannelJobKind.ProductsImport:
                     await eventPublisher.PublishAsync(
                         new ProductsImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
                         cancellationToken);
                     break;
 
-                case JobType.WbOrdersImport:
-                case JobType.OzonOrdersImportFbo:
-                case JobType.OzonOrdersImportFbs:
+                case ChannelJobKind.OrdersImport:
                     // One event type for every orders import flavour: the consumer reads the job
                     // type (and therefore the channel fetchers) from the JobRun itself.
                     await eventPublisher.PublishAsync(

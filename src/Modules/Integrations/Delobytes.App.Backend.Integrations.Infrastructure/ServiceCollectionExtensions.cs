@@ -112,6 +112,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChannelCatalogService, ChannelCatalogService>();
         services.AddChannelModule<WildberriesChannelModule>();
         services.AddChannelModule<OzonChannelModule>();
+        services.AddSingleton<IChannelJobTypeRegistry, ChannelJobTypeRegistry>();
+        services.AddScoped<IProductsImportTuningResolver, ProductsImportTuningResolver>();
 
         services.AddScoped<IOrdersFetcherResolver, OrdersFetcherResolver>();
 
@@ -172,10 +174,10 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IApiKeyValidatorFactory, ApiKeyValidatorFactory>();
         services.AddTransient<IChannelApiClientFactory, ChannelApiClientFactory>();
 
-        // Products sync is still Wildberries-only. Orders are NOT registered this way: an orders
-        // run must reach the client of its own connection's channel, and it gets one through
-        // IChannelApiClientFactory (see OrdersImportOrchestrator).
-        services.AddScoped<IProductsSource>(sp => sp.GetRequiredService<WildberriesApiClient>());
+        // Products sync is registered per channel by AddChannelModule, next to that channel's
+        // client, so no module has to name a concrete client here. Orders are NOT registered this
+        // way: an orders run must reach the client of its own connection's channel, and it gets one
+        // through IChannelApiClientFactory (see OrdersImportOrchestrator).
 
         return services;
     }

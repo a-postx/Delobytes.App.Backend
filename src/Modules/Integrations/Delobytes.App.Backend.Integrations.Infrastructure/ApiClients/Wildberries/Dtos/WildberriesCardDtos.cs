@@ -105,7 +105,7 @@ internal sealed class WildberriesCursorResponse
 
 /// <summary>
 /// Product card data transfer object from Wildberries API.
-/// Internal representation that will be mapped to WildberriesCardSnapshot.
+/// Internal representation that will be mapped to ChannelProductCard.
 /// </summary>
 internal sealed class WildberriesCardDto
 {

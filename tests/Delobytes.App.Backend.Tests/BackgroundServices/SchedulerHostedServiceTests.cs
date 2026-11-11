@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
+using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -221,7 +222,7 @@ public partial class SchedulerHostedServiceTests
     [Fact]
     public async Task Tick_UnknownChannelConnection_OrdersScheduleProducesNoJobRunAndDoesNotAdvance()
     {
-        // A channel with no entry in OrdersJobTypeMap must never get an orders job, and the
+        // A channel that serves no orders job type must never get an orders job, and the
         // schedule is left due (not advanced) so a stale/misconfigured mapping stays visible.
         _connectionRepositoryMock
             .Setup(r => r.FindByIdWithTemplateAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -570,7 +571,8 @@ public partial class SchedulerHostedServiceTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new BackgroundJobsOptions { SchedulerTickIntervalSeconds = tickIntervalSeconds }),
             NullLogger<SchedulerHostedService>.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            new ChannelJobTypeRegistry(new ChannelModule[] { new WildberriesChannelModule(), new OzonChannelModule() }));
     }
 
     /// <summary>

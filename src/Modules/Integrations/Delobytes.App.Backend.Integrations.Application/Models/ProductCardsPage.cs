@@ -11,7 +11,7 @@ public class ProductCardsPage
     /// <summary>
     /// Gets or sets the product cards retrieved for this page.
     /// </summary>
-    public List<WildberriesCardSnapshot> Cards { get; set; } = new();
+    public List<ChannelProductCard> Cards { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the cursor for the next page. Null if this is the last page.

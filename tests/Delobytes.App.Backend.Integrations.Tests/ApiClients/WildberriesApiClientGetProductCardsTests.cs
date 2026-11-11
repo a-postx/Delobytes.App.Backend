@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -158,10 +158,10 @@ public class WildberriesApiClientGetProductCardsTests
         result.Data.NextCursor!.UpdatedAt.Should().Be("2024-01-15T12:30:00Z");
         result.Data.NextCursor.ProductId.Should().Be(123456789);
 
-        WildberriesCardSnapshot card = result.Data.Cards.First();
-        card.NmId.Should().Be(123456789);
+        ChannelProductCard card = result.Data.Cards.First();
+        card.ExternalProductId.Should().Be("123456789");
         card.Name.Should().Be("Тестовый товар");
-        card.VendorCode.Should().Be("VENDOR-001");
+        card.OfferId.Should().Be("VENDOR-001");
         card.Description.Should().Be("Описание товара");
         card.Barcodes.Should().HaveCount(2);
         card.Barcodes.Should().Contain("1234567890123");
@@ -196,7 +196,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
-        WildberriesCardSnapshot card = result.Data!.Cards.First();
+        ChannelProductCard card = result.Data!.Cards.First();
         card.LengthCm.Should().BeNull();
         card.WidthCm.Should().BeNull();
         card.HeightCm.Should().BeNull();
@@ -443,7 +443,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.Cards.Should().HaveCount(1);
-        WildberriesCardSnapshot card = result.Data.Cards.First();
+        ChannelProductCard card = result.Data.Cards.First();
         card.Barcodes.Should().BeEmpty();
     }
 
@@ -534,7 +534,7 @@ public class WildberriesApiClientGetProductCardsTests
         ApiResponse<ProductCardsData> result = await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        WildberriesCardSnapshot card = result.Data!.Cards.First();
+        ChannelProductCard card = result.Data!.Cards.First();
         card.ChannelSpecificData.Should().NotBeNullOrEmpty();
         card.ChannelSpecificData.Should().Contain("TestBrand");
         card.ChannelSpecificData.Should().Contain("dimensions");
@@ -800,9 +800,9 @@ public class WildberriesApiClientGetProductCardsTests
         result.Data!.Cards.Should().HaveCount(1);
         result.Data.TotalCount.Should().Be(100);
 
-        WildberriesCardSnapshot card = result.Data.Cards.First();
-        card.NmId.Should().Be(622223778);
-        card.VendorCode.Should().Be("свч-55");
+        ChannelProductCard card = result.Data.Cards.First();
+        card.ExternalProductId.Should().Be("622223778");
+        card.OfferId.Should().Be("свч-55");
         card.Barcodes.Should().ContainSingle().Which.Should().Be("2047352731808");
 
         using JsonDocument channelData = JsonDocument.Parse(card.ChannelSpecificData!);
@@ -916,7 +916,7 @@ public class WildberriesApiClientGetProductCardsTests
 
         result.IsSuccess.Should().BeTrue();
         result.Data!.Cards.Should().HaveCount(1);
-        result.Data.Cards.First().VendorCode.Should().Be("RETRY-OK");
+        result.Data.Cards.First().OfferId.Should().Be("RETRY-OK");
 
         mockHttp.GetMatchCount(cardsRequest).Should().Be(2,
             "a malformed body should be retried once");
