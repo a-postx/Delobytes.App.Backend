@@ -14,6 +14,7 @@ using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries.Dtos;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,30 +22,16 @@ using Microsoft.Extensions.Options;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
 
 /// <summary>
-/// Wildberries marketplace API client implementation.
+/// Wildberries marketplace API client implementation. Owns transport concerns only: endpoint
+/// resolution, authentication, pacing, retries and response status handling. Turning a response
+/// into snapshots belongs to <see cref="WildberriesOrderMapper"/> and
+/// <see cref="WildberriesCardMapper"/>.
 /// </summary>
 public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder
 {
     private const int DeserializationMaxAttempts = 3;
-    private const string WildberriesCurrency = "RUB";
-
-    /// <summary>
-    /// Longest <c>gNumber</c> or <c>srid</c>/sticker identity this mapper accepts.
-    /// </summary>
-    private const int MaxIdentityLength = 100;
     private const int ResponseBodyLogLimit = 500;
 
-    /// <summary>
-    /// How many times a refusal that points at an already-due slot is re-asked before it is
-    /// treated as final. A refusal of that shape is a clock-skew artefact between the limiter's
-    /// own read and this process's later read, not a real absence of a slot, so the normal case
-    /// succeeds on the first re-ask; the bound only stops a broken limiter from spinning.
-    /// </summary>
-    private const int MaxStaleSlotRetries = 5;
-
-    private const string StickerIdentityPrefix = "wb-stk:";
-    private const string WildberriesSellerWarehouseSchema = "wb_fbs";
-    private const string WildberriesOwnWarehouseSchema = "wb_fbw";
     private static readonly TimeSpan DefaultDeserializationRetryDelay = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
@@ -60,6 +47,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private readonly ILogger<WildberriesApiClient> _logger;
     private readonly WildberriesImportOptions _options;
     private readonly TimeProvider _timeProvider;
+    private readonly WildberriesRequestPacer _pacer;
 
     private Guid? _templateId;
 
@@ -101,6 +89,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider;
+        _pacer = new WildberriesRequestPacer(rateLimiter, timeProvider, logger);
     }
 
     /// <summary>
@@ -313,8 +302,14 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         {
             try
             {
+                // The products import has no continuation of its own: it walks a cursor page by page
+                // inside a single run, so a refusal it cannot wait out ends the run. Waiting here is
+                // what keeps a multi-page import alive under the same adaptive budget the orders
+                // path respects.
+                TimeSpan tolerance = TimeSpan.FromSeconds(Math.Max(0, _options.MaxInProcessWaitSeconds));
+
                 RateLimitAcquireResult? refusedSlot =
-                    await AcquireSlotOrWaitAsync(scope, ct);
+                    await _pacer.WaitForSlotAsync(scope, tolerance, ct);
 
                 if (refusedSlot is not null)
                 {
@@ -429,33 +424,16 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                     return apiResponse;
                 }
 
-                List<WildberriesCardSnapshot> snapshots = cardsResponse.Cards
-                    .Select(MapToSnapshot)
-                    .ToList();
-
-                ProductCardsCursor? nextCursor = null;
-                if (cardsResponse.Cursor?.UpdatedAt != null && cardsResponse.Cursor?.NmId != null)
-                {
-                    nextCursor = new ProductCardsCursor
-                    {
-                        UpdatedAt = cardsResponse.Cursor.UpdatedAt,
-                        ProductId = cardsResponse.Cursor.NmId.Value
-                    };
-                }
+                ProductCardsData data = WildberriesCardMapper.Map(cardsResponse, _logger);
 
                 apiResponse.IsSuccess = true;
-                apiResponse.Data = new ProductCardsData
-                {
-                    Cards = snapshots,
-                    NextCursor = nextCursor,
-                    TotalCount = cardsResponse.Cursor?.Total ?? snapshots.Count
-                };
+                apiResponse.Data = data;
 
                 _logger.LogInformation(
                     "Retrieved {Count} product cards from Wildberries. Total: {Total}, HasNextPage: {HasNext}",
-                    snapshots.Count,
-                    apiResponse.Data.TotalCount,
-                    nextCursor != null);
+                    data.Cards.Count,
+                    data.TotalCount,
+                    data.NextCursor != null);
 
                 return apiResponse;
             }
@@ -625,142 +603,33 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         // fails to deserialize must not cost the limiter its only feedback on the real allowance.
         await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
 
-        List<WildberriesOrderDto>? orders =
+        List<WildberriesOrderDto>? rows =
             await response.Content.ReadFromJsonAsync<List<WildberriesOrderDto>>(cancellationToken);
 
-        orders ??= new List<WildberriesOrderDto>();
-
-        List<ChannelOrderSnapshot> snapshots = new List<ChannelOrderSnapshot>();
-        Dictionary<string, List<WildberriesOrderDto>> rowsByOrderKey = new Dictionary<string, List<WildberriesOrderDto>>(StringComparer.Ordinal);
-
-        List<string> orderKeysInArrivalOrder = new List<string>();
-
-        int rowsWithoutIdentity = 0;
-
-        DateTimeOffset? coveredUntil = null;
-        DateTimeOffset? previousSelectionInstant = null;
-
-        bool coversContiguousPrefix = true;
-
-        foreach (WildberriesOrderDto order in orders)
-        {
-            DateTimeOffset? selectionInstant = GetSelectionInstant(order, request.Selection);
-
-            if (selectionInstant != null)
-            {
-                if (previousSelectionInstant != null && selectionInstant.Value < previousSelectionInstant.Value)
-                {
-                    coversContiguousPrefix = false;
-                }
-
-                previousSelectionInstant = selectionInstant;
-
-                if (coveredUntil == null || selectionInstant.Value > coveredUntil.Value)
-                {
-                    coveredUntil = selectionInstant.Value;
-                }
-            }
-
-            if (!IsWithinRequestedWindow(order, request.Selection, dateToMsk))
-            {
-                continue;
-            }
-
-            string? lineKey = GetLineKey(order);
-
-            if (lineKey == null)
-            {
-                // Never fabricate a key here: any composite over nmId, techSize, gNumber and date
-                // is not proven unique per order (one cart may hold two units of the same article
-                // and size, and Wildberries reports date to the second), so resolving the
-                // collision would merge two real orders into one and report the loss as a
-                // successful import. The row is dropped and counted instead.
-                rowsWithoutIdentity++;
-
-                _logger.LogError(
-                    "Wildberries order row without usable identity skipped: NmId={NmId}, GNumber={GNumber}, Date={Date}, Sticker={Sticker}.",
-                    order.NmId,
-                    order.GNumber,
-                    order.Date,
-                    order.Sticker);
-
-                continue;
-            }
-
-            EnsureIdentityLength(lineKey, nameof(lineKey));
-
-            string? orderKey = GetOrderKey(order);
-
-            if (orderKey == null)
-            {
-                // Distinct from the missing line identity above: this row does have a line identity,
-                // it lacks the order identity that would place it in a cart. Conflating the two is
-                // what let a cart be split into one order per unit.
-                rowsWithoutIdentity++;
-
-                _logger.LogError(
-                    "Wildberries order row without a gNumber skipped: NmId={NmId}, Srid={Srid}, Date={Date}, Sticker={Sticker}.",
-                    order.NmId,
-                    order.Srid,
-                    order.Date,
-                    order.Sticker);
-
-                continue;
-            }
-
-            EnsureIdentityLength(orderKey, nameof(orderKey));
-
-            if (!rowsByOrderKey.TryGetValue(orderKey, out List<WildberriesOrderDto>? rows))
-            {
-                rows = new List<WildberriesOrderDto>();
-                rowsByOrderKey.Add(orderKey, rows);
-                orderKeysInArrivalOrder.Add(orderKey);
-            }
-            else if (ContainsLineKey(rows, lineKey))
-            {
-                // Unlike a repeated order key, a repeated line key inside one order cannot describe
-                // the response: one srid is one ordered unit, so two rows claiming it are two
-                // versions of that unit rather than two units. Keeping either would silently decide
-                // which reported row the import believes.
-                throw new InvalidOperationException(
-                    $"Wildberries returned line key '{lineKey}' more than once within order '{orderKey}' in one response.");
-            }
-
-            rows.Add(order);
-        }
-
-        foreach (string orderKey in orderKeysInArrivalOrder)
-        {
-            snapshots.Add(MapToOrderSnapshot(orderKey, rowsByOrderKey[orderKey]));
-        }
+        rows ??= new List<WildberriesOrderDto>();
 
         int maxRows = _options.MaxOrdersPerResponse > 0
             ? _options.MaxOrdersPerResponse
             : WildberriesImportOptions.DefaultMaxOrdersPerResponse;
 
-        bool hasMore = orders.Count >= maxRows;
+        WildberriesOrderMappingResult mappingResult =
+            WildberriesOrderMapper.Map(rows, request, maxRows, _logger);
 
         _logger.LogInformation(
             "Retrieved {Count} orders from Wildberries (flag={Flag}, dateFrom={DateFrom}, hasMore={HasMore}, coveredUntil={CoveredUntil}, rowsWithoutIdentity={RowsWithoutIdentity}).",
-            snapshots.Count,
+            mappingResult.Orders.Count,
             (int)request.Selection,
             dateFromMsk,
-            hasMore,
-            coveredUntil,
-            rowsWithoutIdentity);
+            mappingResult.HasMore,
+            mappingResult.CoveredUntil,
+            mappingResult.RowsWithoutIdentity);
 
         return new OrdersPage
         {
-            Orders = snapshots,
-            HasMore = hasMore,
-
-            // A response under the cap came back whole, so it covers the window end that was asked
-            // for. A capped one covers only as far as its last returned selection instant, and only
-            // when its rows arrived ordered by that instant.
-            CoveredUntil = !hasMore
-                ? request.DateTo
-                : coversContiguousPrefix ? coveredUntil : null,
-            RowsWithoutIdentity = rowsWithoutIdentity
+            Orders = mappingResult.Orders,
+            HasMore = mappingResult.HasMore,
+            CoveredUntil = mappingResult.CoveredUntil,
+            RowsWithoutIdentity = mappingResult.RowsWithoutIdentity
         };
     }
 
@@ -775,65 +644,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             RetryAt = retryAt,
             RowsWithoutIdentity = 0
         };
-    }
-
-    /// <summary>
-    /// Reserves a pacing slot for one request, waiting in-process while the limiter's next slot is
-    /// within <see cref="WildberriesImportOptions.MaxInProcessWaitSeconds"/>. Returns <c>null</c>
-    /// once a slot is held, or the refusal when waiting that long is not acceptable.
-    /// </summary>
-    /// <remarks>
-    /// The products import has no continuation of its own: it walks a cursor page by page inside a
-    /// single run, so a refusal it cannot wait out ends the run. Waiting here is what keeps a
-    /// multi-page import alive under the same adaptive budget the orders path respects.
-    /// </remarks>
-    private async Task<RateLimitAcquireResult?> AcquireSlotOrWaitAsync(
-        RateLimitScope scope,
-        CancellationToken cancellationToken)
-    {
-        TimeSpan tolerance = TimeSpan.FromSeconds(Math.Max(0, _options.MaxInProcessWaitSeconds));
-        int staleRefusals = 0;
-
-        RateLimitAcquireResult result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
-
-        while (!result.Acquired)
-        {
-            TimeSpan wait = result.NextRequestAllowedAt - _timeProvider.GetUtcNow();
-
-            if (wait <= TimeSpan.Zero)
-            {
-                // A refusal whose slot is already due is not a refusal: the limiter read the clock
-                // before the deadline and this process read it after, which one database round-trip
-                // is enough to cause. Re-asking is the only correct move here; reporting a refusal
-                // would end the whole products run on a slot that is available right now.
-                if (staleRefusals >= MaxStaleSlotRetries)
-                {
-                    return result;
-                }
-
-                staleRefusals++;
-                result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
-                continue;
-            }
-
-            staleRefusals = 0;
-
-            if (wait > tolerance)
-            {
-                return result;
-            }
-
-            _logger.LogDebug(
-                "Wildberries {Method} request waits {WaitSeconds:F1}s in-process for the next rate-limiter slot.",
-                scope.Method,
-                wait.TotalSeconds);
-
-            await Task.Delay(wait, _timeProvider, cancellationToken);
-
-            result = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
-        }
-
-        return null;
     }
 
     private ApiResponse<ProductCardsData> CreateDeferredCardsResponse(DateTimeOffset nextAllowedAt)
@@ -897,62 +707,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         return CreateThrottledPage(retryAt);
     }
 
-    /// <summary>
-    /// Resolves the identity of one ordered unit. <c>srid</c> is the documented per-order id and is
-    /// returned unmodified; <c>sticker</c> is the only other field the payload guarantees one of
-    /// per ordered unit, and is returned with a prefix so it stays recognisable as a derived identity.
-    /// </summary>
-    /// <remarks>
-    /// The result is a line identity, not an order identity: it is unique within the owning order,
-    /// and two carts may carry the same <c>srid</c>.
-    /// </remarks>
-    private static string? GetLineKey(WildberriesOrderDto dto)
-    {
-        if (!string.IsNullOrWhiteSpace(dto.Srid))
-        {
-            return dto.Srid;
-        }
-
-        if (!string.IsNullOrWhiteSpace(dto.Sticker))
-        {
-            return StickerIdentityPrefix + dto.Sticker;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves the identity of one cart. <c>gNumber</c> is the only field that groups the units of
-    /// one cart and the only one that is immutable, so it is the sole source of the order key; a row
-    /// that does not report one has no placeable order identity and yields null.
-    /// </summary>
-    private static string? GetOrderKey(WildberriesOrderDto dto)
-    {
-        return string.IsNullOrWhiteSpace(dto.GNumber) ? null : dto.GNumber;
-    }
-
-    private static void EnsureIdentityLength(string identity, string name)
-    {
-        if (identity.Length > MaxIdentityLength)
-        {
-            throw new InvalidOperationException(
-                $"Wildberries computed {name} '{identity}' exceeds the maximum persistable length of {MaxIdentityLength} characters.");
-        }
-    }
-
-    private static bool ContainsLineKey(List<WildberriesOrderDto> rows, string lineKey)
-    {
-        foreach (WildberriesOrderDto row in rows)
-        {
-            if (string.Equals(GetLineKey(row), lineKey, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private static string TruncateForLog(string responseBody)
     {
         if (string.IsNullOrEmpty(responseBody) || responseBody.Length <= ResponseBodyLogLimit)
@@ -961,198 +715,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         }
 
         return responseBody.Substring(0, ResponseBodyLogLimit);
-    }
-
-    private static DateTimeOffset? GetSelectionInstant(WildberriesOrderDto dto, OrdersSelectionMode selection)
-    {
-        return selection == OrdersSelectionMode.LastChanged
-            ? ParseMoscowTimestamp(dto.LastChangeDate) ?? ParseMoscowTimestamp(dto.Date)
-            : ParseMoscowTimestamp(dto.Date);
-    }
-
-    private static bool IsWithinRequestedWindow(
-        WildberriesOrderDto dto, OrdersSelectionMode selection, DateTimeOffset dateToMsk)
-    {
-        DateTimeOffset? reference = GetSelectionInstant(dto, selection);
-
-        return reference is null || reference.Value <= dateToMsk;
-    }
-
-    /// <summary>
-    /// Wildberries reports timestamps as local (MSK) time without an offset designator; parsing
-    /// them as UTC or local-to-this-process would silently shift them by an arbitrary amount.
-    /// </summary>
-    private static DateTimeOffset? ParseMoscowTimestamp(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        if (!DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime local))
-        {
-            return null;
-        }
-
-        return new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), MoscowOffset)
-            .ToUniversalTime();
-    }
-
-    private ChannelOrderSnapshot MapToOrderSnapshot(string orderKey, List<WildberriesOrderDto> rows)
-    {
-        WildberriesOrderDto first = rows[0];
-
-        List<ChannelOrderLineSnapshot> lines = new List<ChannelOrderLineSnapshot>(rows.Count);
-        List<DateTimeOffset> rowOrderDates = new List<DateTimeOffset>(rows.Count);
-
-        foreach (WildberriesOrderDto row in rows)
-        {
-            string lineKey = GetLineKey(row)
-                ?? throw new InvalidOperationException(
-                    $"Wildberries order '{orderKey}' contains a row without a usable line identity.");
-
-            lines.Add(MapToOrderLine(row, lineKey));
-
-            DateTimeOffset? rowOrderDate = ParseMoscowTimestamp(row.Date);
-
-            if (rowOrderDate != null)
-            {
-                rowOrderDates.Add(rowOrderDate.Value);
-            }
-        }
-
-        if (rowOrderDates.Count == 0)
-        {
-            // Substituting the wall clock here would make every refetch of an unchanged cart differ,
-            // and the difference would surface upstream as an update on every run.
-            throw new InvalidOperationException(
-                $"Wildberries order '{orderKey}' reports no row with a parseable date; " +
-                "the cart carries no placement instant and one cannot be invented.");
-        }
-
-        // Every cart-level field below is reduced from the lines and from the rows' dates by this
-        // one helper; nothing else in the codebase may compute them.
-        ChannelOrderHeaderFacts header = ChannelOrderHeaderFacts.Reduce(lines, rowOrderDates);
-
-        return new ChannelOrderSnapshot
-        {
-            ExternalOrderId = orderKey,
-
-            // gNumber is the buyer-facing order number, so it is both the identity and the number;
-            // reporting it twice is what the contract asks for.
-            ExternalOrderNumber = orderKey,
-            OrderDate = header.OrderDate,
-            StatusChangedAt = header.StatusChangedAt,
-            ExternalStatus = header.ExternalStatus,
-
-            // Reported per unit with no cart-level counterpart, so the first row stands in for the
-            // cart instead of a merge rule the payload does not define.
-            ExternalSubstatus = first.OrderType,
-            CancelReason = header.CancelReason,
-            Currency = WildberriesCurrency,
-            DeliveryRegion = first.RegionName,
-            WarehouseName = first.WarehouseName,
-            ChannelReportedTotal = header.ChannelReportedTotal,
-            Lines = lines
-        };
-    }
-
-    private static ChannelOrderLineSnapshot MapToOrderLine(WildberriesOrderDto dto, string lineKey)
-    {
-        return new ChannelOrderLineSnapshot
-        {
-            LineKey = lineKey,
-            ExternalLineId = dto.Srid,
-            ExternalProductId = dto.NmId.ToString(CultureInfo.InvariantCulture),
-            OfferId = dto.SupplierArticle,
-            ExternalSizeId = dto.TechSize,
-
-            // supplier/orders reports only `subject`, the product's category, never its card title.
-            // Writing the category here would publish a wrong fact that no consumer can tell apart
-            // from a real name; the name is resolved on read from ChannelProductRef instead.
-            ProductName = null,
-            Quantity = 1,
-            UnitPrice = dto.PriceWithDisc,
-            BuyerUnitPrice = dto.FinishedPrice,
-            UnitPriceBeforeDiscount = dto.TotalPrice,
-            Currency = WildberriesCurrency,
-            IsCancelled = dto.IsCancel,
-            StatusChangedAt = ParseMoscowTimestamp(dto.LastChangeDate),
-            ChannelReportedTotal = dto.TotalPrice,
-            FulfillmentSchema = ResolveFulfillmentSchema(dto.WarehouseType)
-        };
-    }
-
-    private static string? ResolveFulfillmentSchema(string? warehouseType)
-    {
-        if (string.IsNullOrWhiteSpace(warehouseType))
-        {
-            return null;
-        }
-
-        return warehouseType.Contains("продавца", StringComparison.OrdinalIgnoreCase)
-            ? WildberriesSellerWarehouseSchema
-            : WildberriesOwnWarehouseSchema;
-    }
-
-    private WildberriesCardSnapshot MapToSnapshot(WildberriesCardDto dto)
-    {
-        List<string> barcodes = new List<string>();
-
-        if (dto.Sizes != null)
-        {
-            foreach (WildberriesSize size in dto.Sizes)
-            {
-                if (size.Skus != null)
-                {
-                    barcodes.AddRange(size.Skus);
-                }
-            }
-        }
-
-        string? channelSpecificData = null;
-        try
-        {
-            Dictionary<string, object?> additionalData = new Dictionary<string, object?>
-            {
-                ["imtId"] = dto.ImtId,
-                ["nmUuid"] = dto.NmUuid,
-                ["subjectId"] = dto.SubjectId,
-                ["subjectName"] = dto.SubjectName,
-                ["brand"] = dto.Brand,
-                ["dimensions"] = dto.Dimensions,
-                ["characteristics"] = dto.Characteristics,
-                ["sizes"] = dto.Sizes,
-                ["tags"] = dto.Tags,
-                ["photos"] = dto.Photos,
-                ["video"] = dto.Video,
-                ["createdAt"] = dto.CreatedAt,
-                ["updatedAt"] = dto.UpdatedAt
-            };
-
-            channelSpecificData = JsonSerializer.Serialize(additionalData);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to serialize channel-specific data for nmID {NmId}.", dto.NmId);
-        }
-
-        return new WildberriesCardSnapshot
-        {
-            NmId = dto.NmId,
-            Name = dto.Title ?? string.Empty,
-            VendorCode = dto.VendorCode ?? string.Empty,
-            Barcodes = barcodes,
-            Description = dto.Description,
-            LengthCm = dto.Dimensions?.Length,
-            WidthCm = dto.Dimensions?.Width,
-            HeightCm = dto.Dimensions?.Height,
-            WeightKg = dto.Dimensions?.WeightBrutto,
-            ChannelSpecificData = channelSpecificData,
-            Photos = dto.Photos?
-                .Select(p => new WildberriesPhotoUrls { C246x328 = p.C246x328, C516x688 = p.C516x688 })
-                .ToList() ?? new List<WildberriesPhotoUrls>()
-        };
     }
 
     private sealed class WildberriesSellerInfoResponse
@@ -1165,60 +727,5 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         [JsonPropertyName("trademark")]
         public string? Trademark { get; init; }
-    }
-
-    /// <summary>One row of the <c>/api/v1/supplier/orders</c> response: one ordered unit.</summary>
-    private sealed class WildberriesOrderDto
-    {
-        [JsonPropertyName("date")]
-        public string? Date { get; init; }
-
-        [JsonPropertyName("lastChangeDate")]
-        public string? LastChangeDate { get; init; }
-
-        [JsonPropertyName("warehouseName")]
-        public string? WarehouseName { get; init; }
-
-        [JsonPropertyName("warehouseType")]
-        public string? WarehouseType { get; init; }
-
-        [JsonPropertyName("regionName")]
-        public string? RegionName { get; init; }
-
-        [JsonPropertyName("supplierArticle")]
-        public string? SupplierArticle { get; init; }
-
-        [JsonPropertyName("nmId")]
-        public long NmId { get; init; }
-
-        [JsonPropertyName("subject")]
-        public string? Subject { get; init; }
-
-        [JsonPropertyName("techSize")]
-        public string? TechSize { get; init; }
-
-        [JsonPropertyName("totalPrice")]
-        public decimal? TotalPrice { get; init; }
-
-        [JsonPropertyName("priceWithDisc")]
-        public decimal? PriceWithDisc { get; init; }
-
-        [JsonPropertyName("finishedPrice")]
-        public decimal? FinishedPrice { get; init; }
-
-        [JsonPropertyName("isCancel")]
-        public bool IsCancel { get; init; }
-
-        [JsonPropertyName("orderType")]
-        public string? OrderType { get; init; }
-
-        [JsonPropertyName("gNumber")]
-        public string? GNumber { get; init; }
-
-        [JsonPropertyName("srid")]
-        public string? Srid { get; init; }
-
-        [JsonPropertyName("sticker")]
-        public string? Sticker { get; init; }
     }
 }

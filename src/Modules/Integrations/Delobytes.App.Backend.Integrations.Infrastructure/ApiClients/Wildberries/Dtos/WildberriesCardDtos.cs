@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries.Dtos;
 
 /// <summary>
 /// Request model for Wildberries POST /content/v2/get/cards/list endpoint.
