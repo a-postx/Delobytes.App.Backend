@@ -203,8 +203,8 @@ public class JobCheckpointTenantIsolationTests
         IEntityType checkpoint = ctx.Model.FindEntityType(typeof(JobCheckpoint))!;
         IEntityType productsImport = ctx.Model.FindEntityType(typeof(ProductsImportJob))!;
 
-        checkpoint.GetQueryFilter().Should().NotBeNull();
-        productsImport.GetQueryFilter().Should().NotBeNull();
+        checkpoint.GetDeclaredQueryFilters().Should().NotBeEmpty();
+        productsImport.GetDeclaredQueryFilters().Should().NotBeEmpty();
         checkpoint.FindProperty("TenantId").Should().NotBeNull();
         productsImport.FindProperty("TenantId").Should().NotBeNull();
     }

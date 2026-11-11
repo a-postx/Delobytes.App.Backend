@@ -1,7 +1,7 @@
-# Многоэтапная сборка для .NET 8 приложения
+# Многоэтапная сборка для .NET 10 приложения
 
 # Этап 1: Сборка
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY ["Directory.Build.props", "./"]
@@ -43,7 +43,7 @@ RUN dotnet build "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Rel
 RUN dotnet publish "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Release --no-build -o /app/publish
 
 # Этап 2: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # Копируем опубликованное приложение из этапа сборки

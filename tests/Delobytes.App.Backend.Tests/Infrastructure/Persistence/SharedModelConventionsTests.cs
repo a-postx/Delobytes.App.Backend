@@ -74,7 +74,7 @@ public class SharedModelConventionsTests
 
         // Assert
         note.FindProperty("TenantId").Should().BeNull();
-        note.GetQueryFilter().Should().BeNull();
+        note.GetDeclaredQueryFilters().Should().BeEmpty();
     }
 
     [Fact]
@@ -112,8 +112,8 @@ public class SharedModelConventionsTests
         IModel model = BuildModel();
 
         // Assert
-        model.FindEntityType(typeof(Widget))!.GetQueryFilter().Should().NotBeNull();
-        model.FindEntityType(typeof(Badge))!.GetQueryFilter().Should().NotBeNull();
-        model.FindEntityType(typeof(VersionedWidget))!.GetQueryFilter().Should().NotBeNull();
+        model.FindEntityType(typeof(Widget))!.GetDeclaredQueryFilters().Should().NotBeEmpty();
+        model.FindEntityType(typeof(Badge))!.GetDeclaredQueryFilters().Should().NotBeEmpty();
+        model.FindEntityType(typeof(VersionedWidget))!.GetDeclaredQueryFilters().Should().NotBeEmpty();
     }
 }
