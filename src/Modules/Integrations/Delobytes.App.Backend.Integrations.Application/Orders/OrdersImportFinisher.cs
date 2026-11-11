@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Microsoft.Extensions.Logging;
 
@@ -7,8 +8,8 @@ namespace Delobytes.App.Backend.Integrations.Application.Orders;
 /// <summary>
 /// Finalises orders import runs: hands each delivery to <see cref="OrdersBatchAggregator"/> and
 /// publishes the completion event when the aggregator reports the run finalised. Idempotent through
-/// the batch's deterministic BatchId and JobRun's xmin concurrency token, both enforced by the
-/// aggregator.
+/// the batch's deterministic BatchId and JobRun's xmin concurrency token, both enforced by
+/// <see cref="ImportRunCompletion"/>.
 /// </summary>
 public class OrdersImportFinisher
 {
@@ -52,7 +53,7 @@ public class OrdersImportFinisher
             message.JobRunId,
             batchId);
 
-        OrdersImportCompletion? completion = await _aggregator.RecordBatchResultAsync(
+        ImportRunResult? completion = await _aggregator.RecordBatchResultAsync(
             message.JobRunId, message, batchId, cancellationToken);
 
         await PublishIfOwedAsync(completion, cancellationToken);
@@ -73,13 +74,13 @@ public class OrdersImportFinisher
             message.JobRunId,
             message.TotalBatches);
 
-        OrdersImportCompletion? completion = await _aggregator.RecordExpectedBatchCountAsync(
+        ImportRunResult? completion = await _aggregator.RecordExpectedBatchCountAsync(
             message.JobRunId, message.TotalBatches, cancellationToken);
 
         await PublishIfOwedAsync(completion, cancellationToken);
     }
 
-    private async Task PublishIfOwedAsync(OrdersImportCompletion? completion, CancellationToken cancellationToken)
+    private async Task PublishIfOwedAsync(ImportRunResult? completion, CancellationToken cancellationToken)
     {
         if (completion == null || !completion.ShouldPublishCompletedEvent)
         {

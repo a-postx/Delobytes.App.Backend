@@ -56,12 +56,16 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
             TimeProvider.System,
             NullLogger<OrdersImportWatermarkWriter>.Instance);
 
-        OrdersBatchAggregator aggregator = new OrdersBatchAggregator(
+        ImportRunCompletion completion = new ImportRunCompletion(
             _jobRunRepo.Object,
-            _jobCheckpointRepo.Object,
             finalizer,
-            watermarkWriter,
             TimeProvider.System,
+            NullLogger<ImportRunCompletion>.Instance);
+
+        OrdersBatchAggregator aggregator = new OrdersBatchAggregator(
+            _jobCheckpointRepo.Object,
+            completion,
+            watermarkWriter,
             _aggregatorLogger.Object);
 
         return new OrdersImportFinisher(

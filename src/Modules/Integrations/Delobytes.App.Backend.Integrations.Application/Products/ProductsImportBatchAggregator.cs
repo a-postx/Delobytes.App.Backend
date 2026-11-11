@@ -8,19 +8,16 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Integrations.Application.Products;
 
 /// <summary>
-/// Aggregates batch results of a products import run and finalises the JobRun once every expected
-/// batch has been recorded (see <see cref="ProductsImportJob.TotalImportBatches"/>) — not simply
-/// when the batch flagged IsLastBatch happens to arrive, since a small trailing batch can finish
-/// before larger sibling batches still in flight. Idempotent: duplicate deliveries are skipped via
-/// MessageId deduplication, and concurrent finalisation attempts are serialised by the shared
-/// <see cref="BatchImportFinalizer"/> through JobRun's xmin.
+/// Products-import adapter over <see cref="ImportRunCompletion"/>: it knows only what is specific to
+/// this path — that the terminal batch is the delivery carrying the total batch count, that a
+/// successful run advances the sync checkpoint and the connection's last sync time, and that it is
+/// the only place that may ask Catalog to reconcile the channel's full listing.
 /// </summary>
 public class ProductsImportBatchAggregator
 {
-    private readonly IJobRunRepository _jobRunRepository;
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IConnectionRepository _connectionRepository;
-    private readonly BatchImportFinalizer _finalizer;
+    private readonly ImportRunCompletion _completion;
     private readonly IEventPublisher _eventPublisher;
     private readonly ILogger<ProductsImportBatchAggregator> _logger;
     private readonly TimeProvider _timeProvider;
@@ -28,26 +25,23 @@ public class ProductsImportBatchAggregator
     /// <summary>
     /// Initializes a new instance of the <see cref="ProductsImportBatchAggregator"/> class.
     /// </summary>
-    /// <param name="jobRunRepository">Job run repository.</param>
     /// <param name="syncCheckpointRepository">Sync checkpoint repository, holds the watermark.</param>
     /// <param name="connectionRepository">Connection repository.</param>
-    /// <param name="finalizer">Finaliser that writes the run's final counters and status.</param>
+    /// <param name="completion">Shared batch-completion rules.</param>
     /// <param name="eventPublisher">Event publisher.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="timeProvider">Time provider.</param>
     public ProductsImportBatchAggregator(
-        IJobRunRepository jobRunRepository,
         ISyncCheckpointRepository syncCheckpointRepository,
         IConnectionRepository connectionRepository,
-        BatchImportFinalizer finalizer,
+        ImportRunCompletion completion,
         IEventPublisher eventPublisher,
         ILogger<ProductsImportBatchAggregator> logger,
         TimeProvider timeProvider)
     {
-        _jobRunRepository = jobRunRepository;
         _syncCheckpointRepository = syncCheckpointRepository;
         _connectionRepository = connectionRepository;
-        _finalizer = finalizer;
+        _completion = completion;
         _eventPublisher = eventPublisher;
         _logger = logger;
         _timeProvider = timeProvider;
@@ -71,120 +65,56 @@ public class ProductsImportBatchAggregator
             message.IsLastBatch,
             message.RecordsProcessed);
 
-        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(message.JobRunId, cancellationToken);
+        // Only the terminal batch knows the final batch count, so only it announces the threshold.
+        ImportBatchDelivery delivery = new ImportBatchDelivery(
+            JobRunId: message.JobRunId,
+            MessageId: messageId,
+            RecordsProcessed: message.RecordsProcessed,
+            RecordsCreated: message.RecordsCreated,
+            RecordsUpdated: message.RecordsUpdated,
+            RecordsSkipped: message.RecordsSkipped,
+            RecordsFailed: message.RecordsFailed,
+            ErrorMessage: message.ErrorMessage,
+            IsLastBatch: message.IsLastBatch,
+            ExpectedBatchCount: message.IsLastBatch ? message.TotalBatches : null,
+            FallbackBatchCount: null,
+            CanFinalize: true,
+            RepublishesCompletionForRedelivery: message.IsLastBatch);
 
-        if (jobRun == null)
-        {
-            _logger.LogWarning(
-                "JobRun {JobRunId} not found for batch result MessageId={MessageId}, skipping",
-                message.JobRunId,
-                messageId);
-            return;
-        }
+        ImportRunResult? result = await _completion.RecordBatchAsync(delivery, cancellationToken);
 
-        // Idempotency: skip if this MessageId was already recorded.
-        bool alreadyProcessed = await _jobRunRepository.BatchResultExistsAsync(messageId, cancellationToken);
-
-        if (alreadyProcessed)
-        {
-            _logger.LogInformation(
-                "Batch result MessageId={MessageId} for JobRun {JobRunId} already recorded, skipping",
-                messageId,
-                message.JobRunId);
-
-            // If this is a redelivered last-batch and the job is already terminal, re-publish
-            // ProductsImportCompletedEvent so downstream consumers don't get stuck.
-            if (message.IsLastBatch && IsTerminalStatus(jobRun.Status))
-            {
-                await PublishCompletedEventAsync(jobRun, cancellationToken);
-            }
-
-            return;
-        }
-
-        // The batch result is still recorded and its counters still accumulated,
-        // so a cancelled run reports what it actually completed instead of zeroes.
-        JobRunBatchResult batchResult = new JobRunBatchResult
-        {
-            Id = Guid.NewGuid(),
-            JobRunId = message.JobRunId,
-            MessageId = messageId,
-            RecordsProcessed = message.RecordsProcessed,
-            RecordsCreated = message.RecordsCreated,
-            RecordsUpdated = message.RecordsUpdated,
-            RecordsSkipped = message.RecordsSkipped,
-            RecordsFailed = message.RecordsFailed,
-            ErrorMessage = message.ErrorMessage,
-            IsLastBatch = message.IsLastBatch,
-            ReceivedAt = _timeProvider.GetUtcNow(),
-        };
-
-        _jobRunRepository.AddBatchResult(batchResult);
-
-        ProductsImportJob? importJob = await _jobRunRepository.GetProductsImportJobAsync(jobRun.Id, cancellationToken);
-
-        if (importJob == null)
-        {
-            _logger.LogError(
-                "JobRun {JobRunId}: no ProductsImportJob row found, cannot track TotalImportBatches",
-                jobRun.Id);
-            return;
-        }
-
-        // The terminal batch is the only one that knows the final batch count.
-        // Persist it on first sight so that later-arriving non-terminal batches — including ones
-        // that complete after this one — can themselves detect "all batches are in".
-        if (message.IsLastBatch)
-        {
-            importJob.TotalImportBatches = message.TotalBatches;
-        }
-
-        await _jobRunRepository.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Recorded batch result for JobRun {JobRunId}, MessageId={MessageId}",
-            message.JobRunId,
-            messageId);
-
-        // Total batch count still unknown: the terminal batch (possibly a small trailing one)
-        // hasn't been reported by anyone yet, so this JobRun cannot be finalised regardless of
-        // how many batch results have already been recorded.
-        if (importJob.TotalImportBatches == null)
+        if (result == null)
         {
             return;
         }
 
-        int recordedBatches = await _jobRunRepository.CountBatchResultsAsync(message.JobRunId, cancellationToken);
+        Connection? connection = null;
 
-        if (recordedBatches < importJob.TotalImportBatches.Value)
+        if (result.IsFinalized)
         {
-            // Other batches are still being processed; whichever one brings the count up to
-            // TotalImportBatches will finalise the job — not necessarily this one, and not
-            // necessarily the one flagged IsLastBatch.
-            _logger.LogInformation(
-                "JobRun {JobRunId}: {Recorded}/{Total} batch results recorded, waiting for the rest",
-                jobRun.Id,
-                recordedBatches,
-                importJob.TotalImportBatches.Value);
+            connection = await AdvanceSyncCheckpointAsync(result.JobRun, cancellationToken);
+        }
 
+        if (result.ShouldPublishCompletedEvent)
+        {
+            await PublishCompletedEventAsync(result.JobRun, cancellationToken);
+        }
+
+        if (!result.IsFinalized)
+        {
             return;
         }
 
-        // All expected batches are recorded — aggregate all stored results and finalise the job.
-        BatchImportFinalizationResult finalization = await _finalizer.FinalizeAsync(jobRun, cancellationToken);
+        await PublishFullSetReconciliationAsync(result.JobRun, connection, cancellationToken);
+    }
 
-        if (finalization == BatchImportFinalizationResult.AlreadyFinalized)
-        {
-            // JobRun.RowVersion (xmin) is the concurrency token: another batch-completed event —
-            // processed concurrently against the same recordedBatches threshold — already finalised
-            // the job first and published ProductsImportCompletedEvent. Stepping aside avoids a
-            // double finalisation.
-            return;
-        }
-
-        // The watermark only advances on an actually successful run: a Failed/Cancelled run
-        // must not move SyncCheckpoint forward, or the next run would skip records this one
-        // never confirmed.
+    /// <summary>
+    /// Moves the watermark forward for a finalised run and reports the connection it belongs to.
+    /// The watermark only advances on an actually successful run: a Failed/Cancelled run must not
+    /// move SyncCheckpoint forward, or the next run would skip records this one never confirmed.
+    /// </summary>
+    private async Task<Connection?> AdvanceSyncCheckpointAsync(JobRun jobRun, CancellationToken cancellationToken)
+    {
         if (jobRun.Status == JobStatus.Success)
         {
             SyncCheckpoint? syncCheckpoint = await _syncCheckpointRepository.GetAsync(
@@ -198,7 +128,8 @@ public class ProductsImportBatchAggregator
             }
         }
 
-        Connection? connection = await _connectionRepository.FindByIdAsync(jobRun.ConnectionId, cancellationToken);
+        Connection? connection = await _connectionRepository.FindByIdAsync(
+            jobRun.ConnectionId, cancellationToken);
 
         if (connection != null)
         {
@@ -206,9 +137,7 @@ public class ProductsImportBatchAggregator
             await _connectionRepository.SaveChangesAsync(cancellationToken);
         }
 
-        await PublishCompletedEventAsync(jobRun, cancellationToken);
-
-        await PublishFullSetReconciliationAsync(jobRun, connection, cancellationToken);
+        return connection;
     }
 
     /// <summary>
@@ -233,9 +162,6 @@ public class ProductsImportBatchAggregator
     /// only leaves the flag behind until the next successful run, which reconciles again.
     /// </para>
     /// </remarks>
-    /// <param name="jobRun">The finalised job run.</param>
-    /// <param name="connection">The connection the run imported through, when it could be resolved.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     private async Task PublishFullSetReconciliationAsync(
         JobRun jobRun,
         Connection? connection,
@@ -323,12 +249,5 @@ public class ProductsImportBatchAggregator
                 "Failed to publish ProductsImportCompletedEvent for JobRun {JobRunId}",
                 jobRun.Id);
         }
-    }
-
-    private static bool IsTerminalStatus(JobStatus status)
-    {
-        return status == JobStatus.Success
-            || status == JobStatus.Failed
-            || status == JobStatus.Cancelled;
     }
 }

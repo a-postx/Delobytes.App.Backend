@@ -141,8 +141,8 @@ public interface IJobRunRepository
 
     /// <summary>
     /// Returns the number of batch result rows recorded so far for the given JobRun.
-    /// Used by the aggregator to decide whether every expected batch (see
-    /// <see cref="ProductsImportJob.TotalImportBatches"/>) has already been reported.
+    /// Used by <c>ImportRunCompletion</c> to decide whether every expected batch
+    /// (see <see cref="JobRun.ExpectedBatchCount"/>) has already been reported.
     /// </summary>
     public Task<int> CountBatchResultsAsync(Guid jobRunId, CancellationToken cancellationToken);
 

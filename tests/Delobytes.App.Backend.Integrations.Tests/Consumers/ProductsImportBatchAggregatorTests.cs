@@ -31,11 +31,16 @@ public class ProductsImportBatchAggregatorTests
             TimeProvider.System,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<BatchImportFinalizer>.Instance);
 
-        return new ProductsImportBatchAggregator(
+        ImportRunCompletion completion = new ImportRunCompletion(
             _jobRunRepo.Object,
+            finalizer,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportRunCompletion>.Instance);
+
+        return new ProductsImportBatchAggregator(
             _syncCheckpointRepo.Object,
             _connectionRepo.Object,
-            finalizer,
+            completion,
             _eventPublisher.Object,
             _logger.Object,
             TimeProvider.System);
@@ -50,15 +55,6 @@ public class ProductsImportBatchAggregatorTests
             JobType = JobType.ProductsImport,
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static ProductsImportJob BuildImportJob(JobRun jobRun, int? totalImportBatches = null)
-    {
-        return new ProductsImportJob
-        {
-            JobRunId = jobRun.Id,
-            TotalImportBatches = totalImportBatches,
         };
     }
 
@@ -88,18 +84,18 @@ public class ProductsImportBatchAggregatorTests
     }
 
     /// <summary>
-    /// Wires up the ProductsImportJob lookup and the SaveChangesAsync/TryUpdateAsync happy path
-    /// most tests rely on. Individual tests override specific setups (totals, counts) afterwards.
+    /// Wires up the SaveChangesAsync/TryUpdateAsync happy path most tests rely on. Individual tests
+    /// override specific setups (totals, counts) afterwards.
     /// </summary>
-    private void SetupDefaults(JobRun jobRun, ProductsImportJob importJob)
+    private void SetupDefaults(JobRun jobRun)
     {
         _jobRunRepo
             .Setup(r => r.GetByIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(jobRun);
 
         _jobRunRepo
-            .Setup(r => r.GetProductsImportJobAsync(jobRun.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(importJob);
+            .Setup(r => r.GetExpectedBatchCountAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => jobRun.ExpectedBatchCount);
 
         _jobRunRepo
             .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -146,10 +142,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_CancelledJob_StillRecordsBatchResultAndAccumulatesCounters()
     {
         JobRun jobRun = BuildJobRun(JobStatus.Cancelled);
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -171,10 +166,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_CancelledJob_LastBatchFinalisesAsCancelledPreservingPartialCounters()
     {
         JobRun jobRun = BuildJobRun(JobStatus.Cancelled);
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -290,10 +284,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_NonLastBatch_StoredWithoutFinalisation()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -309,9 +302,9 @@ public class ProductsImportBatchAggregatorTests
             p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
-        // TotalImportBatches is still unknown (no batch has been flagged IsLastBatch yet), so
-        // the aggregator cannot possibly know it has recorded them all.
-        importJob.TotalImportBatches.Should().BeNull();
+        // The expected batch count is still unknown (no batch has been flagged IsLastBatch yet),
+        // so the aggregator cannot possibly know it has recorded them all.
+        jobRun.ExpectedBatchCount.Should().BeNull();
     }
 
     // -----------------------------------------------------------------------
@@ -322,10 +315,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_LastBatch_NoErrors_FinalisesWithSuccess()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -394,9 +386,8 @@ public class ProductsImportBatchAggregatorTests
         jobRun.Error.Should().BeNull();
         jobRun.CompletedAt.Should().NotBeNull();
 
-        // SaveChangesAsync persists the batch result together with ProductsImportJob.TotalImportBatches
-        // while the job is still Running (so later-arriving batches can still finalise it); TryUpdateAsync
-        // is the separate call that writes the aggregated counters and the terminal status.
+        // SaveChangesAsync persists the batch result while the job is still Running; the announced
+        // batch count and the aggregated counters are written together by the finalising update.
         _jobRunRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
         _jobRunRepo.Verify(r => r.TryUpdateAsync(jobRun, It.IsAny<CancellationToken>()), Times.Once);
 
@@ -423,10 +414,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_LastBatch_PartialErrors_FinalisesWithFailed()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -482,10 +472,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_LastBatch_AllFailed_FinalisesWithFailed()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -535,10 +524,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_LastBatch_AllSkipped_FinalisesWithSuccess()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -581,11 +569,10 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_NonLastBatch_StoresBatchResultWithCorrectJobRunIdAndMessageId()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
         JobRunBatchResult? captured = null;
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -620,7 +607,6 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_TerminalBatchArrivesBeforeLargerBatches_WaitsForAllBatchesBeforeFinalising()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
 
         List<JobRunBatchResult> storedResults = new List<JobRunBatchResult>();
 
@@ -629,8 +615,8 @@ public class ProductsImportBatchAggregatorTests
             .ReturnsAsync(jobRun);
 
         _jobRunRepo
-            .Setup(r => r.GetProductsImportJobAsync(jobRun.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(importJob);
+            .Setup(r => r.GetExpectedBatchCountAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => jobRun.ExpectedBatchCount);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -682,7 +668,7 @@ public class ProductsImportBatchAggregatorTests
             Guid.NewGuid(),
             CancellationToken.None);
 
-        jobRun.Status.Should().Be(JobStatus.Running, "только 1 из 3 батчей учтён - финализация преждевременна");
+        jobRun.Status.Should().Be(JobStatus.Running, "С‚РѕР»СЊРєРѕ 1 РёР· 3 Р±Р°С‚С‡РµР№ СѓС‡С‚С‘РЅ - С„РёРЅР°Р»РёР·Р°С†РёСЏ РїСЂРµР¶РґРµРІСЂРµРјРµРЅРЅР°");
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -693,7 +679,7 @@ public class ProductsImportBatchAggregatorTests
             Guid.NewGuid(),
             CancellationToken.None);
 
-        jobRun.Status.Should().Be(JobStatus.Running, "учтено 2 из 3 батчей");
+        jobRun.Status.Should().Be(JobStatus.Running, "СѓС‡С‚РµРЅРѕ 2 РёР· 3 Р±Р°С‚С‡РµР№");
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -719,7 +705,7 @@ public class ProductsImportBatchAggregatorTests
     // -----------------------------------------------------------------------
     // Concurrency guard: two batch-completion events both reach the finalisation branch
     // for the same JobRun (e.g. two consumer instances racing after both observing
-    // recordedBatches == TotalImportBatches). Status is guarded by JobRun's xmin
+    // recordedBatches == ExpectedBatchCount). Status is guarded by JobRun's xmin
     // concurrency token, so the loser's TryUpdateAsync reports the stale token instead of
     // throwing, and the run is not finalised or published twice.
     // -----------------------------------------------------------------------
@@ -728,10 +714,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_ConcurrentFinalisation_ConcurrencyConflictIsSwallowedWithoutRepublishing()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))
@@ -765,17 +750,17 @@ public class ProductsImportBatchAggregatorTests
             messageId,
             CancellationToken.None);
 
-        await act.Should().NotThrowAsync("конфликт конкуренции должен поглощаться, а не падать наружу");
+        await act.Should().NotThrowAsync("РєРѕРЅС„Р»РёРєС‚ РєРѕРЅРєСѓСЂРµРЅС†РёРё РґРѕР»Р¶РµРЅ РїРѕРіР»РѕС‰Р°С‚СЊСЃСЏ, Р° РЅРµ РїР°РґР°С‚СЊ РЅР°СЂСѓР¶Сѓ");
 
         _eventPublisher.Verify(
             p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never,
-            "победитель гонки публикует событие сам - проигравший не должен его дублировать");
+            "РїРѕР±РµРґРёС‚РµР»СЊ РіРѕРЅРєРё РїСѓР±Р»РёРєСѓРµС‚ СЃРѕР±С‹С‚РёРµ СЃР°Рј - РїСЂРѕРёРіСЂР°РІС€РёР№ РЅРµ РґРѕР»Р¶РµРЅ РµРіРѕ РґСѓР±Р»РёСЂРѕРІР°С‚СЊ");
 
         _connectionRepo.Verify(
             r => r.FindByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never,
-            "проигравший не должен продолжать постобработку (SyncCheckpoint/Connection.LastSyncAt) после конфликта");
+            "РїСЂРѕРёРіСЂР°РІС€РёР№ РЅРµ РґРѕР»Р¶РµРЅ РїСЂРѕРґРѕР»Р¶Р°С‚СЊ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєСѓ (SyncCheckpoint/Connection.LastSyncAt) РїРѕСЃР»Рµ РєРѕРЅС„Р»РёРєС‚Р°");
     }
 
     // -----------------------------------------------------------------------
@@ -792,10 +777,9 @@ public class ProductsImportBatchAggregatorTests
     {
         Guid channelId = Guid.NewGuid();
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
+        SetupFinalisation(jobRun, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
         SetupResolvableConnection(jobRun, channelId);
 
         DateTimeOffset startedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
@@ -824,12 +808,11 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_FailedRun_DoesNotRequestReconciliation()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
         // A failed card leaves its link unstamped, and an unstamped card is indistinguishable from
         // one the channel dropped: sweeping would deactivate a product that is still listed.
-        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 1, statusAfterTotals: JobStatus.Running);
+        SetupFinalisation(jobRun, messageId, totalFailed: 1, statusAfterTotals: JobStatus.Running);
         SetupResolvableConnection(jobRun, Guid.NewGuid());
 
         jobRun.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
@@ -849,12 +832,11 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_CancelledRun_DoesNotRequestReconciliation()
     {
         JobRun jobRun = BuildJobRun(JobStatus.Cancelled);
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
         // A cancelled run publishes a terminal batch so the job can finalise, but it never walked
         // the whole listing; the cards it never fetched were not absent from the channel.
-        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Cancelled);
+        SetupFinalisation(jobRun, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Cancelled);
         SetupResolvableConnection(jobRun, Guid.NewGuid());
 
         jobRun.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
@@ -874,10 +856,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_SuccessfulRunWithoutStartedAt_DoesNotRequestReconciliation()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
+        SetupFinalisation(jobRun, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
         SetupResolvableConnection(jobRun, Guid.NewGuid());
 
         jobRun.StartedAt = null;
@@ -898,10 +879,9 @@ public class ProductsImportBatchAggregatorTests
     public async Task ProcessAsync_ReconciliationPublishFails_FinalisationStillSucceeds()
     {
         JobRun jobRun = BuildJobRun();
-        ProductsImportJob importJob = BuildImportJob(jobRun);
         Guid messageId = Guid.NewGuid();
 
-        SetupFinalisation(jobRun, importJob, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
+        SetupFinalisation(jobRun, messageId, totalFailed: 0, statusAfterTotals: JobStatus.Running);
         SetupResolvableConnection(jobRun, Guid.NewGuid());
 
         jobRun.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
@@ -929,12 +909,11 @@ public class ProductsImportBatchAggregatorTests
     /// </summary>
     private void SetupFinalisation(
         JobRun jobRun,
-        ProductsImportJob importJob,
         Guid messageId,
         int totalFailed,
         JobStatus statusAfterTotals)
     {
-        SetupDefaults(jobRun, importJob);
+        SetupDefaults(jobRun);
 
         _jobRunRepo
             .Setup(r => r.BatchResultExistsAsync(messageId, It.IsAny<CancellationToken>()))

@@ -105,6 +105,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<OrdersBackfillWalker>();
         services.AddScoped<BatchImportFinalizer>();
+        services.AddScoped<ImportRunCompletion>();
         services.AddScoped<OrdersImportWatermarkWriter>();
         services.AddScoped<OrdersBatchAggregator>();
 
