@@ -33,7 +33,12 @@ internal static class ServiceCollectionExtensions
 
                         // Without this the browser hides the correlation header from JavaScript,
                         // because the frontend and the API are served from different origins.
-                        .WithExposedHeaders(CorrelationHeaders.CorrelationId));
+                        .WithExposedHeaders(CorrelationHeaders.CorrelationId)
+
+                        // Without an explicit lifetime the browser keeps a preflight result for
+                        // 5 seconds only and replays OPTIONS for almost every request. Chromium
+                        // caps the value at 2 hours, so asking for more has no effect.
+                        .SetPreflightMaxAge(TimeSpan.FromHours(2)));
             });
     }
 
