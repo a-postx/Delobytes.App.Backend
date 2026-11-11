@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Identity.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -46,8 +47,7 @@ public class ChannelParameterSetRepositoryTests
         ChannelParameterSetRepository repository = new ChannelParameterSetRepository(
             readContext,
             tenantContextMock.Object,
-            settingsProviderMock.Object,
-            new FixedTimeProvider(utcNow));
+            new TenantTimeService(settingsProviderMock.Object, new FixedTimeProvider(utcNow)));
 
         ChannelParameterSet? active = await repository.GetActiveByChannelIdAsync(channelId, CancellationToken.None);
 

@@ -2,7 +2,10 @@ using Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Tests.Infrastructure;
 using FluentAssertions;
 using FluentAssertions.Specialized;
 using Moq;
@@ -11,6 +14,11 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.BomLines;
 
 public class UpsertProductBomCommandHandlerTests
 {
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    // Deliberately not the UTC date: BomLine.ValidFrom is a tenant-local calendar date.
+    private static readonly DateOnly TenantToday = new DateOnly(2026, 11, 9);
+
     private readonly Mock<IBomLineRepository> _bomLineRepositoryMock;
     private readonly Mock<IComponentRepository> _componentRepositoryMock;
     private readonly Mock<IProductCostSnapshotService> _snapshotServiceMock;
@@ -40,7 +48,9 @@ public class UpsertProductBomCommandHandlerTests
         _handler = new UpsertProductBomCommandHandler(
             _bomLineRepositoryMock.Object,
             _componentRepositoryMock.Object,
-            _snapshotServiceMock.Object);
+            _snapshotServiceMock.Object,
+            TenantTimeTestDoubles.TenantContext(TenantId).Object,
+            TenantTimeTestDoubles.TenantTimeService(TenantId, TenantToday).Object);
     }
 
     [Fact]
@@ -175,7 +185,7 @@ public class UpsertProductBomCommandHandlerTests
         addedLines
             .Select(line => line.ValidFrom)
             .Should()
-            .OnlyContain(date => date == DateOnly.FromDateTime(DateTime.UtcNow));
+            .OnlyContain(date => date == TenantToday);
 
         _bomLineRepositoryMock.Verify(
             repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),

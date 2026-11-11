@@ -14,6 +14,7 @@ using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -32,6 +33,7 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.CostCalculation;
 /// </summary>
 public class CostSnapshotTriggerIntegrationTests : IDisposable
 {
+    private static readonly Guid TenantId = Guid.NewGuid();
     private readonly CatalogDbContext _context;
     private readonly ProductCostSnapshotService _snapshotService;
     private readonly BomLineRepository _bomLineRepository;
@@ -48,7 +50,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             .Options;
 
         Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
-        tenantContextMock.Setup(context => context.TenantId).Returns(Guid.NewGuid());
+        tenantContextMock.Setup(context => context.TenantId).Returns(TenantId);
 
         _context = new CatalogDbContext(options, tenantContextMock.Object);
 
@@ -64,11 +66,16 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             _productWorkRateRepository,
             _workRateVersionRepository);
 
+        // The tenant's calendar day is pinned: the snapshot must be dated by it, not by the UTC
+        // date the machine happens to be on.
+        _today = new DateOnly(2026, 11, 9);
+
         _snapshotService = new ProductCostSnapshotService(
             new ProductCostSnapshotRepository(_context),
-            calculator);
-
-        _today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+            calculator,
+            tenantContextMock.Object,
+            TenantTimeTestDoubles.TenantTimeService(TenantId, _today).Object,
+            TimeProvider.System);
     }
 
     public void Dispose()

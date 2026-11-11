@@ -45,24 +45,11 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     {
         Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
 
-        TimeZoneInfo timeZone;
-
-        try
-        {
-            timeZone = TimeZoneInfo.FindSystemTimeZoneById(tenant.TimeZone);
-        }
-        catch (TimeZoneNotFoundException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{tenant.TimeZone}' не найден в системе.", ex);
-        }
-        catch (InvalidTimeZoneException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{tenant.TimeZone}' содержит некорректные данные.", ex);
-        }
+        TimeZoneInfo timeZone = TenantTimeZones.Resolve(tenant.TimeZone);
 
         // Дата профиля — календарная дата тенанта, а не UTC: иначе граница периода
         // смещается на сутки у всех, кто живёт восточнее Гринвича.
-        DateOnly date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(moment, timeZone).DateTime);
+        DateOnly date = TenantTimeZones.DateAt(moment, timeZone);
 
         TenantTaxProfile? profile = await _taxProfileRepository.GetAtDateAsync(tenantId, date, cancellationToken);
 

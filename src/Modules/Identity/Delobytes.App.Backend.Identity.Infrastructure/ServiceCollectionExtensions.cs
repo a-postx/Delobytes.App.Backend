@@ -68,6 +68,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IInvitationRepository, Persistence.Repositories.InvitationRepository>();
         services.AddScoped<ITenantTaxProfileRepository, Persistence.Repositories.TenantTaxProfileRepository>();
         services.AddScoped<ITenantSettingsProvider, Services.TenantSettingsProvider>();
+        services.AddScoped<ITenantTimeService, Services.TenantTimeService>();
 
         services.AddScoped<AuditableEntityInterceptor>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);

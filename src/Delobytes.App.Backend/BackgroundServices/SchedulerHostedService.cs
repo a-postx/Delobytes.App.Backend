@@ -308,7 +308,7 @@ public class SchedulerHostedService : BackgroundService
         try
         {
             TenantAccountingSettings settings = await tenantSettingsProvider.GetAccountingSettingsAsync(tenantId, cancellationToken);
-            return TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZoneId);
+            return TenantTimeZones.Resolve(settings.TimeZoneId);
         }
         catch (Exception ex) when (ex is InvalidOperationException or TimeZoneNotFoundException or InvalidTimeZoneException)
         {

@@ -7,6 +7,9 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Tests.Infrastructure;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -24,6 +27,11 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.ProductWorkRates;
 /// </summary>
 public class DeleteProductWorkRateCommandHandlerTests
 {
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    // Deliberately not the UTC date: RemovedFrom is a tenant-local calendar date.
+    private static readonly DateOnly TenantToday = new DateOnly(2026, 11, 9);
+
     private readonly Mock<IProductWorkRateRepository> _repositoryMock = new();
     private readonly Mock<IProductCostSnapshotService> _snapshotServiceMock = new();
 
@@ -35,7 +43,9 @@ public class DeleteProductWorkRateCommandHandlerTests
 
         return new DeleteProductWorkRateCommandHandler(
             _repositoryMock.Object,
-            _snapshotServiceMock.Object);
+            _snapshotServiceMock.Object,
+            TenantTimeTestDoubles.TenantContext(TenantId).Object,
+            TenantTimeTestDoubles.TenantTimeService(TenantId, TenantToday).Object);
     }
 
     private static ProductWorkRate BuildRate(
@@ -64,7 +74,7 @@ public class DeleteProductWorkRateCommandHandlerTests
     [Fact]
     public async Task Handle_VersionStartingInThePast_RemovesItFromToday()
     {
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = TenantToday;
         ProductWorkRate rate = BuildRate(today.AddDays(-30));
 
         ArrangeExistingRate(rate);
@@ -89,7 +99,7 @@ public class DeleteProductWorkRateCommandHandlerTests
         // The version is in force for today, so the earliest date on which it can stop being in
         // force is the day after it started. Setting RemovedFrom to today would leave a version
         // that was never in force for a single day.
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = TenantToday;
         ProductWorkRate rate = BuildRate(today);
 
         ArrangeExistingRate(rate);
@@ -105,7 +115,7 @@ public class DeleteProductWorkRateCommandHandlerTests
     [Fact]
     public async Task Handle_FutureDatedVersion_RemovesItFromTheDayAfterItsStart()
     {
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = TenantToday;
         DateOnly validFrom = today.AddDays(45);
         ProductWorkRate rate = BuildRate(validFrom);
 

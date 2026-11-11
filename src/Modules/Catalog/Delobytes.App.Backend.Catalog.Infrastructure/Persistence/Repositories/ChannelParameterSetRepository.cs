@@ -10,19 +10,16 @@ public class ChannelParameterSetRepository : IChannelParameterSetRepository
 {
     private readonly CatalogDbContext _context;
     private readonly ITenantContext _tenantContext;
-    private readonly ITenantSettingsProvider _settingsProvider;
-    private readonly TimeProvider _timeProvider;
+    private readonly ITenantTimeService _tenantTimeService;
 
     public ChannelParameterSetRepository(
         CatalogDbContext context,
         ITenantContext tenantContext,
-        ITenantSettingsProvider settingsProvider,
-        TimeProvider timeProvider)
+        ITenantTimeService tenantTimeService)
     {
         _context = context;
         _tenantContext = tenantContext;
-        _settingsProvider = settingsProvider;
-        _timeProvider = timeProvider;
+        _tenantTimeService = tenantTimeService;
     }
 
     public Task<ChannelParameterSet?> GetByIdAsync(Guid id, CancellationToken ct)
@@ -42,7 +39,6 @@ public class ChannelParameterSetRepository : IChannelParameterSetRepository
     public async Task<ChannelParameterSet?> GetActiveByChannelIdAsync(Guid channelId, CancellationToken ct)
     {
         DateOnly today = await GetTodayInTenantTimeZoneAsync(ct);
-
         return await _context.ChannelParameterSets
             .Where(cps => cps.ChannelId == channelId)
             .Where(cps => cps.ValidFrom <= today)
@@ -68,25 +64,6 @@ public class ChannelParameterSetRepository : IChannelParameterSetRepository
         Guid tenantId = _tenantContext.TenantId
             ?? throw new UnauthorizedAccessException("Пользователь не аутентифицирован.");
 
-        TenantAccountingSettings settings = await _settingsProvider.GetAccountingSettingsAsync(tenantId, cancellationToken);
-        TimeZoneInfo timeZone = ResolveTimeZone(settings.TimeZoneId);
-
-        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), timeZone).DateTime);
-    }
-
-    private static TimeZoneInfo ResolveTimeZone(string timeZoneId)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-        }
-        catch (TimeZoneNotFoundException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' не найден в системе.", ex);
-        }
-        catch (InvalidTimeZoneException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' содержит некорректные данные.", ex);
-        }
+        return await _tenantTimeService.GetTodayAsync(tenantId, cancellationToken);
     }
 }

@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
@@ -89,7 +90,7 @@ public class DeleteTenantTaxProfileCommandHandler : IRequestHandler<DeleteTenant
 
         // Дата тенанта, а не UTC: иначе ставка, срок действия которой наступил в 00:30
         // по Москве 1 января, ещё числилась бы "будущей" по UTC (21:30 31 декабря).
-        DateOnly tenantToday = ResolveTenantDate(tenant.TimeZone, DateTimeOffset.UtcNow);
+        DateOnly tenantToday = TenantTimeZones.DateAt(DateTimeOffset.UtcNow, TenantTimeZones.Resolve(tenant.TimeZone));
 
         // Последнюю версию, которая уже вступила в силу, удалять нельзя: она могла
         // попасть в уже посчитанные отчёты, и её исчезновение задним числом эти отчёты
@@ -103,22 +104,5 @@ public class DeleteTenantTaxProfileCommandHandler : IRequestHandler<DeleteTenant
         await _taxProfileRepository.SaveChangesAsync(cancellationToken);
 
         return new DeleteTenantTaxProfileResponse { Found = true };
-    }
-
-    private static DateOnly ResolveTenantDate(string timeZoneId, DateTimeOffset moment)
-    {
-        try
-        {
-            TimeZoneInfo timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-            return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(moment, timeZone).DateTime);
-        }
-        catch (TimeZoneNotFoundException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' не найден в системе.", ex);
-        }
-        catch (InvalidTimeZoneException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' содержит некорректные данные.", ex);
-        }
     }
 }

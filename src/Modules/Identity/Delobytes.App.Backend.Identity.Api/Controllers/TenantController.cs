@@ -116,6 +116,35 @@ public class TenantController : ControllerBase
     }
 
     /// <summary>
+    /// Updates tenant settings that are not part of the legal entity details. Requires Administrator role.
+    /// </summary>
+    /// <param name="request">Update tenant settings request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated tenant settings.</returns>
+    [HttpPatch("settings")]
+    public async Task<ActionResult<UpdateTenantSettingsResponse>> UpdateTenantSettings(
+        [FromBody] UpdateTenantSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? tenantIdClaim = User.FindFirstValue("tenantId");
+
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
+        {
+            return Unauthorized();
+        }
+
+        UpdateTenantSettingsResponse response = await _mediator.Send(
+            new UpdateTenantSettingsCommand
+            {
+                TenantId = tenantId,
+                TimeZone = request.TimeZone,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
     /// Switch to another tenant that the user is a member of.
     /// </summary>
     /// <param name="request">Switch tenant request.</param>
@@ -623,6 +652,17 @@ public class UpdateTenantNameRequest
     /// Gets or sets the new tenant name.
     /// </summary>
     public string Name { get; set; } = default!;
+}
+
+/// <summary>
+/// Request model for updating tenant settings.
+/// </summary>
+public class UpdateTenantSettingsRequest
+{
+    /// <summary>
+    /// Gets or sets the tenant time zone identifier (IANA, e.g. "Europe/Samara").
+    /// </summary>
+    public string TimeZone { get; set; } = default!;
 }
 
 /// <summary>

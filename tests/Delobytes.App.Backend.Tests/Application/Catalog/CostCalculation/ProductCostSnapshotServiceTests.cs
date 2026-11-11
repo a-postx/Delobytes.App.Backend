@@ -3,6 +3,9 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Tests.Infrastructure;
 using FluentAssertions;
 using Moq;
 
@@ -10,12 +13,29 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.CostCalculation;
 
 public class ProductCostSnapshotServiceTests
 {
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    // Deliberately not the UTC date: the snapshot must be dated by the tenant's calendar.
+    private static readonly DateOnly TenantToday = new DateOnly(2026, 11, 9);
+
+    private static ProductCostSnapshotService BuildService(
+        IProductCostSnapshotRepository snapshotRepository,
+        ICostCalculator calculator)
+    {
+        return new ProductCostSnapshotService(
+            snapshotRepository,
+            calculator,
+            TenantTimeTestDoubles.TenantContext(TenantId).Object,
+            TenantTimeTestDoubles.TenantTimeService(TenantId, TenantToday).Object,
+            TimeProvider.System);
+    }
+
     [Fact]
     public async Task CaptureBeforeChangeAsync_CreatesSnapshotForEachDistinctProduct()
     {
         Guid firstProductId = Guid.NewGuid();
         Guid secondProductId = Guid.NewGuid();
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = TenantToday;
         Mock<IProductCostSnapshotRepository> snapshotRepositoryMock = new Mock<IProductCostSnapshotRepository>();
         Mock<ICostCalculator> calculatorMock = new Mock<ICostCalculator>();
         List<ProductCostSnapshot> snapshots = new List<ProductCostSnapshot>();
@@ -37,7 +57,7 @@ public class ProductCostSnapshotServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid productId, DateOnly asOf, CancellationToken _) => BuildBreakdown(productId, asOf));
 
-        ProductCostSnapshotService service = new ProductCostSnapshotService(
+        ProductCostSnapshotService service = BuildService(
             snapshotRepositoryMock.Object,
             calculatorMock.Object);
 
@@ -71,7 +91,7 @@ public class ProductCostSnapshotServiceTests
     public async Task CaptureBeforeChangeAsync_SerializesLinesAndPreservesIncompleteState()
     {
         Guid productId = Guid.NewGuid();
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = TenantToday;
         Mock<IProductCostSnapshotRepository> snapshotRepositoryMock = new Mock<IProductCostSnapshotRepository>();
         Mock<ICostCalculator> calculatorMock = new Mock<ICostCalculator>();
         ProductCostSnapshot? createdSnapshot = null;
@@ -113,7 +133,7 @@ public class ProductCostSnapshotServiceTests
             .Setup(calculator => calculator.CalculateAsync(productId, today, It.IsAny<CancellationToken>()))
             .ReturnsAsync(breakdown);
 
-        ProductCostSnapshotService service = new ProductCostSnapshotService(
+        ProductCostSnapshotService service = BuildService(
             snapshotRepositoryMock.Object,
             calculatorMock.Object);
 
@@ -134,7 +154,7 @@ public class ProductCostSnapshotServiceTests
     public async Task CaptureBeforeChangeAsync_DoesNotCreateDuplicateForExistingProductAndReason()
     {
         Guid productId = Guid.NewGuid();
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = TenantToday;
         Mock<IProductCostSnapshotRepository> snapshotRepositoryMock = new Mock<IProductCostSnapshotRepository>();
         Mock<ICostCalculator> calculatorMock = new Mock<ICostCalculator>();
 
@@ -146,7 +166,7 @@ public class ProductCostSnapshotServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HashSet<Guid> { productId });
 
-        ProductCostSnapshotService service = new ProductCostSnapshotService(
+        ProductCostSnapshotService service = BuildService(
             snapshotRepositoryMock.Object,
             calculatorMock.Object);
 
@@ -171,7 +191,7 @@ public class ProductCostSnapshotServiceTests
     {
         Mock<IProductCostSnapshotRepository> snapshotRepositoryMock = new Mock<IProductCostSnapshotRepository>();
         Mock<ICostCalculator> calculatorMock = new Mock<ICostCalculator>();
-        ProductCostSnapshotService service = new ProductCostSnapshotService(
+        ProductCostSnapshotService service = BuildService(
             snapshotRepositoryMock.Object,
             calculatorMock.Object);
 

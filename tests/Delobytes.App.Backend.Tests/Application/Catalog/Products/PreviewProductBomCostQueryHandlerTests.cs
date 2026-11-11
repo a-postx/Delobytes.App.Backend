@@ -5,7 +5,10 @@ using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Tests.Infrastructure;
 using FluentAssertions;
 using FluentAssertions.Specialized;
 using Moq;
@@ -20,9 +23,15 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.Products;
 /// </summary>
 public class PreviewProductBomCostQueryHandlerTests
 {
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    private static readonly DateOnly TenantToday = new DateOnly(2026, 11, 9);
+
     private readonly Mock<IProductRepository> _productRepositoryMock;
     private readonly Mock<IComponentRepository> _componentRepositoryMock;
     private readonly Mock<ICostCalculator> _costCalculatorMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
+    private readonly Mock<ITenantTimeService> _tenantTimeServiceMock;
     private readonly PreviewProductBomCostQueryHandler _handler;
 
     public PreviewProductBomCostQueryHandlerTests()
@@ -30,10 +39,15 @@ public class PreviewProductBomCostQueryHandlerTests
         _productRepositoryMock = new Mock<IProductRepository>();
         _componentRepositoryMock = new Mock<IComponentRepository>();
         _costCalculatorMock = new Mock<ICostCalculator>();
+        _tenantContextMock = TenantTimeTestDoubles.TenantContext(TenantId);
+        _tenantTimeServiceMock = TenantTimeTestDoubles.TenantTimeService(TenantId, TenantToday);
+
         _handler = new PreviewProductBomCostQueryHandler(
             _productRepositoryMock.Object,
             _componentRepositoryMock.Object,
-            _costCalculatorMock.Object);
+            _costCalculatorMock.Object,
+            _tenantContextMock.Object,
+            _tenantTimeServiceMock.Object);
     }
 
     [Fact]
@@ -405,7 +419,7 @@ public class PreviewProductBomCostQueryHandlerTests
     {
         // Arrange
         Guid productId = Guid.NewGuid();
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
+        DateOnly today = TenantToday;
         Guid componentId = Guid.NewGuid();
 
         Component component = BuildComponent("Ткань", ComponentCategory.Material);

@@ -1,7 +1,9 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
@@ -115,15 +117,21 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
     private readonly IProductRepository _productRepository;
     private readonly IComponentRepository _componentRepository;
     private readonly ICostCalculator _costCalculator;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantTimeService _tenantTimeService;
 
     public PreviewProductBomCostQueryHandler(
         IProductRepository productRepository,
         IComponentRepository componentRepository,
-        ICostCalculator costCalculator)
+        ICostCalculator costCalculator,
+        ITenantContext tenantContext,
+        ITenantTimeService tenantTimeService)
     {
         _productRepository = productRepository;
         _componentRepository = componentRepository;
         _costCalculator = costCalculator;
+        _tenantContext = tenantContext;
+        _tenantTimeService = tenantTimeService;
     }
 
     public async Task<PreviewProductBomCostResponse> Handle(
@@ -151,7 +159,8 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
 
         List<CostCalculationLine> lines = await ResolveDraftLinesAsync(request.Lines, cancellationToken);
 
-        DateOnly asOf = request.AsOf ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
+        DateOnly asOf = request.AsOf
+            ?? await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
 
         CostBreakdown previewBreakdown = await _costCalculator.CalculateForLinesAsync(
             request.ProductId,

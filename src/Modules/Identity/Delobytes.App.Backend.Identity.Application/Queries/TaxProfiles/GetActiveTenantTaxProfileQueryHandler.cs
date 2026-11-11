@@ -87,7 +87,7 @@ public class GetActiveTenantTaxProfileQueryHandler : IRequestHandler<GetActiveTe
         // Москве 1 января, приходит как 21:30 UTC 31 декабря и должен получить профиль
         // нового года, а не предыдущего.
         DateTimeOffset moment = request.At ?? DateTimeOffset.UtcNow;
-        DateOnly date = ResolveTenantDate(tenant.TimeZone, moment);
+        DateOnly date = TenantTimeZones.DateAt(moment, TenantTimeZones.Resolve(tenant.TimeZone));
 
         TenantTaxProfile? profile = await _taxProfileRepository.GetAtDateAsync(request.TenantId, date, cancellationToken);
 
@@ -107,22 +107,5 @@ public class GetActiveTenantTaxProfileQueryHandler : IRequestHandler<GetActiveTe
             Vat = profile.Vat,
             ValidFrom = profile.ValidFrom,
         };
-    }
-
-    private static DateOnly ResolveTenantDate(string timeZoneId, DateTimeOffset moment)
-    {
-        try
-        {
-            TimeZoneInfo timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-            return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(moment, timeZone).DateTime);
-        }
-        catch (TimeZoneNotFoundException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' не найден в системе.", ex);
-        }
-        catch (InvalidTimeZoneException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' содержит некорректные данные.", ex);
-        }
     }
 }

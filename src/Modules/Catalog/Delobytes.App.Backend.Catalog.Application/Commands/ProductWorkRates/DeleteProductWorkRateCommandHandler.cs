@@ -2,7 +2,9 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates;
@@ -23,13 +25,19 @@ public class DeleteProductWorkRateCommandHandler : IRequestHandler<DeleteProduct
 {
     private readonly IProductWorkRateRepository _repository;
     private readonly IProductCostSnapshotService _snapshotService;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantTimeService _tenantTimeService;
 
     public DeleteProductWorkRateCommandHandler(
         IProductWorkRateRepository repository,
-        IProductCostSnapshotService snapshotService)
+        IProductCostSnapshotService snapshotService,
+        ITenantContext tenantContext,
+        ITenantTimeService tenantTimeService)
     {
         _repository = repository;
         _snapshotService = snapshotService;
+        _tenantContext = tenantContext;
+        _tenantTimeService = tenantTimeService;
     }
 
     public async Task<DeleteProductWorkRateResponse> Handle(DeleteProductWorkRateCommand request, CancellationToken cancellationToken)
@@ -49,7 +57,7 @@ public class DeleteProductWorkRateCommandHandler : IRequestHandler<DeleteProduct
             return new DeleteProductWorkRateResponse { Found = true };
         }
 
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        DateOnly today = await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
 
         // A version can only stop being in force on a date on which it had already started: removing
         // a future-dated version on its own start date would claim it was never in force, while

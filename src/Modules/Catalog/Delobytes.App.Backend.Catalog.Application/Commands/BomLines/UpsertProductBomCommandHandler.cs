@@ -1,8 +1,10 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
@@ -30,15 +32,21 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
     private readonly IBomLineRepository _repository;
     private readonly IComponentRepository _componentRepository;
     private readonly IProductCostSnapshotService _snapshotService;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantTimeService _tenantTimeService;
 
     public UpsertProductBomCommandHandler(
         IBomLineRepository repository,
         IComponentRepository componentRepository,
-        IProductCostSnapshotService snapshotService)
+        IProductCostSnapshotService snapshotService,
+        ITenantContext tenantContext,
+        ITenantTimeService tenantTimeService)
     {
         _repository = repository;
         _componentRepository = componentRepository;
         _snapshotService = snapshotService;
+        _tenantContext = tenantContext;
+        _tenantTimeService = tenantTimeService;
     }
 
     public async Task<UpsertProductBomResponse> Handle(UpsertProductBomCommand request, CancellationToken cancellationToken)
@@ -65,7 +73,10 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
 
         IReadOnlyList<BomLine> active = await _repository.GetActiveByProductIdAsync(request.ProductId, cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
+
+        // ValidFrom — календарная дата тенанта: UTC-дата на несколько часов отстаёт от
+        // местной и сдвинула бы вступление состава в силу на предыдущий день.
+        DateOnly today = await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
 
         foreach (BomLine line in active)
         {

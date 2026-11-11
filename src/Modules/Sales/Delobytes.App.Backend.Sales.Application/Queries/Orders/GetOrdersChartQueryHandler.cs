@@ -146,10 +146,9 @@ public class GetOrdersChartQueryHandler : IRequestHandler<GetOrdersChartQuery, G
             ?? throw new UnauthorizedAccessException("Пользователь не аутентифицирован.");
 
         TenantAccountingSettings settings = await _settingsProvider.GetAccountingSettingsAsync(tenantId, cancellationToken);
-        TimeZoneInfo timeZone = ResolveTimeZone(settings.TimeZoneId);
+        TimeZoneInfo timeZone = TenantTimeZones.Resolve(settings.TimeZoneId);
 
-        DateOnly today = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), timeZone).DateTime);
+        DateOnly today = TenantTimeZones.DateAt(_timeProvider.GetUtcNow(), timeZone);
 
         DateOnly to = request.To ?? today;
         DateOnly from = request.From ?? to.AddDays(-(DefaultRangeDays - 1));
@@ -159,8 +158,8 @@ public class GetOrdersChartQueryHandler : IRequestHandler<GetOrdersChartQuery, G
         ChartGranularity granularity = request.Granularity
             ?? SalesChartBucketing.ResolveAdaptiveGranularity(from, to);
 
-        DateTimeOffset fromUtc = ToUtc(from, timeZone);
-        DateTimeOffset toUtcExclusive = ToUtc(to.AddDays(1), timeZone);
+        DateTimeOffset fromUtc = TenantTimeZones.StartOfDayUtc(from, timeZone);
+        DateTimeOffset toUtcExclusive = TenantTimeZones.StartOfDayUtc(to.AddDays(1), timeZone);
 
         IReadOnlyList<OrderLineFact> facts = await _repository.GetLineFactsAsync(
             fromUtc,
@@ -215,28 +214,4 @@ public class GetOrdersChartQueryHandler : IRequestHandler<GetOrdersChartQuery, G
         }
     }
 
-    private static TimeZoneInfo ResolveTimeZone(string timeZoneId)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-        }
-        catch (TimeZoneNotFoundException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' не найден в системе.", ex);
-        }
-        catch (InvalidTimeZoneException ex)
-        {
-            throw new InvalidOperationException($"Часовой пояс '{timeZoneId}' содержит некорректные данные.", ex);
-        }
-    }
-
-    private static DateTimeOffset ToUtc(DateOnly localDate, TimeZoneInfo timeZone)
-    {
-        DateTime localMidnight = DateTime.SpecifyKind(
-            localDate.ToDateTime(TimeOnly.MinValue),
-            DateTimeKind.Unspecified);
-
-        return TimeZoneInfo.ConvertTimeToUtc(localMidnight, timeZone);
-    }
 }

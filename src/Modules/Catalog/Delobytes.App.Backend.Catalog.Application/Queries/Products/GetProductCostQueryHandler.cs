@@ -1,6 +1,8 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
@@ -24,11 +26,19 @@ public class GetProductCostQueryHandler : IRequestHandler<GetProductCostQuery, G
 {
     private readonly IProductRepository _productRepository;
     private readonly ICostCalculator _costCalculator;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantTimeService _tenantTimeService;
 
-    public GetProductCostQueryHandler(IProductRepository productRepository, ICostCalculator costCalculator)
+    public GetProductCostQueryHandler(
+        IProductRepository productRepository,
+        ICostCalculator costCalculator,
+        ITenantContext tenantContext,
+        ITenantTimeService tenantTimeService)
     {
         _productRepository = productRepository;
         _costCalculator = costCalculator;
+        _tenantContext = tenantContext;
+        _tenantTimeService = tenantTimeService;
     }
 
     public async Task<GetProductCostResponse> Handle(GetProductCostQuery request, CancellationToken cancellationToken)
@@ -41,8 +51,10 @@ public class GetProductCostQueryHandler : IRequestHandler<GetProductCostQuery, G
         }
 
         // The calculator itself never reads the clock, so "today" is settled here and passed down
-        // as an explicit date.
-        DateOnly asOf = request.AsOf ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
+        // as an explicit date. It is the tenant's calendar date, not the UTC one: for a tenant
+        // east of UTC the UTC date is still yesterday for the first hours of the working day.
+        DateOnly asOf = request.AsOf
+            ?? await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
 
         CostBreakdown breakdown = await _costCalculator.CalculateAsync(request.ProductId, asOf, cancellationToken);
 

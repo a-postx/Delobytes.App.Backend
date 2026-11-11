@@ -5,6 +5,9 @@ using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Tests.Infrastructure;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -17,15 +20,29 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.Products;
 /// </summary>
 public class GetProductCostQueryHandlerTests
 {
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    // Deliberately not the UTC date: a tenant east of UTC must be priced against its own calendar day.
+    private static readonly DateOnly TenantToday = new DateOnly(2026, 11, 9);
+
     private readonly Mock<IProductRepository> _productRepositoryMock;
     private readonly Mock<ICostCalculator> _costCalculatorMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
+    private readonly Mock<ITenantTimeService> _tenantTimeServiceMock;
     private readonly GetProductCostQueryHandler _handler;
 
     public GetProductCostQueryHandlerTests()
     {
         _productRepositoryMock = new Mock<IProductRepository>();
         _costCalculatorMock = new Mock<ICostCalculator>();
-        _handler = new GetProductCostQueryHandler(_productRepositoryMock.Object, _costCalculatorMock.Object);
+        _tenantContextMock = TenantTimeTestDoubles.TenantContext(TenantId);
+        _tenantTimeServiceMock = TenantTimeTestDoubles.TenantTimeService(TenantId, TenantToday);
+
+        _handler = new GetProductCostQueryHandler(
+            _productRepositoryMock.Object,
+            _costCalculatorMock.Object,
+            _tenantContextMock.Object,
+            _tenantTimeServiceMock.Object);
     }
 
     [Fact]
@@ -125,11 +142,11 @@ public class GetProductCostQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_NullAsOf_UsesTodayForCalculation()
+    public async Task Handle_NullAsOf_UsesTenantTodayForCalculation()
     {
         // Arrange
         Guid productId = Guid.NewGuid();
-        DateOnly today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
+        DateOnly today = TenantToday;
 
         Product product = new Product
         {
