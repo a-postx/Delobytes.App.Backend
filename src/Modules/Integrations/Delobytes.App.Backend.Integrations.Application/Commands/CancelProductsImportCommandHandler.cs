@@ -1,7 +1,7 @@
-using MediatR;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
@@ -21,12 +21,7 @@ public class CancelProductsImportCommandHandler : IRequestHandler<CancelProducts
 
     public async Task Handle(CancelProductsImportCommand request, CancellationToken cancellationToken)
     {
-        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken);
-
-        if (jobRun == null)
-        {
-            throw new KeyNotFoundException($"Задача импорта с ID '{request.JobRunId}' не найдена.");
-        }
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new KeyNotFoundException($"Задача импорта с ID '{request.JobRunId}' не найдена.");
 
         if (jobRun.JobType != JobType.ProductsImport)
         {

@@ -21,7 +21,7 @@ public interface IProductPhotoService
     /// <param name="photos">Photo sources reported by the marketplace; may be empty, which removes every live photo of the channel.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Per-run counters describing what happened to each source.</returns>
-    Task<ProductPhotoImportResult> ImportPhotosAsync(
+    public Task<ProductPhotoImportResult> ImportPhotosAsync(
         Product product,
         Guid channelId,
         IReadOnlyList<MarketplacePhotoSource> photos,
@@ -30,10 +30,10 @@ public interface IProductPhotoService
     /// <summary>Deletes the given photos' blobs from storage. Does not touch the database.</summary>
     /// <param name="photos">Photos whose blobs must be removed.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task DeletePhotosAsync(IReadOnlyList<ProductPhoto> photos, CancellationToken cancellationToken);
+    public Task DeletePhotosAsync(IReadOnlyList<ProductPhoto> photos, CancellationToken cancellationToken);
 
     /// <summary>Builds a public URL. No network call — safe to use inside mapping loops.</summary>
     /// <param name="photo">Photo to build the URL for.</param>
     /// <returns>Publicly reachable URL of the stored blob.</returns>
-    string GetPublicUrl(ProductPhoto photo);
+    public string GetPublicUrl(ProductPhoto photo);
 }

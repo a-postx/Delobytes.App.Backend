@@ -1,6 +1,6 @@
-using MediatR;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
+using MediatR;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;

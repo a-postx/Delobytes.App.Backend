@@ -82,12 +82,7 @@ public class UpdateMembershipRoleCommandHandler : IRequestHandler<UpdateMembersh
         }
 
         TenantMembership? targetMembership = await _membershipRepository
-            .FindActiveByUserAndTenantAsync(request.TargetUserId, request.TenantId, cancellationToken);
-
-        if (targetMembership == null)
-        {
-            throw new InvalidOperationException("Пользователь не является членом данного тенанта.");
-        }
+            .FindActiveByUserAndTenantAsync(request.TargetUserId, request.TenantId, cancellationToken) ?? throw new InvalidOperationException("Пользователь не является членом данного тенанта.");
 
         if (targetMembership.Role == Role.Administrator && request.NewRole != Role.Administrator)
         {

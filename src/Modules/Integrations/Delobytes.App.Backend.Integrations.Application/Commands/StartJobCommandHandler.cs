@@ -1,8 +1,8 @@
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
-using Delobytes.App.Backend.Integrations.Application.Extensions;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 

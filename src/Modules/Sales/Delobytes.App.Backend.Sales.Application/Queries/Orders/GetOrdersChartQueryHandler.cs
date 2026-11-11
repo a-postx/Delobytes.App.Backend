@@ -1,4 +1,3 @@
-using MediatR;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
@@ -6,6 +5,7 @@ using Delobytes.App.Backend.Sales.Application.Models;
 using Delobytes.App.Backend.Sales.Application.Services;
 using FluentValidation;
 using FluentValidation.Results;
+using MediatR;
 
 namespace Delobytes.App.Backend.Sales.Application.Queries.Orders;
 

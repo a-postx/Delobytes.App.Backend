@@ -1,6 +1,6 @@
 ﻿using System;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;

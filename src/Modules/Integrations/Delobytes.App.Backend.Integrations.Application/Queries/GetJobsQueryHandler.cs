@@ -1,9 +1,9 @@
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
-using MediatR;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
+using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Queries;
 

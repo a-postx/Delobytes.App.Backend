@@ -1,8 +1,8 @@
-using MediatR;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
@@ -26,12 +26,7 @@ public class CancelJobCommandHandler : IRequestHandler<CancelJobCommand>
 
     public async Task Handle(CancelJobCommand request, CancellationToken cancellationToken)
     {
-        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken);
-
-        if (jobRun == null)
-        {
-            throw new KeyNotFoundException($"Задача с ID '{request.JobRunId}' не найдена.");
-        }
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new KeyNotFoundException($"Задача с ID '{request.JobRunId}' не найдена.");
 
         if (!jobRun.JobType.IsCancellable())
         {

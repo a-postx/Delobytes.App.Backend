@@ -13,7 +13,7 @@ public interface IProductOrdersRepository
     /// <param name="channelProductIds">Channel product ids to look for.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Number of distinct orders referencing the channel products.</returns>
-    Task<int> CountOrdersForChannelProductsAsync(
+    public Task<int> CountOrdersForChannelProductsAsync(
         IReadOnlyCollection<Guid> channelProductIds,
         CancellationToken cancellationToken);
 }

@@ -1,7 +1,7 @@
 ﻿using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure;
-using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.Extensions.DependencyInjection;

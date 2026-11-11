@@ -1,6 +1,6 @@
-using MediatR;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Channels;
 

@@ -1,11 +1,11 @@
-using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
-using MediatR;
 using System.Text.Json;
+using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
@@ -45,12 +45,7 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
         CancellationToken cancellationToken)
     {
         SystemChannelTemplate? template = await _templateRepository
-            .GetByCodeAsync(request.SystemChannelTemplateCode, cancellationToken);
-
-        if (template == null)
-        {
-            throw new KeyNotFoundException($"Канал '{request.SystemChannelTemplateCode}' не найден.");
-        }
+            .GetByCodeAsync(request.SystemChannelTemplateCode, cancellationToken) ?? throw new KeyNotFoundException($"Канал '{request.SystemChannelTemplateCode}' не найден.");
 
         bool hasActiveConnection = await _connectionRepository
             .HasActiveConnectionForChannelAsync(request.ChannelId, cancellationToken);

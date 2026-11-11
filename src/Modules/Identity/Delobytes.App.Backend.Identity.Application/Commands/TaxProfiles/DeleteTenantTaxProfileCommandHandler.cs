@@ -1,7 +1,7 @@
 using Delobytes.App.Backend.Contracts.Authorization;
-using MediatR;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 
@@ -85,12 +85,7 @@ public class DeleteTenantTaxProfileCommandHandler : IRequestHandler<DeleteTenant
             return new DeleteTenantTaxProfileResponse { Found = true, NotLatest = true };
         }
 
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken);
-
-        if (tenant == null)
-        {
-            throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
-        }
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
 
         // Дата тенанта, а не UTC: иначе ставка, срок действия которой наступил в 00:30
         // по Москве 1 января, ещё числилась бы "будущей" по UTC (21:30 31 декабря).

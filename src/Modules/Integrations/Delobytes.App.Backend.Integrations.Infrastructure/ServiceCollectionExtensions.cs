@@ -1,5 +1,4 @@
 using System.Reflection;
-using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -7,17 +6,20 @@ using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Application.Products;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
-using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Infrastructure.Options.Validators;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
+using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
 using MassTransit;
 using MassTransit.Configuration;
@@ -28,8 +30,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure;
 

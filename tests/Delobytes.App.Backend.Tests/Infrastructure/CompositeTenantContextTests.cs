@@ -1,8 +1,8 @@
+using System.Security.Claims;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Moq;
-using System.Security.Claims;
 
 namespace Delobytes.App.Backend.Tests.Messaging;
 

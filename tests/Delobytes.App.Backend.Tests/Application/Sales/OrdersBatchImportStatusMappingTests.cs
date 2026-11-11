@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using Delobytes.App.Backend.Sales.Domain.Enums;
 using Delobytes.App.Backend.Sales.Application.Orders;
+using Delobytes.App.Backend.Sales.Domain.Enums;
 using FluentAssertions;
 using Xunit;
 

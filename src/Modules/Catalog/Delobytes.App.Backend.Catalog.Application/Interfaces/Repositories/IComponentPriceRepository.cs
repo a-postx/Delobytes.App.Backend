@@ -4,9 +4,9 @@ namespace Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 
 public interface IComponentPriceRepository
 {
-    Task<ComponentPrice?> GetActiveByComponentIdAsync(Guid componentId, CancellationToken ct);
+    public Task<ComponentPrice?> GetActiveByComponentIdAsync(Guid componentId, CancellationToken ct);
 
-    Task<ComponentPrice?> GetLatestByComponentIdAsync(Guid componentId, CancellationToken ct);
+    public Task<ComponentPrice?> GetLatestByComponentIdAsync(Guid componentId, CancellationToken ct);
 
     /// <summary>
     /// Returns the price version that was effective on <paramref name="asOf"/>: the latest version whose
@@ -17,9 +17,9 @@ public interface IComponentPriceRepository
     /// <param name="asOf">Date the price is resolved against.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The effective price version, or null when the component had no price by that date.</returns>
-    Task<ComponentPrice?> GetEffectiveAtAsync(Guid componentId, DateOnly asOf, CancellationToken ct);
+    public Task<ComponentPrice?> GetEffectiveAtAsync(Guid componentId, DateOnly asOf, CancellationToken ct);
 
-    void Add(ComponentPrice price);
+    public void Add(ComponentPrice price);
 
-    Task<int> SaveChangesAsync(CancellationToken ct);
+    public Task<int> SaveChangesAsync(CancellationToken ct);
 }

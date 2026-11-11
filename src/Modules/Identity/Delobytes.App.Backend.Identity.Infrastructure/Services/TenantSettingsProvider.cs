@@ -31,12 +31,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     /// <inheritdoc/>
     public async Task<TenantAccountingSettings> GetAccountingSettingsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken);
-
-        if (tenant == null)
-        {
-            throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
-        }
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
 
         return new TenantAccountingSettings
         {
@@ -48,12 +43,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     /// <inheritdoc/>
     public async Task<TenantTaxProfileSnapshot?> GetTaxProfileAtAsync(Guid tenantId, DateTimeOffset moment, CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken);
-
-        if (tenant == null)
-        {
-            throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
-        }
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
 
         TimeZoneInfo timeZone;
 
@@ -93,12 +83,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     /// <inheritdoc/>
     public async Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken);
-
-        if (tenant == null)
-        {
-            throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
-        }
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
 
         return tenant.MaxBackgroundJobsParallelism;
     }

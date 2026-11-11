@@ -1,8 +1,8 @@
 ﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
-using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Moq;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;

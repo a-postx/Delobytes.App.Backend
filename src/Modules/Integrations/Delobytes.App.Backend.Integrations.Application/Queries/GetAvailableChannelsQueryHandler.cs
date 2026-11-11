@@ -1,7 +1,7 @@
 using Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
-using MediatR;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Queries;
 

@@ -1,9 +1,9 @@
-using MediatR;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
+using MediatR;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
@@ -50,12 +50,7 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
         CancellationToken cancellationToken)
     {
         Connection? connection = await _connectionRepository
-            .FindByIdAsync(request.ConnectionId, cancellationToken);
-
-        if (connection == null)
-        {
-            throw new KeyNotFoundException($"Подключение с ID '{request.ConnectionId}' не найдено.");
-        }
+            .FindByIdAsync(request.ConnectionId, cancellationToken) ?? throw new KeyNotFoundException($"Подключение с ID '{request.ConnectionId}' не найдено.");
 
         if (!connection.IsActive)
         {

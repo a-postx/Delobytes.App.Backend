@@ -15,7 +15,7 @@ public interface ICostCalculator
     /// <param name="asOf">Date the inputs are resolved against; supplied explicitly so past dates stay reproducible.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The breakdown, complete or with warnings describing missing inputs.</returns>
-    Task<CostBreakdown> CalculateAsync(Guid productId, DateOnly asOf, CancellationToken ct);
+    public Task<CostBreakdown> CalculateAsync(Guid productId, DateOnly asOf, CancellationToken ct);
 
     /// <summary>
     /// Calculates the cost of <paramref name="productId"/> against a composition supplied by the
@@ -27,7 +27,7 @@ public interface ICostCalculator
     /// <param name="lines">Draft composition lines, already resolved to components.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The breakdown of the draft, complete or with warnings describing missing inputs.</returns>
-    Task<CostBreakdown> CalculateForLinesAsync(
+    public Task<CostBreakdown> CalculateForLinesAsync(
         Guid productId,
         DateOnly asOf,
         IReadOnlyList<CostCalculationLine> lines,

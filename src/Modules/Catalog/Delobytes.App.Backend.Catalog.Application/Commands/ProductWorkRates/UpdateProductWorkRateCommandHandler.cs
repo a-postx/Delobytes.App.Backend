@@ -1,10 +1,10 @@
-using Delobytes.App.Backend.Contracts.Authorization;
-using MediatR;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates;
 
@@ -66,12 +66,7 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
 
         if (request.WorkRateId != rate.WorkRateId)
         {
-            WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken);
-
-            if (workRate == null)
-            {
-                throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
-            }
+            WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken) ?? throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
         }
 
         List<ProductWorkRate> otherVersions = (await _repository.GetByProductIdAsync(rate.ProductId, cancellationToken))

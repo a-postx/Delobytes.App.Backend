@@ -23,13 +23,8 @@ public class ConnectionResolver : IConnectionResolver
         Connection? connection = connections.FirstOrDefault(c =>
             c.IsActive &&
             c.SystemChannelTemplate?.Code != null &&
-            c.SystemChannelTemplate.Code.Equals(channelCode, StringComparison.OrdinalIgnoreCase));
-
-        if (connection is null)
-        {
-            throw new InvalidOperationException(
+            c.SystemChannelTemplate.Code.Equals(channelCode, StringComparison.OrdinalIgnoreCase)) ?? throw new InvalidOperationException(
                 $"Active connection for channel '{channelCode}' not found for tenant '{_tenantContext.TenantId}'.");
-        }
 
         return connection;
     }

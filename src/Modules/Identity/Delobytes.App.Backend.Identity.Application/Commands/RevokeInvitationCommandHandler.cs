@@ -70,12 +70,7 @@ public class RevokeInvitationCommandHandler : IRequestHandler<RevokeInvitationCo
             throw new InvalidOperationException("Только администратор может отзывать приглашения.");
         }
 
-        Invitation? invitation = await _invitationRepository.FindByIdAsync(request.InvitationId, cancellationToken);
-
-        if (invitation == null)
-        {
-            throw new InvalidOperationException("Приглашение не найдено.");
-        }
+        Invitation? invitation = await _invitationRepository.FindByIdAsync(request.InvitationId, cancellationToken) ?? throw new InvalidOperationException("Приглашение не найдено.");
 
         if (invitation.TenantId != request.TenantId)
         {

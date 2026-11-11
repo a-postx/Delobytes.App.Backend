@@ -4,17 +4,17 @@ namespace Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 
 public interface IComponentRepository
 {
-    Task<Component?> GetByIdAsync(Guid id, CancellationToken ct);
+    public Task<Component?> GetByIdAsync(Guid id, CancellationToken ct);
 
     /// <summary>
     /// Loads the components with the given identifiers in a single round trip.
     /// An empty <paramref name="ids"/> returns an empty list without querying the database.
     /// The order of the result is not guaranteed, so callers that care about it must restore it themselves.
     /// </summary>
-    Task<IReadOnlyList<Component>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct);
+    public Task<IReadOnlyList<Component>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct);
 
     /// <summary>Loads the component together with its price versions.</summary>
-    Task<Component?> GetWithPricesByIdAsync(Guid id, CancellationToken ct);
+    public Task<Component?> GetWithPricesByIdAsync(Guid id, CancellationToken ct);
 
     /// <summary>
     /// Returns one page of components, with price versions and suppliers loaded, together with
@@ -34,7 +34,7 @@ public interface IComponentRepository
     /// and truncated to 200 characters; null, empty or whitespace-only means "no filter". Paging is
     /// applied after this filter, so the returned total count describes the filtered set.</param>
     /// <returns>The unpaged total count and the requested slice of components.</returns>
-    Task<(int TotalCount, IReadOnlyList<Component> Items)> GetPagedAsync(
+    public Task<(int TotalCount, IReadOnlyList<Component> Items)> GetPagedAsync(
         bool? isActive,
         int? skip,
         int? take,
@@ -52,9 +52,9 @@ public interface IComponentRepository
     /// describe the current search result set instead of the whole catalog: a component is counted
     /// when its name contains the trimmed, 200-character-truncated term, case-insensitively. Null,
     /// empty or whitespace-only means "count everything".</param>
-    Task<(int Active, int Inactive, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null);
+    public Task<(int Active, int Inactive, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null);
 
-    void Add(Component component);
+    public void Add(Component component);
 
-    Task<int> SaveChangesAsync(CancellationToken ct);
+    public Task<int> SaveChangesAsync(CancellationToken ct);
 }

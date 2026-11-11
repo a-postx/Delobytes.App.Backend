@@ -19,24 +19,24 @@ public interface IChannelRateLimiter
     /// Attempts to reserve the next request slot for <paramref name="scope"/>. Returns a result with
     /// <c>Acquired == false</c> without any side effect when the next request is not yet due.
     /// </summary>
-    Task<RateLimitAcquireResult> TryAcquireAsync(RateLimitScope scope, CancellationToken cancellationToken);
+    public Task<RateLimitAcquireResult> TryAcquireAsync(RateLimitScope scope, CancellationToken cancellationToken);
 
     /// <summary>
     /// Records a throttled (<c>429</c>) response and computes the next allowed instant from the
     /// server's own advice.
     /// </summary>
     /// <returns>The computed next allowed attempt instant.</returns>
-    Task<DateTimeOffset> ReportRateLimitedAsync(
+    public Task<DateTimeOffset> ReportRateLimitedAsync(
         RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken);
 
     /// <summary>
     /// Records a successful response and lets the limiter adjust its pacing accordingly.
     /// </summary>
-    Task ReportSuccessAsync(RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken);
+    public Task ReportSuccessAsync(RateLimitScope scope, RateLimitSignal signal, CancellationToken cancellationToken);
 
     /// <summary>
     /// Reads the next allowed request instant for <paramref name="scope"/> without reserving a slot.
     /// Returns <c>null</c> when a request may be issued right away.
     /// </summary>
-    Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(RateLimitScope scope, CancellationToken cancellationToken);
+    public Task<DateTimeOffset?> GetNextRequestAllowedAtAsync(RateLimitScope scope, CancellationToken cancellationToken);
 }

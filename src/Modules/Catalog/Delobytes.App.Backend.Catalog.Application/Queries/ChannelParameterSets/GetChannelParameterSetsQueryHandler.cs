@@ -1,5 +1,5 @@
-using MediatR;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.ChannelParameterSets;
 

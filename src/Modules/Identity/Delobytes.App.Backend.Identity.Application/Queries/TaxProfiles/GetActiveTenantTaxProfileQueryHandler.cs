@@ -1,7 +1,7 @@
-using MediatR;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles;
 
@@ -81,12 +81,7 @@ public class GetActiveTenantTaxProfileQueryHandler : IRequestHandler<GetActiveTe
         GetActiveTenantTaxProfileQuery request,
         CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken);
-
-        if (tenant == null)
-        {
-            throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
-        }
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
 
         // Дата берётся в часовом поясе тенанта, а не по UTC: заказ, сделанный в 00:30 по
         // Москве 1 января, приходит как 21:30 UTC 31 декабря и должен получить профиль

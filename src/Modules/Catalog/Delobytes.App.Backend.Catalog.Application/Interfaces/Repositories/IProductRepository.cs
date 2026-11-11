@@ -5,12 +5,12 @@ namespace Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 
 public interface IProductRepository
 {
-    Task<Product?> GetByIdAsync(Guid id, CancellationToken ct);
+    public Task<Product?> GetByIdAsync(Guid id, CancellationToken ct);
 
-    Task<Product?> GetWithChannelProductsByIdAsync(Guid id, CancellationToken ct);
+    public Task<Product?> GetWithChannelProductsByIdAsync(Guid id, CancellationToken ct);
 
     /// <summary>Returns products ordered by name. A null status means "all statuses".</summary>
-    Task<IReadOnlyList<Product>> GetAllByStatusAsync(ProductStatus? status, CancellationToken ct);
+    public Task<IReadOnlyList<Product>> GetAllByStatusAsync(ProductStatus? status, CancellationToken ct);
 
     /// <summary>
     /// Returns one page of products together with the total count of matching rows.
@@ -31,7 +31,7 @@ public interface IProductRepository
     /// product are loaded as well, so the caller can tell whether the product is covered by an
     /// active rate. Off by default: it costs an extra collection include per product.</param>
     /// <returns>The unpaged total count and the requested slice of products.</returns>
-    Task<(int TotalCount, IReadOnlyList<Product> Items)> GetPagedAsync(
+    public Task<(int TotalCount, IReadOnlyList<Product> Items)> GetPagedAsync(
         ProductStatus? status,
         int? skip,
         int? take,
@@ -50,9 +50,9 @@ public interface IProductRepository
     /// describe the current search result set instead of the whole catalog: a product is counted when
     /// its name or SKU contains the trimmed, 200-character-truncated term, case-insensitively. Null,
     /// empty or whitespace-only means "count everything".</param>
-    Task<(int Active, int Archived, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null);
+    public Task<(int Active, int Archived, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null);
 
-    void Add(Product product);
+    public void Add(Product product);
 
-    Task<int> SaveChangesAsync(CancellationToken ct);
+    public Task<int> SaveChangesAsync(CancellationToken ct);
 }

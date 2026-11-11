@@ -1,6 +1,6 @@
-using MediatR;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -74,12 +74,7 @@ public class AcceptInvitationCommandHandler : IRequestHandler<AcceptInvitationCo
     /// <inheritdoc/>
     public async Task<AcceptInvitationResponse> Handle(AcceptInvitationCommand request, CancellationToken cancellationToken)
     {
-        Invitation? invitation = await _invitationRepository.FindByTokenAsync(request.Token, cancellationToken);
-
-        if (invitation == null)
-        {
-            throw new InvalidOperationException("Приглашение не найдено.");
-        }
+        Invitation? invitation = await _invitationRepository.FindByTokenAsync(request.Token, cancellationToken) ?? throw new InvalidOperationException("Приглашение не найдено.");
 
         if (invitation.IsAccepted)
         {
@@ -91,12 +86,7 @@ public class AcceptInvitationCommandHandler : IRequestHandler<AcceptInvitationCo
             throw new InvalidOperationException("Срок действия приглашения истёк.");
         }
 
-        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken);
-
-        if (user == null)
-        {
-            throw new InvalidOperationException("Пользователь не найден.");
-        }
+        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken) ?? throw new InvalidOperationException("Пользователь не найден.");
 
         if (!string.Equals(user.Email, invitation.Email, StringComparison.OrdinalIgnoreCase))
         {

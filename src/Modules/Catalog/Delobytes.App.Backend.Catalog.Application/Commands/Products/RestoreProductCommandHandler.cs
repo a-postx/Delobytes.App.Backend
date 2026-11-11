@@ -1,7 +1,7 @@
-using MediatR;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
 

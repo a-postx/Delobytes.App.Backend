@@ -77,12 +77,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
     /// <inheritdoc/>
     public async Task<CreateTenantResponse> Handle(CreateTenantCommand request, CancellationToken cancellationToken)
     {
-        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken);
-
-        if (user == null)
-        {
-            throw new InvalidOperationException($"Пользователь с ID {request.UserId} не найден.");
-        }
+        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken) ?? throw new InvalidOperationException($"Пользователь с ID {request.UserId} не найден.");
 
         int currentMembershipsCount = await _membershipRepository.CountActiveByUserAsync(request.UserId, cancellationToken);
 
@@ -101,12 +96,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
             }
 
             TenantMembership? currentMembership = await _membershipRepository
-                .FindActiveByUserAndTenantAsync(request.UserId, request.CurrentTenantId.Value, cancellationToken);
-
-            if (currentMembership == null)
-            {
-                throw new InvalidOperationException("Пользователь не состоит в указанном текущем пространстве.");
-            }
+                .FindActiveByUserAndTenantAsync(request.UserId, request.CurrentTenantId.Value, cancellationToken) ?? throw new InvalidOperationException("Пользователь не состоит в указанном текущем пространстве.");
 
             if (currentMembership.Role != Role.Administrator)
             {

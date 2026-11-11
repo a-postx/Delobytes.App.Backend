@@ -11,7 +11,7 @@ public interface ITenantSettingsProvider
     /// <param name="tenantId">Идентификатор тенанта.</param>
     /// <param name="cancellationToken">Токен отмены.</param>
     /// <returns>Настройки учёта тенанта.</returns>
-    Task<TenantAccountingSettings> GetAccountingSettingsAsync(Guid tenantId, CancellationToken cancellationToken);
+    public Task<TenantAccountingSettings> GetAccountingSettingsAsync(Guid tenantId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Возвращает налоговый профиль, действующий на указанный момент времени.
@@ -23,7 +23,7 @@ public interface ITenantSettingsProvider
     /// Профиль с максимальным <c>ValidFrom &lt;= </c> даты момента, либо <c>null</c>,
     /// если на эту дату ни одного профиля нет.
     /// </returns>
-    Task<TenantTaxProfileSnapshot?> GetTaxProfileAtAsync(Guid tenantId, DateTimeOffset moment, CancellationToken cancellationToken);
+    public Task<TenantTaxProfileSnapshot?> GetTaxProfileAtAsync(Guid tenantId, DateTimeOffset moment, CancellationToken cancellationToken);
 
     /// <summary>
     /// Возвращает лимит одновременно выполняемых фоновых задач (JobRun) для тенанта.
@@ -35,5 +35,5 @@ public interface ITenantSettingsProvider
     /// <param name="tenantId">Идентификатор тенанта.</param>
     /// <param name="cancellationToken">Токен отмены.</param>
     /// <returns>Максимальное число одновременно выполняемых JobRun для тенанта.</returns>
-    Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken);
+    public Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken);
 }

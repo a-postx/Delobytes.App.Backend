@@ -5,9 +5,9 @@ namespace Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 
 public interface IProductWorkRateRepository
 {
-    Task<ProductWorkRate?> GetByIdAsync(Guid id, CancellationToken ct);
+    public Task<ProductWorkRate?> GetByIdAsync(Guid id, CancellationToken ct);
 
-    Task<IReadOnlyList<ProductWorkRate>> GetAllAsync(CancellationToken ct);
+    public Task<IReadOnlyList<ProductWorkRate>> GetAllAsync(CancellationToken ct);
 
     /// <summary>
     /// Returns one page of rate versions, paged by product rather than by row: the page holds every
@@ -26,7 +26,7 @@ public interface IProductWorkRateRepository
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The total number of matching products and their rate versions, ordered by product
     /// as on the page and, within a product, with the newest version first.</returns>
-    Task<(int TotalCount, IReadOnlyList<ProductWorkRate> Items)> GetPagedByProductAsync(
+    public Task<(int TotalCount, IReadOnlyList<ProductWorkRate> Items)> GetPagedByProductAsync(
         ProductWorkRateGroupFilter filter,
         string? search,
         int? skipProducts,
@@ -43,11 +43,11 @@ public interface IProductWorkRateRepository
     /// <param name="search">Free-text filter over product name and SKU, normalised the same way as
     /// in <see cref="GetPagedByProductAsync"/>.</param>
     /// <param name="ct">Cancellation token.</param>
-    Task<(int Active, int Inactive, int All)> GetGroupCountsAsync(
+    public Task<(int Active, int Inactive, int All)> GetGroupCountsAsync(
         string? search,
         CancellationToken ct);
 
-    Task<IReadOnlyList<ProductWorkRate>> GetByProductIdAsync(Guid productId, CancellationToken ct);
+    public Task<IReadOnlyList<ProductWorkRate>> GetByProductIdAsync(Guid productId, CancellationToken ct);
 
     /// <summary>
     /// Returns the version currently in force for the product (Status = Active), so that a new
@@ -58,7 +58,7 @@ public interface IProductWorkRateRepository
     /// <param name="productId">Product to look up.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The active version, or null when the product currently has none.</returns>
-    Task<ProductWorkRate?> GetActiveByProductIdAsync(Guid productId, CancellationToken ct);
+    public Task<ProductWorkRate?> GetActiveByProductIdAsync(Guid productId, CancellationToken ct);
 
     /// <summary>
     /// Returns the assembly output rate version that was effective on <paramref name="asOf"/>: the
@@ -73,11 +73,11 @@ public interface IProductWorkRateRepository
     /// <param name="asOf">Date the rate is resolved against.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The effective rate version, or null when none was in force by that date.</returns>
-    Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct);
+    public Task<ProductWorkRate?> GetEffectiveAtAsync(Guid productId, DateOnly asOf, CancellationToken ct);
 
-    Task<IReadOnlyList<Guid>> GetProductIdsByWorkRateIdAsync(Guid workRateId, CancellationToken ct);
+    public Task<IReadOnlyList<Guid>> GetProductIdsByWorkRateIdAsync(Guid workRateId, CancellationToken ct);
 
-    void Add(ProductWorkRate rate);
+    public void Add(ProductWorkRate rate);
 
-    Task<int> SaveChangesAsync(CancellationToken ct);
+    public Task<int> SaveChangesAsync(CancellationToken ct);
 }

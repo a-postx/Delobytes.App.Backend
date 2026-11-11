@@ -1,5 +1,5 @@
-using MediatR;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
+using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Queries;
 
@@ -53,12 +53,7 @@ public class GetTenantLegalEntityQueryHandler : IRequestHandler<GetTenantLegalEn
     /// <inheritdoc/>
     public async Task<GetTenantLegalEntityResponse> Handle(GetTenantLegalEntityQuery request, CancellationToken cancellationToken)
     {
-        Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken);
-
-        if (tenant == null)
-        {
-            throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
-        }
+        Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
 
         return new GetTenantLegalEntityResponse
         {

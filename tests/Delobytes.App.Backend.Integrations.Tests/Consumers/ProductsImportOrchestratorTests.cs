@@ -367,7 +367,7 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -415,7 +415,7 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -462,14 +462,14 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), cursor2));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -526,7 +526,7 @@ public class ProductsImportOrchestratorTests
         _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor>(x => x.ProductId == 999),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -546,7 +546,7 @@ public class ProductsImportOrchestratorTests
 
         // Called with cursor from the saved checkpoint, not null.
         _apiClient.Verify(
-            c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor>(x => x.ProductId == 999),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
@@ -618,7 +618,7 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -672,14 +672,14 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 5), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 5),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(6, 3), cursor2));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 8),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -800,7 +800,7 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 50), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 50),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
@@ -847,14 +847,14 @@ public class ProductsImportOrchestratorTests
             .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 50), cursor1));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 50),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildSuccessResponse(BuildCards(51, 30), cursor2));
 
         _apiClient
-            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), 
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
                 It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 80),
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))

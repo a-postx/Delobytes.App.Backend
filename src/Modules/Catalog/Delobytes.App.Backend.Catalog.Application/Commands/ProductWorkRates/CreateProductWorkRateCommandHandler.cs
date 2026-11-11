@@ -44,12 +44,7 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
 
     public async Task<CreateProductWorkRateResponse> Handle(CreateProductWorkRateCommand request, CancellationToken cancellationToken)
     {
-        WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken);
-
-        if (workRate == null)
-        {
-            throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
-        }
+        WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken) ?? throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
 
         // Checked before any snapshot work: a duplicate ValidFrom would resolve unpredictably via
         // the ThenByDescending(CreatedAt) tie-break in GetEffectiveAtAsync, so the request is

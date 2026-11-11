@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Delobytes.App.Backend.Integrations.Application.Orders;
 using FluentAssertions;
 using Moq;
 using Xunit;

@@ -1,9 +1,9 @@
-using Delobytes.App.Backend.Contracts.Authorization;
-using MediatR;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
 
@@ -44,11 +44,7 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
             throw new AppException(ErrorCodes.Catalog.BomLineInvalidQuantity);
         }
 
-        Component? component = await _componentRepository.GetByIdAsync(request.ComponentId, cancellationToken);
-
-        if (component == null) {
-            throw new AppException(ErrorCodes.Catalog.BomComponentNotFound);
-        }
+        Component? component = await _componentRepository.GetByIdAsync(request.ComponentId, cancellationToken) ?? throw new AppException(ErrorCodes.Catalog.BomComponentNotFound);
 
         await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "BomChanged", cancellationToken);
 

@@ -1,8 +1,8 @@
 using Delobytes.App.Backend.Contracts.Interfaces;
-using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
@@ -53,12 +53,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         CancellationToken cancellationToken)
     {
         Connection? connection = await _connectionRepository
-            .FindByIdWithTemplateAsync(request.ConnectionId, cancellationToken);
-
-        if (connection == null)
-        {
-            throw new KeyNotFoundException($"Подключение с ID '{request.ConnectionId}' не найдено.");
-        }
+            .FindByIdWithTemplateAsync(request.ConnectionId, cancellationToken) ?? throw new KeyNotFoundException($"Подключение с ID '{request.ConnectionId}' не найдено.");
 
         if (!connection.IsActive)
         {

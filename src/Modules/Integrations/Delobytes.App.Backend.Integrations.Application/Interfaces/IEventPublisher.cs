@@ -11,5 +11,5 @@ public interface IEventPublisher
     /// <typeparam name="TEvent">Event type.</typeparam>
     /// <param name="event">Event instance.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken) where TEvent : class;
+    public Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken) where TEvent : class;
 }

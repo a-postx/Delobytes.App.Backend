@@ -2,13 +2,16 @@
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,9 +19,6 @@ using Microsoft.Extensions.Options;
 using Moq;
 using RichardSzalay.MockHttp;
 using Xunit;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
-using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.YandexKit;
 
 namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
 

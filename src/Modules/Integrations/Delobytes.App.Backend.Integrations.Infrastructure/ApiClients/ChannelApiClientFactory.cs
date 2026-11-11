@@ -23,12 +23,7 @@ public class ChannelApiClientFactory : IChannelApiClientFactory
         ArgumentNullException.ThrowIfNull(template);
 
         string code = template.Code.ToLowerInvariant();
-        IChannelApiClient? client = _serviceProvider.GetKeyedService<IChannelApiClient>(code);
-
-        if (client == null)
-        {
-            throw new NotSupportedException($"Channel '{template.Code}' is not supported.");
-        }
+        IChannelApiClient? client = _serviceProvider.GetKeyedService<IChannelApiClient>(code) ?? throw new NotSupportedException($"Channel '{template.Code}' is not supported.");
 
         // A client that resolves its endpoints from the template is bound here, at the one place
         // that hands clients out, so callers never configure it themselves.

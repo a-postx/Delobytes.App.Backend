@@ -1,11 +1,11 @@
-﻿using Delobytes.App.Backend.Catalog.Application.Exceptions;
+﻿using System.Linq.Expressions;
+using Delobytes.App.Backend.Catalog.Application.Exceptions;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Contracts.Errors;
 using Microsoft.EntityFrameworkCore;
-using System.Linq.Expressions;
 
 namespace Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 

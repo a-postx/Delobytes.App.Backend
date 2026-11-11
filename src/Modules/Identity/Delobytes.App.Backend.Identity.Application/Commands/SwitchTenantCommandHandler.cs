@@ -1,6 +1,6 @@
-using MediatR;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
+using MediatR;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -57,12 +57,7 @@ public class SwitchTenantCommandHandler : IRequestHandler<SwitchTenantCommand, S
     public async Task<SwitchTenantResponse> Handle(SwitchTenantCommand request, CancellationToken cancellationToken)
     {
         TenantMembership? membership = await _membershipRepository
-            .FindActiveByUserAndTenantAsync(request.UserId, request.TargetTenantId, cancellationToken);
-
-        if (membership == null)
-        {
-            throw new InvalidOperationException("Пользователь не состоит в указанном пространстве.");
-        }
+            .FindActiveByUserAndTenantAsync(request.UserId, request.TargetTenantId, cancellationToken) ?? throw new InvalidOperationException("Пользователь не состоит в указанном пространстве.");
 
         User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken);
 

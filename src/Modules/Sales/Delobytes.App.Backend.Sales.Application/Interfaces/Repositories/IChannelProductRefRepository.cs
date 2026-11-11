@@ -9,7 +9,7 @@ namespace Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
 public interface IChannelProductRefRepository
 {
     /// <summary>Finds the projection of a channel product link.</summary>
-    Task<ChannelProductRef?> FindByChannelProductIdAsync(
+    public Task<ChannelProductRef?> FindByChannelProductIdAsync(
         Guid channelProductId,
         CancellationToken cancellationToken);
 
@@ -17,18 +17,18 @@ public interface IChannelProductRefRepository
     /// Finds a projection that still occupies the natural key
     /// <c>(TenantId, ChannelId, ExternalProductId)</c> under a different channel product id.
     /// </summary>
-    Task<ChannelProductRef?> FindStaleAsync(
+    public Task<ChannelProductRef?> FindStaleAsync(
         Guid channelId,
         string externalProductId,
         Guid newChannelProductId,
         CancellationToken cancellationToken);
 
     /// <summary>Stages a new projection.</summary>
-    void Add(ChannelProductRef projection);
+    public void Add(ChannelProductRef projection);
 
     /// <summary>Stages the removal of a projection.</summary>
-    void Remove(ChannelProductRef projection);
+    public void Remove(ChannelProductRef projection);
 
     /// <summary>Persists every pending change.</summary>
-    Task SaveChangesAsync(CancellationToken cancellationToken);
+    public Task SaveChangesAsync(CancellationToken cancellationToken);
 }

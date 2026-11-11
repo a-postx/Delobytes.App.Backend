@@ -136,12 +136,7 @@ public class GetTenantMembersQueryHandler : IRequestHandler<GetTenantMembersQuer
     public async Task<GetTenantMembersResponse> Handle(GetTenantMembersQuery request, CancellationToken cancellationToken)
     {
         TenantMembership? requesterMembership = await _membershipRepository
-            .FindActiveByUserAndTenantAsync(request.RequestedByUserId, request.TenantId, cancellationToken);
-
-        if (requesterMembership == null)
-        {
-            throw new InvalidOperationException("Вы не являетесь членом данного тенанта.");
-        }
+            .FindActiveByUserAndTenantAsync(request.RequestedByUserId, request.TenantId, cancellationToken) ?? throw new InvalidOperationException("Вы не являетесь членом данного тенанта.");
 
         IReadOnlyList<TenantMembership> memberships = await _membershipRepository
             .GetActiveByTenantAsync(request.TenantId, cancellationToken);
