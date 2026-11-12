@@ -112,12 +112,12 @@ public class OzonImportOptionsValidatorTests
         {
             BackfillRunBudgetSeconds = 20 * 60,
             MaxInProcessWaitSeconds = 120,
-            MinimumRequestIntervalSeconds = 15,
+            MinimumRequestIntervalSeconds = 2,
         };
 
         ValidateOptionsResult result = _validator.Validate(null, options);
 
-        result.Succeeded.Should().BeTrue("a 15s interval is well inside the 120s in-process wait tolerance");
+        result.Succeeded.Should().BeTrue("a 2s interval is well inside the 120s in-process wait tolerance");
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public class OzonImportOptionsValidatorTests
     [Fact]
     public void Validate_NegativeMinimumRequestInterval_FallsBackToTheDefault()
     {
-        // A negative value is read as "use the default 15s", which still fits inside a 60s wait.
+        // A negative value is read as "use the default 2s", which still fits inside a 60s wait.
         OzonImportOptions options = new OzonImportOptions
         {
             BackfillRunBudgetSeconds = 20 * 60,

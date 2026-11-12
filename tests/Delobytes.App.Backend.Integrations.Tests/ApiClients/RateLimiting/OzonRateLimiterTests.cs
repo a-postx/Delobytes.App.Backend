@@ -152,7 +152,7 @@ public class OzonRateLimiterTests
     public async Task TryAcquireAsync_WithMinimumInterval_RefusesTheSecondRequestUntilTheIntervalElapses()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromSeconds(15));
+        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromSeconds(2));
         RateLimitScope scope = Scope("key-a");
 
         (await limiter.TryAcquireAsync(scope, CancellationToken.None)).Acquired.Should().BeTrue();
@@ -160,11 +160,11 @@ public class OzonRateLimiterTests
         RateLimitAcquireResult tooSoon = await limiter.TryAcquireAsync(scope, CancellationToken.None);
 
         tooSoon.Acquired.Should().BeFalse("the minimum interval has not elapsed since the last request");
-        tooSoon.NextRequestAllowedAt.Should().Be(timeProvider.GetUtcNow().AddSeconds(15));
+        tooSoon.NextRequestAllowedAt.Should().Be(timeProvider.GetUtcNow().AddSeconds(2));
 
-        timeProvider.Advance(TimeSpan.FromSeconds(14));
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
         (await limiter.TryAcquireAsync(scope, CancellationToken.None)).Acquired.Should().BeFalse(
-            "14 seconds is still short of the 15 second interval");
+            "1 second is still short of the 2 second interval");
 
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         (await limiter.TryAcquireAsync(scope, CancellationToken.None)).Acquired.Should().BeTrue(
@@ -191,7 +191,7 @@ public class OzonRateLimiterTests
         // The same connection drives FBO and FBS against one Client-Id, so the interval has to span
         // both methods: pacing them independently would let the two runs reach Ozon back to back.
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromSeconds(15));
+        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromSeconds(2));
         RateLimitScope fboScope = new RateLimitScope("ozon", "key-a", OrdersRateLimiterMethods.OzonPostingFboList);
         RateLimitScope fbsScope = new RateLimitScope("ozon", "key-a", OrdersRateLimiterMethods.OzonPostingFbsList);
 
@@ -200,7 +200,7 @@ public class OzonRateLimiterTests
         RateLimitAcquireResult fbsResult = await limiter.TryAcquireAsync(fbsScope, CancellationToken.None);
 
         fbsResult.Acquired.Should().BeFalse();
-        fbsResult.NextRequestAllowedAt.Should().Be(timeProvider.GetUtcNow().AddSeconds(15));
+        fbsResult.NextRequestAllowedAt.Should().Be(timeProvider.GetUtcNow().AddSeconds(2));
 
         (await limiter.TryAcquireAsync(Scope("key-b"), CancellationToken.None)).Acquired.Should().BeTrue(
             "another API key is paced by its own interval");
@@ -210,7 +210,7 @@ public class OzonRateLimiterTests
     public async Task GetNextRequestAllowedAtAsync_WithMinimumInterval_ReportsTheIntervalWithoutReservingASlot()
     {
         FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromSeconds(15));
+        OzonRateLimiter limiter = new OzonRateLimiter(timeProvider, TimeSpan.FromSeconds(2));
         RateLimitScope scope = Scope("key-a");
 
         (await limiter.GetNextRequestAllowedAtAsync(scope, CancellationToken.None)).Should().BeNull(
@@ -219,12 +219,12 @@ public class OzonRateLimiterTests
         await limiter.TryAcquireAsync(scope, CancellationToken.None);
 
         (await limiter.GetNextRequestAllowedAtAsync(scope, CancellationToken.None))
-            .Should().Be(timeProvider.GetUtcNow().AddSeconds(15));
+            .Should().Be(timeProvider.GetUtcNow().AddSeconds(2));
 
         // Reading the instant must not consume the interval: the scheduler asks on every tick.
         (await limiter.TryAcquireAsync(scope, CancellationToken.None)).Acquired.Should().BeFalse();
 
-        timeProvider.Advance(TimeSpan.FromSeconds(15));
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
 
         (await limiter.GetNextRequestAllowedAtAsync(scope, CancellationToken.None)).Should().BeNull();
     }
