@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Application.Products;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -31,6 +32,7 @@ public sealed class OzonChannelModule : ChannelModule
     {
         (JobType.OzonOrdersImportFbo, ChannelJobKind.OrdersImport),
         (JobType.OzonOrdersImportFbs, ChannelJobKind.OrdersImport),
+        (JobType.OzonProductsImport, ChannelJobKind.ProductsImport),
     };
 
     public override string? GetRateLimitMethod(JobType jobType)
@@ -45,8 +47,15 @@ public sealed class OzonChannelModule : ChannelModule
 
     public override void RegisterProducts(IServiceCollection services)
     {
-        // Ozon does not expose product cards through this system yet; when it does, its tuning and
-        // products source are registered here, next to the orders wiring below.
+        // 1000 is the endpoint's ceiling and keeps the run short; 200 keeps one published message
+        // near 1-3 MB, because a page of full cards with attributes is 3-15 MB in total.
+        services.AddKeyedScoped<ProductsImportTuning>(
+            ChannelCatalog.OzonCode,
+            (sp, _) => new ProductsImportTuning(1000, 200));
+
+        services.AddKeyedScoped<IProductsSource>(
+            ChannelCatalog.OzonCode,
+            (sp, _) => sp.GetRequiredService<OzonApiClient>());
     }
 
     public override void RegisterOrders(IServiceCollection services)

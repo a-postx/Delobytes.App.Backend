@@ -410,6 +410,46 @@ public class ProductRepositorySearchTests
         all.Should().Be(3);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_SearchMatchingOnlyChannelName_DoesNotMatch()
+    {
+        // Arrange: the channel's copy of the name is separate data; the catalogue search covers
+        // the product's own code, name and SKU.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        Product product = Product("SKU-1", "Hammer", ProductStatus.Active, "C-1");
+        product.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = Guid.NewGuid(),
+            ExternalProductId = "1088660899",
+            Name = "Blue widget from the channel",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        setupContext.Products.Add(product);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ProductRepository repository = new ProductRepository(readContext);
+
+        // Act
+        (int totalCount, _) = await repository.GetPagedAsync(
+            null,
+            null,
+            null,
+            null,
+            descending: false,
+            CancellationToken.None,
+            "widget");
+
+        // Assert
+        totalCount.Should().Be(0, "channel-reported text is not part of the catalogue search");
+    }
+
     private static Product Product(string sku, string name, ProductStatus status, string? code = null)
     {
         return new Product

@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -23,10 +24,10 @@ public class CancelProductsImportCommandHandler : IRequestHandler<CancelProducts
     {
         JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new KeyNotFoundException($"Задача импорта с ID '{request.JobRunId}' не найдена.");
 
-        if (jobRun.JobType != JobType.ProductsImport)
+        if (!jobRun.JobType.IsProductsImport())
         {
             throw new InvalidOperationException(
-                $"Отмена поддерживается только для задач типа ProductsImport. Текущий тип: '{jobRun.JobType}'.");
+                $"Отмена поддерживается только для задач импорта товаров. Текущий тип: '{jobRun.JobType.ToStringCamelCase()}'.");
         }
 
         if (jobRun.Status != JobStatus.Pending && jobRun.Status != JobStatus.Running)

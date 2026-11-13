@@ -19,13 +19,33 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 
 /// <summary>
-/// Ozon marketplace API client. Reads FBO and FBS orders; product cards are not supported yet.
+/// Ozon marketplace API client. Reads FBO and FBS orders, and the full catalogue of on-sale product
+/// cards through the attributes endpoint.
 /// </summary>
 public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder
 {
     private const string DefaultApiBaseUrl = "https://api-seller.ozon.ru";
     private const string FboListPath = "/v3/posting/fbo/list";
     private const string FbsListPath = "/v4/posting/fbs/list";
+
+    /// <summary>
+    /// Lists the seller's cards together with their attributes, so one request is both the listing
+    /// and the card payload.
+    /// </summary>
+    private const string ProductAttributesPath = "/v4/product/info/attributes";
+
+    /// <summary>Ozon's own ceiling for one attributes page.</summary>
+    private const int ProductAttributesPageSizeMaximum = 1000;
+
+    // Fixed attribute id; to be replaced by category-driven resolution later.
+    private const int DescriptionAttributeId = 4191;
+
+    /// <summary>
+    /// Longest in-process wait the products client accepts for a rate-limiter slot. With a
+    /// two-second minimum interval the wait never approaches this; the bound only stops a broken
+    /// limiter from hanging a run.
+    /// </summary>
+    private static readonly TimeSpan ProductCardsWaitTolerance = TimeSpan.FromSeconds(30);
 
     // Both posting list endpoints share the same page size envelope.
     private const int PostingListPageSizeMinimum = 1;
@@ -40,8 +60,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
     // только для метода GetAccountInfoAsync
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConnectionResolver _connectionResolver;
-    private readonly IChannelRateLimiter _ordersRateLimiter;
+    private readonly IChannelRateLimiter _rateLimiter;
     private readonly ILogger<OzonApiClient> _logger;
+    private readonly TimeProvider _timeProvider;
+    private readonly RateLimitRequestPacer _pacer;
 
     private Guid? _templateId;
     private string? _apiBaseUrl;
@@ -70,20 +92,29 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
     /// Resolves the connection the request authenticates as, so the rate-limit scope is keyed by the
     /// key Ozon actually meters rather than by an arbitrary connection of the tenant.
     /// </param>
-    /// <param name="ordersRateLimiter">Channel-neutral orders pacing.</param>
+    /// <param name="rateLimiter">
+    /// One limiter per API key, shared by orders and products: Ozon meters the key, not the method.
+    /// </param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="timeProvider">
+    /// Clock of the pacing helper and of the response timestamps. Both must read the same clock as
+    /// the limiter, otherwise a slot that is already due looks like one that is still held.
+    /// </param>
     public OzonApiClient(
         HttpClient httpClient,
         IHttpClientFactory httpClientFactory,
         IConnectionResolver connectionResolver,
-        [FromKeyedServices(ChannelCatalog.OzonCode)] IChannelRateLimiter ordersRateLimiter,
-        ILogger<OzonApiClient> logger)
+        [FromKeyedServices(ChannelCatalog.OzonCode)] IChannelRateLimiter rateLimiter,
+        ILogger<OzonApiClient> logger,
+        TimeProvider timeProvider)
     {
         _httpClient = httpClient;
         _httpClientFactory = httpClientFactory;
         _connectionResolver = connectionResolver;
-        _ordersRateLimiter = ordersRateLimiter;
+        _rateLimiter = rateLimiter;
         _logger = logger;
+        _timeProvider = timeProvider;
+        _pacer = new RateLimitRequestPacer(rateLimiter, timeProvider, logger);
     }
 
     /// <summary>
@@ -297,7 +328,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
 
         RateLimitScope scope = new RateLimitScope(ChannelCatalog.OzonCode, connection.ApiKey, rateLimiterMethod);
 
-        RateLimitAcquireResult acquireResult = await _ordersRateLimiter.TryAcquireAsync(scope, cancellationToken);
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
 
         if (!acquireResult.Acquired)
         {
@@ -326,7 +357,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            DateTimeOffset retryAt = await _ordersRateLimiter.ReportRateLimitedAsync(
+            DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
                 scope, rateLimitSignal, cancellationToken);
 
             string throttledBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -365,7 +396,7 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
 
         // Reported before the body is read: the counters describe this response, and a body that
         // fails to deserialize must not cost the limiter its only feedback on the real allowance.
-        await _ordersRateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
 
         OzonPostingListResponse? page = await readPage(response.Content, cancellationToken);
 
@@ -395,19 +426,300 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
         };
     }
 
-    public Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(
+    /// <inheritdoc/>
+    public async Task<ApiResponse<ProductCardsData>> GetProductCardsAsync(
         Guid connectionId, ProductCardsCursor? cursor, int limit, CancellationToken ct)
     {
-        throw new NotImplementedException();
+        int pageSize = Math.Clamp(limit, 1, ProductAttributesPageSizeMaximum);
+
+        Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, ct);
+
+        // Products and orders share one limiter per API key: Ozon meters the key. The method value
+        // only labels the scope for logging and diagnostics.
+        RateLimitScope scope = new RateLimitScope(
+            ChannelCatalog.OzonCode,
+            connection.ApiKey,
+            ProductAttributesPath);
+
+        // The orchestrator treats any non-success page as a failed job, so a short wait is always
+        // better than a refusal: return the failure only when the slot is beyond the tolerance.
+        RateLimitAcquireResult? refusedSlot = await _pacer.WaitForSlotAsync(scope, ProductCardsWaitTolerance, ct);
+
+        if (refusedSlot is not null)
+        {
+            _logger.LogWarning(
+                "Ozon product cards request for connection {ConnectionId} was not issued: the rate " +
+                "limiter has not released the next slot before {NextAllowed:O}.",
+                connectionId,
+                refusedSlot.NextRequestAllowedAt);
+
+            return new ApiResponse<ProductCardsData>
+            {
+                IsSuccess = false,
+                ErrorMessage = $"Rate limit: slot not available until {refusedSlot.NextRequestAllowedAt:O}.",
+                StatusCode = 429,
+                Timestamp = _timeProvider.GetUtcNow(),
+                Data = new ProductCardsData(),
+            };
+        }
+
+        OzonProductAttributesRequest body = new OzonProductAttributesRequest
+        {
+            Filter = new OzonProductAttributesFilter(),
+            Limit = pageSize,
+            LastId = string.IsNullOrEmpty(cursor?.Token) ? null : cursor.Token,
+        };
+
+        using HttpRequestMessage httpRequest = new HttpRequestMessage(
+            HttpMethod.Post, $"{BaseUrl}{ProductAttributesPath}")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(body, SerializerOptions), Encoding.UTF8, "application/json"),
+        };
+
+        httpRequest.Options.Set(OzonAuthHandler.ConnectionIdOptionKey, connectionId);
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(httpRequest, ct);
+
+        RateLimitSignal rateLimitSignal = OzonRateLimitHeaders.Parse(response);
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
+                scope, rateLimitSignal, ct);
+
+            string throttledBody = await response.Content.ReadAsStringAsync(ct);
+
+            _logger.LogWarning(
+                "Ozon products API throttled the request (429): connection {ConnectionId}, " +
+                "x-request-id {RequestId}, Ratelimit-Remaining {Remaining}, Retry-After {RetrySeconds}s. " +
+                "Response: {Response}",
+                connectionId,
+                rateLimitSignal.RequestId,
+                rateLimitSignal.Remaining,
+                rateLimitSignal.RetrySeconds,
+                TruncateForLog(throttledBody));
+
+            return new ApiResponse<ProductCardsData>
+            {
+                IsSuccess = false,
+                ErrorMessage = $"Rate limit exceeded. Retry after {retryAt:O}.",
+                StatusCode = (int)response.StatusCode,
+                Timestamp = _timeProvider.GetUtcNow(),
+                Data = new ProductCardsData(),
+            };
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string responseBody = await response.Content.ReadAsStringAsync(ct);
+
+            _logger.LogWarning(
+                "Ozon products API returned {StatusCode} (x-request-id {RequestId}). Response: {Response}",
+                (int)response.StatusCode,
+                rateLimitSignal.RequestId,
+                TruncateForLog(responseBody));
+
+            throw new HttpRequestException(
+                $"Ozon products API returned {(int)response.StatusCode}.",
+                null,
+                response.StatusCode);
+        }
+
+        // Reported before the body is read: the counters describe this response, and a body that
+        // fails to deserialize must not cost the limiter its only feedback on the real allowance.
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, ct);
+
+        OzonProductAttributesResponse? page = await response.Content
+            .ReadFromJsonAsync<OzonProductAttributesResponse>(SerializerOptions, ct);
+
+        List<ChannelProductCard> cards = new List<ChannelProductCard>();
+
+        foreach (OzonProductAttributesItem item in page?.Result ?? new List<OzonProductAttributesItem>())
+        {
+            if (item.Sku == 0)
+            {
+                // No marketplace article: two such cards would collide on the value "0" inside the
+                // unique index that keys links by (channel, external product id).
+                _logger.LogWarning(
+                    "Ozon card Id={OzonId}, OfferId={OfferId} has no sku; skipping it.",
+                    item.Id,
+                    item.OfferId);
+
+                continue;
+            }
+
+            cards.Add(MapCard(item));
+        }
+
+        return new ApiResponse<ProductCardsData>
+        {
+            IsSuccess = true,
+            StatusCode = (int)HttpStatusCode.OK,
+            Timestamp = _timeProvider.GetUtcNow(),
+            Data = new ProductCardsData
+            {
+                Cards = cards,
+                NextCursor = string.IsNullOrEmpty(page?.LastId)
+                    ? null
+                    : new ProductCardsCursor { Token = page.LastId },
+                TotalCount = page?.Total ?? 0,
+            },
+        };
     }
 
     /// <inheritdoc/>
-    ///
-    /// <remarks>Ozon does not support product cards sync yet.</remarks>
-    public Task<ProductCardsPage> GetProductCardsAsync(
+    public async Task<ProductCardsPage> GetProductCardsAsync(
         Guid connectionId, ProductCardsPageRequest request, CancellationToken cancellationToken)
     {
-        throw new NotSupportedException("Ozon does not support product cards sync yet.");
+        ArgumentNullException.ThrowIfNull(request);
+
+        ApiResponse<ProductCardsData> response =
+            await GetProductCardsAsync(connectionId, request.Cursor, request.Limit, cancellationToken);
+
+        if (!response.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Failed to retrieve Ozon product cards: {response.ErrorMessage}");
+        }
+
+        return new ProductCardsPage
+        {
+            Cards = response.Data?.Cards.ToList() ?? new List<ChannelProductCard>(),
+            NextCursor = response.Data?.NextCursor,
+            TotalCount = response.Data?.TotalCount ?? 0,
+        };
+    }
+
+    /// <summary>
+    /// Projects one attributes item onto the channel-neutral card.
+    /// </summary>
+    /// <remarks>
+    /// The top-level <c>depth</c>/<c>width</c>/<c>height</c>/<c>weight</c> describe the packed unit.
+    /// Attributes 8415, 6433, 6469, 4082, 4497 and 8962 carry the product's own measurements and
+    /// disagree with them, so they are deliberately not read here.
+    /// </remarks>
+    private static ChannelProductCard MapCard(OzonProductAttributesItem item)
+    {
+        decimal dimensionDivisor = string.Equals(item.DimensionUnit, "mm", StringComparison.OrdinalIgnoreCase)
+            ? 10m
+            : 1m;
+
+        decimal weightDivisor = string.Equals(item.WeightUnit, "g", StringComparison.OrdinalIgnoreCase)
+            ? 1000m
+            : 1m;
+
+        return new ChannelProductCard
+        {
+            ExternalProductId = item.Sku.ToString(CultureInfo.InvariantCulture),
+            OfferId = item.OfferId,
+            Name = item.Name ?? string.Empty,
+            Description = FindAttributeValue(item, DescriptionAttributeId),
+            Barcodes = MapBarcodes(item),
+            LengthCm = item.Depth / dimensionDivisor,
+            WidthCm = item.Width / dimensionDivisor,
+            HeightCm = item.Height / dimensionDivisor,
+            WeightKg = item.Weight / weightDivisor,
+            Photos = MapPhotos(item),
+            ChannelSpecificData = null,
+            ChannelCode = ChannelCatalog.OzonCode,
+            BarcodeType = ChannelCatalog.OzonCode,
+        };
+    }
+
+    /// <summary>
+    /// Both barcode shapes are present in live payloads and agree; the list wins when it has any
+    /// entries, because a card may have several.
+    /// </summary>
+    private static List<string> MapBarcodes(OzonProductAttributesItem item)
+    {
+        List<string> barcodes = new List<string>();
+
+        IEnumerable<string> source = item.Barcodes.Count > 0
+            ? item.Barcodes
+            : string.IsNullOrWhiteSpace(item.Barcode)
+                ? Array.Empty<string>()
+                : new[] { item.Barcode };
+
+        foreach (string barcode in source)
+        {
+            if (!string.IsNullOrWhiteSpace(barcode))
+            {
+                barcodes.Add(barcode);
+            }
+        }
+
+        return barcodes;
+    }
+
+    /// <summary>
+    /// Builds the photo list the importer expects. Ozon publishes one size per image, while the
+    /// photo pipeline selects the "thumbnail" variant, so each URL yields both variants under the
+    /// same display order.
+    /// </summary>
+    private static List<ChannelProductPhoto> MapPhotos(OzonProductAttributesItem item)
+    {
+        List<string> urls = new List<string>();
+        HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+
+        if (!string.IsNullOrWhiteSpace(item.PrimaryImage) && seen.Add(item.PrimaryImage))
+        {
+            urls.Add(item.PrimaryImage);
+        }
+
+        foreach (string image in item.Images)
+        {
+            // The primary image is frequently absent from "images", but a payload that repeats it
+            // must not yield a duplicate gallery entry.
+            if (!string.IsNullOrWhiteSpace(image) && seen.Add(image))
+            {
+                urls.Add(image);
+            }
+        }
+
+        List<ChannelProductPhoto> photos = new List<ChannelProductPhoto>(urls.Count * 2);
+
+        for (int index = 0; index < urls.Count; index++)
+        {
+            int displayOrder = index + 1;
+
+            photos.Add(new ChannelProductPhoto
+            {
+                Url = urls[index],
+                SizeVariant = "large",
+                DisplayOrder = displayOrder,
+            });
+
+            photos.Add(new ChannelProductPhoto
+            {
+                Url = urls[index],
+                SizeVariant = "thumbnail",
+                DisplayOrder = displayOrder,
+            });
+        }
+
+        return photos;
+    }
+
+    private static string? FindAttributeValue(OzonProductAttributesItem item, int attributeId)
+    {
+        foreach (OzonProductAttribute attribute in item.Attributes)
+        {
+            if (attribute.Id != attributeId)
+            {
+                continue;
+            }
+
+            foreach (OzonProductAttributeValue value in attribute.Values)
+            {
+                if (!string.IsNullOrWhiteSpace(value.Value))
+                {
+                    return value.Value;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static int ClampLimit(int limit)

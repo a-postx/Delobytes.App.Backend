@@ -47,6 +47,32 @@ public class StartJobCommandHandlerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task Handle_OzonProductsImport_IsAcceptedAndDispatched()
+    {
+        Guid connectionId = Guid.NewGuid();
+        Guid jobRunId = Guid.NewGuid();
+
+        _mediator
+            .Setup(m => m.Send(It.IsAny<StartProductsImportCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StartProductsImportResponse { JobRunId = jobRunId });
+
+        StartJobCommandHandler handler = CreateHandler();
+
+        StartJobResponse response = await handler.Handle(
+            new StartJobCommand { JobType = JobType.OzonProductsImport, ConnectionId = connectionId },
+            CancellationToken.None);
+
+        response.JobRunId.Should().Be(jobRunId);
+        response.Type.Should().Be("ozon-products-import");
+
+        _mediator.Verify(
+            m => m.Send(
+                It.Is<StartProductsImportCommand>(c => c.ConnectionId == connectionId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     [Theory]
     [InlineData(JobType.WbOrdersImport)]
     public async Task Handle_NonStartableType_Throws_WithoutDispatching(JobType jobType)

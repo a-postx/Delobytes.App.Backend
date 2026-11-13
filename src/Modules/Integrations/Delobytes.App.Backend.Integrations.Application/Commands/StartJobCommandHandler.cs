@@ -45,7 +45,7 @@ public class StartJobCommandHandler : IRequestHandler<StartJobCommand, StartJobR
                 "она выполняется планировщиком по расписанию.");
         }
 
-        if (request.JobType != JobType.ProductsImport)
+        if (!request.JobType.IsProductsImport())
         {
             throw new InvalidOperationException(
                 $"Запуск задач типа '{request.JobType.ToStringCamelCase()}' через API не поддерживается.");

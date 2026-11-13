@@ -61,11 +61,11 @@ public class UpdateProductResponse
 /// only changes the SKU cannot accidentally blank the name, drop barcodes, or deactivate the
 /// packing unit. Only fields the caller actually supplied are written.
 ///
-/// SKU changes are safe for marketplace-linked products. The import matches cards by nmID and by
-/// barcode and never consults Product.Sku (see ProductBatchImporter.FindProductByBarcodeAsync),
-/// so renaming the internal SKU cannot re-route or duplicate a later import. The channel's own
-/// vendor code is kept separately on ChannelProduct.ExternalSku and continues to be refreshed on
-/// every sync.
+/// SKU changes are safe for marketplace-linked products. The import matches cards by the existing
+/// channel link, then by barcode, then by the seller article of a card on any channel, and never
+/// consults Product.Sku (see ProductBatchImporter.FindProductAsync). Renaming the internal SKU
+/// therefore cannot re-route or duplicate a later import. The channel's own article is kept
+/// separately on ChannelProduct.ExternalSku and continues to be refreshed on every sync.
 /// </summary>
 public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand, UpdateProductResponse>
 {

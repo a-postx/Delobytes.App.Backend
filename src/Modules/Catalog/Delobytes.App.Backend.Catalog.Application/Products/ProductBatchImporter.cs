@@ -1,6 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Numbering;
-using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -298,8 +297,9 @@ public class ProductBatchImporter
     }
 
     /// <summary>
-    /// Resolves a card to a product in two steps: the channel link by nmID first, then an existing
-    /// product by barcode. A card that matches neither is imported as a new product.
+    /// Resolves a card to a product: the existing channel link first, then a match by barcode, then
+    /// a match by the seller article the card carries on any channel. A card that matches nothing
+    /// is imported as a new product; an ambiguous match is skipped instead.
     /// </summary>
     private async Task<ImportResult> ProcessCardAsync(
         ChannelProductCard card,
@@ -318,52 +318,104 @@ public class ProductBatchImporter
             return await UpdateExistingProductAsync(existingChannelProduct, card, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
         }
 
-        Product? matchedProduct = await FindProductByBarcodeAsync(card, cancellationToken);
-
-        if (matchedProduct != null)
+        // A card with neither barcode nor seller article carries nothing that could identify it.
+        // Importing it would create a product per run, so it is treated as a draft of the channel
+        // and left out of the catalogue until the channel publishes identifiers.
+        if (card.Barcodes.Count == 0 && string.IsNullOrWhiteSpace(card.OfferId))
         {
-            return await LinkExistingProductAsync(matchedProduct, card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+            _logger.LogInformation(
+                "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: card has neither barcode nor offer id; treating as draft and skipping.",
+                channelId,
+                externalProductId);
+
+            return new ImportResult { Status = ImportStatus.Skipped };
+        }
+
+        ProductMatch match = await FindProductAsync(card, channelId, cancellationToken);
+
+        if (match.IsAmbiguous)
+        {
+            return new ImportResult { Status = ImportStatus.Skipped };
+        }
+
+        if (match.Product != null)
+        {
+            return await LinkExistingProductAsync(match.Product, card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
         }
 
         return await CreateNewProductAsync(card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
     }
 
     /// <summary>
-    /// Finds a product already known to the catalog whose barcode appears on the marketplace card.
-    /// This is the only automatic matching rule besides the nmID link: Product.Sku is deliberately
-    /// not consulted, so renaming the internal SKU can never re-route or duplicate an import.
-    /// Returns null when the card carries no barcodes or when the match is ambiguous.
+    /// Finds the product a new card belongs to: by barcode first, then by the seller article the
+    /// card carries (<c>vendorCode</c> / <c>offer_id</c>) on any channel of the tenant.
+    /// <see cref="Product.Sku"/> is deliberately never consulted: it is user-editable, so using it
+    /// as a key would re-route an import after a rename.
     /// </summary>
-    private async Task<Product?> FindProductByBarcodeAsync(
+    /// <remarks>
+    /// The result distinguishes "no candidate" from "several candidates". Reading ambiguity as
+    /// "no candidate" would create a duplicate of a product the catalogue already holds, so an
+    /// ambiguous match is reported instead of returned as <c>null</c>.
+    /// </remarks>
+    private async Task<ProductMatch> FindProductAsync(
         ChannelProductCard card,
+        Guid channelId,
         CancellationToken cancellationToken)
     {
-        if (card.Barcodes.Count == 0)
+        bool barcodeWasAmbiguous = false;
+
+        if (card.Barcodes.Count > 0)
         {
-            return null;
+            IReadOnlyList<Product> productsByBarcode = await _store
+                .FindProductsByBarcodesAsync(card.Barcodes, cancellationToken);
+
+            if (productsByBarcode.Count == 1)
+            {
+                return new ProductMatch(productsByBarcode[0], IsAmbiguous: false);
+            }
+
+            if (productsByBarcode.Count > 1)
+            {
+                barcodeWasAmbiguous = true;
+                _logger.LogWarning(
+                    "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: {Count} products share a barcode with the card. Falling back to the seller article.",
+                    channelId,
+                    card.ExternalProductId,
+                    productsByBarcode.Count);
+            }
         }
 
-        IReadOnlyList<Product> productsByBarcode = await _store
-            .FindProductsByBarcodesAsync(card.Barcodes, cancellationToken);
-
-        if (productsByBarcode.Count == 1)
+        if (!string.IsNullOrWhiteSpace(card.OfferId))
         {
-            return productsByBarcode[0];
+            IReadOnlyList<Product> productsByExternalSku = await _store
+                .FindProductsByExternalSkuAsync(card.OfferId, cancellationToken);
+
+            if (productsByExternalSku.Count == 1)
+            {
+                return new ProductMatch(productsByExternalSku[0], IsAmbiguous: false);
+            }
+
+            if (productsByExternalSku.Count > 1)
+            {
+                _logger.LogInformation(
+                    "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: seller article {OfferId} matches {Count} products. Skipping the card instead of guessing.",
+                    channelId,
+                    card.ExternalProductId,
+                    card.OfferId,
+                    productsByExternalSku.Count);
+
+                return new ProductMatch(null, IsAmbiguous: true);
+            }
         }
 
-        // Ambiguous: several catalog products share a barcode with this card. Linking to an
-        // arbitrary one would silently attach an order history to the wrong product, so the card
-        // is left unmatched and falls through to import as a new product.
-        if (productsByBarcode.Count > 1)
-        {
-            _logger.LogWarning(
-                "Multiple products found with barcodes matching NmId={NmId}. Skipping automatic matching.",
-                card.ExternalProductId);
-        }
-
-        return null;
+        return new ProductMatch(null, barcodeWasAmbiguous);
     }
 
+    /// <summary>
+    /// Refreshes the channel-owned side of a known card. Product-level fields (name, description,
+    /// SKU, canonical packing unit) are written once at creation and are never overwritten here:
+    /// the catalogue is canonical, the channel reports.
+    /// </summary>
     private async Task<ImportResult> UpdateExistingProductAsync(
         ChannelProduct channelProduct,
         ChannelProductCard card,
@@ -371,28 +423,27 @@ public class ProductBatchImporter
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
-        // Temporary measure: Product is the source of truth, but until marketplace write-back
-        // exists, import keeps overwriting Name/Description/Barcodes/PackingUnit for linked
-        // products. The frontend disables editing these fields whenever the product has a
-        // ChannelProduct link (see ProductChannelLinkDto). Once write-back ships, import must
-        // stop overwriting these fields and the frontend restriction can be lifted.
         bool hasChanges = false;
 
-        if (channelProduct.Product.Name != card.Name)
+        string cardName = TrimName(card.Name);
+        string? cardDescription = TrimDescription(card.Description);
+        string cardExternalSku = card.OfferId ?? string.Empty;
+
+        if (channelProduct.Name != cardName)
         {
-            channelProduct.Product.Name = TrimName(card.Name);
+            channelProduct.Name = cardName;
             hasChanges = true;
         }
 
-        if (channelProduct.Product.Description != card.Description)
+        if (channelProduct.Description != cardDescription)
         {
-            channelProduct.Product.Description = TrimDescription(card.Description);
+            channelProduct.Description = cardDescription;
             hasChanges = true;
         }
 
-        if (channelProduct.ExternalSku != (card.OfferId ?? string.Empty))
+        if (channelProduct.ExternalSku != cardExternalSku)
         {
-            channelProduct.ExternalSku = (card.OfferId ?? string.Empty);
+            channelProduct.ExternalSku = cardExternalSku;
             hasChanges = true;
         }
 
@@ -421,9 +472,21 @@ public class ProductBatchImporter
             hasChanges = true;
         }
 
-        bool packingUnitChanged = SynchronizePackingUnit(channelProduct.Product, card, _timeProvider.GetUtcNow());
+        bool channelPackingUnitChanged = SynchronizeChannelPackingUnit(
+            channelProduct.Product,
+            channelProduct.ChannelId,
+            card,
+            _timeProvider.GetUtcNow());
 
-        if (packingUnitChanged)
+        if (channelPackingUnitChanged)
+        {
+            hasChanges = true;
+        }
+
+        // A product created from a card without dimensions would otherwise never gain a canonical
+        // unit, because product-level fields are not rewritten by later imports. This is the one
+        // product-level write the update path performs, and it happens at most once.
+        if (EnsureCanonicalPackingUnit(channelProduct.Product, card, _timeProvider.GetUtcNow()))
         {
             hasChanges = true;
         }
@@ -443,13 +506,18 @@ public class ProductBatchImporter
     }
 
     /// <summary>
-    /// Links a product found by barcode to the importing channel, for the case where the card's
-    /// nmID is not yet known. A product may hold only one link per channel (unique index on
-    /// ProductId + ChannelId), so when a link already exists the card is skipped with a warning
-    /// rather than a second link created: creating one would violate the index and roll back the
-    /// whole batch, and overwriting the existing link would make its data flip between the two
-    /// nmID each time either card is imported.
+    /// Links a product found by barcode or by seller article to the importing channel, for the case
+    /// where the card's external id is not known yet. A product may hold only one link per channel
+    /// (unique index on ProductId + ChannelId), so when a link already exists the card is skipped
+    /// with a warning rather than a second link created: creating one would violate the index and
+    /// roll back the whole batch, and overwriting the existing link would make its data flip
+    /// between the two cards each time either one is imported.
     /// </summary>
+    /// <remarks>
+    /// Only channel-owned data is written here. Product-level fields stay as they are, with one
+    /// exception: a product that still has no canonical packing unit receives one when this card
+    /// reports usable dimensions, because no later import could ever add it otherwise.
+    /// </remarks>
     private async Task<ImportResult> LinkExistingProductAsync(
         Product product,
         ChannelProductCard card,
@@ -464,10 +532,10 @@ public class ProductBatchImporter
         if (existingLink != null)
         {
             _logger.LogWarning(
-                "NmId={NmId} matched ProductId={ProductId} by barcode, but that product is already linked to ChannelId={ChannelId} via nmID={LinkedNmId}. Skipping the card: one product can hold only one link per channel.",
+                "ChannelId={ChannelId}, ExternalProductId={ExternalProductId} matched ProductId={ProductId}, but that product is already linked to this channel via ExternalProductId={LinkedExternalProductId}. Skipping the card: one product can hold only one link per channel.",
+                channelId,
                 card.ExternalProductId,
                 product.Id,
-                channelId,
                 existingLink.ExternalProductId);
 
             return new ImportResult { Status = ImportStatus.Skipped };
@@ -480,6 +548,8 @@ public class ProductBatchImporter
             ChannelId = channelId,
             ExternalProductId = card.ExternalProductId,
             ExternalSku = (card.OfferId ?? string.Empty),
+            Name = TrimName(card.Name),
+            Description = TrimDescription(card.Description),
             ChannelSpecificData = card.ChannelSpecificData,
             IsActive = true,
             LastSyncedAt = _timeProvider.GetUtcNow(),
@@ -488,11 +558,11 @@ public class ProductBatchImporter
 
         _store.AddChannelProduct(channelProduct);
 
-        product.Name = TrimName(card.Name);
-        product.Description = TrimDescription(card.Description);
-
         await SynchronizeBarcodesAsync(product, card.Barcodes, ResolveBarcodeType(card), cancellationToken);
-        SynchronizePackingUnit(product, card, _timeProvider.GetUtcNow());
+
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        EnsureCanonicalPackingUnit(product, card, now);
+        SynchronizeChannelPackingUnit(product, channelId, card, now);
 
         QueuePhotos(product, card, channelId, pendingPhotoImports);
 
@@ -536,6 +606,8 @@ public class ProductBatchImporter
             ChannelId = channelId,
             ExternalProductId = card.ExternalProductId,
             ExternalSku = (card.OfferId ?? string.Empty),
+            Name = TrimName(card.Name),
+            Description = TrimDescription(card.Description),
             ChannelSpecificData = card.ChannelSpecificData,
             IsActive = true,
             LastSyncedAt = _timeProvider.GetUtcNow(),
@@ -545,7 +617,10 @@ public class ProductBatchImporter
         _store.AddChannelProduct(channelProduct);
 
         await SynchronizeBarcodesAsync(product, card.Barcodes, ResolveBarcodeType(card), cancellationToken);
-        SynchronizePackingUnit(product, card, _timeProvider.GetUtcNow());
+
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        EnsureCanonicalPackingUnit(product, card, now);
+        SynchronizeChannelPackingUnit(product, channelId, card, now);
 
         QueuePhotos(product, card, channelId, pendingPhotoImports);
 
@@ -571,14 +646,15 @@ public class ProductBatchImporter
         string candidate = (offerId ?? string.Empty).Trim();
         string code = await AllocateCodeAsync(cancellationToken);
 
-        if (candidate.Length > 0 && !await _store.IsSkuTakenAsync(candidate, cancellationToken))
+        if (candidate.Length > 0
+            && await _store.FindProductBySkuAsync(candidate, cancellationToken) == null)
         {
             return (code, candidate);
         }
 
         for (int attempt = 1; attempt <= MaxCodeAttempts; attempt++)
         {
-            if (!await _store.IsSkuTakenAsync(code, cancellationToken))
+            if (await _store.FindProductBySkuAsync(code, cancellationToken) == null)
             {
                 return (code, code);
             }
@@ -778,19 +854,75 @@ public class ProductBatchImporter
     }
 
     /// <summary>
-    /// Creates or updates the product's canonical packing unit from marketplace-reported
-    /// dimensions. Length/width/height are required on PackingUnit, so a card without all three
-    /// leaves any existing unit untouched. A channel row is never selected here: those describe
-    /// what the marketplace reports and are written separately.
+    /// Reports whether the card carries a complete, usable dimension set. A marketplace that
+    /// omits a measurement sends null, and a zero means "unknown", not "zero-sized"; both must be
+    /// treated as absent, because the columns are non-nullable decimals and a written zero would
+    /// be indistinguishable from a real size. The comparison is lifted, so null yields false
+    /// without being dereferenced.
     /// </summary>
-    private static bool SynchronizePackingUnit(Product product, ChannelProductCard card, DateTimeOffset now)
+    private static bool HasUsableDimensions(ChannelProductCard card)
     {
-        if (card.LengthCm == null || card.WidthCm == null || card.HeightCm == null)
+        return card.LengthCm > 0 && card.WidthCm > 0 && card.HeightCm > 0;
+    }
+
+    /// <summary>
+    /// Creates the product's canonical packing unit when it has none and the card reports usable
+    /// dimensions. An existing canonical unit is never touched here: it is the catalogue's own
+    /// value, written once, and the import only fills the gap that the creating import left.
+    /// </summary>
+    private static bool EnsureCanonicalPackingUnit(Product product, ChannelProductCard card, DateTimeOffset now)
+    {
+        if (!HasUsableDimensions(card))
         {
             return false;
         }
 
-        PackingUnit? existing = PackingUnitResolver.ResolveCanonical(product);
+        // Any canonical row, active or not, occupies the filtered unique index. Adding a second
+        // one would fail the insert and with it the card's savepoint.
+        if (product.PackingUnits.Any(unit => unit.ChannelId == null))
+        {
+            return false;
+        }
+
+        product.PackingUnits.Add(new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = null,
+            LengthCm = card.LengthCm!.Value,
+            WidthCm = card.WidthCm!.Value,
+            HeightCm = card.HeightCm!.Value,
+            WeightKg = card.WeightKg,
+            IsActive = true,
+            CreatedAt = now
+        });
+
+        return true;
+    }
+
+    /// <summary>
+    /// Creates or refreshes the packing unit that this channel reports. The canonical row is left
+    /// alone: the marketplace describes its own packing, not the catalogue's.
+    /// </summary>
+    /// <returns>
+    /// True when a row was created or changed. A card with an incomplete dimension set returns
+    /// false and leaves an existing row byte-identical — an omitted measurement must never
+    /// overwrite a value the channel reported earlier with a zero.
+    /// </returns>
+    private static bool SynchronizeChannelPackingUnit(
+        Product product,
+        Guid channelId,
+        ChannelProductCard card,
+        DateTimeOffset now)
+    {
+        if (!HasUsableDimensions(card))
+        {
+            return false;
+        }
+
+        // Matched by channel regardless of IsActive: the unique index on (ProductId, ChannelId)
+        // does not filter inactivity, so a new row would collide with a deactivated one.
+        PackingUnit? existing = product.PackingUnits.FirstOrDefault(unit => unit.ChannelId == channelId);
 
         if (existing == null)
         {
@@ -798,9 +930,10 @@ public class ProductBatchImporter
             {
                 Id = Guid.NewGuid(),
                 ProductId = product.Id,
-                LengthCm = card.LengthCm.Value,
-                WidthCm = card.WidthCm.Value,
-                HeightCm = card.HeightCm.Value,
+                ChannelId = channelId,
+                LengthCm = card.LengthCm!.Value,
+                WidthCm = card.WidthCm!.Value,
+                HeightCm = card.HeightCm!.Value,
                 WeightKg = card.WeightKg,
                 IsActive = true,
                 CreatedAt = now
@@ -811,19 +944,19 @@ public class ProductBatchImporter
 
         bool hasChanges = false;
 
-        if (existing.LengthCm != card.LengthCm.Value)
+        if (existing.LengthCm != card.LengthCm!.Value)
         {
             existing.LengthCm = card.LengthCm.Value;
             hasChanges = true;
         }
 
-        if (existing.WidthCm != card.WidthCm.Value)
+        if (existing.WidthCm != card.WidthCm!.Value)
         {
             existing.WidthCm = card.WidthCm.Value;
             hasChanges = true;
         }
 
-        if (existing.HeightCm != card.HeightCm.Value)
+        if (existing.HeightCm != card.HeightCm!.Value)
         {
             existing.HeightCm = card.HeightCm.Value;
             hasChanges = true;
@@ -832,6 +965,12 @@ public class ProductBatchImporter
         if (existing.WeightKg != card.WeightKg)
         {
             existing.WeightKg = card.WeightKg;
+            hasChanges = true;
+        }
+
+        if (!existing.IsActive)
+        {
+            existing.IsActive = true;
             hasChanges = true;
         }
 
@@ -932,6 +1071,13 @@ public class ProductBatchImporter
         public ImportStatus Status { get; set; }
         public string? ErrorMessage { get; set; }
     }
+
+    /// <summary>
+    /// Result of matching a card to a catalogue product: either exactly one candidate, or none,
+    /// or nothing that can be chosen between. The third state is why this is not a plain
+    /// <see cref="Product"/> reference — an ambiguous match must not be read as "no candidate".
+    /// </summary>
+    private sealed record ProductMatch(Product? Product, bool IsAmbiguous);
 
     private enum ImportStatus
     {

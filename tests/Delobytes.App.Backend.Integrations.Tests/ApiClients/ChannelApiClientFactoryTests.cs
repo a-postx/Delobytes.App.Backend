@@ -77,7 +77,8 @@ public class ChannelApiClientFactoryTests
             sp.GetRequiredService<IHttpClientFactory>(),
             new FixedConnectionResolver(),
             new AlwaysAllowRateLimiter(),
-            NullLogger<OzonApiClient>.Instance));
+            NullLogger<OzonApiClient>.Instance,
+            TimeProvider.System));
 
         services.AddTransient(sp => new YandexKitApiClient(
             httpClient,

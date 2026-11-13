@@ -26,7 +26,7 @@ public static class ChannelCatalog
         new ChannelDescriptor(
             OzonCode,
             "Ozon",
-            new HashSet<ChannelJobKind> { ChannelJobKind.OrdersImport },
+            new HashSet<ChannelJobKind> { ChannelJobKind.ProductsImport, ChannelJobKind.OrdersImport },
             SerializesOrdersJobTypes: true),
     };
 

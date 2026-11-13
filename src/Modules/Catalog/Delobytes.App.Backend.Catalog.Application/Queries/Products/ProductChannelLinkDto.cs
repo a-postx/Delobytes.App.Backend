@@ -27,6 +27,27 @@ public class ProductChannelLinkDto
     /// </summary>
     public string? ExternalSku { get; set; }
 
+    /// <summary>Product name as the channel reports it. Read-only.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>Product description as the channel reports it. Read-only.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// The packing unit this channel reports, or <c>null</c> when the channel reported no complete
+    /// dimension set.
+    /// </summary>
+    /// <remarks>
+    /// Populated by the single-product query only. The product list leaves it <c>null</c> on
+    /// purpose: it does not render dimensions and loading every channel unit would add a fourth
+    /// collection include to every catalogue request. A <c>null</c> here therefore means
+    /// "not loaded", not "the channel reported nothing".
+    /// </remarks>
+    public PackingUnitDto? PackingUnit { get; set; }
+
+    /// <summary>When this link was last synchronised with the channel, if ever.</summary>
+    public DateTimeOffset? LastSyncedAt { get; set; }
+
     /// <summary>
     /// Gets or sets a value indicating whether the card was present in the channel listing at the
     /// last import — a channel-reported fact, not the user's decision to hide the product. That

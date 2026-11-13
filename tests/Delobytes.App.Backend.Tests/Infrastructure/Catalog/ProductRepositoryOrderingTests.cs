@@ -126,6 +126,38 @@ public class ProductRepositoryOrderingTests
         items.Select(p => p.Id).Should().ContainInOrder(alpha.Id, beta.Id);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_SortByCode_OrdersByProductCode()
+    {
+        // Arrange: names and codes order differently, so the assertion cannot be satisfied by the
+        // default name ordering.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        DateTimeOffset createdAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        Product namedAlpha = Product("SKU-Z", "Alpha", createdAt);
+        Product namedZulu = Product("SKU-A", "Zulu", createdAt.AddMinutes(1));
+
+        setupContext.Products.AddRange(namedAlpha, namedZulu);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ProductRepository repository = new ProductRepository(readContext);
+
+        // Act
+        (int _, IReadOnlyList<Product> items) = await repository.GetPagedAsync(
+            null,
+            null,
+            null,
+            "code",
+            descending: false,
+            CancellationToken.None);
+
+        // Assert: "C-SKU-A" sorts before "C-SKU-Z".
+        items.Select(p => p.Id).Should().ContainInOrder(namedZulu.Id, namedAlpha.Id);
+    }
+
     private static Product Product(string sku, string name, DateTimeOffset createdAt, DateTimeOffset? updatedAt = null)
     {
         return new Product

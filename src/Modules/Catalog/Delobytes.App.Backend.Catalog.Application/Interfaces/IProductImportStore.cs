@@ -23,23 +23,36 @@ public interface IProductImportStore
 
     /// <summary>
     /// Returns every product whose barcode appears in <paramref name="barcodes"/>, including
-    /// products and barcodes added earlier in this batch but not yet saved.
+    /// products and barcodes added earlier in this batch but not yet saved. Loaded with the
+    /// collections the import writes: barcodes, packing units and photos.
     /// </summary>
     public Task<IReadOnlyList<Product>> FindProductsByBarcodesAsync(
         IReadOnlyCollection<string> barcodes,
         CancellationToken cancellationToken);
 
-    /// <summary>Finds an existing link between the product and the channel.</summary>
+    /// <summary>
+    /// Returns the distinct products whose card on any channel carries this seller article
+    /// (<c>ExternalSku</c>), including links added or updated earlier in this batch but not yet
+    /// saved. Loaded with barcodes, packing units and photos: the link path synchronises all
+    /// three and lazy loading is disabled in this project.
+    /// </summary>
+    public Task<IReadOnlyList<Product>> FindProductsByExternalSkuAsync(
+        string externalSku,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds an existing link between the product and the channel.
+    /// </summary>
     public Task<ChannelProduct?> FindChannelProductLinkAsync(
         Guid productId,
         Guid channelId,
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Reports whether the tenant already holds this internal SKU, including products added earlier
-    /// in this batch but not yet saved.
+    /// Finds the tenant's product with this internal SKU, including products added earlier in this
+    /// batch but not yet saved. Used to decide whether a card's vendor code can become the SKU.
     /// </summary>
-    public Task<bool> IsSkuTakenAsync(string sku, CancellationToken cancellationToken);
+    public Task<Product?> FindProductBySkuAsync(string sku, CancellationToken cancellationToken);
 
     /// <summary>Stages a new product.</summary>
     public void AddProduct(Product product);

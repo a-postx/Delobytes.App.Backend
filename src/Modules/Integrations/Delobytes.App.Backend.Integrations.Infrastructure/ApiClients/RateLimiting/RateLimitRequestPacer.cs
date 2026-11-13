@@ -2,14 +2,18 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Microsoft.Extensions.Logging;
 
-namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimiting;
 
 /// <summary>
 /// Reserves a pacing slot for one request, waiting in-process while the limiter's next slot is
 /// within the caller's tolerance. A refusal that cannot be waited out is returned to the caller,
 /// which decides whether it becomes a deferred page or ends the run.
 /// </summary>
-internal sealed class WildberriesRequestPacer
+/// <remarks>
+/// Channel-neutral: the loop and its stale-slot retry rule are the part that is easy to get wrong,
+/// so channels share this implementation instead of each carrying a copy of it.
+/// </remarks>
+internal sealed class RateLimitRequestPacer
 {
     /// <summary>
     /// How many times a refusal that points at an already-due slot is re-asked before it is
@@ -23,7 +27,7 @@ internal sealed class WildberriesRequestPacer
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
-    public WildberriesRequestPacer(
+    public RateLimitRequestPacer(
         IChannelRateLimiter rateLimiter,
         TimeProvider timeProvider,
         ILogger logger)
@@ -58,7 +62,7 @@ internal sealed class WildberriesRequestPacer
                 // A refusal whose slot is already due is not a refusal: the limiter read the clock
                 // before the deadline and this process read it after, which one database round-trip
                 // is enough to cause. Re-asking is the only correct move here; reporting a refusal
-                // would end the whole products run on a slot that is available right now.
+                // would end the whole run on a slot that is available right now.
                 if (staleRefusals >= MaxStaleSlotRetries)
                 {
                     return result;
@@ -77,7 +81,8 @@ internal sealed class WildberriesRequestPacer
             }
 
             _logger.LogDebug(
-                "Wildberries {Method} request waits {WaitSeconds:F1}s in-process for the next rate-limiter slot.",
+                "{ChannelCode} {Method} request waits {WaitSeconds:F1}s in-process for the next rate-limiter slot.",
+                scope.ChannelCode,
                 scope.Method,
                 wait.TotalSeconds);
 

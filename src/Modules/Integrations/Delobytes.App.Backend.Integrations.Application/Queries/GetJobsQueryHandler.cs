@@ -66,7 +66,8 @@ public class GetJobsQueryHandler : IRequestHandler<GetJobsQuery, GetJobsResponse
                 throw new InvalidOperationException(
                     $"Неизвестный тип задачи '{request.Type}'. Допустимые значения: " +
                     $"'{JobTypeExtensions.ProductsImport}', '{JobTypeExtensions.WbOrdersImport}', " +
-                    $"'{JobTypeExtensions.OzonOrdersImportFbo}', '{JobTypeExtensions.OzonOrdersImportFbs}'.");
+                    $"'{JobTypeExtensions.OzonOrdersImportFbo}', '{JobTypeExtensions.OzonOrdersImportFbs}', " +
+                    $"'{JobTypeExtensions.OzonProductsImport}'.");
             }
 
             jobType = parsed;

@@ -311,6 +311,59 @@ public class GetProductsQueryHandlerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task Handle_ProductWithCodeAndChannelLink_ProjectsCodeAndChannelFieldsWithNullUnit()
+    {
+        Guid channelId = Guid.NewGuid();
+
+        Product product = BuildProduct();
+        product.Code = "P-000042";
+        product.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            ExternalProductId = "1088660899",
+            ExternalSku = "квр-10",
+            Name = "Channel name",
+            Description = "Channel description",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Channel = new Channel
+            {
+                Id = channelId,
+                Name = "Ozon",
+                Code = "ozon",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+            },
+        });
+
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(
+                null,
+                null,
+                null,
+                null,
+                false,
+                It.IsAny<CancellationToken>(),
+                null,
+                false))
+            .ReturnsAsync((1, new List<Product> { product }));
+
+        GetProductsResponse response = await _handler.Handle(new GetProductsQuery(), CancellationToken.None);
+
+        ProductItem item = response.Items.Should().ContainSingle().Subject;
+        item.Code.Should().Be("P-000042");
+
+        ProductChannelLinkDto link = item.ChannelLinks.Should().ContainSingle().Subject;
+        link.Name.Should().Be("Channel name");
+        link.Description.Should().Be("Channel description");
+        link.ExternalProductId.Should().Be("1088660899");
+        link.ExternalSku.Should().Be("квр-10");
+        link.PackingUnit.Should().BeNull("the list does not load channel units by design");
+    }
+
     private static Product BuildProduct()
     {
         return new Product

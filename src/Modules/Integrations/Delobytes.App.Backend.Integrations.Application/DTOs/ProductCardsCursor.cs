@@ -15,4 +15,10 @@ public class ProductCardsCursor
     /// For Wildberries, this is nmID.
     /// </summary>
     public long ProductId { get; set; }
+
+    /// <summary>
+    /// Gets or sets an opaque string cursor. Ozon pages by <c>last_id</c>, which is a string, and
+    /// does not use the timestamp/number pair Wildberries does.
+    /// </summary>
+    public string? Token { get; set; }
 }

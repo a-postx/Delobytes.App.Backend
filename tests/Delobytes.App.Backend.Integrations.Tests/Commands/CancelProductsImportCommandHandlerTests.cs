@@ -40,6 +40,37 @@ public class CancelProductsImportCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_OzonProductsImportRun_IsCancelled()
+    {
+        // Ozon products runs are user-initiated like the WB ones: the same command must be able to
+        // stop a stuck run, or it holds HasActiveJobAsync for its type until the watchdog kills it.
+        JobRun jobRun = new JobRun
+        {
+            Id = Guid.NewGuid(),
+            ConnectionId = Guid.NewGuid(),
+            JobType = JobType.OzonProductsImport,
+            Status = JobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        _jobRunRepo
+            .Setup(r => r.GetByIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(jobRun);
+        _jobRunRepo
+            .Setup(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        CancelProductsImportCommandHandler handler = CreateHandler();
+
+        await handler.Handle(
+            new CancelProductsImportCommand { JobRunId = jobRun.Id },
+            CancellationToken.None);
+
+        jobRun.Status.Should().Be(JobStatus.Cancelled);
+        _jobRunRepo.Verify(r => r.UpdateAsync(jobRun, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Handle_WrongJobType_ThrowsInvalidOperationException()
     {
         JobRun jobRun = new JobRun
@@ -62,7 +93,7 @@ public class CancelProductsImportCommandHandlerTests
             CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ProductsImport*");
+            .WithMessage("*импорта товаров*'wb-orders-import'*");
     }
 
     [Theory]

@@ -59,7 +59,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(4);
+        configurations.Should().HaveCount(5);
         configurations.Select(c => c.JobType)
             .Should().BeEquivalentTo(new[]
             {
@@ -67,6 +67,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
                 JobType.WbOrdersImport,
                 JobType.OzonOrdersImportFbo,
                 JobType.OzonOrdersImportFbs,
+                JobType.OzonProductsImport,
             });
     }
 
@@ -102,6 +103,20 @@ public class DataSeederSeedJobTypeConfigurationsTests
     }
 
     [Fact]
+    public async Task SeedJobTypeConfigurationsAsync_OzonProductsImport_UsesSixtyMinuteTimeoutAndBatchOfTwoHundred()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+
+        await RunSeederAsync(options);
+
+        JobTypeConfiguration configuration = (await ReadConfigurationsAsync(options))
+            .Single(c => c.JobType == JobType.OzonProductsImport);
+
+        configuration.TimeoutMinutes.Should().Be(60);
+        configuration.BatchSize.Should().Be(200);
+    }
+
+    [Fact]
     public async Task SeedJobTypeConfigurationsAsync_OrdersImport_UsesThirtyMinuteTimeoutAndBatchOfOneHundred()
     {
         DbContextOptions<IntegrationsDbContext> options = BuildOptions();
@@ -126,7 +141,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(4);
+        configurations.Should().HaveCount(5);
     }
 
     [Fact]
@@ -153,7 +168,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(4);
+        configurations.Should().HaveCount(5);
 
         JobTypeConfiguration products = configurations.Single(c => c.JobType == JobType.ProductsImport);
         products.TimeoutMinutes.Should().Be(45);
@@ -181,7 +196,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(4);
+        configurations.Should().HaveCount(5);
         configurations.Single(c => c.JobType == JobType.ProductsImport).TimeoutMinutes.Should().Be(60);
     }
 }

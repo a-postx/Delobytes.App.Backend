@@ -128,6 +128,125 @@ public class GetProductQueryHandlerTests
         };
     }
 
+    [Fact]
+    public async Task Handle_ChannelLinkCarriesChannelFieldsAndOwnUnit_AndCanonicalIsTheRowWithoutChannel()
+    {
+        Guid channelId = Guid.NewGuid();
+        Product product = BuildProduct();
+        product.Code = "P-000007";
+
+        product.PackingUnits.Add(new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            LengthCm = 40m,
+            WidthCm = 50m,
+            HeightCm = 60m,
+            WeightKg = 2m,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        product.PackingUnits.Add(new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = null,
+            LengthCm = 10m,
+            WidthCm = 20m,
+            HeightCm = 30m,
+            WeightKg = 1m,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        product.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            ExternalProductId = "1088660899",
+            ExternalSku = "квр-10",
+            Name = "Channel name",
+            Description = "Channel description",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Channel = new Channel
+            {
+                Id = channelId,
+                Name = "Ozon",
+                Code = "ozon",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+            },
+        });
+
+        _repositoryMock
+            .Setup(r => r.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        GetProductResponse response = await _handler.Handle(
+            new GetProductQuery { Id = product.Id },
+            CancellationToken.None);
+
+        response.Code.Should().Be("P-000007");
+        response.PackingUnit!.LengthCm.Should().Be(10m, "the canonical unit is the row without a channel");
+
+        ProductChannelLinkDto link = response.ChannelLinks.Should().ContainSingle().Subject;
+        link.Name.Should().Be("Channel name");
+        link.Description.Should().Be("Channel description");
+        link.PackingUnit!.LengthCm.Should().Be(40m, "the link carries the channel's own unit");
+    }
+
+    [Fact]
+    public async Task Handle_OnlyAChannelUnit_ReturnsNullCanonicalAndStillCarriesTheChannelRow()
+    {
+        Guid channelId = Guid.NewGuid();
+        Product product = BuildProduct();
+
+        product.PackingUnits.Add(new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            LengthCm = 40m,
+            WidthCm = 50m,
+            HeightCm = 60m,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        product.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            ExternalProductId = "1088660899",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Channel = new Channel
+            {
+                Id = channelId,
+                Name = "Ozon",
+                Code = "ozon",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+            },
+        });
+
+        _repositoryMock
+            .Setup(r => r.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        GetProductResponse response = await _handler.Handle(
+            new GetProductQuery { Id = product.Id },
+            CancellationToken.None);
+
+        response.PackingUnit.Should().BeNull("a product may have no canonical row at all");
+        response.ChannelLinks!.Should().ContainSingle().Which.PackingUnit!.LengthCm.Should().Be(40m);
+    }
+
     private static Product BuildProduct()
     {
         return new Product

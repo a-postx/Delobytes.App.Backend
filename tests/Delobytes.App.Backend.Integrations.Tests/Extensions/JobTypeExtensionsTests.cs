@@ -13,6 +13,7 @@ public class JobTypeExtensionsTests
     [InlineData(JobType.WbOrdersImport, "wb-orders-import")]
     [InlineData(JobType.OzonOrdersImportFbo, "ozon-orders-import-fbo")]
     [InlineData(JobType.OzonOrdersImportFbs, "ozon-orders-import-fbs")]
+    [InlineData(JobType.OzonProductsImport, "ozon-products-import")]
     public void ToStringCamelCase_ReturnsStableApiToken(JobType jobType, string expected)
     {
         // The token is the public route segment: it must not follow a rename of the enum member.
@@ -32,6 +33,7 @@ public class JobTypeExtensionsTests
     [InlineData("wb-orders-import", JobType.WbOrdersImport)]
     [InlineData("ozon-orders-import-fbo", JobType.OzonOrdersImportFbo)]
     [InlineData("ozon-orders-import-fbs", JobType.OzonOrdersImportFbs)]
+    [InlineData("ozon-products-import", JobType.OzonProductsImport)]
     [InlineData("Products-Import", JobType.ProductsImport)]
     [InlineData("WB-ORDERS-IMPORT", JobType.WbOrdersImport)]
     [InlineData("  products-import  ", JobType.ProductsImport)]
@@ -57,6 +59,7 @@ public class JobTypeExtensionsTests
 
     [Theory]
     [InlineData(JobType.ProductsImport, true)]
+    [InlineData(JobType.OzonProductsImport, true)]
     [InlineData(JobType.WbOrdersImport, false)]
     [InlineData(JobType.OzonOrdersImportFbo, false)]
     [InlineData(JobType.OzonOrdersImportFbs, false)]
@@ -67,6 +70,7 @@ public class JobTypeExtensionsTests
 
     [Theory]
     [InlineData(JobType.ProductsImport, true)]
+    [InlineData(JobType.OzonProductsImport, true)]
     [InlineData(JobType.WbOrdersImport, false)]
     [InlineData(JobType.OzonOrdersImportFbo, false)]
     [InlineData(JobType.OzonOrdersImportFbs, false)]

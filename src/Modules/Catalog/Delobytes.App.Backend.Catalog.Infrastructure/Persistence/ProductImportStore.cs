@@ -108,6 +108,60 @@ public class ProductImportStore : IProductImportStore
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<Product>> FindProductsByExternalSkuAsync(
+        string externalSku,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(externalSku))
+        {
+            return Array.Empty<Product>();
+        }
+
+        HashSet<Guid> productIds = new HashSet<Guid>();
+
+        List<Guid> persistedProductIds = await _context.ChannelProducts
+            .Where(cp => cp.ExternalSku == externalSku)
+            .Select(cp => cp.ProductId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        productIds.UnionWith(persistedProductIds);
+
+        // Links created or re-pointed earlier in this batch are not saved yet, so the query above
+        // cannot see their new seller article. Reading the change tracker keeps a second card with
+        // the same offer id in one batch from creating a duplicate product.
+        foreach (EntityEntry<ChannelProduct> entry in _context.ChangeTracker.Entries<ChannelProduct>())
+        {
+            if (entry.State != EntityState.Deleted && entry.Entity.ExternalSku == externalSku)
+            {
+                productIds.Add(entry.Entity.ProductId);
+            }
+        }
+
+        if (productIds.Count == 0)
+        {
+            return Array.Empty<Product>();
+        }
+
+        List<Product> products = await _context.Products
+            .Where(p => productIds.Contains(p.Id))
+            .Include(p => p.Barcodes)
+            .Include(p => p.PackingUnits)
+            .Include(p => p.Photos)
+            .ToListAsync(cancellationToken);
+
+        foreach (Product tracked in _context.Products.Local)
+        {
+            if (productIds.Contains(tracked.Id) && products.All(p => p.Id != tracked.Id))
+            {
+                products.Add(tracked);
+            }
+        }
+
+        return products;
+    }
+
+    /// <inheritdoc/>
     public Task<ChannelProduct?> FindChannelProductLinkAsync(
         Guid productId,
         Guid channelId,
@@ -122,16 +176,19 @@ public class ProductImportStore : IProductImportStore
     }
 
     /// <inheritdoc/>
-    public async Task<bool> IsSkuTakenAsync(string sku, CancellationToken cancellationToken)
+    public async Task<Product?> FindProductBySkuAsync(string sku, CancellationToken cancellationToken)
     {
-        if (await _context.Products.AnyAsync(p => p.Sku == sku, cancellationToken))
+        Product? persisted = await _context.Products
+            .FirstOrDefaultAsync(p => p.Sku == sku, cancellationToken);
+
+        if (persisted != null)
         {
-            return true;
+            return persisted;
         }
 
         // Products created earlier in the same batch are not in the database yet, but they will be
         // at SaveChanges time, where the unique index sees them.
-        return _context.Products.Local.Any(p => p.Sku == sku);
+        return _context.Products.Local.FirstOrDefault(p => p.Sku == sku);
     }
 
     /// <inheritdoc/>

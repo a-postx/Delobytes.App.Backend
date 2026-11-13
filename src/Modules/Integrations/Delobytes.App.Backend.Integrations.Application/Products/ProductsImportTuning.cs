@@ -4,9 +4,18 @@ namespace Delobytes.App.Backend.Integrations.Application.Products;
 /// Channel-provided knobs of a products import run. Kept separate from any one marketplace's
 /// options so the orchestrator never reads a channel-specific settings class.
 /// </summary>
+/// <param name="PageSize">
+/// How many cards one API request asks for. It can be far larger than the batch size: a marketplace
+/// returns full cards per page, and the same volume would otherwise land in one message.
+/// </param>
 /// <param name="BatchSize">How many cards one published batch carries.</param>
-public sealed record ProductsImportTuning(int BatchSize)
+public sealed record ProductsImportTuning(int PageSize, int BatchSize)
 {
+    /// <summary>
+    /// Page size used when a channel does not configure one.
+    /// </summary>
+    public const int DefaultPageSize = 50;
+
     /// <summary>
     /// Batch size used when a channel does not configure one.
     /// </summary>
@@ -15,7 +24,7 @@ public sealed record ProductsImportTuning(int BatchSize)
     /// <summary>
     /// Gets the tuning a channel that does not register its own falls back to.
     /// </summary>
-    public static ProductsImportTuning Default { get; } = new ProductsImportTuning(DefaultBatchSize);
+    public static ProductsImportTuning Default { get; } = new ProductsImportTuning(DefaultPageSize, DefaultBatchSize);
 }
 
 /// <summary>

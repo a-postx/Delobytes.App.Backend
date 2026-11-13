@@ -424,6 +424,14 @@ public static class DataSeeder
                 TimeoutMinutes = 30,
                 BatchSize = 100,
             },
+            new JobTypeConfiguration
+            {
+                // BatchSize is seeded for consistency with the channel's products tuning only:
+                // ProductsImportOrchestrator reads ProductsImportTuning, not this row.
+                JobType = JobType.OzonProductsImport,
+                TimeoutMinutes = 60,
+                BatchSize = 200,
+            },
         };
 
         int seededCount = 0;

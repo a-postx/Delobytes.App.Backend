@@ -31,7 +31,8 @@ public class OzonApiClientAccountInfoTests
             factory.Object,
             new FixedConnectionResolver(),
             new AlwaysAllowRateLimiter(),
-            NullLogger<OzonApiClient>.Instance);
+            NullLogger<OzonApiClient>.Instance,
+            TimeProvider.System);
     }
 
     private static Dictionary<string, string> ValidSettings()

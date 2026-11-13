@@ -23,11 +23,14 @@ public class StartProductsImportCommandHandlerTests
     private readonly Mock<IJobRunRepository> _jobRunRepo = new();
     private readonly Mock<ISyncCheckpointRepository> _syncCheckpointRepo = new();
     private readonly Mock<IEventPublisher> _eventPublisher = new();
+    private readonly Mock<IChannelJobTypeRegistry> _jobTypeRegistry = new();
     private readonly Mock<IUserContext> _userContext = new();
     private readonly Mock<ILogger<StartProductsImportCommandHandler>> _logger = new();
 
     private StartProductsImportCommandHandler CreateHandler()
     {
+        SetupKnownChannels();
+
         JobRunStarter jobRunStarter = new JobRunStarter(
             _jobRunRepo.Object,
             TimeProvider.System,
@@ -39,8 +42,25 @@ public class StartProductsImportCommandHandlerTests
             _syncCheckpointRepo.Object,
             _eventPublisher.Object,
             jobRunStarter,
+            _jobTypeRegistry.Object,
             _userContext.Object,
             _logger.Object);
+    }
+
+    /// <summary>
+    /// Mirrors the real registry for the channels these tests exercise: each channel serves exactly
+    /// one products-import job type, and a channel that serves none yields an empty list.
+    /// </summary>
+    private void SetupKnownChannels()
+    {
+        _jobTypeRegistry
+            .Setup(r => r.GetJobTypes(It.IsAny<string?>(), ChannelJobKind.ProductsImport))
+            .Returns<string?, ChannelJobKind>((channelCode, _) => channelCode switch
+            {
+                "wildberries" => new[] { JobType.ProductsImport },
+                "ozon" => new[] { JobType.OzonProductsImport },
+                _ => Array.Empty<JobType>(),
+            });
     }
 
     private static Connection BuildConnection(string templateCode = "wildberries", bool isActive = true)
@@ -123,9 +143,9 @@ public class StartProductsImportCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_NonWildberriesConnection_ThrowsInvalidOperationException()
+    public async Task Handle_ChannelWithoutProductsImportKind_ThrowsInvalidOperationException()
     {
-        Connection connection = BuildConnection(templateCode: "ozon");
+        Connection connection = BuildConnection(templateCode: "yandex.kit");
 
         _connectionRepo
             .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
@@ -137,7 +157,85 @@ public class StartProductsImportCommandHandlerTests
             new StartProductsImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*Импорт карточек товаров не поддерживается для канала 'yandex.kit'*");
+    }
+
+    [Fact]
+    public async Task Handle_ChannelWithSeveralProductsJobTypes_ThrowsInsteadOfGuessing()
+    {
+        Connection connection = BuildConnection(templateCode: "ozon");
+
+        _connectionRepo
+            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        StartProductsImportCommandHandler handler = CreateHandler();
+
+        // Set up after CreateHandler so this channel-specific answer wins over the defaults.
+        _jobTypeRegistry
+            .Setup(r => r.GetJobTypes("ozon", ChannelJobKind.ProductsImport))
+            .Returns(new[] { JobType.OzonProductsImport, JobType.ProductsImport });
+
+        Func<Task> act = () => handler.Handle(
+            new StartProductsImportCommand { ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*ozon*несколько*");
+    }
+
+    [Fact]
+    public async Task Handle_OzonConnection_CreatesRunOfTheResolvedJobType()
+    {
+        // The registry, not this handler, owns the mapping from channel to products job type.
+        // Every call that persists or reads per-type state must use the resolved value.
+        Connection connection = BuildConnection(templateCode: "ozon");
+        JobRun? savedJobRun = null;
+        SyncCheckpoint? savedCheckpoint = null;
+
+        _connectionRepo
+            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        _jobRunRepo
+            .Setup(r => r.HasActiveJobAsync(connection.Id, JobType.OzonProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _jobRunRepo
+            .Setup(r => r.CreateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()))
+            .Callback<JobRun, CancellationToken>((j, _) => savedJobRun = j)
+            .ReturnsAsync((JobRun j, CancellationToken _) => j);
+
+        _syncCheckpointRepo
+            .Setup(r => r.GetAsync(connection.Id, JobType.OzonProductsImport, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SyncCheckpoint?)null);
+
+        _syncCheckpointRepo
+            .Setup(r => r.UpsertAsync(It.IsAny<SyncCheckpoint>(), It.IsAny<CancellationToken>()))
+            .Callback<SyncCheckpoint, CancellationToken>((c, _) => savedCheckpoint = c)
+            .Returns(Task.CompletedTask);
+
+        _userContext.Setup(u => u.UserId).Returns((Guid?)null);
+
+        StartProductsImportCommandHandler handler = CreateHandler();
+        await handler.Handle(
+            new StartProductsImportCommand { ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        savedJobRun.Should().NotBeNull();
+        savedJobRun!.JobType.Should().Be(JobType.OzonProductsImport);
+
+        savedCheckpoint.Should().NotBeNull();
+        savedCheckpoint!.JobType.Should().Be(JobType.OzonProductsImport);
+
+        _jobRunRepo.Verify(
+            r => r.HasActiveJobAsync(connection.Id, JobType.OzonProductsImport, It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _jobRunRepo.Verify(
+            r => r.HasActiveJobAsync(connection.Id, JobType.ProductsImport, It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

@@ -161,6 +161,8 @@ public class ProductRepository : IProductRepository
         // Whitelist only: a client string never reaches EF.Property or an expression build.
         switch (sortBy?.ToLowerInvariant())
         {
+            case "code":
+                return Order(query, p => p.Code, descending);
             case "sku":
                 return Order(query, p => p.Sku, descending);
             case "status":

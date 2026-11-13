@@ -266,6 +266,95 @@ public class UpdateProductCommandHandlerTests
         result.Errors.Should().Contain(e => e.PropertyName == nameof(UpdateProductCommand.Name));
     }
 
+    [Fact]
+    public async Task Handle_PackingUnitUpdate_WritesOnlyTheCanonicalRow()
+    {
+        // Arrange
+        Product product = BuildProduct();
+        Guid channelId = Guid.NewGuid();
+
+        PackingUnit channelUnit = new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            LengthCm = 40m,
+            WidthCm = 50m,
+            HeightCm = 60m,
+            WeightKg = 2m,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
+        };
+
+        product.PackingUnits.Add(channelUnit);
+
+        Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
+        UpdateProductCommandHandler handler = new UpdateProductCommandHandler(repositoryMock.Object);
+
+        // Act
+        await handler.Handle(
+            new UpdateProductCommand
+            {
+                Id = product.Id,
+                PackingUnit = new PackingUnitDto { LengthCm = 11m, WidthCm = 12m, HeightCm = 13m, WeightKg = 3m },
+            },
+            CancellationToken.None);
+
+        // Assert
+        PackingUnit canonical = product.PackingUnits.Single(unit => unit.ChannelId == null);
+        canonical.LengthCm.Should().Be(11m);
+        canonical.WidthCm.Should().Be(12m);
+        canonical.HeightCm.Should().Be(13m);
+        canonical.WeightKg.Should().Be(3m);
+
+        channelUnit.LengthCm.Should().Be(40m, "the channel row is owned by the import");
+        channelUnit.WidthCm.Should().Be(50m);
+        channelUnit.HeightCm.Should().Be(60m);
+        channelUnit.WeightKg.Should().Be(2m);
+    }
+
+    [Fact]
+    public async Task Handle_PackingUnitUpdateWithoutCanonicalRow_AppendsOne()
+    {
+        // Arrange: the product was imported from a card that reported no dimensions, so it holds
+        // only a channel row; a manual save is its first chance to get canonical dimensions.
+        Product product = BuildProduct();
+        product.PackingUnits.Clear();
+
+        product.PackingUnits.Add(new PackingUnit
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = Guid.NewGuid(),
+            LengthCm = 40m,
+            WidthCm = 50m,
+            HeightCm = 60m,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
+        });
+
+        Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
+        UpdateProductCommandHandler handler = new UpdateProductCommandHandler(repositoryMock.Object);
+
+        // Act
+        await handler.Handle(
+            new UpdateProductCommand
+            {
+                Id = product.Id,
+                PackingUnit = new PackingUnitDto { LengthCm = 5m, WidthCm = 6m, HeightCm = 7m },
+            },
+            CancellationToken.None);
+
+        // Assert
+        product.PackingUnits.Should().HaveCount(2);
+
+        PackingUnit canonical = product.PackingUnits.Single(unit => unit.ChannelId == null);
+        canonical.LengthCm.Should().Be(5m);
+        canonical.WidthCm.Should().Be(6m);
+        canonical.HeightCm.Should().Be(7m);
+        canonical.IsActive.Should().BeTrue();
+    }
+
     private static Product BuildProduct(ProductStatus status = ProductStatus.Active)
     {
         Product product = new Product

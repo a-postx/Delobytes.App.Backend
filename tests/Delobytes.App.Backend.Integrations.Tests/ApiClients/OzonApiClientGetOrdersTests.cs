@@ -96,7 +96,8 @@ public class OzonApiClientGetOrdersTests
             Mock.Of<IHttpClientFactory>(),
             resolver,
             rateLimiter,
-            NullLogger<OzonApiClient>.Instance);
+            NullLogger<OzonApiClient>.Instance,
+            TimeProvider.System);
 
         client.SetTemplate(BuildTemplate());
 
@@ -850,7 +851,8 @@ public class OzonApiClientGetOrdersTests
             Mock.Of<IHttpClientFactory>(),
             resolver.Object,
             new AlwaysAllowRateLimiter(),
-            NullLogger<OzonApiClient>.Instance);
+            NullLogger<OzonApiClient>.Instance,
+            TimeProvider.System);
 
         Func<Task> act = async () =>
             await client.GetOrdersAsync(connectionId, BuildRequest(), CancellationToken.None);

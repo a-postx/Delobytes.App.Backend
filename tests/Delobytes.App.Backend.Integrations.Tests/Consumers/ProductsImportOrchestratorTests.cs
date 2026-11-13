@@ -39,7 +39,8 @@ public class ProductsImportOrchestratorTests
 
     private ProductsImportOrchestrator CreateOrchestrator(int batchSize = 50)
     {
-        IProductsImportTuningResolver tunings = new FixedTuningResolver(batchSize);
+        // WB keeps one page per batch, so both values carry the same number here.
+        IProductsImportTuningResolver tunings = new FixedTuningResolver(batchSize, batchSize);
 
         return new ProductsImportOrchestrator(
             _jobRunRepo.Object,
@@ -54,16 +55,18 @@ public class ProductsImportOrchestratorTests
 
     private sealed class FixedTuningResolver : IProductsImportTuningResolver
     {
+        private readonly int _pageSize;
         private readonly int _batchSize;
 
-        public FixedTuningResolver(int batchSize)
+        public FixedTuningResolver(int pageSize, int batchSize)
         {
+            _pageSize = pageSize;
             _batchSize = batchSize;
         }
 
         public ProductsImportTuning Resolve(string channelCode)
         {
-            return new ProductsImportTuning(_batchSize);
+            return new ProductsImportTuning(_pageSize, _batchSize);
         }
     }
 
@@ -747,7 +750,7 @@ public class ProductsImportOrchestratorTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task ProcessAsync_MoreThan50Cards_PublishesSingleBatchWithAllCards()
+    public async Task ProcessAsync_PageLargerThanBatchSize_SplitsIntoBatches()
     {
         SystemChannelTemplate template = BuildWildberriesTemplate();
         Connection connection = BuildConnection(template);
@@ -773,9 +776,17 @@ public class ProductsImportOrchestratorTests
             new ProductsImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
             CancellationToken.None);
 
-        published.Should().HaveCount(1);
-        published[0].Cards.Should().HaveCount(100);
-        published[0].IsLastBatch.Should().BeTrue();
+        // A page and a batch are different sizes: 100 cards with an event batch of 50 must arrive
+        // as two messages, and only the last one may finalise the run.
+        published.Should().HaveCount(2);
+
+        published[0].Cards.Should().HaveCount(50);
+        published[0].IsLastBatch.Should().BeFalse();
+        published[0].TotalBatches.Should().Be(0);
+
+        published[1].Cards.Should().HaveCount(50);
+        published[1].IsLastBatch.Should().BeTrue();
+        published[1].TotalBatches.Should().Be(2);
     }
 
     // -----------------------------------------------------------------------

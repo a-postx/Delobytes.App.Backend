@@ -124,6 +124,10 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                     ChannelCode = cp.Channel.Code,
                     ExternalProductId = cp.ExternalProductId,
                     ExternalSku = cp.ExternalSku,
+                    Name = cp.Name,
+                    Description = cp.Description,
+                    PackingUnit = ToPackingUnitDto(PackingUnitResolver.ResolveForChannel(product, cp.ChannelId)),
+                    LastSyncedAt = cp.LastSyncedAt,
                     IsActive = cp.IsActive,
                 })
                 .ToList(),

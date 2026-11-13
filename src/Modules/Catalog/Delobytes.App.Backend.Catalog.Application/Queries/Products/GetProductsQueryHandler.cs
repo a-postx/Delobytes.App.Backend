@@ -46,7 +46,7 @@ public class GetProductsQuery : IRequest<GetProductsResponse>
     public int? PageSize { get; set; }
 
     /// <summary>
-    /// Sort key, resolved against a whitelist: name, sku, status, createdAt.
+    /// Sort key, resolved against a whitelist: name, code, sku, status, createdAt, updatedAt.
     /// Unknown or missing values fall back to name.
     /// </summary>
     public string? SortBy { get; set; }
@@ -258,6 +258,10 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
                         ChannelCode = cp.Channel.Code,
                         ExternalProductId = cp.ExternalProductId,
                         ExternalSku = cp.ExternalSku,
+                        Name = cp.Name,
+                        Description = cp.Description,
+                        PackingUnit = null,
+                        LastSyncedAt = cp.LastSyncedAt,
                         IsActive = cp.IsActive,
                     })
                     .ToList(),

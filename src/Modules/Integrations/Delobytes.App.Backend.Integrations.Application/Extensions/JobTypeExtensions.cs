@@ -30,6 +30,11 @@ public static class JobTypeExtensions
     public const string OzonOrdersImportFbs = "ozon-orders-import-fbs";
 
     /// <summary>
+    /// API type token for <see cref="JobType.OzonProductsImport"/>.
+    /// </summary>
+    public const string OzonProductsImport = "ozon-products-import";
+
+    /// <summary>
     /// Returns the API type token for the given job type.
     /// </summary>
     public static string ToStringCamelCase(this JobType jobType)
@@ -40,6 +45,7 @@ public static class JobTypeExtensions
             JobType.WbOrdersImport => WbOrdersImport,
             JobType.OzonOrdersImportFbo => OzonOrdersImportFbo,
             JobType.OzonOrdersImportFbs => OzonOrdersImportFbs,
+            JobType.OzonProductsImport => OzonProductsImport,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(jobType),
                 jobType,
@@ -89,7 +95,7 @@ public static class JobTypeExtensions
     /// </summary>
     public static bool IsCancellable(this JobType jobType)
     {
-        return jobType == JobType.ProductsImport;
+        return IsProductsImport(jobType);
     }
 
     /// <summary>
@@ -97,6 +103,17 @@ public static class JobTypeExtensions
     /// </summary>
     public static bool IsManuallyStartable(this JobType jobType)
     {
-        return jobType == JobType.ProductsImport;
+        return IsProductsImport(jobType);
+    }
+
+    /// <summary>
+    /// True for every products-import type. Declared explicitly rather than resolved through
+    /// <see cref="Jobs.IChannelJobTypeRegistry"/> because these are pure extension methods: the
+    /// registry would require DI, and the membership of this set is a property of the job type
+    /// itself, not of a channel.
+    /// </summary>
+    public static bool IsProductsImport(this JobType jobType)
+    {
+        return jobType == JobType.ProductsImport || jobType == JobType.OzonProductsImport;
     }
 }

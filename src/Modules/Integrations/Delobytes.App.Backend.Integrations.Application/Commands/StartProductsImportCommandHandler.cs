@@ -2,7 +2,6 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
-using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MediatR;
@@ -27,6 +26,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
     private readonly ISyncCheckpointRepository _syncCheckpointRepository;
     private readonly IEventPublisher _eventPublisher;
     private readonly JobRunStarter _jobRunStarter;
+    private readonly IChannelJobTypeRegistry _jobTypeRegistry;
     private readonly IUserContext _userContext;
     private readonly ILogger<StartProductsImportCommandHandler> _logger;
 
@@ -36,6 +36,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         ISyncCheckpointRepository syncCheckpointRepository,
         IEventPublisher eventPublisher,
         JobRunStarter jobRunStarter,
+        IChannelJobTypeRegistry jobTypeRegistry,
         IUserContext userContext,
         ILogger<StartProductsImportCommandHandler> logger)
     {
@@ -44,6 +45,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         _syncCheckpointRepository = syncCheckpointRepository;
         _eventPublisher = eventPublisher;
         _jobRunStarter = jobRunStarter;
+        _jobTypeRegistry = jobTypeRegistry;
         _userContext = userContext;
         _logger = logger;
     }
@@ -60,18 +62,33 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
             throw new InvalidOperationException("Подключение неактивно. Импорт невозможен.");
         }
 
-        // Wildberries — единственный поддерживаемый источник в первой версии.
-        if (!string.Equals(
-                connection.SystemChannelTemplate?.Code,
-                ChannelCatalog.WildberriesCode,
-                StringComparison.OrdinalIgnoreCase))
+        // The channel module, not this handler, decides which job type its products import runs as:
+        // the same orchestration is served under a different type per channel.
+        string? channelCode = connection.SystemChannelTemplate?.Code;
+
+        IReadOnlyList<JobType> productsJobTypes = _jobTypeRegistry.GetJobTypes(
+            channelCode,
+            ChannelJobKind.ProductsImport);
+
+        if (productsJobTypes.Count == 0)
         {
             throw new InvalidOperationException(
-                $"Импорт карточек товаров не поддерживается для канала '{connection.SystemChannelTemplate?.Code}'.");
+                $"Импорт карточек товаров не поддерживается для канала '{channelCode}'.");
         }
 
+        if (productsJobTypes.Count > 1)
+        {
+            // Two products types for one channel is a registry design error: picking one would
+            // silently create the wrong run type and break cancellation and dispatch for it.
+            throw new InvalidOperationException(
+                $"Канал '{channelCode}' объявляет несколько типов задач импорта товаров: " +
+                $"{string.Join(", ", productsJobTypes)}.");
+        }
+
+        JobType productsJobType = productsJobTypes[0];
+
         bool hasActiveJob = await _jobRunRepository
-            .HasActiveJobAsync(request.ConnectionId, JobType.ProductsImport, cancellationToken);
+            .HasActiveJobAsync(request.ConnectionId, productsJobType, cancellationToken);
 
         if (hasActiveJob)
         {
@@ -81,7 +98,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
 
         JobRun jobRun = await _jobRunStarter.CreatePendingAsync(
             request.ConnectionId,
-            JobType.ProductsImport,
+            productsJobType,
             _userContext.UserId,
             cancellationToken);
 
@@ -89,7 +106,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         // an existing checkpoint already carries the real watermark from a previous run and
         // must not be reset back to the 30-day backfill window.
         SyncCheckpoint? checkpoint = await _syncCheckpointRepository
-            .GetAsync(request.ConnectionId, JobType.ProductsImport, cancellationToken);
+            .GetAsync(request.ConnectionId, productsJobType, cancellationToken);
 
         if (checkpoint == null)
         {
@@ -98,7 +115,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
                 {
                     Id = Guid.NewGuid(),
                     ConnectionId = request.ConnectionId,
-                    JobType = JobType.ProductsImport,
+                    JobType = productsJobType,
                     LastChangedAt = null,
                     LastSuccessAt = DateTimeOffset.UtcNow.AddDays(-30),
                     LastJobRunId = null,

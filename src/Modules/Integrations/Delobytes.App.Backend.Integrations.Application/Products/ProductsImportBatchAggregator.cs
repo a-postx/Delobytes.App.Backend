@@ -172,6 +172,15 @@ public class ProductsImportBatchAggregator
             return;
         }
 
+        // Ozon imports only VISIBLE cards, so sweeping the channel's full listing would deactivate
+        // links of cards that are merely hidden right now, even though a channel-side change must
+        // not change anything on our side. The job type carries that distinction; the connection
+        // here has no system channel template loaded, so its code is not readable.
+        if (jobRun.JobType != JobType.ProductsImport)
+        {
+            return;
+        }
+
         if (jobRun.StartedAt == null)
         {
             _logger.LogWarning(

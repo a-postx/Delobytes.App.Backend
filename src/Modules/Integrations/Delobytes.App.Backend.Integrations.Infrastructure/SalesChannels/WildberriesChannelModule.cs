@@ -45,8 +45,14 @@ public sealed class WildberriesChannelModule : ChannelModule
     {
         services.AddKeyedScoped<ProductsImportTuning>(
             ChannelCatalog.WildberriesCode,
-            (sp, _) => new ProductsImportTuning(
-                sp.GetRequiredService<IOptions<WildberriesImportOptions>>().Value.BatchSize));
+            (sp, _) =>
+            {
+                int batchSize = sp.GetRequiredService<IOptions<WildberriesImportOptions>>().Value.BatchSize;
+
+                // WB's card page is capped at 100 and its payload is small, so one page is one
+                // batch: the behaviour stays exactly as it was before page/batch split existed.
+                return new ProductsImportTuning(batchSize, batchSize);
+            });
 
         services.AddKeyedScoped<IProductsSource>(
             ChannelCatalog.WildberriesCode,

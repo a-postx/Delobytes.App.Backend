@@ -62,6 +62,7 @@ public sealed class JobRunStarter
         switch (jobType)
         {
             case JobType.ProductsImport:
+            case JobType.OzonProductsImport:
                 await _jobRunRepository.CreateProductsImportJobAsync(
                     new ProductsImportJob { JobRunId = jobRun.Id },
                     cancellationToken);

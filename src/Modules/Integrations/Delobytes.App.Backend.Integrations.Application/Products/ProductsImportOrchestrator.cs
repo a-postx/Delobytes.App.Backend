@@ -119,9 +119,9 @@ public class ProductsImportOrchestrator
 
         IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
-        int configuredBatchSize = _tunings.Resolve(connection.SystemChannelTemplate.Code).BatchSize;
-        int batchSize = configuredBatchSize > 0 ? configuredBatchSize : ProductsImportTuning.DefaultBatchSize;
-        int batchNumber = 0;
+        int pageSize = ResolvePageSize(connection);
+        int publishedBatches = 0;
+        int pageNumber = 0;
 
         // Resume from the saved checkpoint cursor when redelivered mid-import.
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
@@ -145,10 +145,12 @@ public class ProductsImportOrchestrator
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    pageNumber++;
+
                     ApiResponse<ProductCardsData> apiResponse = await apiClient.GetProductCardsAsync(
                         connection.Id,
                         cursor,
-                        batchSize,
+                        pageSize,
                         cancellationToken);
 
                     if (!apiResponse.IsSuccess)
@@ -156,9 +158,9 @@ public class ProductsImportOrchestrator
                         string errorMsg = apiResponse.ErrorMessage ?? "Unknown API error";
 
                         _logger.LogError(
-                            "JobRun {JobRunId}: WB API call failed (batch {Batch}): {Error}",
+                            "JobRun {JobRunId}: Products API call failed (page {Page}): {Error}",
                             jobRun.Id,
-                            batchNumber,
+                            pageNumber,
                             errorMsg);
 
                         await FailJobAsync(jobRun, errorMsg, cancellationToken);
@@ -185,9 +187,9 @@ public class ProductsImportOrchestrator
                     if (cards.Count == 0 && apiReportsMore && !cancelled)
                     {
                         _logger.LogInformation(
-                            "JobRun {JobRunId}: page {Batch} has no cards but a next cursor, advancing",
+                            "JobRun {JobRunId}: page {Page} has no cards but a next cursor, advancing",
                             jobRun.Id,
-                            batchNumber);
+                            pageNumber);
 
                         // Nothing is published, so the checkpoint may move past this page safely:
                         // the buffered batch keeps its own cursor and stays refetchable.
@@ -207,22 +209,12 @@ public class ProductsImportOrchestrator
                         List<ChannelProductCard> terminalCards =
                             bufferedBatch != null ? bufferedBatch.Cards : new List<ChannelProductCard>();
 
-                        batchNumber++;
-
-                        _logger.LogInformation(
-                            "JobRun {JobRunId}: publishing terminal batch {Batch} with {Count} cards (cancelled={Cancelled})",
-                            jobRun.Id,
-                            batchNumber,
-                            terminalCards.Count,
-                            cancelled);
-
-                        await PublishBatchAsync(
+                        publishedBatches = await PublishPageAsync(
                             jobRun,
                             connection,
                             terminalCards,
-                            isLastBatch: true,
-                            batchNumber,
-                            totalBatches: batchNumber,
+                            isTerminalPage: true,
+                            publishedBatches,
                             cancellationToken);
 
                         break;
@@ -234,43 +226,30 @@ public class ProductsImportOrchestrator
                     // itself as the terminal batch when this is the stop point.
                     if (bufferedBatch != null)
                     {
-                        batchNumber++;
-
-                        await PublishBatchAsync(
+                        publishedBatches = await PublishPageAsync(
                             jobRun,
                             connection,
                             bufferedBatch.Cards,
-                            isLastBatch: false,
-                            batchNumber,
-                            totalBatches: 0,
+                            isTerminalPage: false,
+                            publishedBatches,
                             cancellationToken);
 
-                        // Checkpoint the cursor of the page just published РІР‚вЂќ not of the page just
+                        // Checkpoint the cursor of the page just published, not of the page just
                         // fetched. A redelivery then refetches the page still sitting in the buffer,
                         // which at worst duplicates one batch that batch idempotency absorbs, instead
-                        // of skipping it outright.
+                        // of skipping it outright. All chunks of the page are published by now.
                         await _jobCheckpointRepository.UpsertAsync(
                             BuildCheckpoint(jobRun.Id, bufferedBatch.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
                     }
 
                     if (isTerminalPage)
                     {
-                        batchNumber++;
-
-                        _logger.LogInformation(
-                            "JobRun {JobRunId}: publishing terminal batch {Batch} with {Count} cards (cancelled={Cancelled})",
-                            jobRun.Id,
-                            batchNumber,
-                            cards.Count,
-                            cancelled);
-
-                        await PublishBatchAsync(
+                        publishedBatches = await PublishPageAsync(
                             jobRun,
                             connection,
                             cards,
-                            isLastBatch: true,
-                            batchNumber,
-                            totalBatches: batchNumber,
+                            isTerminalPage: true,
+                            publishedBatches,
                             cancellationToken);
 
                         break;
@@ -288,7 +267,7 @@ public class ProductsImportOrchestrator
                 _logger.LogInformation(
                     "JobRun {JobRunId}: all {Batches} batches published successfully",
                     jobRun.Id,
-                    batchNumber);
+                    publishedBatches);
             }
             catch (OperationCanceledException)
             {
@@ -303,6 +282,93 @@ public class ProductsImportOrchestrator
                 await FailJobAsync(jobRun, ex.Message, cancellationToken);
             }
         }
+    }
+
+    private int ResolvePageSize(Connection connection)
+    {
+        int configured = _tunings.Resolve(connection.SystemChannelTemplate.Code).PageSize;
+
+        return configured > 0 ? configured : ProductsImportTuning.DefaultPageSize;
+    }
+
+    private int ResolveEventBatchSize(Connection connection)
+    {
+        int configured = _tunings.Resolve(connection.SystemChannelTemplate.Code).BatchSize;
+
+        return configured > 0 ? configured : ProductsImportTuning.DefaultBatchSize;
+    }
+
+    /// <summary>
+    /// Publishes one fetched page as one or more batch events and returns the updated count of
+    /// published events.
+    /// </summary>
+    /// <remarks>
+    /// A page and a batch are different sizes: a marketplace returns full cards per page, and the
+    /// same volume would otherwise land in one message. The returned count is what the aggregator
+    /// compares against its recorded batch rows, so it counts events, not pages.
+    /// </remarks>
+    /// <param name="jobRun">Run the page belongs to.</param>
+    /// <param name="connection">Connection the run imports through.</param>
+    /// <param name="cards">Cards of the page, in the order the channel returned them.</param>
+    /// <param name="isTerminalPage">True for the publish that ends the run.</param>
+    /// <param name="publishedBatches">Events published before this page.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of events published so far, this page included.</returns>
+    private async Task<int> PublishPageAsync(
+        JobRun jobRun,
+        Connection connection,
+        List<ChannelProductCard> cards,
+        bool isTerminalPage,
+        int publishedBatches,
+        CancellationToken cancellationToken)
+    {
+        if (cards.Count == 0)
+        {
+            // Nothing to chunk. A terminal publish still emits one event so the aggregator can
+            // finalise a run that genuinely had no records.
+            int emptyTotalBatches = isTerminalPage ? publishedBatches + 1 : 0;
+
+            await PublishBatchAsync(
+                jobRun,
+                connection,
+                cards,
+                isLastBatch: isTerminalPage,
+                publishedBatches + 1,
+                emptyTotalBatches,
+                cancellationToken);
+
+            return publishedBatches + 1;
+        }
+
+        int eventBatchSize = ResolveEventBatchSize(connection);
+        int chunkCount = (cards.Count + eventBatchSize - 1) / eventBatchSize;
+
+        // Only the last chunk of the terminal publish reports the run total: earlier chunks are
+        // ordinary batches and carry 0, exactly as non-terminal pages do. The aggregator reads the
+        // value from the batch that ends the run.
+        int runTotalBatches = isTerminalPage ? publishedBatches + chunkCount : 0;
+
+        for (int index = 0; index < chunkCount; index++)
+        {
+            int offset = index * eventBatchSize;
+            int length = Math.Min(eventBatchSize, cards.Count - offset);
+            List<ChannelProductCard> chunk = cards.GetRange(offset, length);
+
+            publishedBatches++;
+
+            bool isLastChunk = isTerminalPage && index == chunkCount - 1;
+
+            await PublishBatchAsync(
+                jobRun,
+                connection,
+                chunk,
+                isLastChunk,
+                publishedBatches,
+                isLastChunk ? runTotalBatches : 0,
+                cancellationToken);
+        }
+
+        return publishedBatches;
     }
 
     private async Task PublishBatchAsync(

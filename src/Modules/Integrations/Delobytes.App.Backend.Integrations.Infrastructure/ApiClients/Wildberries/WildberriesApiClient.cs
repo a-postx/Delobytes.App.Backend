@@ -47,7 +47,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
     private readonly ILogger<WildberriesApiClient> _logger;
     private readonly WildberriesImportOptions _options;
     private readonly TimeProvider _timeProvider;
-    private readonly WildberriesRequestPacer _pacer;
+    private readonly RateLimitRequestPacer _pacer;
 
     private Guid? _templateId;
 
@@ -89,7 +89,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider;
-        _pacer = new WildberriesRequestPacer(rateLimiter, timeProvider, logger);
+        _pacer = new RateLimitRequestPacer(rateLimiter, timeProvider, logger);
     }
 
     /// <summary>

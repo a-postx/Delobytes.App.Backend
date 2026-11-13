@@ -52,5 +52,28 @@ public class UpdateProductCommandValidator : AbstractValidator<UpdateProductComm
                     .MaximumLength(100);
             })
             .When(x => x.Barcodes != null);
+
+        // The canonical unit's dimensions are non-nullable decimals, so a zero cannot represent
+        // absence: it would be stored and read back as a real 0 cm size. The import treats zero as
+        // "unknown" and writes no row; a manual update must reject it instead of writing one.
+        RuleFor(x => x.PackingUnit!.LengthCm)
+            .GreaterThan(0)
+            .WithMessage("Длина упаковки должна быть больше нуля.")
+            .When(x => x.PackingUnit != null);
+
+        RuleFor(x => x.PackingUnit!.WidthCm)
+            .GreaterThan(0)
+            .WithMessage("Ширина упаковки должна быть больше нуля.")
+            .When(x => x.PackingUnit != null);
+
+        RuleFor(x => x.PackingUnit!.HeightCm)
+            .GreaterThan(0)
+            .WithMessage("Высота упаковки должна быть больше нуля.")
+            .When(x => x.PackingUnit != null);
+
+        RuleFor(x => x.PackingUnit!.WeightKg)
+            .Must(weight => !weight.HasValue || weight.Value > 0)
+            .WithMessage("Вес упаковки должен быть больше нуля.")
+            .When(x => x.PackingUnit != null);
     }
 }

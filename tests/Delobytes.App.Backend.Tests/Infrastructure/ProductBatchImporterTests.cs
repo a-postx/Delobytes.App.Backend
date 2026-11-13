@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
+using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Application.Products;
 using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
@@ -114,7 +115,7 @@ public class ProductBatchImporterTests
     }
 
     [Fact]
-    public async Task ProcessAsync_CreatesPackingUnit_WhenCardHasDimensions()
+    public async Task ProcessAsync_CreatesCanonicalAndChannelPackingUnit_WhenCardHasDimensions()
     {
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
@@ -160,14 +161,21 @@ public class ProductBatchImporterTests
             .FirstOrDefaultAsync(p => p.Sku == "SKU-001");
 
         product.Should().NotBeNull();
-        product!.PackingUnits.Should().HaveCount(1);
+        product!.PackingUnits.Should().HaveCount(2, "the canonical unit and the one this channel reports");
 
-        PackingUnit packingUnit = product.PackingUnits.First();
-        packingUnit.LengthCm.Should().Be(30);
-        packingUnit.WidthCm.Should().Be(20);
-        packingUnit.HeightCm.Should().Be(10);
-        packingUnit.WeightKg.Should().Be(0.5m);
-        packingUnit.IsActive.Should().BeTrue();
+        PackingUnit canonical = PackingUnitResolver.ResolveCanonical(product)!;
+        canonical.ChannelId.Should().BeNull();
+        canonical.LengthCm.Should().Be(30);
+        canonical.WidthCm.Should().Be(20);
+        canonical.HeightCm.Should().Be(10);
+        canonical.WeightKg.Should().Be(0.5m);
+        canonical.IsActive.Should().BeTrue();
+
+        PackingUnit channelUnit = PackingUnitResolver.ResolveForChannel(product, _channelId)!;
+        channelUnit.ChannelId.Should().Be(_channelId);
+        channelUnit.LengthCm.Should().Be(30);
+        channelUnit.WidthCm.Should().Be(20);
+        channelUnit.HeightCm.Should().Be(10);
     }
 
     [Fact]
@@ -217,9 +225,10 @@ public class ProductBatchImporterTests
     }
 
     [Fact]
-    public async Task ProcessAsync_UpdatesPackingUnit_WhenDimensionsChange()
+    public async Task ProcessAsync_UpdatesOnlyChannelPackingUnit_WhenDimensionsChange()
     {
-        // Arrange
+        // Arrange: the product already owns a canonical unit; the card reports its own packing,
+        // which must be stored next to it rather than overwriting the catalogue's value.
         string databaseName = Guid.NewGuid().ToString();
         CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
         await CreateChannelAsync(setupContext, _tenantId);
@@ -251,6 +260,7 @@ public class ProductBatchImporterTests
         {
             Id = Guid.NewGuid(),
             ProductId = existingProduct.Id,
+            ChannelId = null,
             LengthCm = 10,
             WidthCm = 10,
             HeightCm = 10,
@@ -303,13 +313,19 @@ public class ProductBatchImporterTests
             .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
 
         product.Should().NotBeNull();
-        product!.PackingUnits.Should().HaveCount(1, "existing packing unit must be updated, not duplicated");
+        product!.PackingUnits.Should().HaveCount(2, "the canonical unit stays and the channel one is added");
 
-        PackingUnit packingUnit = product.PackingUnits.First();
-        packingUnit.LengthCm.Should().Be(40);
-        packingUnit.WidthCm.Should().Be(25);
-        packingUnit.HeightCm.Should().Be(15);
-        packingUnit.WeightKg.Should().Be(1.2m);
+        PackingUnit canonical = PackingUnitResolver.ResolveCanonical(product)!;
+        canonical.LengthCm.Should().Be(10, "the import never rewrites the catalogue's own dimensions");
+        canonical.WidthCm.Should().Be(10);
+        canonical.HeightCm.Should().Be(10);
+        canonical.WeightKg.Should().Be(0.1m);
+
+        PackingUnit channelUnit = PackingUnitResolver.ResolveForChannel(product, _channelId)!;
+        channelUnit.LengthCm.Should().Be(40);
+        channelUnit.WidthCm.Should().Be(25);
+        channelUnit.HeightCm.Should().Be(15);
+        channelUnit.WeightKg.Should().Be(1.2m);
 
         publishEndpointMock.Verify(
             p => p.Publish(
@@ -322,7 +338,7 @@ public class ProductBatchImporterTests
     }
 
     [Fact]
-    public async Task ProcessAsync_UpdatesExistingProduct_WhenChannelProductExists()
+    public async Task ProcessAsync_UpdatesOnlyChannelFields_WhenChannelProductExists()
     {
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
@@ -348,6 +364,8 @@ public class ProductBatchImporterTests
             ChannelId = _channelId,
             ExternalProductId = "123456789",
             ExternalSku = "SKU-001",
+            Name = "Old card name",
+            Description = "Old card description",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
@@ -392,8 +410,12 @@ public class ProductBatchImporterTests
             .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
 
         product.Should().NotBeNull();
-        product!.Name.Should().Be("Updated Name");
-        product.Description.Should().Be("Updated Description");
+        product!.Name.Should().Be("Old Name", "the catalogue name is written only at creation");
+        product.Description.Should().Be("Old Description");
+
+        ChannelProduct channelProduct = product.ChannelProducts.Should().ContainSingle().Subject;
+        channelProduct.Name.Should().Be("Updated Name");
+        channelProduct.Description.Should().Be("Updated Description");
 
         publishEndpointMock.Verify(
             p => p.Publish(
@@ -973,8 +995,8 @@ public class ProductBatchImporterTests
 
         product.Should().NotBeNull();
         product!.Sku.Should().Be("OLD-VENDOR-CODE", "Product.Sku Р В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’Вµ Р В Р’В Р РЋРІР‚СћР В Р’В Р вЂ™Р’В±Р В Р’В Р В РІР‚В¦Р В Р’В Р РЋРІР‚СћР В Р’В Р В РІР‚В Р В Р’В Р вЂ™Р’В»Р В Р Р‹Р В Р РЏР В Р’В Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р’В Р РЋРІР‚вЂќР В Р Р‹Р В РІР‚С™Р В Р’В Р РЋРІР‚В Р В Р’В Р РЋРІР‚ВР В Р’В Р РЋР’ВР В Р’В Р РЋРІР‚вЂќР В Р’В Р РЋРІР‚СћР В Р Р‹Р В РІР‚С™Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’Вµ");
-        product.Name.Should().Be("Updated Product Name");
-        product.Description.Should().Be("Updated Description");
+        product.Name.Should().Be("Test Product", "the catalogue name is written only at creation");
+        product.Description.Should().Be("Original Description");
 
         ChannelProduct? channelProduct = product.ChannelProducts.FirstOrDefault();
         channelProduct.Should().NotBeNull();
@@ -1464,6 +1486,681 @@ public class ProductBatchImporterTests
             Times.Once);
     }
 
+    // -----------------------------------------------------------------------
+    // Matching: link -> barcode -> ExternalSku; product fields are written once,
+    // channel fields refresh on every import.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_MatchesByBarcode_LinksTheUnlinkedProductAndKeepsItsName()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product existingProduct = new Product
+        {
+            Id = Guid.NewGuid(),
+            Code = "P-000910",
+            Sku = "INTERNAL-SKU",
+            Name = "Seed Name",
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.Manual,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
+        };
+
+        existingProduct.Barcodes.Add(new ProductBarcode
+        {
+            Id = Guid.NewGuid(),
+            ProductId = existingProduct.Id,
+            Value = "1111111111111",
+            Type = ChannelCodes.Wildberries,
+            IsDefault = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
+        });
+
+        await setupContext.Products.AddAsync(existingProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "777000111",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Card Name",
+            OfferId = "CARD-ART",
+            Barcodes = new List<string> { "1111111111111" },
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        List<Product> products = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.ChannelProducts)
+            .ToListAsync();
+
+        products.Should().ContainSingle();
+        products[0].Name.Should().Be("Seed Name", "the catalogue name is not overwritten by a link");
+        products[0].ChannelProducts.Should().ContainSingle()
+            .Which.ExternalProductId.Should().Be("777000111");
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e => e.RecordsCreated == 0 && e.RecordsUpdated == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CardWithoutBarcodeAndOfferId_IsSkippedAndInsertsNothing()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "555000222",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Channel draft",
+            OfferId = null,
+            Barcodes = new List<string>(),
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        (await consumerContext.Products.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await consumerContext.ChannelProducts.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 && e.RecordsCreated == 0 && e.RecordsSkipped == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MatchesByExternalSkuOnAnotherChannel_LinksInsteadOfCreating()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid otherChannelId = Guid.NewGuid();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+        await setupContext.Channels.AddAsync(BuildChannel(otherChannelId, "Ozon"));
+        await setupContext.SaveChangesAsync();
+
+        Product existingProduct = new Product
+        {
+            Id = Guid.NewGuid(),
+            Code = "P-000911",
+            Sku = "OTHER-SKU",
+            Name = "Product known from another channel",
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.Manual,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
+        };
+
+        existingProduct.ChannelProducts.Add(new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = existingProduct.Id,
+            ChannelId = otherChannelId,
+            ExternalProductId = "999000111",
+            ExternalSku = "SHARED-ART",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
+        });
+
+        await setupContext.Products.AddAsync(existingProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "777000333",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Card with the same seller article",
+            OfferId = "SHARED-ART",
+            Barcodes = new List<string>(),
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        List<Product> products = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.ChannelProducts)
+            .ToListAsync();
+
+        products.Should().ContainSingle("the seller article identifies the product across channels");
+        products[0].ChannelProducts.Should().HaveCount(2);
+        products[0].ChannelProducts.Should().ContainSingle(cp => cp.ChannelId == _channelId);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e => e.RecordsCreated == 0 && e.RecordsUpdated == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ExternalSkuMatchesTwoProducts_IsSkipped()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid firstChannelId = Guid.NewGuid();
+        Guid secondChannelId = Guid.NewGuid();
+
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+        await setupContext.Channels.AddAsync(BuildChannel(firstChannelId, "Ozon"));
+        await setupContext.Channels.AddAsync(BuildChannel(secondChannelId, "Yandex Kit"));
+
+        Product firstProduct = BuildSeededProduct("P-000912", "SKU-A", "First product");
+        firstProduct.ChannelProducts.Add(BuildSeededLink(firstProduct.Id, firstChannelId, "100", "DUP-ART"));
+
+        Product secondProduct = BuildSeededProduct("P-000913", "SKU-B", "Second product");
+        secondProduct.ChannelProducts.Add(BuildSeededLink(secondProduct.Id, secondChannelId, "200", "DUP-ART"));
+
+        await setupContext.Products.AddRangeAsync(firstProduct, secondProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "777000444",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Ambiguous card",
+            OfferId = "DUP-ART",
+            Barcodes = new List<string>(),
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        (await consumerContext.Products.IgnoreQueryFilters().CountAsync()).Should().Be(2);
+        (await consumerContext.ChannelProducts.IgnoreQueryFilters().CountAsync())
+            .Should().Be(2, "an ambiguous match must not invent a third link");
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e =>
+                    e.RecordsCreated == 0 && e.RecordsSkipped == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NewCard_CopiesNameDescriptionSkuAndPackingUnit()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Card name",
+            Description = "Card description",
+            OfferId = "SKU-COPY",
+            Barcodes = new List<string> { "4600000000001" },
+            LengthCm = 10,
+            WidthCm = 20,
+            HeightCm = 30,
+            WeightKg = 1.5m,
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        Product product = (await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .Include(p => p.ChannelProducts)
+            .ToListAsync())
+            .Should().ContainSingle().Subject;
+
+        product.Name.Should().Be("Card name");
+        product.Description.Should().Be("Card description");
+        product.Sku.Should().Be("SKU-COPY");
+        product.Code.Should().MatchRegex("^P-\\d{6}$");
+
+        PackingUnit canonical = PackingUnitResolver.ResolveCanonical(product)!;
+        canonical.LengthCm.Should().Be(10);
+        canonical.WidthCm.Should().Be(20);
+        canonical.HeightCm.Should().Be(30);
+        canonical.WeightKg.Should().Be(1.5m);
+
+        PackingUnitResolver.ResolveForChannel(product, _channelId).Should().NotBeNull();
+
+        ChannelProduct channelProduct = product.ChannelProducts.Should().ContainSingle().Subject;
+        channelProduct.Name.Should().Be("Card name");
+        channelProduct.Description.Should().Be("Card description");
+        channelProduct.ExternalSku.Should().Be("SKU-COPY");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SameBarcodeInTwoChannels_YieldsOneProductAndTwoLinks()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        Guid secondChannelId = Guid.NewGuid();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+        await setupContext.Channels.AddAsync(BuildChannel(secondChannelId, "Ozon"));
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard firstCard = new ChannelProductCard
+        {
+            ExternalProductId = "111000111",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Card on the first channel",
+            OfferId = "ART-WB",
+            Barcodes = new List<string> { "4600000000009" },
+        };
+
+        ChannelProductCard secondCard = new ChannelProductCard
+        {
+            ExternalProductId = "222000222",
+            ChannelCode = "ozon",
+            BarcodeType = "ozon",
+            Name = "Card on the second channel",
+            OfferId = "ART-OZON",
+            Barcodes = new List<string> { "4600000000009" },
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(firstCard), CancellationToken.None);
+        await importer.ImportAsync(BuildMessage(secondCard, secondChannelId), CancellationToken.None);
+
+        // Assert
+        List<Product> products = await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.ChannelProducts)
+            .ToListAsync();
+
+        products.Should().ContainSingle("the shared barcode identifies one product");
+        products[0].ChannelProducts.Should().HaveCount(2);
+        products[0].ChannelProducts.Select(cp => cp.ChannelId)
+            .Should().BeEquivalentTo(new[] { _channelId, secondChannelId });
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ChannelExternalSku_IsPopulatedOnCreateAndUpdatedOnChange()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard creatingCard = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "ART-1",
+            Barcodes = new List<string> { "4600000000002" },
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(creatingCard), CancellationToken.None);
+
+        // Assert: created with the seller article the card carries.
+        ChannelProduct created = (await consumerContext.ChannelProducts
+            .IgnoreQueryFilters()
+            .ToListAsync()).Should().ContainSingle().Subject;
+        created.ExternalSku.Should().Be("ART-1");
+
+        // Act: the channel renames the article of the same card.
+        ChannelProductCard updatingCard = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "ART-2",
+            Barcodes = new List<string> { "4600000000002" },
+        };
+
+        await importer.ImportAsync(BuildMessage(updatingCard), CancellationToken.None);
+
+        // Assert
+        CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
+        ChannelProduct updated = (await assertContext.ChannelProducts
+            .IgnoreQueryFilters()
+            .ToListAsync()).Should().ContainSingle().Subject;
+        updated.ExternalSku.Should().Be("ART-2");
+
+        Product product = (await assertContext.Products.IgnoreQueryFilters().ToListAsync())
+            .Should().ContainSingle().Subject;
+        product.Sku.Should().Be("ART-1", "the internal SKU is not rewritten by a channel change");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ExternalSkuMatchAlreadyLinkedToSameChannel_IsSkipped()
+    {
+        // Arrange: the product already has a card on this channel, under another external id.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product existingProduct = BuildSeededProduct("P-000914", "INTERNAL", "Already linked");
+        ChannelProduct existingLink = BuildSeededLink(existingProduct.Id, _channelId, "old-external-id", "ART-X");
+        existingProduct.ChannelProducts.Add(existingLink);
+
+        await setupContext.Products.AddAsync(existingProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "new-external-id",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Second card of the same product",
+            OfferId = "ART-X",
+            Barcodes = new List<string>(),
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        ChannelProduct link = (await consumerContext.ChannelProducts
+            .IgnoreQueryFilters()
+            .ToListAsync()).Should().ContainSingle().Subject;
+        link.ExternalProductId.Should().Be("old-external-id");
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e =>
+                    e.RecordsCreated == 0 && e.RecordsSkipped == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AmbiguousBarcodeAndNoArticleMatch_CreatesNothing()
+    {
+        // Arrange: each barcode belongs to a different product, so the card points at two.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        Product firstProduct = BuildSeededProduct("P-000915", "SKU-A", "First");
+        firstProduct.Barcodes.Add(BuildSeededBarcode(firstProduct.Id, "1111111111111"));
+
+        Product secondProduct = BuildSeededProduct("P-000916", "SKU-B", "Second");
+        secondProduct.Barcodes.Add(BuildSeededBarcode(secondProduct.Id, "2222222222222"));
+
+        await setupContext.Products.AddRangeAsync(firstProduct, secondProduct);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "777000555",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Card pointing at two products",
+            OfferId = "NO-MATCH",
+            Barcodes = new List<string> { "1111111111111", "2222222222222" },
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        // Assert
+        (await consumerContext.Products.IgnoreQueryFilters().CountAsync()).Should().Be(2);
+        (await consumerContext.ChannelProducts.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e =>
+                    e.RecordsCreated == 0 && e.RecordsSkipped == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ZeroDimensions_CreateNoUnits_ThenRealDimensionsCreateBoth()
+    {
+        // Arrange: a card that reports zeros reports nothing usable at all.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard cardWithoutDimensions = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product without dimensions",
+            OfferId = "SKU-DIM",
+            Barcodes = new List<string> { "4600000000003" },
+            LengthCm = 0,
+            WidthCm = 0,
+            HeightCm = 0,
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(cardWithoutDimensions), CancellationToken.None);
+
+        // Assert
+        Product productWithoutUnits = (await consumerContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .ToListAsync()).Should().ContainSingle().Subject;
+        productWithoutUnits.PackingUnits.Should().BeEmpty();
+
+        // Act: the same card starts reporting real dimensions.
+        ChannelProductCard cardWithDimensions = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product without dimensions",
+            OfferId = "SKU-DIM",
+            Barcodes = new List<string> { "4600000000003" },
+            LengthCm = 10,
+            WidthCm = 20,
+            HeightCm = 30,
+            WeightKg = 2m,
+        };
+
+        await importer.ImportAsync(BuildMessage(cardWithDimensions), CancellationToken.None);
+
+        // Assert
+        CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Product product = (await assertContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .ToListAsync()).Should().ContainSingle().Subject;
+
+        product.PackingUnits.Should().HaveCount(2);
+        PackingUnitResolver.ResolveCanonical(product)!.LengthCm.Should().Be(10);
+        PackingUnitResolver.ResolveForChannel(product, _channelId)!.LengthCm.Should().Be(10);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CanonicalUnitWrittenOnce_LaterImportUpdatesOnlyTheChannelRow()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard firstCard = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "SKU-ONCE",
+            Barcodes = new List<string> { "4600000000004" },
+            LengthCm = 10,
+            WidthCm = 10,
+            HeightCm = 10,
+            WeightKg = 0.5m,
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(firstCard), CancellationToken.None);
+
+        ChannelProductCard secondCard = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "SKU-ONCE",
+            Barcodes = new List<string> { "4600000000004" },
+            LengthCm = 40,
+            WidthCm = 50,
+            HeightCm = 60,
+            WeightKg = 2m,
+        };
+
+        await importer.ImportAsync(BuildMessage(secondCard), CancellationToken.None);
+
+        // Assert
+        CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Product product = (await assertContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .ToListAsync()).Should().ContainSingle().Subject;
+
+        PackingUnit canonical = PackingUnitResolver.ResolveCanonical(product)!;
+        canonical.LengthCm.Should().Be(10);
+        canonical.WidthCm.Should().Be(10);
+        canonical.HeightCm.Should().Be(10);
+        canonical.WeightKg.Should().Be(0.5m);
+
+        PackingUnit channelUnit = PackingUnitResolver.ResolveForChannel(product, _channelId)!;
+        channelUnit.LengthCm.Should().Be(40);
+        channelUnit.WidthCm.Should().Be(50);
+        channelUnit.HeightCm.Should().Be(60);
+        channelUnit.WeightKg.Should().Be(2m);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_IncompleteDimensions_LeaveTheChannelRowUnchanged()
+    {
+        // Arrange
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
+        await CreateChannelAsync(setupContext, _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard completeCard = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "SKU-PARTIAL",
+            Barcodes = new List<string> { "4600000000005" },
+            LengthCm = 10,
+            WidthCm = 20,
+            HeightCm = 30,
+            WeightKg = 1m,
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(completeCard), CancellationToken.None);
+
+        ChannelProductCard incompleteCard = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "SKU-PARTIAL",
+            Barcodes = new List<string> { "4600000000005" },
+            LengthCm = 50,
+            WidthCm = 60,
+            HeightCm = null,
+            WeightKg = 9m,
+        };
+
+        await importer.ImportAsync(BuildMessage(incompleteCard), CancellationToken.None);
+
+        // Assert: a partial report must not be zero-filled over the earlier complete one.
+        CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Product product = (await assertContext.Products
+            .IgnoreQueryFilters()
+            .Include(p => p.PackingUnits)
+            .ToListAsync()).Should().ContainSingle().Subject;
+
+        PackingUnit channelUnit = PackingUnitResolver.ResolveForChannel(product, _channelId)!;
+        channelUnit.LengthCm.Should().Be(10);
+        channelUnit.WidthCm.Should().Be(20);
+        channelUnit.HeightCm.Should().Be(30);
+        channelUnit.WeightKg.Should().Be(1m);
+    }
+
     private static ProductPhoto BuildStoredPhoto(
         Guid productId,
         Guid channelId,
@@ -1533,11 +2230,78 @@ public class ProductBatchImporterTests
 
     private Channel BuildChannel()
     {
+        return BuildChannel(_channelId, "Wildberries");
+    }
+
+    private static Channel BuildChannel(Guid channelId, string name)
+    {
         return new Channel
         {
-            Id = _channelId,
-            Name = "Wildberries",
+            Id = channelId,
+            Name = name,
             CreatedAt = DateTimeOffset.UtcNow
+        };
+    }
+
+    private ProductBatchImportRequestedEvent BuildMessage(ChannelProductCard card)
+    {
+        return BuildMessage(card, _channelId);
+    }
+
+    private ProductBatchImportRequestedEvent BuildMessage(ChannelProductCard card, Guid channelId)
+    {
+        return new ProductBatchImportRequestedEvent
+        {
+            JobRunId = _syncJobId,
+            ConnectionId = _connectionId,
+            ChannelId = channelId,
+            Cards = new List<ChannelProductCard> { card },
+            IsLastBatch = false
+        };
+    }
+
+    private static Product BuildSeededProduct(string code, string sku, string name)
+    {
+        return new Product
+        {
+            Id = Guid.NewGuid(),
+            Code = code,
+            Sku = sku,
+            Name = name,
+            Status = ProductStatus.Active,
+            CreationSource = CreationSource.Manual,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
+        };
+    }
+
+    private static ChannelProduct BuildSeededLink(
+        Guid productId,
+        Guid channelId,
+        string externalProductId,
+        string externalSku)
+    {
+        return new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ChannelId = channelId,
+            ExternalProductId = externalProductId,
+            ExternalSku = externalSku,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
+        };
+    }
+
+    private static ProductBarcode BuildSeededBarcode(Guid productId, string value)
+    {
+        return new ProductBarcode
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            Value = value,
+            Type = ChannelCodes.Wildberries,
+            IsDefault = false,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
         };
     }
 

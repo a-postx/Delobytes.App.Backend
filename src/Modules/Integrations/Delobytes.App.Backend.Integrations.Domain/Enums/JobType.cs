@@ -17,5 +17,10 @@ public enum JobType
     /// <summary>
     /// Scheduled Ozon FBS orders delta/backfill import.
     /// </summary>
-    OzonOrdersImportFbs = 5
+    OzonOrdersImportFbs = 5,
+
+    /// <summary>
+    /// Manually started Ozon product cards import.
+    /// </summary>
+    OzonProductsImport = 6
 }
