@@ -18,7 +18,7 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("catalog")
-                .HasAnnotation("ProductVersion", "8.0.2")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -438,6 +438,198 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("MarginCalculationSnapshots", "catalog");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingScheme", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("EntityKind")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NumberingSchemes_TenantId_Code");
+
+                    b.HasIndex("TenantId", "EntityKind")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NumberingSchemes_TenantId_Kind_Default")
+                        .HasFilter("\"IsDefault\"");
+
+                    b.ToTable("NumberingSchemes", "catalog");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingSegment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ConstantValue")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("Length")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("NumberingSequenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SchemeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SeparatorAfter")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NumberingSequenceId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("SchemeId", "Order")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NumberingSegments_SchemeId_Order");
+
+                    b.ToTable("NumberingSegments", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("CK_NumberingSegments_AutoNumber", "(\"Type\" = 2 AND \"NumberingSequenceId\" IS NOT NULL) OR \"Type\" <> 2");
+
+                            t.HasCheckConstraint("CK_NumberingSegments_Constant", "(\"Type\" = 1 AND \"ConstantValue\" IS NOT NULL) OR \"Type\" <> 1");
+
+                            t.HasCheckConstraint("CK_NumberingSegments_Order", "\"Order\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingSequence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("EndNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("ManualNumbering")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("NextNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("StartNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<int>("Step")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("WarnIfNotContinuous")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("WarnOnClose")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("NumberingSequences", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("CK_NumberingSequences_Step", "\"Step\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackingUnit", b =>
@@ -1140,6 +1332,24 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Navigation("ProductCostSnapshot");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingSegment", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingSequence", "NumberingSequence")
+                        .WithMany()
+                        .HasForeignKey("NumberingSequenceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingScheme", "Scheme")
+                        .WithMany("Segments")
+                        .HasForeignKey("SchemeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("NumberingSequence");
+
+                    b.Navigation("Scheme");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackingUnit", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
@@ -1235,6 +1445,11 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Navigation("BomLines");
 
                     b.Navigation("Prices");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.NumberingScheme", b =>
+                {
+                    b.Navigation("Segments");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Product", b =>

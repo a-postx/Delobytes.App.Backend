@@ -276,6 +276,17 @@ public class ProductImportStore : IProductImportStore
                     entry.State = EntityState.Detached;
                 }
             }
+
+            // Numbering counters advanced by this card were rolled back in the database, but EF
+            // still holds the advanced values in memory; without this reload the next card would
+            // allocate from a number this card never committed. Sequences first tracked inside the
+            // failed card were detached by the loop above, so only committed counters remain here.
+            // Counters of cards that already saved stay as the database holds them.
+            foreach (EntityEntry<NumberingSequence> sequenceEntry
+                in _context.ChangeTracker.Entries<NumberingSequence>().ToList())
+            {
+                await sequenceEntry.ReloadAsync(cancellationToken);
+            }
         }
 
         public void Dispose()

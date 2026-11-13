@@ -1,9 +1,11 @@
 using System.Reflection;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Numbering;
 using Delobytes.App.Backend.Catalog.Application.Products;
 using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
+using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Infrastructure.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
@@ -11,6 +13,7 @@ using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Persistence.Interceptors;
+using FluentValidation;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,6 +66,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IChannelProductRepository, ChannelProductRepository>();
         services.AddScoped<IProductCostSnapshotRepository, ProductCostSnapshotRepository>();
+
+        // Numbering: the allocator mutates tracked counter entities, so it lives in the same scope
+        // as the DbContext. The validator is registered here as well because the provider and the
+        // allocator depend on it, not only the MediatR commands the Api project validates.
+        services.TryAddScoped<IValidator<NumberingScheme>, NumberingSchemeValidator>();
+        services.AddScoped<INumberingSchemeProvider, NumberingSchemeProvider>();
+        services.AddScoped<INumberingSequenceStore, NumberingSequenceStore>();
+        services.AddScoped<INumberAllocator, NumberAllocator>();
 
         // Scoped because the repositories it reads through are bound to the scoped DbContext.
         services.AddScoped<ICostCalculator, ProductCostCalculator>();

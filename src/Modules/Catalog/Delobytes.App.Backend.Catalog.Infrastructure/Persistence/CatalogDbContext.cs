@@ -32,6 +32,9 @@ public class CatalogDbContext : TenantScopedDbContext
     public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
     public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
     public DbSet<ProductCostSnapshot> ProductCostSnapshots => Set<ProductCostSnapshot>();
+    public DbSet<NumberingSequence> NumberingSequences => Set<NumberingSequence>();
+    public DbSet<NumberingScheme> NumberingSchemes => Set<NumberingScheme>();
+    public DbSet<NumberingSegment> NumberingSegments => Set<NumberingSegment>();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)

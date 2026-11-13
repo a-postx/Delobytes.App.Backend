@@ -24,6 +24,7 @@ public static class ErrorCodes
         public static readonly ErrorCode ProductBarcodeConflict = new ErrorCode("catalog.product_barcode.value_conflict", 409, "Этот штрихкод уже привязан к другому товару.");
         public static readonly ErrorCode ProductWorkRateValidFromConflict = new ErrorCode("catalog.product_work_rate.valid_from_conflict", 409, "Версия нормы с такой датой начала уже существует.");
         public static readonly ErrorCode ProductWorkRateValidFromNotLatest = new ErrorCode("catalog.product_work_rate.valid_from_not_latest", 409, "Дата начала действия должна быть позже даты предыдущей версии.");
+        public static readonly ErrorCode NumberingExhausted = new ErrorCode("catalog.numbering.exhausted", 409, "Диапазон нумерации исчерпан.");
     }
 
     public static class Identity
