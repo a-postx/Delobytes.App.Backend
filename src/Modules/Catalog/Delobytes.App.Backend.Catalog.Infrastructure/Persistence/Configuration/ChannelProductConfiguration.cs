@@ -29,6 +29,12 @@ public class ChannelProductConfiguration : IEntityTypeConfiguration<ChannelProdu
         builder.Property(cp => cp.ExternalSku)
             .HasMaxLength(100);
 
+        builder.Property(cp => cp.Name)
+            .HasMaxLength(2000);
+
+        builder.Property(cp => cp.Description)
+            .HasMaxLength(20000);
+
         builder.Property(cp => cp.ChannelSpecificData)
             .HasColumnType("text");
 

@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -164,11 +165,14 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
     }
 
     /// <summary>
-    /// Writes dimensions onto the active packing unit, creating one when the product has none.
+    /// Writes dimensions onto the product's canonical packing unit, creating one when the product
+    /// has none. Channel-reported rows are never touched: they are refreshed by the import that
+    /// owns them, and writing canonical dimensions into one of them would silently rewrite what a
+    /// marketplace reports.
     /// </summary>
     private static void ApplyPackingUnit(Product product, PackingUnitDto packingUnit)
     {
-        PackingUnit? existing = product.PackingUnits.FirstOrDefault(pu => pu.IsActive);
+        PackingUnit? existing = PackingUnitResolver.ResolveCanonical(product);
 
         if (existing == null)
         {

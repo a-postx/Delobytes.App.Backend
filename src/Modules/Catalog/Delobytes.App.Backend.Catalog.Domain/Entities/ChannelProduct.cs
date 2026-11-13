@@ -28,9 +28,25 @@ public class ChannelProduct : ITenantScoped
     public string ExternalProductId { get; set; } = default!;
 
     /// <summary>
-    /// Gets or sets the external SKU if it differs from Product.Sku.
+    /// Gets or sets the seller's own article for this card as the channel reports it
+    /// (<c>vendorCode</c> for Wildberries, <c>offer_id</c> for Ozon). It is the channel's copy, not
+    /// a mirror of <see cref="Product.Sku"/>: the import writes it unconditionally on every sync,
+    /// while the internal SKU is user-editable and independent.
     /// </summary>
     public string? ExternalSku { get; set; }
+
+    /// <summary>
+    /// Gets or sets the product name as the channel reports it. Channel-owned data: refreshed on
+    /// every import and read-only in the UI. The canonical name is <see cref="Product.Name"/>.
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Gets or sets the product description as the channel reports it. Channel-owned data:
+    /// refreshed on every import and read-only in the UI. The canonical description is
+    /// <see cref="Product.Description"/>.
+    /// </summary>
+    public string? Description { get; set; }
 
     /// <summary>
     /// Gets or sets channel-specific data as JSON string.

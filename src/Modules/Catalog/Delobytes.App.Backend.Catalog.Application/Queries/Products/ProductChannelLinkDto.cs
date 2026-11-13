@@ -4,12 +4,10 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
 /// Link between a product and its external card on a sales channel (ChannelProduct), as
 /// exposed through the API. Shared by the product list and single-product queries.
 ///
-/// Temporary measure (see refactor TODO): while marketplace write-back is not implemented,
-/// import is the source of truth for Name/Description/Barcodes/PackingUnit of a linked
-/// product and will overwrite local edits. The backend does not reject edits to those
-/// fields in UpdateProductCommand — the frontend disables them whenever ChannelLinks is
-/// non-empty. Once write-back exists, import should stop overwriting these fields and this
-/// frontend-only restriction can be lifted.
+/// Everything here is channel-owned and read-only: the values describe what the marketplace
+/// reports about the card and are refreshed by every import. Product fields (name, description,
+/// SKU, canonical packing unit) are the catalogue's own and stay canonical; a channel value never
+/// promotes itself into them.
 /// </summary>
 public class ProductChannelLinkDto
 {
@@ -23,7 +21,10 @@ public class ProductChannelLinkDto
     /// <summary>External product identifier in the marketplace/channel system (e.g. nmID for WB).</summary>
     public string ExternalProductId { get; set; } = default!;
 
-    /// <summary>External SKU if it differs from Product.Sku (e.g. vendorCode for WB).</summary>
+    /// <summary>
+    /// The seller's own article for this card as the channel reports it (<c>vendorCode</c> for
+    /// Wildberries, <c>offer_id</c> for Ozon). It is not a mirror of the internal SKU.
+    /// </summary>
     public string? ExternalSku { get; set; }
 
     /// <summary>

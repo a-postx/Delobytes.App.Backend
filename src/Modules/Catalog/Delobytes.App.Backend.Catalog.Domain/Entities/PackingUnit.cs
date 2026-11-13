@@ -15,7 +15,18 @@ public class PackingUnit : ITenantScoped
 
     public Guid ProductId { get; set; }
 
-    /// <summary>Sales channel this unit is packed for; null means every channel. Not used yet.</summary>
+    /// <summary>
+    /// Sales channel this unit describes. <c>null</c> marks the product's canonical unit — the
+    /// dimensions the catalogue itself works with, including tariff volume. A non-null value is the
+    /// unit that channel reports, kept per channel and never used as the canonical one.
+    /// </summary>
+    /// <remarks>
+    /// At most one row per <c>(ProductId, ChannelId)</c> and at most one canonical row per product;
+    /// both bounds are enforced by unique indexes. Neither is mandatory: a product may have no
+    /// canonical unit at all, so every reader must accept <c>null</c> instead of dereferencing.
+    /// Postgres treats <c>NULL</c> values as distinct, which is why the canonical bound needs a
+    /// filtered index rather than this column being part of a plain unique index.
+    /// </remarks>
     public Guid? ChannelId { get; set; }
 
     /// <summary>Optional label shown to the operator when a product has more than one packing.</summary>

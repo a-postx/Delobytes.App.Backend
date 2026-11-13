@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Numbering;
+using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
@@ -777,9 +778,10 @@ public class ProductBatchImporter
     }
 
     /// <summary>
-    /// Creates or updates the product's packing unit from marketplace-reported dimensions.
-    /// Length/width/height are required on PackingUnit, so a card without all three
-    /// leaves any existing packing unit untouched.
+    /// Creates or updates the product's canonical packing unit from marketplace-reported
+    /// dimensions. Length/width/height are required on PackingUnit, so a card without all three
+    /// leaves any existing unit untouched. A channel row is never selected here: those describe
+    /// what the marketplace reports and are written separately.
     /// </summary>
     private static bool SynchronizePackingUnit(Product product, ChannelProductCard card, DateTimeOffset now)
     {
@@ -788,7 +790,7 @@ public class ProductBatchImporter
             return false;
         }
 
-        PackingUnit? existing = product.PackingUnits.FirstOrDefault(pu => pu.IsActive);
+        PackingUnit? existing = PackingUnitResolver.ResolveCanonical(product);
 
         if (existing == null)
         {

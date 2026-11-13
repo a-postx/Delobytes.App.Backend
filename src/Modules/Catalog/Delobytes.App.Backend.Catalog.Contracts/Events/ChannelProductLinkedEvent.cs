@@ -30,7 +30,9 @@ public record ChannelProductLinkedEvent
     public string ExternalProductId { get; init; } = default!;
 
     /// <summary>
-    /// External SKU reported by the marketplace when it differs from the internal SKU.
+    /// The seller's own article for this card as the channel reports it (<c>vendorCode</c> for
+    /// Wildberries, <c>offer_id</c> for Ozon). It is the channel's copy, not a mirror of
+    /// <see cref="Sku"/>.
     /// </summary>
     public string? ExternalSku { get; init; }
 

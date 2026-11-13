@@ -44,13 +44,28 @@ public class PackingUnitConfiguration : IEntityTypeConfiguration<PackingUnit>
 
         builder.Property(pu => pu.UpdatedAt);
 
-        // Serves both lookups by product and the cascade from Product; PostgreSQL
-        // does not create indexes for foreign keys automatically.
-        builder.HasIndex(pu => pu.ProductId);
+        // One row per product and channel. ProductId is the leading column, so this index also
+        // serves every lookup by product and the cascade from Product; a separate single-column
+        // index on ProductId would only double the write cost.
+        builder.HasIndex(pu => new { pu.ProductId, pu.ChannelId })
+            .IsUnique()
+            .HasDatabaseName("IX_PackingUnits_Product_Channel");
+
+        // At most one canonical row per product. PostgreSQL treats NULLs as distinct, so the
+        // composite index above cannot enforce this bound; a filtered index can.
+        builder.HasIndex(pu => pu.ProductId)
+            .IsUnique()
+            .HasFilter("\"ChannelId\" IS NULL")
+            .HasDatabaseName("IX_PackingUnits_Product_Canonical");
 
         builder.HasOne(pu => pu.Product)
             .WithMany(p => p.PackingUnits)
             .HasForeignKey(pu => pu.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Channel>()
+            .WithMany()
+            .HasForeignKey(pu => pu.ChannelId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
@@ -97,7 +98,7 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                     IsDefault = b.IsDefault,
                 })
                 .ToList(),
-            PackingUnit = ToPackingUnitDto(product.PackingUnits.FirstOrDefault(pu => pu.IsActive)),
+            PackingUnit = ToPackingUnitDto(PackingUnitResolver.ResolveCanonical(product)),
             // Only one channel importer exists today, so this flat, unfiltered list is that
             // channel's photo set; per-channel selection is a later stage.
             Photos = product.Photos

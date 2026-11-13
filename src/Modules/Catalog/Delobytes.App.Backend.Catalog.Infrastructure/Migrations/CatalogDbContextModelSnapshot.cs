@@ -185,6 +185,10 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(20000)
+                        .HasColumnType("character varying(20000)");
+
                     b.Property<string>("ExternalProductId")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -199,6 +203,10 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("LastSyncedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
@@ -678,9 +686,18 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProductId");
+                    b.HasIndex("ChannelId");
+
+                    b.HasIndex("ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PackingUnits_Product_Canonical")
+                        .HasFilter("\"ChannelId\" IS NULL");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("ProductId", "ChannelId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PackingUnits_Product_Channel");
 
                     b.ToTable("PackingUnits", "catalog");
                 });
@@ -1361,6 +1378,11 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.PackingUnit", b =>
                 {
+                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", null)
+                        .WithMany()
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Product", "Product")
                         .WithMany("PackingUnits")
                         .HasForeignKey("ProductId")
