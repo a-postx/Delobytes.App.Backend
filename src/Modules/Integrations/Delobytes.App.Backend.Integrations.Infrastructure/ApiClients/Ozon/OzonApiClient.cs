@@ -533,9 +533,11 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
         OzonProductAttributesResponse? page = await response.Content
             .ReadFromJsonAsync<OzonProductAttributesResponse>(SerializerOptions, ct);
 
+        List<OzonProductAttributesItem> resultItems = page?.Result ?? new List<OzonProductAttributesItem>();
+
         List<ChannelProductCard> cards = new List<ChannelProductCard>();
 
-        foreach (OzonProductAttributesItem item in page?.Result ?? new List<OzonProductAttributesItem>())
+        foreach (OzonProductAttributesItem item in resultItems)
         {
             if (item.Sku == 0)
             {
@@ -560,9 +562,9 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
             Data = new ProductCardsData
             {
                 Cards = cards,
-                NextCursor = string.IsNullOrEmpty(page?.LastId)
-                    ? null
-                    : new ProductCardsCursor { Token = page.LastId },
+                NextCursor = HasMorePages(resultItems.Count, pageSize, page?.LastId)
+                    ? new ProductCardsCursor { Token = page!.LastId }
+                    : null,
                 TotalCount = page?.Total ?? 0,
             },
         };
@@ -589,6 +591,34 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
             NextCursor = response.Data?.NextCursor,
             TotalCount = response.Data?.TotalCount ?? 0,
         };
+    }
+
+    /// <summary>
+    /// Decides whether the page just read is followed by another one.
+    /// </summary>
+    /// <remarks>
+    /// Ozon fills <c>last_id</c> on every page, the terminal one included: a catalogue of 95 cards
+    /// read with <c>limit: 100</c> comes back complete, with a populated <c>last_id</c>. Treating a
+    /// non-empty value as "there is more" makes the run request a page that does not exist, which
+    /// the channel answers with 404 <c>{"code":5,"message":"item not found"}</c> and fails the job.
+    /// A page shorter than the requested limit therefore ends the catalogue, and <c>last_id</c>
+    /// decides only when the page is full.
+    /// </remarks>
+    /// <param name="returnedItems">
+    /// Items the channel returned, counted before cards without a sku are dropped: a full page that
+    /// loses a few rows in mapping must still advance the cursor.
+    /// </param>
+    /// <param name="requestedLimit">Page size the page was requested with.</param>
+    /// <param name="lastId">Cursor of the page, empty when the channel sent none.</param>
+    /// <returns>True when another request may be issued; false when the catalogue is exhausted.</returns>
+    private static bool HasMorePages(int returnedItems, int requestedLimit, string? lastId)
+    {
+        if (string.IsNullOrEmpty(lastId))
+        {
+            return false;
+        }
+
+        return returnedItems >= requestedLimit;
     }
 
     /// <summary>

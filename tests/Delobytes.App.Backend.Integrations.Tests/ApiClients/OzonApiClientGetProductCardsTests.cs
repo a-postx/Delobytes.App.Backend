@@ -105,7 +105,7 @@ public class OzonApiClientGetProductCardsTests
                 requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
                 return true;
             })
-            .Respond("application/json", Payload(lastId: "next-token"));
+            .Respond("application/json", Payload(count: 100, lastId: "next-token"));
 
         ApiResponse<ProductCardsData> response = await client.GetProductCardsAsync(
             _connectionId,
@@ -122,12 +122,49 @@ public class OzonApiClientGetProductCardsTests
         (OzonApiClient secondClient, MockHttpMessageHandler secondMock) = BuildClient(_connection);
         secondMock
             .When(HttpMethod.Post, AttributesUrl)
-            .Respond("application/json", Payload(lastId: string.Empty));
+            .Respond("application/json", Payload(count: 100, lastId: string.Empty));
 
         ApiResponse<ProductCardsData> endOfCatalogue = await secondClient.GetProductCardsAsync(
             _connectionId, cursor: null, limit: 100, CancellationToken.None);
 
         endOfCatalogue.Data!.NextCursor.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProductCards_ShortPageWithPopulatedLastId_ReportsNoNextCursor()
+    {
+        // Live shape: a catalogue of 95 cards read with limit 100 comes back complete, with total 95
+        // and a populated last_id. Asking for the page that cursor implies is what Ozon rejects with
+        // 404 "item not found", so the short page must end the walk on its own.
+        (OzonApiClient client, MockHttpMessageHandler mockHttp) = BuildClient(_connection);
+        mockHttp
+            .When(HttpMethod.Post, AttributesUrl)
+            .Respond("application/json", Payload(count: 95, total: 95, lastId: "terminal-token"));
+
+        ApiResponse<ProductCardsData> response = await client.GetProductCardsAsync(
+            _connectionId, cursor: null, limit: 100, CancellationToken.None);
+
+        response.IsSuccess.Should().BeTrue();
+        response.Data!.Cards.Should().HaveCount(95);
+        response.Data.NextCursor.Should().BeNull(
+            "a page shorter than the limit is the end of the catalogue, whatever last_id says");
+    }
+
+    [Fact]
+    public async Task GetProductCards_FullPageLosingCardsWithoutSku_StillReportsNextCursor()
+    {
+        // Three of the hundred rows have no sku and are dropped in mapping. Counting the survivors
+        // would read as a short page and silently truncate the import at 97 cards.
+        (OzonApiClient client, MockHttpMessageHandler mockHttp) = BuildClient(_connection);
+        mockHttp
+            .When(HttpMethod.Post, AttributesUrl)
+            .Respond("application/json", Payload(count: 100, cardsWithoutSku: 3, lastId: "next-token"));
+
+        ApiResponse<ProductCardsData> response = await client.GetProductCardsAsync(
+            _connectionId, cursor: null, limit: 100, CancellationToken.None);
+
+        response.Data!.Cards.Should().HaveCount(97);
+        response.Data.NextCursor!.Token.Should().Be("next-token");
     }
 
     [Fact]
@@ -412,12 +449,20 @@ public class OzonApiClientGetProductCardsTests
         return rateLimiter;
     }
 
+    /// <summary>
+    /// Builds one attributes response. <paramref name="count"/> drives the page length, because the
+    /// client reads the terminal page from it: Ozon sends a populated last_id even when the page is
+    /// the last one, so a single-item payload cannot describe "there is more".
+    /// </summary>
     private static string Payload(
         long sku = 1088660899,
         string? lastId = null,
         List<string>? barcodes = null,
         string barcode = "4600000000001",
-        List<string>? images = null)
+        List<string>? images = null,
+        int count = 1,
+        int? total = null,
+        int cardsWithoutSku = 0)
     {
         List<string> imageList = images ??
         [
@@ -429,50 +474,54 @@ public class OzonApiClientGetProductCardsTests
             "https://cdn.example/6.jpg",
         ];
 
+        List<object> result = new List<object>(count);
+
+        for (int index = 0; index < count; index++)
+        {
+            result.Add(new
+            {
+                id = 577954855L + index,
+                sku = index < cardsWithoutSku ? 0L : sku + index,
+                offer_id = "квр-10",
+                name = "Top level name",
+                barcode,
+                barcodes = barcodes ?? ["4600000000001", "4600000000002"],
+                depth = 570,
+                width = 240,
+                height = 40,
+                dimension_unit = "mm",
+                weight = 450,
+                weight_unit = "g",
+                primary_image = "https://cdn.example/primary.jpg",
+                images = imageList,
+                attributes = new object[]
+                {
+                    new
+                    {
+                        id = 4180,
+                        complex_id = 0,
+                        values = new[] { new { dictionary_value_id = 0, value = "Wrong description" } },
+                    },
+                    new
+                    {
+                        id = 4191,
+                        complex_id = 0,
+                        values = new[] { new { dictionary_value_id = 0, value = "Right description" } },
+                    },
+                    new { id = 8415, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "55" } } },
+                    new { id = 6433, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "111" } } },
+                    new { id = 6469, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "222" } } },
+                    new { id = 4082, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "58×30×4" } } },
+                    new { id = 4497, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "333" } } },
+                    new { id = 8962, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "444" } } },
+                },
+            });
+        }
+
         object payload = new
         {
-            result = new[]
-            {
-                new
-                {
-                    id = 577954855,
-                    sku,
-                    offer_id = "квр-10",
-                    name = "Top level name",
-                    barcode,
-                    barcodes = barcodes ?? ["4600000000001", "4600000000002"],
-                    depth = 570,
-                    width = 240,
-                    height = 40,
-                    dimension_unit = "mm",
-                    weight = 450,
-                    weight_unit = "g",
-                    primary_image = "https://cdn.example/primary.jpg",
-                    images = imageList,
-                    attributes = new object[]
-                    {
-                        new
-                        {
-                            id = 4180,
-                            complex_id = 0,
-                            values = new[] { new { dictionary_value_id = 0, value = "Wrong description" } },
-                        },
-                        new
-                        {
-                            id = 4191,
-                            complex_id = 0,
-                            values = new[] { new { dictionary_value_id = 0, value = "Right description" } },
-                        },
-                        new { id = 8415, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "55" } } },
-                        new { id = 6433, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "111" } } },
-                        new { id = 6469, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "222" } } },
-                        new { id = 4082, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "58х30х4" } } },
-                        new { id = 4497, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "333" } } },
-                        new { id = 8962, complex_id = 0, values = new[] { new { dictionary_value_id = 0, value = "444" } } },
-                    },
-                },
-            },
-            total = 1,
+            result,
+            total = total ?? count,
             last_id = lastId ?? string.Empty,
         };
 
