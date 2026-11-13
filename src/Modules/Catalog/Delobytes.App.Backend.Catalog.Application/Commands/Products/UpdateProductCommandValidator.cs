@@ -13,10 +13,12 @@ namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
 /// </summary>
 public class UpdateProductCommandValidator : AbstractValidator<UpdateProductCommand>
 {
-    // Mirrors ProductConfiguration: Sku HasMaxLength(100), Name HasMaxLength(200).
+    // Mirrors ProductConfiguration: Sku HasMaxLength(100), Name HasMaxLength(2000),
+    // Description HasMaxLength(20000). A name or description the import legitimately stored at
+    // its own limit must remain editable, so these must not be narrower than the columns.
     private const int SkuMaxLength = 100;
-    private const int NameMaxLength = 200;
-    private const int DescriptionMaxLength = 2000;
+    private const int NameMaxLength = 2000;
+    private const int DescriptionMaxLength = 20000;
 
     public UpdateProductCommandValidator()
     {

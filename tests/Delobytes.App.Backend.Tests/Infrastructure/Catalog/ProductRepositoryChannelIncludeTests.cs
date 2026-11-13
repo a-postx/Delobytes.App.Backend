@@ -43,6 +43,7 @@ public class ProductRepositoryChannelIncludeTests
         Product product = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000001",
             Sku = "SKU-001",
             Name = "Test product",
             Status = ProductStatus.Active,
@@ -91,6 +92,7 @@ public class ProductRepositoryChannelIncludeTests
         Product linkedProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000001",
             Sku = "SKU-001",
             Name = "Linked product",
             Status = ProductStatus.Active,
@@ -109,6 +111,7 @@ public class ProductRepositoryChannelIncludeTests
         Product manualProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000002",
             Sku = "SKU-002",
             Name = "Manual product",
             Status = ProductStatus.Active,

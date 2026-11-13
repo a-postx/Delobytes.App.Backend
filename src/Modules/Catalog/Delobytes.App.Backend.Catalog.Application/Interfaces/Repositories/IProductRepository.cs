@@ -24,9 +24,10 @@ public interface IProductRepository
     /// <param name="descending">True for descending order, false for ascending.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <param name="search">Free-text filter applied on top of <paramref name="status"/> with AND:
-    /// a product matches when its name or its SKU contains the term, case-insensitively. The term is
-    /// trimmed and truncated to 200 characters; null, empty or whitespace-only means "no filter".
-    /// Paging is applied after this filter, so the returned total count describes the filtered set.</param>
+    /// a product matches when its code, its name or its SKU contains the term, case-insensitively.
+    /// The term is trimmed and truncated to 200 characters; null, empty or whitespace-only means
+    /// "no filter". Paging is applied after this filter, so the returned total count describes the
+    /// filtered set.</param>
     /// <param name="includeWorkRateCoverage">When true, the work rate versions of each returned
     /// product are loaded as well, so the caller can tell whether the product is covered by an
     /// active rate. Off by default: it costs an extra collection include per product.</param>
@@ -51,6 +52,13 @@ public interface IProductRepository
     /// its name or SKU contains the trimmed, 200-character-truncated term, case-insensitively. Null,
     /// empty or whitespace-only means "count everything".</param>
     public Task<(int Active, int Archived, int All)> GetStatusCountsAsync(CancellationToken ct, string? search = null);
+
+    /// <summary>
+    /// Reports whether the tenant already holds a product with this SKU. The unique index on
+    /// (TenantId, Sku) stays the backstop; this check exists so a taken SKU becomes a domain error
+    /// instead of a provider exception, and so the caller can pick another value.
+    /// </summary>
+    public Task<bool> SkuExistsAsync(string sku, CancellationToken ct);
 
     public void Add(Product product);
 

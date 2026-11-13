@@ -94,6 +94,11 @@ public class ProductRepository : IProductRepository
         return (active, archived, all);
     }
 
+    public async Task<bool> SkuExistsAsync(string sku, CancellationToken ct)
+    {
+        return await _context.Products.AnyAsync(p => p.Sku == sku, ct);
+    }
+
     public void Add(Product product)
     {
         _context.Products.Add(product);
@@ -141,12 +146,14 @@ public class ProductRepository : IProductRepository
             return query;
         }
 
-        // Case-insensitive substring match. Lower-casing both sides keeps this translatable to SQL
-        // while staying provider-agnostic: EF.Functions.ILike works on PostgreSQL but throws on the
-        // InMemory provider the repository tests run against.
+        // Case-insensitive substring match over the code, name and SKU. Lower-casing both sides
+        // keeps this translatable to SQL while staying provider-agnostic: EF.Functions.ILike works
+        // on PostgreSQL but throws on the InMemory provider the repository tests run against.
         string lowered = term.ToLowerInvariant();
 
-        return query.Where(p => p.Name.ToLower().Contains(lowered) || p.Sku.ToLower().Contains(lowered));
+        return query.Where(p => p.Code.ToLower().Contains(lowered)
+            || p.Name.ToLower().Contains(lowered)
+            || p.Sku.ToLower().Contains(lowered));
     }
 
     private static IQueryable<Product> ApplyOrdering(IQueryable<Product> query, string? sortBy, bool descending)

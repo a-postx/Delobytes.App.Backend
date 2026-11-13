@@ -13,6 +13,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.HasKey(p => p.Id);
 
+        builder.Property(p => p.Code)
+            .IsRequired()
+            .HasMaxLength(50);
+
         builder.Property(p => p.Sku)
             .IsRequired()
             .HasMaxLength(100);
@@ -50,6 +54,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex("TenantId", nameof(Product.Sku))
             .IsUnique()
             .HasDatabaseName("IX_Products_TenantId_Sku");
+
+        builder.HasIndex("TenantId", nameof(Product.Code))
+            .IsUnique()
+            .HasDatabaseName("IX_Products_TenantId_Code");
 
         builder.HasMany(p => p.ChannelProducts)
             .WithOne(cp => cp.Product)

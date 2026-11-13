@@ -57,6 +57,37 @@ public class ProductRepositorySearchTests
     }
 
     [Fact]
+    public async Task GetPagedAsync_SearchMatchesProductCodeFragment()
+    {
+        // Arrange: Product.Code is searchable together with name and SKU.
+        string databaseName = Guid.NewGuid().ToString();
+        CatalogDbContext setupContext = BuildContext(databaseName);
+
+        Product matching = Product("SKU-1", "Blue Widget", ProductStatus.Active, "P-000123");
+        Product other = Product("SKU-2", "Red Widget", ProductStatus.Active, "P-000999");
+
+        setupContext.Products.AddRange(matching, other);
+        await setupContext.SaveChangesAsync();
+
+        CatalogDbContext readContext = BuildContext(databaseName);
+        ProductRepository repository = new ProductRepository(readContext);
+
+        // Act
+        (int totalCount, IReadOnlyList<Product> items) = await repository.GetPagedAsync(
+            null,
+            null,
+            null,
+            null,
+            descending: false,
+            CancellationToken.None,
+            "p-000123");
+
+        // Assert
+        totalCount.Should().Be(1);
+        items.Should().ContainSingle().Which.Id.Should().Be(matching.Id);
+    }
+
+    [Fact]
     public async Task GetPagedAsync_SearchMatchesSkuFragmentInDifferentCase()
     {
         // Arrange
@@ -379,11 +410,12 @@ public class ProductRepositorySearchTests
         all.Should().Be(3);
     }
 
-    private static Product Product(string sku, string name, ProductStatus status)
+    private static Product Product(string sku, string name, ProductStatus status, string? code = null)
     {
         return new Product
         {
             Id = Guid.NewGuid(),
+            Code = code ?? "C-" + sku,
             Sku = sku,
             Name = name,
             Status = status,

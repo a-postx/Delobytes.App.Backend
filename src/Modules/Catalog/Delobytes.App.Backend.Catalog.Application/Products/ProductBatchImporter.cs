@@ -1,7 +1,9 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
+using Delobytes.App.Backend.Catalog.Application.Numbering;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Microsoft.Extensions.Logging;
@@ -24,6 +26,12 @@ public class ProductBatchImporter
     private const int NameMaxLength = 2000;
 
     /// <summary>
+    /// How many codes a card may burn while looking for one that is also free as a SKU. Each
+    /// discarded number is a gap in the product numbering, which is permitted.
+    /// </summary>
+    private const int MaxCodeAttempts = 5;
+
+    /// <summary>
     /// Size variant of the photo the Sales-side projection shows for a product. Matches the
     /// convention used by <c>GetProductsQueryHandler</c> and <c>ProductPhotoService</c>.
     /// </summary>
@@ -32,6 +40,8 @@ public class ProductBatchImporter
     private readonly IProductImportStore _store;
     private readonly IProductPhotoService _photoService;
     private readonly IEventPublisher _eventPublisher;
+    private readonly INumberingSchemeProvider _numberingSchemes;
+    private readonly INumberAllocator _numberAllocator;
     private readonly ILogger<ProductBatchImporter> _logger;
     private readonly TimeProvider _timeProvider;
 
@@ -41,18 +51,27 @@ public class ProductBatchImporter
     /// <param name="store">Persistence port of the import.</param>
     /// <param name="photoService">Photo import/delete service.</param>
     /// <param name="eventPublisher">Event publisher.</param>
+    /// <param name="numberingSchemes">Resolves the scheme new product codes are issued from.</param>
+    /// <param name="numberAllocator">
+    /// Issues new product codes. It runs inside the batch transaction the store owns, so the
+    /// numbers stay durable together with the products they belong to.
+    /// </param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="timeProvider">Clock source.</param>
     public ProductBatchImporter(
         IProductImportStore store,
         IProductPhotoService photoService,
         IEventPublisher eventPublisher,
+        INumberingSchemeProvider numberingSchemes,
+        INumberAllocator numberAllocator,
         ILogger<ProductBatchImporter> logger,
         TimeProvider timeProvider)
     {
         _store = store;
         _photoService = photoService;
         _eventPublisher = eventPublisher;
+        _numberingSchemes = numberingSchemes;
+        _numberAllocator = numberAllocator;
         _logger = logger;
         _timeProvider = timeProvider;
     }
@@ -488,28 +507,18 @@ public class ProductBatchImporter
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
-        // Product.Sku is unique per tenant, and the internal SKU is copied from the marketplace
-        // vendor code. A second card presenting the same vendor code therefore cannot become a
-        // second internal product. It must not fall through to the insert either: the unique index
-        // would reject it at SaveChanges and take the whole batch down with it.
-        if (await _store.IsSkuTakenAsync((card.OfferId ?? string.Empty), cancellationToken))
-        {
-            _logger.LogWarning(
-                "NmId={NmId}: cannot import. Internal SKU {VendorCode} is already used by another product in this tenant.",
-                card.ExternalProductId,
-                (card.OfferId ?? string.Empty));
-
-            return new ImportResult
-            {
-                Status = ImportStatus.Failed,
-                ErrorMessage = $"SKU '{(card.OfferId ?? string.Empty)}' is already assigned to another product.",
-            };
-        }
+        // Product.Sku is unique per tenant and is copied from the marketplace vendor code when
+        // that value is free. It is never a matching key: a vendor code another product already
+        // holds — typically a hand-made product with no channel link — must not abort the card,
+        // so the product falls back to its own code, which is unique by construction unless a user
+        // typed that code in by hand before numbering existed.
+        (string code, string sku) = await ResolveCodeAndSkuAsync(card.OfferId, cancellationToken);
 
         Product product = new Product
         {
             Id = Guid.NewGuid(),
-            Sku = (card.OfferId ?? string.Empty),
+            Code = code,
+            Sku = sku,
             Name = TrimName(card.Name),
             Description = TrimDescription(card.Description),
             Status = ProductStatus.Active,
@@ -542,6 +551,56 @@ public class ProductBatchImporter
         QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
 
         return new ImportResult { Status = ImportStatus.Created };
+    }
+
+    /// <summary>
+    /// Issues the immutable product code and picks the internal SKU for a card that becomes a new
+    /// product: the trimmed vendor code when it is free, otherwise the code itself.
+    /// </summary>
+    /// <remarks>
+    /// A code used as a SKU can still collide, because Product.Sku is user-editable and a number
+    /// typed in by hand may equal a code the allocator has not issued yet. Such a collision burns
+    /// the number and moves to the next one; five of them mean the catalogue cannot be told apart
+    /// from the numbering scheme, and the card fails instead of guessing.
+    /// </remarks>
+    private async Task<(string Code, string Sku)> ResolveCodeAndSkuAsync(
+        string? offerId,
+        CancellationToken cancellationToken)
+    {
+        string candidate = (offerId ?? string.Empty).Trim();
+        string code = await AllocateCodeAsync(cancellationToken);
+
+        if (candidate.Length > 0 && !await _store.IsSkuTakenAsync(candidate, cancellationToken))
+        {
+            return (code, candidate);
+        }
+
+        for (int attempt = 1; attempt <= MaxCodeAttempts; attempt++)
+        {
+            if (!await _store.IsSkuTakenAsync(code, cancellationToken))
+            {
+                return (code, code);
+            }
+
+            if (attempt == MaxCodeAttempts)
+            {
+                break;
+            }
+
+            _logger.LogWarning(
+                "Code {Code} is already used as a SKU by another product in this tenant. Allocating the next code.",
+                code);
+
+            code = await AllocateCodeAsync(cancellationToken);
+        }
+
+        throw new AppException(ErrorCodes.Catalog.ProductCodeAllocationFailed);
+    }
+
+    private async Task<string> AllocateCodeAsync(CancellationToken cancellationToken)
+    {
+        NumberingScheme scheme = await _numberingSchemes.GetDefaultProductSchemeAsync(cancellationToken);
+        return await _numberAllocator.AllocateAsync(scheme.Id, cancellationToken);
     }
 
     /// <summary>

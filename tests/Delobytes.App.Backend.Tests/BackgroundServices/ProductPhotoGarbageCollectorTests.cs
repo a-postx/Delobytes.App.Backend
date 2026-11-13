@@ -279,6 +279,7 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
             Product product = new Product
             {
                 Id = Guid.NewGuid(),
+                Code = "C-" + Guid.NewGuid().ToString("N").Substring(0, 8),
                 Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
                 Name = "Test product",
                 CreatedAt = DateTimeOffset.UtcNow.AddDays(-100)

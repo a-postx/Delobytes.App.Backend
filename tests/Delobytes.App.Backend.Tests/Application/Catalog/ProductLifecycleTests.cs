@@ -928,6 +928,7 @@ public class ProductLifecycleTests
         Product product = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "C-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Name = name ?? "Test product",
             Status = status,

@@ -694,6 +694,11 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ArchivedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -750,6 +755,10 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.HasIndex("Status", "DeletionRequestedAt");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Products_TenantId_Code");
 
                     b.HasIndex("TenantId", "Sku")
                         .IsUnique()

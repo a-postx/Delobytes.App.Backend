@@ -27,10 +27,10 @@ public class GetProductsQuery : IRequest<GetProductsResponse>
     public ProductStatus? Status { get; set; }
 
     /// <summary>
-    /// Optional free-text filter over the product name and SKU: case-insensitive substring match,
-    /// a product is kept when either field contains the term. Combined with <see cref="Status"/>
-    /// using AND. Blank or whitespace-only values are treated as "no search". The value is trimmed
-    /// and capped at 200 characters.
+    /// Optional free-text filter over the product code, name and SKU: case-insensitive substring
+    /// match, a product is kept when any of those fields contains the term. Combined with
+    /// <see cref="Status"/> using AND. Blank or whitespace-only values are treated as "no search".
+    /// The value is trimmed and capped at 200 characters.
     /// </summary>
     public string? Search { get; set; }
 
@@ -119,6 +119,9 @@ public class ProductItem
 {
     public Guid Id { get; set; }
 
+    /// <summary>Immutable product code issued by the numbering scheme.</summary>
+    public string Code { get; set; } = default!;
+
     public string Sku { get; set; } = default!;
 
     public string Name { get; set; } = default!;
@@ -205,6 +208,7 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, GetProd
             Items = products.Select(p => new ProductItem
             {
                 Id = p.Id,
+                Code = p.Code,
                 Sku = p.Sku,
                 Name = p.Name,
                 Description = p.Description,

@@ -17,6 +17,7 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
+using Delobytes.App.Backend.Tests.Application.Catalog.Numbering;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -226,6 +227,7 @@ public class ProductBatchImporterTests
         Product existingProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000900",
             Sku = "SKU-001",
             Name = "Old Name",
             Description = "Old Description",
@@ -330,6 +332,7 @@ public class ProductBatchImporterTests
         Product existingProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000900",
             Sku = "SKU-001",
             Name = "Old Name",
             Description = "Old Description",
@@ -471,10 +474,11 @@ public class ProductBatchImporterTests
     }
 
     [Fact]
-    public async Task ProcessAsync_LinksToExistingProduct_WhenBarcodeMatches_AndVendorCodeIsCopiedToNewProduct()
+    public async Task ProcessAsync_CreatesSecondProductWithCodeAsSku_WhenVendorCodeMatchesAnUnlinkedProduct()
     {
-        // Product.Sku is no longer a matching key: a card whose vendor code equals an existing
-        // product's SKU is NOT linked to that product. Only nmID and barcode link cards.
+        // Product.Sku is not a matching key: a card whose vendor code equals an existing product's
+        // SKU is NOT linked to that product. It also cannot reuse the taken SKU, so it becomes a
+        // new product whose SKU is its freshly issued code.
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
         CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
@@ -483,6 +487,7 @@ public class ProductBatchImporterTests
         Product existingProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000900",
             Sku = "SKU-001",
             Name = "Existing Product",
             Status = ProductStatus.Active,
@@ -526,18 +531,19 @@ public class ProductBatchImporterTests
             .Include(p => p.ChannelProducts)
             .ToListAsync();
 
-        // The card can no longer become a second product: the internal SKU is unique and already
-        // taken, so the card is reported as failed instead of aborting the batch.
-        products.Should().HaveCount(1);
-        products[0].Id.Should().Be(existingProduct.Id);
+        products.Should().HaveCount(2);
+
+        Product created = products.Should().ContainSingle(p => p.Id != existingProduct.Id).Subject;
+        created.Sku.Should().Be(created.Code, "the vendor code was already another product's SKU");
+        created.Code.Should().Be("P-000001");
+        created.ChannelProducts.Should().ContainSingle();
 
         publishEndpointMock.Verify(
             p => p.Publish(
                 It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
-                    e.RecordsCreated == 0 &&
-                    e.RecordsFailed == 1 &&
-                    e.ErrorMessage != null),
+                    e.RecordsCreated == 1 &&
+                    e.RecordsFailed == 0),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -553,6 +559,7 @@ public class ProductBatchImporterTests
         Product existingProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000901",
             Sku = "INTERNAL-SKU",
             Name = "Existing Product",
             Status = ProductStatus.Active,
@@ -617,11 +624,11 @@ public class ProductBatchImporterTests
     }
 
     [Fact]
-    public async Task ProcessAsync_FailsCard_WhenVendorCodeCollidesWithExistingInternalSku()
+    public async Task ProcessAsync_CreatesProductWithCodeAsSku_WhenVendorCodeCollidesWithExistingInternalSku()
     {
-        // A vendor code that already exists as an internal SKU must not become a third product:
-        // the unique index on (TenantId, Sku) would reject it at SaveChanges and roll back the
-        // entire batch. The card is reported as failed and the batch still completes.
+        // A vendor code that already exists as an internal SKU must not become a duplicate: the
+        // unique index on (TenantId, Sku) would reject it at SaveChanges and roll back the batch.
+        // The card is created under its own code instead, and the batch still completes.
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
         CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
@@ -630,6 +637,7 @@ public class ProductBatchImporterTests
         Product product1 = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000900",
             Sku = "SKU-001",
             Name = "Product 1",
             Status = ProductStatus.Active,
@@ -640,6 +648,7 @@ public class ProductBatchImporterTests
         Product product2 = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000901",
             Sku = "SKU-002",
             Name = "Product 2",
             Status = ProductStatus.Active,
@@ -683,16 +692,20 @@ public class ProductBatchImporterTests
             .Include(p => p.ChannelProducts)
             .ToListAsync();
 
-        allProducts.Should().HaveCount(2, "no third product may be created while its SKU is taken");
-        allProducts.Should().NotContain(p => p.CreationSource == CreationSource.WildberriesImport);
+        allProducts.Should().HaveCount(3, "the card becomes a product under its own code");
+
+        Product imported = allProducts.Should()
+            .ContainSingle(p => p.CreationSource == CreationSource.WildberriesImport).Subject;
+        imported.Sku.Should().Be(imported.Code);
+        imported.Sku.Should().NotBe("SKU-001");
+        imported.ChannelProducts.Should().ContainSingle();
 
         publishEndpointMock.Verify(
             p => p.Publish(
                 It.Is<ProductBatchImportCompletedEvent>(e =>
                     e.RecordsProcessed == 1 &&
-                    e.RecordsCreated == 0 &&
-                    e.RecordsFailed == 1 &&
-                    e.ErrorMessage != null),
+                    e.RecordsCreated == 1 &&
+                    e.RecordsFailed == 0),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -708,6 +721,7 @@ public class ProductBatchImporterTests
         Product existingProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000902",
             Sku = "SKU-001",
             Name = "Product",
             Status = ProductStatus.Active,
@@ -898,6 +912,7 @@ public class ProductBatchImporterTests
         Product existingProduct = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000903",
             Sku = "OLD-VENDOR-CODE",
             Name = "Test Product",
             Description = "Original Description",
@@ -1278,6 +1293,7 @@ public class ProductBatchImporterTests
         Product product = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000904",
             Sku = "SKU-001",
             Name = "Test Product",
             Status = ProductStatus.Active,
@@ -1312,6 +1328,8 @@ public class ProductBatchImporterTests
             new ProductImportStore(consumerContext),
             photoService,
             new MassTransitEventPublisher(publishEndpointMock.Object),
+            new FakeNumberingSchemeProvider(),
+            new FakeNumberAllocator(),
             Mock.Of<ILogger<ProductBatchImporter>>(),
             TimeProvider.System);
 
@@ -1374,6 +1392,7 @@ public class ProductBatchImporterTests
         Product product = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "P-000904",
             Sku = "SKU-001",
             Name = "Test Product",
             Status = ProductStatus.Active,
@@ -1536,7 +1555,14 @@ public class ProductBatchImporterTests
         MassTransitEventPublisher eventPublisher = new MassTransitEventPublisher(publishEndpoint);
         Mock<ILogger<ProductBatchImporter>> loggerMock = new Mock<ILogger<ProductBatchImporter>>();
 
-        return new ProductBatchImporter(store, photoService.Object, eventPublisher, loggerMock.Object, TimeProvider.System);
+        return new ProductBatchImporter(
+            store,
+            photoService.Object,
+            eventPublisher,
+            new FakeNumberingSchemeProvider(),
+            new FakeNumberAllocator(),
+            loggerMock.Object,
+            TimeProvider.System);
     }
 
     private static Mock<IProductPhotoService> BuildPhotoServiceMock()

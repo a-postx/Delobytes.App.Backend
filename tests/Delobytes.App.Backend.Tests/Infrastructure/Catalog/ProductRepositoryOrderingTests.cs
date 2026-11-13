@@ -131,6 +131,7 @@ public class ProductRepositoryOrderingTests
         return new Product
         {
             Id = Guid.NewGuid(),
+            Code = "C-" + sku,
             Sku = sku,
             Name = name,
             Status = ProductStatus.Active,

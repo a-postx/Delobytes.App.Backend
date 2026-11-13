@@ -10,6 +10,12 @@ public class Product : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 {
     public Guid Id { get; set; }
 
+    /// <summary>
+    /// Immutable code assigned from the default numbering scheme when the product is created.
+    /// Never part of a create or update payload.
+    /// </summary>
+    public string Code { get; set; } = default!;
+
     /// <summary>Internal SKU code.</summary>
     public string Sku { get; set; } = default!;
 

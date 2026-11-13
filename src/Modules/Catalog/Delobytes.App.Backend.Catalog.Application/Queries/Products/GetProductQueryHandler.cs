@@ -17,6 +17,9 @@ public class GetProductResponse
 
     public Guid Id { get; set; }
 
+    /// <summary>Immutable product code issued by the numbering scheme.</summary>
+    public string Code { get; set; } = default!;
+
     public string Sku { get; set; } = default!;
 
     public string Name { get; set; } = default!;
@@ -75,6 +78,7 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
         {
             Found = true,
             Id = product.Id,
+            Code = product.Code,
             Sku = product.Sku,
             Name = product.Name,
             Description = product.Description,

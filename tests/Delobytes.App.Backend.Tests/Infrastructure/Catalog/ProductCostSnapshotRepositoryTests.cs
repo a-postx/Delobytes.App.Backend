@@ -98,6 +98,7 @@ public class ProductCostSnapshotRepositoryTests
         return new Product
         {
             Id = id,
+            Code = "C-" + sku,
             Sku = sku,
             Name = sku,
             CreatedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),

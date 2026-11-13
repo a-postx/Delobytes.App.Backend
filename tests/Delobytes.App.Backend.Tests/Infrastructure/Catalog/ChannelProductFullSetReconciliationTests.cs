@@ -236,6 +236,7 @@ public class ChannelProductFullSetReconciliationTests
         Product product = new Product
         {
             Id = Guid.NewGuid(),
+            Code = "C-" + Guid.NewGuid().ToString("N")[..8],
             Sku = "SKU-" + Guid.NewGuid().ToString("N")[..8],
             Name = "Product " + externalProductId,
             Status = ProductStatus.Active,

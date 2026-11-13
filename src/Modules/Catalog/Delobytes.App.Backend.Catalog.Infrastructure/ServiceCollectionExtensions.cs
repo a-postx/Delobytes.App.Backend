@@ -67,6 +67,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChannelProductRepository, ChannelProductRepository>();
         services.AddScoped<IProductCostSnapshotRepository, ProductCostSnapshotRepository>();
 
+        // Scoped: the transaction belongs to the DbContext of this scope.
+        services.AddScoped<ICatalogTransactionFactory, CatalogTransactionFactory>();
+
         // Numbering: the allocator mutates tracked counter entities, so it lives in the same scope
         // as the DbContext. The validator is registered here as well because the provider and the
         // allocator depend on it, not only the MediatR commands the Api project validates.

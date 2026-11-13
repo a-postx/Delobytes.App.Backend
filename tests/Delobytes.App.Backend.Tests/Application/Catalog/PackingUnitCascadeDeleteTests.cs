@@ -40,6 +40,7 @@ public class PackingUnitCascadeDeleteTests
         return new Product
         {
             Id = Guid.NewGuid(),
+            Code = "C-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Name = "Товар"
         };
