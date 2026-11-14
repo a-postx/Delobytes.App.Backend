@@ -230,6 +230,41 @@ public class OzonApiClientGetProductCardsTests
         }
     }
 
+    /// <summary>
+    /// The bare URL Ozon reports returns JPEG, which the photo pipeline rejects, so both variants
+    /// must be rewritten onto the CDN's WebP size segment before they reach the importer.
+    /// </summary>
+    [Fact]
+    public async Task GetProductCards_PhotoUrlsCarryTheWebPSizeSegmentOfEachVariant()
+    {
+        string payload = Payload(
+            primaryImage: "https://ir.ozone.ru/s3/multimedia-1-z/7696694447.jpg",
+            images:
+            [
+                "https://ir.ozone.ru/s3/multimedia-1-k/7689189908.jpg",
+            ]);
+
+        ChannelProductCard card = await GetSingleCardAsync(payload);
+
+        card.Photos.Should().HaveCount(4);
+
+        card.Photos
+            .Where(photo => photo.SizeVariant == "thumbnail")
+            .Select(photo => photo.Url)
+            .Should()
+            .Equal(
+                "https://ir.ozone.ru/s3/multimedia-1-z/wc328/7696694447.jpg",
+                "https://ir.ozone.ru/s3/multimedia-1-k/wc328/7689189908.jpg");
+
+        card.Photos
+            .Where(photo => photo.SizeVariant == "large")
+            .Select(photo => photo.Url)
+            .Should()
+            .Equal(
+                "https://ir.ozone.ru/s3/multimedia-1-z/wc688/7696694447.jpg",
+                "https://ir.ozone.ru/s3/multimedia-1-k/wc688/7689189908.jpg");
+    }
+
     [Fact]
     public async Task GetProductCards_PrimaryImageAlsoInImages_IsEmittedOnce()
     {
@@ -462,7 +497,8 @@ public class OzonApiClientGetProductCardsTests
         List<string>? images = null,
         int count = 1,
         int? total = null,
-        int cardsWithoutSku = 0)
+        int cardsWithoutSku = 0,
+        string primaryImage = "https://cdn.example/primary.jpg")
     {
         List<string> imageList = images ??
         [
@@ -492,7 +528,7 @@ public class OzonApiClientGetProductCardsTests
                 dimension_unit = "mm",
                 weight = 450,
                 weight_unit = "g",
-                primary_image = "https://cdn.example/primary.jpg",
+                primary_image = primaryImage,
                 images = imageList,
                 attributes = new object[]
                 {

@@ -114,6 +114,8 @@ public class ProductPhotoService : IProductPhotoService
             ContentType = WebPContentType,
             OriginalFileName = string.Empty,
             StorageKey = string.Empty,
+            Width = source.Width,
+            Height = source.Height,
             Status = ProductPhotoStatus.Pending,
 
             // AuditableEntityInterceptor fills CreatedAt on save, but callers may read the
@@ -132,7 +134,7 @@ public class ProductPhotoService : IProductPhotoService
         Guid channelId,
         string contentHash,
         string storageKey,
-        byte[] payload,
+        PhotoPayload download,
         DateTimeOffset now)
     {
         Guid photoId = Guid.NewGuid();
@@ -150,9 +152,9 @@ public class ProductPhotoService : IProductPhotoService
             StorageKey = storageKey,
             ContentType = WebPContentType,
             OriginalFileName = $"{photoId:N}.{ProductPhotoKeys.Extension}",
-            SizeBytes = payload.Length,
-            Width = source.Width,
-            Height = source.Height,
+            SizeBytes = download.Bytes.Length,
+            Width = download.Width,
+            Height = download.Height,
             Status = ProductPhotoStatus.Uploaded,
             LastCheckedAt = now,
             CreatedAt = now
@@ -361,13 +363,13 @@ public class ProductPhotoService : IProductPhotoService
         ProductPhoto? livePhoto = FindLivePhoto(product, channelId, source.ExternalId);
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
-        (byte[]? payload, string? failureReason) = await DownloadAsync(
+        (PhotoPayload? download, string? failureReason) = await DownloadAsync(
             httpClient,
             source,
             product.Id,
             cancellationToken);
 
-        if (payload is null)
+        if (download is null)
         {
             string reason = failureReason ?? "Photo download failed.";
 
@@ -391,7 +393,8 @@ public class ProductPhotoService : IProductPhotoService
             return PhotoImportOutcome.Failed;
         }
 
-        string contentHash = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        PhotoPayload payload = download.Value;
+        string contentHash = Convert.ToHexString(SHA256.HashData(payload.Bytes)).ToLowerInvariant();
 
         if (livePhoto is not null && livePhoto.Status == ProductPhotoStatus.Uploaded)
         {
@@ -424,7 +427,7 @@ public class ProductPhotoService : IProductPhotoService
 
         try
         {
-            using MemoryStream content = new MemoryStream(payload, writable: false);
+            using MemoryStream content = new MemoryStream(payload.Bytes, writable: false);
 
             await _objectStorage.UploadAsync(
                 StorageArea.ProductPhotos,
@@ -489,10 +492,10 @@ public class ProductPhotoService : IProductPhotoService
     }
 
     /// <summary>
-    /// Downloads a photo and validates it. Returns a null payload together with the reason
-    /// when the bytes are unusable.
+    /// Downloads a photo, validates it and reads its rendered size. Returns a null download
+    /// together with the reason when the bytes are unusable.
     /// </summary>
-    private async Task<(byte[]? Payload, string? FailureReason)> DownloadAsync(
+    private async Task<(PhotoPayload? Download, string? FailureReason)> DownloadAsync(
         HttpClient httpClient,
         MarketplacePhotoSource source,
         Guid productId,
@@ -560,8 +563,31 @@ public class ProductPhotoService : IProductPhotoService
             return (null, "Payload is not a valid WebP file.");
         }
 
-        return (payload, null);
+        // The header states the size of the bytes actually received, which is what the row must
+        // record: a marketplace-declared size is a box, and the rendered image need not fill it.
+        // The declared value stays as the fallback for a layout this parser does not understand.
+        int? width = source.Width;
+        int? height = source.Height;
+
+        if (WebPDimensions.TryRead(payload, out int parsedWidth, out int parsedHeight))
+        {
+            width = parsedWidth;
+            height = parsedHeight;
+        }
+        else
+        {
+            _logger.LogWarning(
+                "Unreadable WebP chunk layout for Product {ProductId}, ExternalId {ExternalId}; keeping the declared size.",
+                productId,
+                source.ExternalId);
+        }
+
+        return (new PhotoPayload(payload, width, height), null);
     }
+
+    // The downloaded bytes together with the size to persist: the rendered size read from the WebP
+    // header, falling back to the marketplace-declared size when the header is not understood.
+    private readonly record struct PhotoPayload(byte[] Bytes, int? Width, int? Height);
 
     private enum PhotoImportOutcome
     {

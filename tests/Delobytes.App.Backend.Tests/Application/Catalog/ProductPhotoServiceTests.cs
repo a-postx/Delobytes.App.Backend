@@ -814,6 +814,76 @@ public class ProductPhotoServiceTests
         url.Should().Be("https://cdn.example.com/product-photos/a.webp");
     }
 
+    // ---------- ImportPhotosAsync: rendered size ----------
+
+    [Fact]
+    public async Task ImportPhotosAsync_StoresTheRenderedSizeFromTheWebPHeader()
+    {
+        // A landscape source rendered into a 3:4 box: the declared 516x688 is a box the image
+        // never fills, so accepting it would reserve the wrong space in the layout.
+        byte[] landscape = BuildLandscapeWebP(328, 255);
+
+        Product product = BuildProduct();
+
+        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
+        ProductPhotoService service = BuildService(storage, landscape);
+
+        await service.ImportPhotosAsync(
+            product,
+            ChannelId,
+            new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
+            CancellationToken.None);
+
+        ProductPhoto photo = product.Photos.Should().ContainSingle().Subject;
+
+        photo.Width.Should().Be(328);
+        photo.Height.Should().Be(255);
+        photo.Status.Should().Be(ProductPhotoStatus.Uploaded);
+    }
+
+    [Fact]
+    public async Task ImportPhotosAsync_WhenTheHeaderIsNotUnderstood_KeepsTheDeclaredSize()
+    {
+        // The synthetic payload has a valid RIFF/WEBP signature but no readable chunk.
+        Product product = BuildProduct();
+
+        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
+        ProductPhotoService service = BuildService(storage, ValidWebP);
+
+        await service.ImportPhotosAsync(
+            product,
+            ChannelId,
+            new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
+            CancellationToken.None);
+
+        ProductPhoto photo = product.Photos.Should().ContainSingle().Subject;
+
+        photo.Width.Should().Be(516, "the declared size stays as the fallback");
+        photo.Height.Should().Be(688);
+    }
+
+    [Fact]
+    public async Task ImportPhotosAsync_WhenDownloadFails_RecordsTheDeclaredSizeOnTheFailedRow()
+    {
+        Product product = BuildProduct();
+
+        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
+        ProductPhotoService service = BuildServiceWithStatus(storage, HttpStatusCode.NotFound);
+
+        await service.ImportPhotosAsync(
+            product,
+            ChannelId,
+            new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
+            CancellationToken.None);
+
+        ProductPhoto photo = product.Photos.Should().ContainSingle().Subject;
+
+        photo.Status.Should().Be(ProductPhotoStatus.Failed);
+        photo.Width.Should().Be(516, "a row that never held bytes still knows the declared size");
+        photo.Height.Should().Be(688);
+        photo.ErrorMessage.Should().NotBeNull();
+    }
+
     // ---------- helpers ----------
 
     private static void VerifyNoUpload(Mock<IObjectStorage> storage)
@@ -966,6 +1036,32 @@ public class ProductPhotoServiceTests
         payload[9] = (byte)'E';
         payload[10] = (byte)'B';
         payload[11] = (byte)'P';
+
+        return payload;
+    }
+
+    /// <summary>
+    /// A WebP whose VP8X chunk declares the given canvas, so the service can read a size that
+    /// differs from the one the marketplace declared.
+    /// </summary>
+    private static byte[] BuildLandscapeWebP(int width, int height)
+    {
+        byte[] payload = BuildWebP(64);
+
+        payload[12] = (byte)'V';
+        payload[13] = (byte)'P';
+        payload[14] = (byte)'8';
+        payload[15] = (byte)'X';
+
+        int storedWidth = width - 1;
+        int storedHeight = height - 1;
+
+        payload[24] = (byte)(storedWidth & 0xFF);
+        payload[25] = (byte)((storedWidth >> 8) & 0xFF);
+        payload[26] = (byte)((storedWidth >> 16) & 0xFF);
+        payload[27] = (byte)(storedHeight & 0xFF);
+        payload[28] = (byte)((storedHeight >> 8) & 0xFF);
+        payload[29] = (byte)((storedHeight >> 16) & 0xFF);
 
         return payload;
     }

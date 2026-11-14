@@ -683,9 +683,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
     }
 
     /// <summary>
-    /// Builds the photo list the importer expects. Ozon publishes one size per image, while the
-    /// photo pipeline selects the "thumbnail" variant, so each URL yields both variants under the
-    /// same display order.
+    /// Builds the photo list the importer expects. Ozon publishes one URL per image, so each of
+    /// them is rendered by the CDN into the two size variants the photo pipeline downloads, both
+    /// under the same display order. The rendered bytes are WebP: the bare URL returns the
+    /// original JPEG, which the pipeline rejects.
     /// </summary>
     private static List<ChannelProductPhoto> MapPhotos(OzonProductAttributesItem item)
     {
@@ -715,14 +716,14 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
 
             photos.Add(new ChannelProductPhoto
             {
-                Url = urls[index],
+                Url = OzonPhotoUrl.ToWebP(urls[index], OzonPhotoUrl.LargeMaxSide),
                 SizeVariant = "large",
                 DisplayOrder = displayOrder,
             });
 
             photos.Add(new ChannelProductPhoto
             {
-                Url = urls[index],
+                Url = OzonPhotoUrl.ToWebP(urls[index], OzonPhotoUrl.ThumbnailMaxSide),
                 SizeVariant = "thumbnail",
                 DisplayOrder = displayOrder,
             });
