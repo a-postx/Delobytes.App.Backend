@@ -87,7 +87,7 @@ public sealed class ImportRunCompletion
             RecordsUpdated = delivery.RecordsUpdated,
             RecordsSkipped = delivery.RecordsSkipped,
             RecordsFailed = delivery.RecordsFailed,
-            ErrorMessage = delivery.ErrorMessage,
+            ErrorMessage = TruncateString(delivery.ErrorMessage, 2000),
             IsLastBatch = delivery.IsLastBatch,
             ReceivedAt = _timeProvider.GetUtcNow(),
         });
@@ -297,6 +297,16 @@ public sealed class ImportRunCompletion
     private static bool IsTerminalStatus(JobStatus status)
     {
         return status is JobStatus.Success or JobStatus.Failed or JobStatus.Cancelled;
+    }
+
+    private static string? TruncateString(string? value, int maxLength)
+    {
+        if (value == null || value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return value[..maxLength];
     }
 }
 
