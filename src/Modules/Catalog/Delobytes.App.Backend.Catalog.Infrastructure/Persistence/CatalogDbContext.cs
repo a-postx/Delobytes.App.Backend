@@ -19,6 +19,7 @@ public class CatalogDbContext : TenantScopedDbContext
     public DbSet<ChannelParameterSet> ChannelParameterSets => Set<ChannelParameterSet>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ChannelProduct> ChannelProducts => Set<ChannelProduct>();
+    public DbSet<ChannelProductBarcode> ChannelProductBarcodes => Set<ChannelProductBarcode>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<Component> Components => Set<Component>();
     public DbSet<ComponentPrice> ComponentPrices => Set<ComponentPrice>();

@@ -22,12 +22,49 @@ public interface IProductImportStore
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Returns every product whose barcode appears in <paramref name="barcodes"/>, including
-    /// products and barcodes added earlier in this batch but not yet saved. Loaded with the
-    /// collections the import writes: barcodes, packing units and photos.
+    /// Returns every product whose canonical barcode appears in <paramref name="barcodes"/>,
+    /// including products and barcodes added earlier in this batch but not yet saved. Loaded with
+    /// the collections the import writes: barcodes, packing units and photos.
     /// </summary>
+    /// <remarks>
+    /// Canonical barcodes only. A card is matched against the importing channel's own barcodes
+    /// first, through <see cref="FindProductsByChannelBarcodesAsync"/>; this method is the fallback
+    /// that lets a card from a new channel find a product another channel already created.
+    /// </remarks>
     public Task<IReadOnlyList<Product>> FindProductsByBarcodesAsync(
         IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the products whose card on <paramref name="channelId"/> reports one of
+    /// <paramref name="barcodes"/> in the channel's own barcode set, including cards and barcodes
+    /// staged earlier in this batch but not yet saved. Loaded with barcodes, packing units and
+    /// photos.
+    /// </summary>
+    /// <remarks>
+    /// Separated from <see cref="FindProductsByBarcodesAsync"/> because the two sets carry
+    /// different guarantees: a channel barcode may be reported for several of that channel's own
+    /// cards, and only a match inside the importing channel says which card a value belongs to
+    /// there.
+    /// </remarks>
+    public Task<IReadOnlyList<Product>> FindProductsByChannelBarcodesAsync(
+        Guid channelId,
+        IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the subset of <paramref name="barcodes"/> the tenant already holds as a canonical
+    /// barcode of a product other than <paramref name="excludedProductId"/>, including values
+    /// staged earlier in this batch but not yet saved.
+    /// </summary>
+    /// <remarks>
+    /// Guards the canonical set, which stays unique per tenant: a card whose barcode another
+    /// product already holds keeps that barcode on the channel link only, instead of failing the
+    /// card on the unique index that used to make the whole import unusable.
+    /// </remarks>
+    public Task<IReadOnlySet<string>> FindTakenCanonicalBarcodesAsync(
+        IReadOnlyCollection<string> barcodes,
+        Guid excludedProductId,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -62,6 +99,12 @@ public interface IProductImportStore
 
     /// <summary>Stages a new channel-product link.</summary>
     public void AddChannelProduct(ChannelProduct channelProduct);
+
+    /// <summary>Stages a new barcode a channel reports for one of its cards.</summary>
+    public void AddChannelProductBarcode(ChannelProductBarcode barcode);
+
+    /// <summary>Stages the removal of a barcode the channel no longer reports.</summary>
+    public void RemoveChannelProductBarcode(ChannelProductBarcode barcode);
 
     /// <summary>Persists every pending change.</summary>
     public Task SaveChangesAsync(CancellationToken cancellationToken);

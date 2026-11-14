@@ -12,8 +12,9 @@ namespace Delobytes.App.Backend.Catalog.Application.Products;
 
 /// <summary>
 /// Imports one batch of marketplace product cards into the catalog: resolves each card to a known
-/// product (channel link, then barcode, then a new product), synchronises barcodes and packing unit,
-/// queues photos and channel links for after the commit, and reports batch counters.
+/// product (channel link, then the channel's barcodes, then the canonical barcodes, then the seller
+/// article), synchronises the channel's barcodes and packing unit, queues photos and channel links
+/// for after the commit, and reports batch counters.
 /// </summary>
 public class ProductBatchImporter
 {
@@ -131,7 +132,7 @@ public class ProductBatchImporter
                         {
                             try
                             {
-                                ImportResult result = await ProcessCardAsync(card, message.ChannelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+                                ImportResult result = await ProcessCardAsync(card, message.JobRunId, message.ChannelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
 
                                 // Now one flush per card instead of one per batch.
                                 await cardScope.SaveAsync(cancellationToken);
@@ -303,12 +304,27 @@ public class ProductBatchImporter
     /// </summary>
     private async Task<ImportResult> ProcessCardAsync(
         ChannelProductCard card,
+        Guid jobRunId,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
         string externalProductId = card.ExternalProductId;
+
+        // Normalised once, here: the matchers compare these values against trimmed columns, and a
+        // stray space would otherwise make a card look like a new product with a new barcode.
+        if (card.Barcodes.Count > 0)
+        {
+            List<string> normalizedBarcodes = card.Barcodes
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct()
+                .ToList();
+
+            card.Barcodes.Clear();
+            card.Barcodes.AddRange(normalizedBarcodes);
+        }
 
         ChannelProduct? existingChannelProduct = await _store
             .FindChannelProductWithProductAsync(channelId, externalProductId, cancellationToken);
@@ -324,7 +340,8 @@ public class ProductBatchImporter
         if (card.Barcodes.Count == 0 && string.IsNullOrWhiteSpace(card.OfferId))
         {
             _logger.LogInformation(
-                "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: card has neither barcode nor offer id; treating as draft and skipping.",
+                "JobRunId={JobRunId}, ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: card has neither barcode nor offer id; treating as draft and skipping.",
+                jobRunId,
                 channelId,
                 externalProductId);
 
@@ -335,27 +352,42 @@ public class ProductBatchImporter
 
         if (match.IsAmbiguous)
         {
+            // Logged, not recorded as an error: the run's status is derived from RecordsFailed and
+            // from a non-empty batch ErrorMessage, so a skipped card must not write one. The warning
+            // is what tells an operator why the card is missing from the catalogue.
+            _logger.LogWarning(
+                "JobRunId={JobRunId}, ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: the card's identifiers point at several products and no single one can be chosen; skipping the card.",
+                jobRunId,
+                channelId,
+                externalProductId);
+
             return new ImportResult { Status = ImportStatus.Skipped };
         }
 
         if (match.Product != null)
         {
-            return await LinkExistingProductAsync(match.Product, card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+            return await LinkExistingProductAsync(match.Product, card, jobRunId, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
         }
 
         return await CreateNewProductAsync(card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
     }
 
     /// <summary>
-    /// Finds the product a new card belongs to: by barcode first, then by the seller article the
-    /// card carries (<c>vendorCode</c> / <c>offer_id</c>) on any channel of the tenant.
-    /// <see cref="Product.Sku"/> is deliberately never consulted: it is user-editable, so using it
-    /// as a key would re-route an import after a rename.
+    /// Finds the product an unknown card belongs to: by the channel's own barcodes first, then by
+    /// the tenant's canonical barcodes, then by the seller article the card carries
+    /// (<c>vendorCode</c> / <c>offer_id</c>). <see cref="Product.Sku"/> is deliberately never
+    /// consulted: it is user-editable, so using it as a key would re-route an import after a rename.
     /// </summary>
     /// <remarks>
-    /// The result distinguishes "no candidate" from "several candidates". Reading ambiguity as
-    /// "no candidate" would create a duplicate of a product the catalogue already holds, so an
-    /// ambiguous match is reported instead of returned as <c>null</c>.
+    /// The ladders exist because the three keys carry different guarantees. A channel barcode is
+    /// authoritative for the importing channel alone: another channel may report the same value for
+    /// a different product, so a match there is only trusted inside this channel. The canonical
+    /// barcode is unique per tenant, which is what lets a card from a newly connected channel find
+    /// the product an older channel already created. The article is the last resort and is the only
+    /// key a card can carry without any barcode at all.
+    /// Coming back with several candidates is reported rather than resolved: reading it as either
+    /// "one of them" or "none of them" would attach the card to a product the operator did not
+    /// choose, or create a duplicate of one that already exists.
     /// </remarks>
     private async Task<ProductMatch> FindProductAsync(
         ChannelProductCard card,
@@ -366,22 +398,42 @@ public class ProductBatchImporter
 
         if (card.Barcodes.Count > 0)
         {
-            IReadOnlyList<Product> productsByBarcode = await _store
-                .FindProductsByBarcodesAsync(card.Barcodes, cancellationToken);
+            IReadOnlyList<Product> productsByChannelBarcode = await _store
+                .FindProductsByChannelBarcodesAsync(channelId, card.Barcodes, cancellationToken);
 
-            if (productsByBarcode.Count == 1)
+            if (productsByChannelBarcode.Count == 1)
             {
-                return new ProductMatch(productsByBarcode[0], IsAmbiguous: false);
+                return new ProductMatch(productsByChannelBarcode[0], IsAmbiguous: false);
             }
 
-            if (productsByBarcode.Count > 1)
+            if (productsByChannelBarcode.Count > 1)
             {
                 barcodeWasAmbiguous = true;
+
                 _logger.LogWarning(
-                    "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: {Count} products share a barcode with the card. Falling back to the seller article.",
+                    "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: {Count} products of this channel report one of the card's barcodes. Falling back to the canonical barcodes and then to the seller article.",
                     channelId,
                     card.ExternalProductId,
-                    productsByBarcode.Count);
+                    productsByChannelBarcode.Count);
+            }
+
+            IReadOnlyList<Product> productsByCanonicalBarcode = await _store
+                .FindProductsByBarcodesAsync(card.Barcodes, cancellationToken);
+
+            if (productsByCanonicalBarcode.Count == 1)
+            {
+                return new ProductMatch(productsByCanonicalBarcode[0], IsAmbiguous: false);
+            }
+
+            if (productsByCanonicalBarcode.Count > 1)
+            {
+                barcodeWasAmbiguous = true;
+
+                _logger.LogWarning(
+                    "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: {Count} products share a canonical barcode with the card. Falling back to the seller article.",
+                    channelId,
+                    card.ExternalProductId,
+                    productsByCanonicalBarcode.Count);
             }
         }
 
@@ -408,14 +460,12 @@ public class ProductBatchImporter
             }
         }
 
+        // Several barcodes pointing at different products is a contradiction in the card, not an
+        // absence of candidates: creating a product here would duplicate one of the two the card
+        // already points at.
         return new ProductMatch(null, barcodeWasAmbiguous);
     }
 
-    /// <summary>
-    /// Refreshes the channel-owned side of a known card. Product-level fields (name, description,
-    /// SKU, canonical packing unit) are written once at creation and are never overwritten here:
-    /// the catalogue is canonical, the channel reports.
-    /// </summary>
     private async Task<ImportResult> UpdateExistingProductAsync(
         ChannelProduct channelProduct,
         ChannelProductCard card,
@@ -461,11 +511,11 @@ public class ProductBatchImporter
             hasChanges = true;
         }
 
-        bool barcodesChanged = await SynchronizeBarcodesAsync(
-            channelProduct.Product,
+        bool barcodesChanged = SynchronizeChannelBarcodes(
+            channelProduct,
             card.Barcodes,
             ResolveBarcodeType(card),
-            cancellationToken);
+            _timeProvider.GetUtcNow());
 
         if (barcodesChanged)
         {
@@ -514,13 +564,16 @@ public class ProductBatchImporter
     /// between the two cards each time either one is imported.
     /// </summary>
     /// <remarks>
-    /// Only channel-owned data is written here. Product-level fields stay as they are, with one
-    /// exception: a product that still has no canonical packing unit receives one when this card
-    /// reports usable dimensions, because no later import could ever add it otherwise.
+    /// Only channel-owned data is written here, canonical barcodes included: a product's canonical
+    /// barcodes are assigned when it is created and belong to the operator from then on, so a card
+    /// that merely matched an existing product must not rewrite them. Product-level fields stay as
+    /// they are, with one exception: a product that still has no canonical packing unit receives one
+    /// when this card reports usable dimensions, because no later import could ever add it otherwise.
     /// </remarks>
     private async Task<ImportResult> LinkExistingProductAsync(
         Product product,
         ChannelProductCard card,
+        Guid jobRunId,
         Guid channelId,
         List<PendingPhotoImport> pendingPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
@@ -531,8 +584,12 @@ public class ProductBatchImporter
 
         if (existingLink != null)
         {
+            // The usual cause is two cards of one channel reporting the same barcode: the first one
+            // created the product, the second matches it and has nowhere to attach. Logged rather
+            // than recorded as an error, for the same reason as the ambiguous match above.
             _logger.LogWarning(
-                "ChannelId={ChannelId}, ExternalProductId={ExternalProductId} matched ProductId={ProductId}, but that product is already linked to this channel via ExternalProductId={LinkedExternalProductId}. Skipping the card: one product can hold only one link per channel.",
+                "JobRunId={JobRunId}, ChannelId={ChannelId}, ExternalProductId={ExternalProductId} matched ProductId={ProductId}, but that product is already linked to this channel via ExternalProductId={LinkedExternalProductId}; two cards of this channel probably report the same barcode. Skipping the card: one product can hold only one link per channel.",
+                jobRunId,
                 channelId,
                 card.ExternalProductId,
                 product.Id,
@@ -558,7 +615,9 @@ public class ProductBatchImporter
 
         _store.AddChannelProduct(channelProduct);
 
-        await SynchronizeBarcodesAsync(product, card.Barcodes, ResolveBarcodeType(card), cancellationToken);
+        // The product exists already, so its canonical barcodes are not touched: they were fixed
+        // when it was created and belong to the operator from then on.
+        SynchronizeChannelBarcodes(channelProduct, card.Barcodes, ResolveBarcodeType(card), _timeProvider.GetUtcNow());
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
         EnsureCanonicalPackingUnit(product, card, now);
@@ -616,7 +675,12 @@ public class ProductBatchImporter
 
         _store.AddChannelProduct(channelProduct);
 
-        await SynchronizeBarcodesAsync(product, card.Barcodes, ResolveBarcodeType(card), cancellationToken);
+        // The only place canonical barcodes are written by an import: this is the product's first
+        // appearance, so its card's values are the best statement of its identity the catalogue will
+        // ever get. Later imports keep the channel's values on the link instead.
+        await AssignCanonicalBarcodesAsync(product, channelProduct, card, cancellationToken);
+
+        SynchronizeChannelBarcodes(channelProduct, card.Barcodes, ResolveBarcodeType(card), _timeProvider.GetUtcNow());
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
         EnsureCanonicalPackingUnit(product, card, now);
@@ -982,42 +1046,133 @@ public class ProductBatchImporter
         return hasChanges;
     }
 
-    private async Task<bool> SynchronizeBarcodesAsync(
+    /// <summary>
+    /// Gives a product its canonical barcodes at the moment it is created from a card. Values the
+    /// tenant already holds as another product's canonical barcode are left out: the canonical set
+    /// stays unique per tenant, and a card that reuses a value another product already owns must
+    /// not fail on it. Those values remain on the channel link, which is where a repeated barcode
+    /// is allowed to live.
+    /// </summary>
+    /// <remarks>
+    /// Called only from <see cref="CreateNewProductAsync"/>. Every other import path leaves
+    /// <see cref="Product.Barcodes"/> alone, because a canonical barcode is the operator's
+    /// identity for the product and a later sync must not rewrite it. The first value of a new
+    /// product is marked default, so the label printed for it is stable.
+    /// </remarks>
+    private async Task AssignCanonicalBarcodesAsync(
         Product product,
-        List<string> newBarcodes,
-        string barcodeType,
+        ChannelProduct channelProduct,
+        ChannelProductCard card,
         CancellationToken cancellationToken)
     {
-        if (newBarcodes.Count == 0)
+        if (card.Barcodes.Count == 0)
+        {
+            return;
+        }
+
+        IReadOnlySet<string> taken = await _store.FindTakenCanonicalBarcodesAsync(
+            card.Barcodes,
+            product.Id,
+            cancellationToken);
+
+        string barcodeType = ResolveBarcodeType(card);
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        bool anyAssigned = false;
+
+        foreach (string barcodeValue in card.Barcodes)
+        {
+            if (taken.Contains(barcodeValue))
+            {
+                _logger.LogWarning(
+                    "ChannelId={ChannelId}, ExternalProductId={ExternalProductId}: barcode {Barcode} is already the canonical barcode of another product; keeping it on the channel link only.",
+                    channelProduct.ChannelId,
+                    card.ExternalProductId,
+                    barcodeValue);
+
+                continue;
+            }
+
+            ProductBarcode barcode = new ProductBarcode
+            {
+                Id = Guid.NewGuid(),
+                ProductId = product.Id,
+                Value = barcodeValue,
+                Type = barcodeType,
+                IsDefault = !anyAssigned,
+                CreatedAt = now
+            };
+
+            _store.AddProductBarcode(barcode);
+            anyAssigned = true;
+        }
+    }
+
+    /// <summary>
+    /// Replaces the barcodes the channel reports for a card with <paramref name="newBarcodes"/>:
+    /// values the channel no longer reports are removed, the rest are added. Returns whether the
+    /// stored set changed.
+    /// </summary>
+    /// <remarks>
+    /// A full replacement, not an accumulation: the card's barcode set is owned by the channel, so
+    /// a value it stopped reporting is stale here even though the product may still carry it
+    /// canonically. The two sets are allowed to disagree — the canonical one is the catalogue's
+    /// identity for the product, this one is a copy of what the channel currently says.
+    /// </remarks>
+    private bool SynchronizeChannelBarcodes(
+        ChannelProduct channelProduct,
+        List<string> newBarcodes,
+        string barcodeType,
+        DateTimeOffset now)
+    {
+        HashSet<string> newValues = newBarcodes
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .ToHashSet();
+
+        // A card that reports no barcode at all is read as "the channel said nothing about them",
+        // not as "the channel dropped every barcode": the two are indistinguishable in the payload,
+        // and wiping the stored set on a partial response would destroy data no later import can
+        // reconstruct. Removal is therefore driven only by a card that does report a set.
+        if (newValues.Count == 0)
         {
             return false;
         }
 
         bool hasChanges = false;
 
-        List<ProductBarcode> existingBarcodes = product.Barcodes.ToList();
-        HashSet<string> existingBarcodeValues = existingBarcodes
-            .Where(b => b.Type == barcodeType)
-            .Select(b => b.Value)
-            .ToHashSet();
-
-        foreach (string barcodeValue in newBarcodes)
+        foreach (ChannelProductBarcode existing in channelProduct.Barcodes.ToList())
         {
-            if (!existingBarcodeValues.Contains(barcodeValue))
+            if (!newValues.Contains(existing.Value))
             {
-                ProductBarcode barcode = new ProductBarcode
-                {
-                    Id = Guid.NewGuid(),
-                    ProductId = product.Id,
-                    Value = barcodeValue,
-                    Type = barcodeType,
-                    IsDefault = false,
-                    CreatedAt = _timeProvider.GetUtcNow()
-                };
-
-                _store.AddProductBarcode(barcode);
+                _store.RemoveChannelProductBarcode(existing);
+                channelProduct.Barcodes.Remove(existing);
                 hasChanges = true;
             }
+        }
+
+        HashSet<string> storedValues = channelProduct.Barcodes
+            .Select(barcode => barcode.Value)
+            .ToHashSet();
+
+        foreach (string barcodeValue in newValues)
+        {
+            if (storedValues.Contains(barcodeValue))
+            {
+                continue;
+            }
+
+            ChannelProductBarcode barcode = new ChannelProductBarcode
+            {
+                Id = Guid.NewGuid(),
+                ChannelProductId = channelProduct.Id,
+                Value = barcodeValue,
+                Type = barcodeType,
+                CreatedAt = now
+            };
+
+            _store.AddChannelProductBarcode(barcode);
+            channelProduct.Barcodes.Add(barcode);
+            hasChanges = true;
         }
 
         return hasChanges;

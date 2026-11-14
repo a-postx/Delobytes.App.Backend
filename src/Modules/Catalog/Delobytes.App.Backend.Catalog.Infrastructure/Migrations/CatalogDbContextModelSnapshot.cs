@@ -235,6 +235,49 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.ToTable("ChannelProducts", "catalog");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductBarcode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChannelProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelProductId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Value")
+                        .HasDatabaseName("IX_ChannelProductBarcodes_TenantId_Value");
+
+                    b.HasIndex("TenantId", "ChannelProductId", "Value")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ChannelProductBarcodes_TenantId_ChannelProductId_Value");
+
+                    b.ToTable("ChannelProductBarcodes", "catalog");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Component", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1321,6 +1364,17 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductBarcode", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProduct", "ChannelProduct")
+                        .WithMany("Barcodes")
+                        .HasForeignKey("ChannelProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ChannelProduct");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ComponentPrice", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Component", "Component")
@@ -1469,6 +1523,11 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Channel", b =>
                 {
                     b.Navigation("ChannelProducts");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProduct", b =>
+                {
+                    b.Navigation("Barcodes");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Component", b =>

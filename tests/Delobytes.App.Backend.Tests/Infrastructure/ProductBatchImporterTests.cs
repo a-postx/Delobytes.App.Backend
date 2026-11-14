@@ -642,7 +642,18 @@ public class ProductBatchImporterTests
         products[0].Id.Should().Be(existingProduct.Id);
         products[0].ChannelProducts.Should().HaveCount(1);
         products[0].ChannelProducts.First().ExternalProductId.Should().Be("123456789");
-        products[0].Barcodes.Where(b => b.Type == "wildberries").Should().HaveCount(2);
+
+        // A link writes the channel's copy only: the canonical set was fixed when the product was
+        // created and is the operator's from then on.
+        products[0].Barcodes.Select(b => b.Value).Should().Equal("9876543210987");
+
+        List<ChannelProductBarcode> channelBarcodes = await consumerContext.ChannelProductBarcodes
+            .IgnoreQueryFilters()
+            .ToListAsync();
+
+        channelBarcodes.Select(b => b.Value)
+            .Should().BeEquivalentTo(new[] { "9876543210987", "1111111111111" },
+                "the card's whole barcode set is mirrored onto the channel link");
     }
 
     [Fact]
@@ -733,7 +744,7 @@ public class ProductBatchImporterTests
     }
 
     [Fact]
-    public async Task ProcessAsync_SynchronizesBarcodes_WithoutDuplication()
+    public async Task ProcessAsync_SynchronizesChannelBarcodes_WithoutDuplication()
     {
         // Arrange
         string databaseName = Guid.NewGuid().ToString();
@@ -811,9 +822,50 @@ public class ProductBatchImporterTests
             .FirstOrDefaultAsync(p => p.Id == existingProduct.Id);
 
         product.Should().NotBeNull();
-        product!.Barcodes.Where(b => b.Type == "wildberries").Should().HaveCount(2);
-        product.Barcodes.Should().Contain(b => b.Value == "1111111111111");
-        product.Barcodes.Should().Contain(b => b.Value == "2222222222222");
+        // An update leaves the canonical set alone.
+        product!.Barcodes.Select(b => b.Value).Should().Equal("1111111111111");
+
+        List<ChannelProductBarcode> channelBarcodes = await consumerContext.ChannelProductBarcodes
+            .IgnoreQueryFilters()
+            .ToListAsync();
+
+        channelBarcodes.Should().HaveCount(2);
+        channelBarcodes.Select(b => b.Value)
+            .Should().BeEquivalentTo(new[] { "1111111111111", "2222222222222" });
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReprocessingABatch_DoesNotDuplicateChannelBarcodes()
+    {
+        // Arrange: a redelivered batch must be idempotent on both barcode sets.
+        string databaseName = Guid.NewGuid().ToString();
+        await CreateChannelAsync(BuildCatalogDbContext(_tenantId, databaseName), _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        ProductBatchImporter importer = BuildImporter(consumerContext, new Mock<IPublishEndpoint>().Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Product",
+            OfferId = "SKU-001",
+            Barcodes = new List<string> { "1111111111111", "2222222222222" }
+        };
+
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
+
+        // Act
+        await importer.ImportAsync(message, CancellationToken.None);
+        await importer.ImportAsync(message, CancellationToken.None);
+
+        // Assert
+        (await consumerContext.Products.IgnoreQueryFilters().Include(p => p.Barcodes).SingleAsync())
+            .Barcodes.Should().HaveCount(2);
+
+        (await consumerContext.ChannelProductBarcodes.IgnoreQueryFilters().ToListAsync())
+            .Should().HaveCount(2);
     }
 
     [Fact]

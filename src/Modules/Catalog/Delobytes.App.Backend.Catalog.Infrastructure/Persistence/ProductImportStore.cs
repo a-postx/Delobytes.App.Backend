@@ -39,6 +39,7 @@ public class ProductImportStore : IProductImportStore
         CancellationToken cancellationToken)
     {
         return _context.ChannelProducts
+            .Include(cp => cp.Barcodes)
             .Include(cp => cp.Product)
                 .ThenInclude(p => p.Barcodes)
             .Include(cp => cp.Product)
@@ -105,6 +106,103 @@ public class ProductImportStore : IProductImportStore
         }
 
         return productsByBarcode;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<Product>> FindProductsByChannelBarcodesAsync(
+        Guid channelId,
+        IReadOnlyCollection<string> barcodes,
+        CancellationToken cancellationToken)
+    {
+        if (barcodes.Count == 0)
+        {
+            return Array.Empty<Product>();
+        }
+
+        // Scoped to the importing channel on purpose: the same value may be reported for cards of
+        // several channels, and only this channel's cards say which product the card belongs to
+        // here.
+        HashSet<Guid> productIds = new HashSet<Guid>(
+            await _context.ChannelProductBarcodes
+                .Where(cpb => barcodes.Contains(cpb.Value) && cpb.ChannelProduct.ChannelId == channelId)
+                .Select(cpb => cpb.ChannelProduct.ProductId)
+                .Distinct()
+                .ToListAsync(cancellationToken));
+
+        // Cards written earlier in this batch are still unsaved, so their barcodes are read from
+        // the change tracker instead of from the database. The navigation is not relied on: a link
+        // staged in this batch is resolved by its identifier.
+        Dictionary<Guid, Guid> batchProductIdsByLinkId = _context.ChangeTracker
+            .Entries<ChannelProduct>()
+            .Where(entry => entry.State != EntityState.Deleted && entry.Entity.ChannelId == channelId)
+            .ToDictionary(entry => entry.Entity.Id, entry => entry.Entity.ProductId);
+
+        foreach (EntityEntry<ChannelProductBarcode> entry in _context.ChangeTracker.Entries<ChannelProductBarcode>())
+        {
+            if (entry.State == EntityState.Deleted || !barcodes.Contains(entry.Entity.Value))
+            {
+                continue;
+            }
+
+            if (batchProductIdsByLinkId.TryGetValue(entry.Entity.ChannelProductId, out Guid productId))
+            {
+                productIds.Add(productId);
+            }
+        }
+
+        if (productIds.Count == 0)
+        {
+            return Array.Empty<Product>();
+        }
+
+        List<Product> products = await _context.Products
+            .Where(p => productIds.Contains(p.Id))
+            .Include(p => p.Barcodes)
+            .Include(p => p.PackingUnits)
+            .Include(p => p.Photos)
+            .ToListAsync(cancellationToken);
+
+        foreach (Product tracked in _context.Products.Local)
+        {
+            if (productIds.Contains(tracked.Id) && products.All(p => p.Id != tracked.Id))
+            {
+                products.Add(tracked);
+            }
+        }
+
+        return products;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlySet<string>> FindTakenCanonicalBarcodesAsync(
+        IReadOnlyCollection<string> barcodes,
+        Guid excludedProductId,
+        CancellationToken cancellationToken)
+    {
+        if (barcodes.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        HashSet<string> taken = new HashSet<string>(
+            await _context.ProductBarcodes
+                .Where(pb => barcodes.Contains(pb.Value) && pb.ProductId != excludedProductId)
+                .Select(pb => pb.Value)
+                .ToListAsync(cancellationToken));
+
+        // Values staged earlier in this batch are not in the database yet, but they will be at
+        // SaveChanges time, where the unique index sees them.
+        foreach (EntityEntry<ProductBarcode> entry in _context.ChangeTracker.Entries<ProductBarcode>())
+        {
+            if (entry.State != EntityState.Deleted
+                && entry.Entity.ProductId != excludedProductId
+                && barcodes.Contains(entry.Entity.Value))
+            {
+                taken.Add(entry.Entity.Value);
+            }
+        }
+
+        return taken;
     }
 
     /// <inheritdoc/>
@@ -207,6 +305,18 @@ public class ProductImportStore : IProductImportStore
     public void AddChannelProduct(ChannelProduct channelProduct)
     {
         _context.ChannelProducts.Add(channelProduct);
+    }
+
+    /// <inheritdoc/>
+    public void AddChannelProductBarcode(ChannelProductBarcode barcode)
+    {
+        _context.ChannelProductBarcodes.Add(barcode);
+    }
+
+    /// <inheritdoc/>
+    public void RemoveChannelProductBarcode(ChannelProductBarcode barcode)
+    {
+        _context.ChannelProductBarcodes.Remove(barcode);
     }
 
     /// <inheritdoc/>

@@ -76,6 +76,13 @@ public class ChannelProduct : ITenantScoped
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the barcodes this channel reports for the card. Channel-owned data: replaced
+    /// as a whole by every import, and never promoted to <see cref="Product.Barcodes"/> once the
+    /// product exists.
+    /// </summary>
+    public ICollection<ChannelProductBarcode> Barcodes { get; set; } = new List<ChannelProductBarcode>();
+
+    /// <summary>
     /// Gets or sets the date and time when the channel product was last updated.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
