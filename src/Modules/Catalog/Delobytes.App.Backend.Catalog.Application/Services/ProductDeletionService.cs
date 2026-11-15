@@ -171,7 +171,9 @@ public class ProductDeletionService
             {
                 try
                 {
-                    await _photoService.DeletePhotosAsync(product.Photos.ToList(), cancellationToken);
+                    await _photoService.DeletePhotosAsync(
+                        product.Photos.Select(p => p.StorageKey).ToList(),
+                        cancellationToken);
                 }
                 catch (Exception ex)
                 {

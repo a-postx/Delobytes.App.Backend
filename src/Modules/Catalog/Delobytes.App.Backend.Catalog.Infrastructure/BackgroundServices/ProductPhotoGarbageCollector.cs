@@ -144,13 +144,22 @@ public class ProductPhotoGarbageCollector : BackgroundService
                             && p.RemovedAt < threshold)
                 .ToListAsync(cancellationToken);
 
-            if (expiredPhotos.Count == 0)
+            List<ChannelProductPhoto> expiredChannelPhotos = await context.ChannelProductPhotos
+                .Where(p => p.Status == ProductPhotoStatus.Removed
+                            && p.RemovedAt != null
+                            && p.RemovedAt < threshold)
+                .ToListAsync(cancellationToken);
+
+            if (expiredPhotos.Count == 0 && expiredChannelPhotos.Count == 0)
             {
                 return (0, 0);
             }
 
+            // Blobs are content-addressed and shared by both tables, so the candidate set and the
+            // liveness check must span both of them.
             HashSet<string> candidateKeys = expiredPhotos
                 .Select(p => p.StorageKey)
+                .Concat(expiredChannelPhotos.Select(p => p.StorageKey))
                 .Where(k => !string.IsNullOrEmpty(k))
                 .ToHashSet(StringComparer.Ordinal);
 
@@ -168,17 +177,20 @@ public class ProductPhotoGarbageCollector : BackgroundService
             }
 
             context.ProductPhotos.RemoveRange(expiredPhotos);
+            context.ChannelProductPhotos.RemoveRange(expiredChannelPhotos);
 
             await context.SaveChangesAsync(cancellationToken);
+
+            int deletedPhotos = expiredPhotos.Count + expiredChannelPhotos.Count;
 
             _logger.LogDebug(
                 "ProductPhotoGarbageCollector: TenantId {TenantId}: {DeletedPhotos} row(s) deleted, {DeletedBlobs} blob(s) deleted, {SharedBlobs} blob(s) kept for live rows.",
                 tenantId,
-                expiredPhotos.Count,
+                deletedPhotos,
                 deletableKeys.Count,
                 candidateKeys.Count - deletableKeys.Count);
 
-            return (expiredPhotos.Count, deletableKeys.Count);
+            return (deletedPhotos, deletableKeys.Count);
         }
         finally
         {
@@ -199,13 +211,21 @@ public class ProductPhotoGarbageCollector : BackgroundService
             return new HashSet<string>(StringComparer.Ordinal);
         }
 
-        List<string> liveKeys = await context.ProductPhotos
+        List<string> liveCanonicalKeys = await context.ProductPhotos
             .Where(p => p.Status != ProductPhotoStatus.Removed
                         && candidateKeys.Contains(p.StorageKey))
             .Select(p => p.StorageKey)
             .ToListAsync(cancellationToken);
 
-        return liveKeys.ToHashSet(StringComparer.Ordinal);
+        List<string> liveChannelKeys = await context.ChannelProductPhotos
+            .Where(p => p.Status != ProductPhotoStatus.Removed
+                        && candidateKeys.Contains(p.StorageKey))
+            .Select(p => p.StorageKey)
+            .ToListAsync(cancellationToken);
+
+        return liveCanonicalKeys
+            .Concat(liveChannelKeys)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     // PeriodicTimer rejects a non-positive period, and a misconfigured interval must not take the

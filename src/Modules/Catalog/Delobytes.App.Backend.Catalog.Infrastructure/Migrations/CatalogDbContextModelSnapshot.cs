@@ -278,6 +278,104 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.ToTable("ChannelProductBarcodes", "catalog");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductPhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChannelProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SizeVariant")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelProductId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ContentHash")
+                        .HasDatabaseName("IX_ChannelProductPhotos_TenantId_ContentHash");
+
+                    b.HasIndex("TenantId", "ChannelProductId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ChannelProductPhotos_TenantId_ChannelProductId_ExternalId")
+                        .HasFilter("\"Status\" <> 3");
+
+                    b.ToTable("ChannelProductPhotos", "catalog");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Component", b =>
                 {
                     b.Property<Guid>("Id")
@@ -987,11 +1085,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ChannelId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000000"));
-
                     b.Property<string>("ContentHash")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -1077,18 +1170,16 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProductId");
+
                     b.HasIndex("TenantId");
-
-                    b.HasIndex("ProductId", "ExternalId");
-
-                    b.HasIndex("ProductId", "DisplayOrder", "SizeVariant");
 
                     b.HasIndex("TenantId", "ProductId", "ContentHash")
                         .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ContentHash");
 
-                    b.HasIndex("TenantId", "ProductId", "ChannelId", "ExternalId")
+                    b.HasIndex("TenantId", "ProductId", "DisplayOrder", "SizeVariant")
                         .IsUnique()
-                        .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ChannelId_ExternalId")
+                        .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_DisplayOrder_SizeVariant")
                         .HasFilter("\"Status\" <> 3");
 
                     b.ToTable("ProductPhotos", "catalog");
@@ -1375,6 +1466,17 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Navigation("ChannelProduct");
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductPhoto", b =>
+                {
+                    b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProduct", "ChannelProduct")
+                        .WithMany("Photos")
+                        .HasForeignKey("ChannelProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ChannelProduct");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ComponentPrice", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Catalog.Domain.Entities.Component", "Component")
@@ -1528,6 +1630,8 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProduct", b =>
                 {
                     b.Navigation("Barcodes");
+
+                    b.Navigation("Photos");
                 });
 
             modelBuilder.Entity("Delobytes.App.Backend.Catalog.Domain.Entities.Component", b =>

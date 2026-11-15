@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Products;
 using Delobytes.App.Backend.Catalog.Application.Services;
+using Delobytes.App.Backend.Catalog.Domain;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
@@ -62,10 +63,45 @@ public class ProductBatchImporterBarcodeTests
         product.Barcodes.Single(b => b.Value == "4600000000001").IsDefault
             .Should().BeTrue("the first canonical barcode is the one printed on the label");
         product.Barcodes.Single(b => b.Value == "4600000000002").IsDefault.Should().BeFalse();
+        product.Barcodes.Should().OnlyContain(
+            b => b.Type == BarcodeTypes.Ean13,
+            "the canonical field carries a symbology, not the channel code");
 
         List<ChannelProductBarcode> channelBarcodes = await GetChannelBarcodesAsync(context);
         channelBarcodes.Select(b => b.Value).Should().BeEquivalentTo(new[] { "4600000000001", "4600000000002" });
         channelBarcodes.Should().OnlyContain(b => b.Type == ChannelCodes.Wildberries);
+    }
+
+    [Fact]
+    public async Task ImportAsync_CardReportingOzonBarcodeType_StillWritesCanonicalEan13()
+    {
+        // Arrange: the channel reports its own type for the barcode. That value belongs to the
+        // channel copy only; the canonical row records the symbology.
+        string databaseName = Guid.NewGuid().ToString();
+        await SeedChannelAsync(databaseName);
+
+        CatalogDbContext context = BuildContext(databaseName);
+        ProductBatchImporter importer = BuildImporter(context, new Mock<IPublishEndpoint>().Object);
+
+        ChannelProductCard card = new ChannelProductCard
+        {
+            ExternalProductId = "555000555",
+            ChannelCode = ChannelCodes.Ozon,
+            BarcodeType = ChannelCodes.Ozon,
+            Name = "Ozon-typed card",
+            OfferId = "ART-OZON-TYPE",
+            Barcodes = new List<string> { "4600000000015" },
+        };
+
+        // Act
+        await importer.ImportAsync(BuildMessage(card, _channelId), CancellationToken.None);
+
+        // Assert
+        Product product = (await context.Products.IgnoreQueryFilters().Include(p => p.Barcodes).SingleAsync());
+        product.Barcodes.Should().ContainSingle().Which.Type.Should().Be(BarcodeTypes.Ean13);
+
+        (await GetChannelBarcodesAsync(context)).Should().ContainSingle()
+            .Which.Type.Should().Be(ChannelCodes.Ozon);
     }
 
     [Fact]
@@ -91,6 +127,7 @@ public class ProductBatchImporterBarcodeTests
 
         // A link must not extend the canonical set.
         product.Barcodes.Select(b => b.Value).Should().Equal("4600000000001");
+        product.Barcodes.Should().OnlyContain(b => b.Type == BarcodeTypes.Ean13);
 
         (await GetChannelBarcodesAsync(context)).Select(b => b.Value)
             .Should().BeEquivalentTo(new[] { "4600000000001", "4600000000009" },
@@ -413,7 +450,7 @@ public class ProductBatchImporterBarcodeTests
             Id = Guid.NewGuid(),
             ProductId = productId,
             Value = value,
-            Type = ChannelCodes.Wildberries,
+            Type = BarcodeTypes.Ean13,
             IsDefault = true,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
         };
@@ -499,9 +536,14 @@ public class ProductBatchImporterBarcodeTests
     {
         Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
         photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
+            .Setup(s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductPhotoImportResult());
+        photoServiceMock
+            .Setup(s => s.SyncChannelPhotosAsync(
+                It.IsAny<ChannelProduct>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());

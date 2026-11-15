@@ -99,8 +99,8 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                 })
                 .ToList(),
             PackingUnit = ToPackingUnitDto(PackingUnitResolver.ResolveCanonical(product)),
-            // Only one channel importer exists today, so this flat, unfiltered list is that
-            // channel's photo set; per-channel selection is a later stage.
+            // The product's own gallery. Channel galleries live on ChannelProduct.Photos and are
+            // exposed through ChannelLinks, so this list is canonical by construction.
             Photos = product.Photos
                 .Where(ph => ph.Status == ProductPhotoStatus.Uploaded)
                 .OrderBy(ph => ph.DisplayOrder)
@@ -108,10 +108,9 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                 .Select(ph => new ProductPhotoDto
                 {
                     Id = ph.Id,
-                    ChannelId = ph.ChannelId,
                     DisplayOrder = ph.DisplayOrder,
                     SizeVariant = ph.SizeVariant,
-                    Url = _photoService.GetPublicUrl(ph),
+                    Url = _photoService.GetPublicUrl(ph.StorageKey),
                     Width = ph.Width,
                     Height = ph.Height
                 })
@@ -127,6 +126,25 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
                     Name = cp.Name,
                     Description = cp.Description,
                     PackingUnit = ToPackingUnitDto(PackingUnitResolver.ResolveForChannel(product, cp.ChannelId)),
+                    Barcodes = cp.Barcodes
+                        .OrderBy(b => b.Value)
+                        .Select(b => new ChannelProductBarcodeDto
+                        {
+                            Value = b.Value,
+                            Type = b.Type,
+                        })
+                        .ToList(),
+                    Photos = cp.Photos
+                        .Where(ph => ph.Status == ProductPhotoStatus.Uploaded)
+                        .OrderBy(ph => ph.DisplayOrder)
+                        .ThenBy(ph => ph.SizeVariant == "thumbnail" ? 0 : 1)
+                        .Select(ph => new ProductChannelPhotoDto
+                        {
+                            DisplayOrder = ph.DisplayOrder,
+                            SizeVariant = ph.SizeVariant,
+                            Url = _photoService.GetPublicUrl(ph.StorageKey),
+                        })
+                        .ToList(),
                     LastSyncedAt = cp.LastSyncedAt,
                     IsActive = cp.IsActive,
                 })

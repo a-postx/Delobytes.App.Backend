@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Catalog.Domain.Entities;
-using Delobytes.App.Backend.Catalog.Domain.Enums;
 
 namespace Delobytes.App.Backend.Catalog.Application.Interfaces;
 
@@ -10,30 +9,43 @@ namespace Delobytes.App.Backend.Catalog.Application.Interfaces;
 public interface IProductPhotoService
 {
     /// <summary>
-    /// Reconciles the photo set of one channel's card on the product: downloads and hashes every
-    /// declared source, uploads content that is not stored yet, supersedes rows whose bytes changed
-    /// and marks rows the card no longer declares as <see cref="ProductPhotoStatus.Removed"/>.
+    /// Reconciles the product's own gallery: downloads and hashes every declared source, uploads
+    /// content that is not stored yet, supersedes rows whose bytes changed and marks rows the card
+    /// no longer declares as <see cref="Domain.Enums.ProductPhotoStatus.Removed"/>.
     /// Adds and mutates rows on the tracked product but does NOT call SaveChanges — the caller
     /// owns the transaction boundary.
     /// </summary>
-    /// <param name="product">Tracked product that owns the photos.</param>
-    /// <param name="channelId">Channel whose card declares the set; other channels' rows are left alone.</param>
-    /// <param name="photos">Photo sources reported by the marketplace; may be empty, which removes every live photo of the channel.</param>
+    /// <param name="product">Tracked product that owns the gallery.</param>
+    /// <param name="photos">Photo sources reported by the marketplace; may be empty, which removes every live canonical photo.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Per-run counters describing what happened to each source.</returns>
-    public Task<ProductPhotoImportResult> ImportPhotosAsync(
+    public Task<ProductPhotoImportResult> ImportCanonicalPhotosAsync(
         Product product,
-        Guid channelId,
         IReadOnlyList<MarketplacePhotoSource> photos,
         CancellationToken cancellationToken);
 
-    /// <summary>Deletes the given photos' blobs from storage. Does not touch the database.</summary>
-    /// <param name="photos">Photos whose blobs must be removed.</param>
+    /// <summary>
+    /// Reconciles the gallery of one channel's card: a full replacement of that card's photo set.
+    /// Other channels' cards and the product's own gallery are never touched.
+    /// Adds and mutates rows on the tracked link but does NOT call SaveChanges — the caller owns
+    /// the transaction boundary.
+    /// </summary>
+    /// <param name="channelProduct">Tracked link whose card declares the set.</param>
+    /// <param name="photos">Photo sources reported by the marketplace; may be empty, which removes every live photo of the card.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public Task DeletePhotosAsync(IReadOnlyList<ProductPhoto> photos, CancellationToken cancellationToken);
+    /// <returns>Per-run counters describing what happened to each source.</returns>
+    public Task<ProductPhotoImportResult> SyncChannelPhotosAsync(
+        ChannelProduct channelProduct,
+        IReadOnlyList<MarketplacePhotoSource> photos,
+        CancellationToken cancellationToken);
+
+    /// <summary>Deletes the given blobs from storage. Does not touch the database.</summary>
+    /// <param name="storageKeys">Object keys whose blobs must be removed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task DeletePhotosAsync(IReadOnlyList<string> storageKeys, CancellationToken cancellationToken);
 
     /// <summary>Builds a public URL. No network call — safe to use inside mapping loops.</summary>
-    /// <param name="photo">Photo to build the URL for.</param>
+    /// <param name="storageKey">Object key of the stored blob.</param>
     /// <returns>Publicly reachable URL of the stored blob.</returns>
-    public string GetPublicUrl(ProductPhoto photo);
+    public string GetPublicUrl(string storageKey);
 }

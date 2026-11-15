@@ -25,6 +25,8 @@ public class ProductRepository : IProductRepository
             .Include(p => p.PackingUnits)
             .Include(p => p.Photos)
             .Include(p => p.ChannelProducts).ThenInclude(cp => cp.Channel)
+            .Include(p => p.ChannelProducts).ThenInclude(cp => cp.Barcodes)
+            .Include(p => p.ChannelProducts).ThenInclude(cp => cp.Photos)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 

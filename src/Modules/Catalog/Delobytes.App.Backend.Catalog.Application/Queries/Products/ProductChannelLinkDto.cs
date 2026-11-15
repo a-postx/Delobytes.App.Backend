@@ -45,6 +45,27 @@ public class ProductChannelLinkDto
     /// </remarks>
     public PackingUnitDto? PackingUnit { get; set; }
 
+    /// <summary>
+    /// The barcodes this channel reports for the card.
+    /// </summary>
+    /// <remarks>
+    /// Populated by the single-product query only. The product list leaves it <c>null</c> on
+    /// purpose: it renders identifiers only, and loading this collection would add two more
+    /// includes to every catalogue page. A <c>null</c> here therefore means "not loaded", not
+    /// "the channel reports no barcode".
+    /// </remarks>
+    public List<ChannelProductBarcodeDto>? Barcodes { get; set; }
+
+    /// <summary>
+    /// The photos of the card's own gallery, ordered by display order with thumbnails first.
+    /// </summary>
+    /// <remarks>
+    /// Populated by the single-product query only, for the same reason as
+    /// <see cref="Barcodes"/>. A <c>null</c> here means "not loaded"; an empty list means the
+    /// channel reported no photos.
+    /// </remarks>
+    public List<ProductChannelPhotoDto>? Photos { get; set; }
+
     /// <summary>When this link was last synchronised with the channel, if ever.</summary>
     public DateTimeOffset? LastSyncedAt { get; set; }
 

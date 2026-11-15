@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
+using Delobytes.App.Backend.Catalog.Domain;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using MediatR;
@@ -146,7 +147,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                 if (existing != null)
                 {
                     existing.Value = dto.Value;
-                    existing.Type = dto.Type;
+                    existing.Type = NormalizeBarcodeType(dto.Type);
                     existing.IsDefault = dto.IsDefault;
                 }
             }
@@ -157,11 +158,18 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
                     Id = Guid.NewGuid(),
                     ProductId = product.Id,
                     Value = dto.Value,
-                    Type = dto.Type,
+                    Type = NormalizeBarcodeType(dto.Type),
                     IsDefault = dto.IsDefault
                 });
             }
         }
+    }
+
+    // A barcode without a symbology is meaningless now that the field no longer carries the
+    // channel; the API still accepts other values so a future EAN8/Code128 needs no change.
+    private static string NormalizeBarcodeType(string? type)
+    {
+        return string.IsNullOrWhiteSpace(type) ? BarcodeTypes.Ean13 : type;
     }
 
     /// <summary>

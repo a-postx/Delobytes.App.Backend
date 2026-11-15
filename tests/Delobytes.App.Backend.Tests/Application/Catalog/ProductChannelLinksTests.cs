@@ -27,8 +27,8 @@ public class ProductChannelLinksTests
     public ProductChannelLinksTests()
     {
         _photoServiceMock
-            .Setup(s => s.GetPublicUrl(It.IsAny<ProductPhoto>()))
-            .Returns((ProductPhoto photo) => $"https://storage.example/{photo.StorageKey}");
+            .Setup(s => s.GetPublicUrl(It.IsAny<string>()))
+            .Returns((string storageKey) => $"https://storage.example/{storageKey}");
     }
 
     // ── GetProductQueryHandler ───────────────────────────────────────────

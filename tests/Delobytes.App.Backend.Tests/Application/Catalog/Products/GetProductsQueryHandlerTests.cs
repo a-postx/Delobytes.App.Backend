@@ -362,6 +362,8 @@ public class GetProductsQueryHandlerTests
         link.ExternalProductId.Should().Be("1088660899");
         link.ExternalSku.Should().Be("квр-10");
         link.PackingUnit.Should().BeNull("the list does not load channel units by design");
+        link.Barcodes.Should().BeNull("the list renders identifiers only and does not load channel barcodes");
+        link.Photos.Should().BeNull("the list does not load channel galleries");
     }
 
     private static Product BuildProduct()

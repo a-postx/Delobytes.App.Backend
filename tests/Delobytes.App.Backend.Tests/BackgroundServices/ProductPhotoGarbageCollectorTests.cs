@@ -32,7 +32,6 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
 {
     private static readonly Guid TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid OtherTenantId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private static readonly Guid ChannelId = Guid.Parse("44444444-4444-4444-4444-444444444444");
 
     private readonly string _databaseName;
     private readonly MessageTenantContext _tenantContext;
@@ -252,6 +251,71 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         (await ReadAllPhotosAsync()).Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task Cleanup_BlobReferencedOnlyByALiveChannelPhoto_Survives()
+    {
+        // Blobs are shared by the canonical and the channel tables, so the liveness check must
+        // read both: sweeping on the canonical table alone would blank a live channel gallery.
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string sharedKey = "product-photos/channel-only.webp";
+
+        await SeedPhotoAsync(TenantId, ProductPhotoStatus.Removed, sharedKey, now.AddDays(-40));
+        await SeedChannelPhotoAsync(TenantId, ProductPhotoStatus.Uploaded, sharedKey, null);
+
+        ProductPhotoGcResult result = await _collector.CleanupAsync(now, CancellationToken.None);
+
+        result.DeletedPhotos.Should().Be(1);
+        result.DeletedBlobs.Should().Be(0);
+
+        VerifyNoBlobDeleted();
+
+        (await ReadAllPhotosAsync()).Should().BeEmpty();
+        (await ReadAllChannelPhotosAsync()).Should().ContainSingle()
+            .Which.Status.Should().Be(ProductPhotoStatus.Uploaded);
+    }
+
+    [Fact]
+    public async Task Cleanup_BlobReferencedByNoLiveRow_IsDeleted()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string key = "product-photos/orphan-channel.webp";
+
+        await SeedChannelPhotoAsync(TenantId, ProductPhotoStatus.Removed, key, now.AddDays(-40));
+
+        ProductPhotoGcResult result = await _collector.CleanupAsync(now, CancellationToken.None);
+
+        result.DeletedPhotos.Should().Be(1, "an expired channel row is swept like a canonical one");
+        result.DeletedBlobs.Should().Be(1);
+
+        _storageMock.Verify(
+            s => s.DeleteManyAsync(
+                StorageArea.ProductPhotos,
+                It.Is<IReadOnlyCollection<string>>(keys => keys.Count == 1 && keys.Contains(key)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        (await ReadAllChannelPhotosAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Cleanup_RemovedCanonicalAndLiveChannelRows_KeepTheSharedBlob()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string sharedKey = "product-photos/shared-with-channel.webp";
+
+        await SeedPhotoAsync(TenantId, ProductPhotoStatus.Removed, sharedKey, now.AddDays(-60));
+        await SeedChannelPhotoAsync(TenantId, ProductPhotoStatus.Uploaded, sharedKey, null);
+
+        ProductPhotoGcResult result = await _collector.CleanupAsync(now, CancellationToken.None);
+
+        result.DeletedPhotos.Should().Be(1);
+        result.DeletedBlobs.Should().Be(0);
+        VerifyNoBlobDeleted();
+
+        (await ReadAllPhotosAsync()).Should().BeEmpty();
+        (await ReadAllChannelPhotosAsync()).Should().ContainSingle();
+    }
+
     private void VerifyNoBlobDeleted()
     {
         _storageMock.Verify(
@@ -289,7 +353,6 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
             {
                 Id = Guid.NewGuid(),
                 ProductId = product.Id,
-                ChannelId = ChannelId,
                 DisplayOrder = 1,
                 SizeVariant = "thumbnail",
                 StorageKey = storageKey,
@@ -311,6 +374,78 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         {
             _tenantContext.Clear();
         }
+    }
+
+    private async Task SeedChannelPhotoAsync(
+        Guid tenantId,
+        ProductPhotoStatus status,
+        string storageKey,
+        DateTimeOffset? removedAt)
+    {
+        using IServiceScope scope = _provider.CreateScope();
+
+        _tenantContext.SetTenantId(tenantId);
+
+        try
+        {
+            CatalogDbContext context = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+
+            Product product = new Product
+            {
+                Id = Guid.NewGuid(),
+                Code = "C-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                Name = "Test product",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-100)
+            };
+
+            ChannelProduct channelProduct = new ChannelProduct
+            {
+                Id = Guid.NewGuid(),
+                ProductId = product.Id,
+                ChannelId = Guid.NewGuid(),
+                ExternalProductId = Guid.NewGuid().ToString("N"),
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-100)
+            };
+
+            channelProduct.Photos.Add(new ChannelProductPhoto
+            {
+                Id = Guid.NewGuid(),
+                ChannelProductId = channelProduct.Id,
+                ExternalId = "1_1_thumbnail",
+                DisplayOrder = 1,
+                SizeVariant = "thumbnail",
+                StorageKey = storageKey,
+                ContentHash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
+                ContentType = "image/webp",
+                SizeBytes = 64,
+                Source = "Wildberries",
+                Status = status,
+                RemovedAt = removedAt,
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-100)
+            });
+
+            product.ChannelProducts.Add(channelProduct);
+
+            await context.Products.AddAsync(product);
+            await context.SaveChangesAsync();
+        }
+        finally
+        {
+            _tenantContext.Clear();
+        }
+    }
+
+    private async Task<List<ChannelProductPhoto>> ReadAllChannelPhotosAsync()
+    {
+        using IServiceScope scope = _provider.CreateScope();
+
+        CatalogDbContext context = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+
+        return await context.ChannelProductPhotos
+            .IgnoreQueryFilters()
+            .ToListAsync();
     }
 
     private async Task<List<ProductPhoto>> ReadAllPhotosAsync()

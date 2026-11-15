@@ -9,8 +9,12 @@ using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Application.Products;
 using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
+using Delobytes.App.Backend.Catalog.Domain;
+using Delobytes.App.Backend.Catalog.Domain;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using ChannelProductPhotoRow = Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductPhoto;
+using CardPhoto = Delobytes.App.Backend.Integrations.Contracts.Models.ChannelProductPhoto;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
@@ -92,7 +96,7 @@ public class ProductBatchImporterTests
 
         product.Barcodes.Should().HaveCount(1);
         product.Barcodes.First().Value.Should().Be("1234567890123");
-        product.Barcodes.First().Type.Should().Be("wildberries");
+        product.Barcodes.First().Type.Should().Be(BarcodeTypes.Ean13);
 
         product.ChannelProducts.Should().HaveCount(1);
         ChannelProduct channelProduct = product.ChannelProducts.First();
@@ -562,7 +566,7 @@ public class ProductBatchImporterTests
 
         products.Should().HaveCount(1);
         products[0].ChannelProducts.Should().HaveCount(1);
-        products[0].Barcodes.Where(b => b.Type == "wildberries").Should().HaveCount(1);
+        products[0].Barcodes.Where(b => b.Type == BarcodeTypes.Ean13).Should().HaveCount(1);
 
         publishEndpointMock.Verify(
             p => p.Publish(
@@ -1179,12 +1183,11 @@ public class ProductBatchImporterTests
         bool productWasVisibleWhenPhotosWereImported = false;
 
         photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
+            .Setup(s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<Product, Guid, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((product, _, _, _) =>
+            .Callback<Product, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((product, _, _) =>
             {
                 // A separate context stands in for another connection: if the product is visible
                 // here, the transaction that created it has already been committed.
@@ -1203,9 +1206,9 @@ public class ProductBatchImporterTests
             Name = "Product With Photos",
             OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
-            Photos = new List<ChannelProductPhoto>
+            Photos = new List<CardPhoto>
             {
-                new ChannelProductPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 }, new ChannelProductPhoto { Url = "https://example.test/l.webp", SizeVariant = "large", Width = 516, Height = 688, DisplayOrder = 1 },
+                new CardPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 }, new CardPhoto { Url = "https://example.test/l.webp", SizeVariant = "large", Width = 516, Height = 688, DisplayOrder = 1 },
             },
         };
 
@@ -1223,9 +1226,14 @@ public class ProductBatchImporterTests
 
         // Assert
         photoServiceMock.Verify(
-            s => s.ImportPhotosAsync(
+            s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
+                It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        photoServiceMock.Verify(
+            s => s.SyncChannelPhotosAsync(
+                It.IsAny<ChannelProduct>(),
                 It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -1264,9 +1272,14 @@ public class ProductBatchImporterTests
             photoServiceMock);
 
         photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
+            .Setup(s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage unavailable"));
+        photoServiceMock
+            .Setup(s => s.SyncChannelPhotosAsync(
+                It.IsAny<ChannelProduct>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("storage unavailable"));
@@ -1279,9 +1292,9 @@ public class ProductBatchImporterTests
             Name = "Product With Broken Photos",
             OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
-            Photos = new List<ChannelProductPhoto>
+            Photos = new List<CardPhoto>
             {
-                new ChannelProductPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 },
+                new CardPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 },
             },
         };
 
@@ -1335,12 +1348,11 @@ public class ProductBatchImporterTests
         // The commit must have happened before any photo is downloaded.
         bool committedBeforePhotoImport = false;
         photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
+            .Setup(s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<Product, Guid, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((_, _, _, _) =>
+            .Callback<Product, IReadOnlyList<MarketplacePhotoSource>, CancellationToken>((_, _, _) =>
             {
                 // A committed product is visible to a second context; an uncommitted one is not.
                 using CatalogDbContext probeContext = BuildCatalogDbContext(_tenantId, databaseName);
@@ -1372,9 +1384,14 @@ public class ProductBatchImporterTests
             "Р В Р Р‹Р Р†Р вЂљРЎвЂєР В Р’В Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚Сћ Р В Р’В Р вЂ™Р’В·Р В Р’В Р вЂ™Р’В°Р В Р’В Р РЋРІР‚вЂњР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В Р’В Р вЂ™Р’В¶Р В Р’В Р вЂ™Р’В°Р В Р Р‹Р В РІР‚в„–Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РЎвЂњР В Р Р‹Р В Р РЏ Р В Р’В Р РЋРІР‚вЂќР В Р’В Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р’В Р вЂ™Р’В»Р В Р’В Р вЂ™Р’Вµ Р В Р’В Р РЋРІР‚СњР В Р’В Р РЋРІР‚СћР В Р’В Р РЋР’ВР В Р’В Р РЋР’ВР В Р’В Р РЋРІР‚ВР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’В° Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р В РІР‚С™Р В Р’В Р вЂ™Р’В°Р В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’В·Р В Р’В Р вЂ™Р’В°Р В Р’В Р РЋРІР‚СњР В Р Р‹Р Р†Р вЂљР’В Р В Р’В Р РЋРІР‚ВР В Р’В Р РЋРІР‚В");
 
         photoServiceMock.Verify(
-            s => s.ImportPhotosAsync(
+            s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
+                It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        photoServiceMock.Verify(
+            s => s.SyncChannelPhotosAsync(
+                It.IsAny<ChannelProduct>(),
                 It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 2),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -1434,12 +1451,18 @@ public class ProductBatchImporterTests
         // A card that stopped reporting photos is the only signal that the channel's photos were
         // removed, so the import must run with an empty declaration instead of being skipped.
         photoServiceMock.Verify(
-            s => s.ImportPhotosAsync(
-                It.IsAny<Product>(),
-                _channelId,
+            s => s.SyncChannelPhotosAsync(
+                It.Is<ChannelProduct>(cp => cp.ChannelId == _channelId),
                 It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 0),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+        photoServiceMock.Verify(
+            s => s.ImportCanonicalPhotosAsync(
+                It.IsAny<Product>(),
+                It.Is<IReadOnlyList<MarketplacePhotoSource>>(sources => sources.Count == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "the creating import also declares the canonical gallery, and an empty declaration is how its photos are removed");
     }
 
     [Fact]
@@ -1463,7 +1486,7 @@ public class ProductBatchImporterTests
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };
 
-        product.ChannelProducts.Add(new ChannelProduct
+        ChannelProduct importingLink = new ChannelProduct
         {
             Id = Guid.NewGuid(),
             ProductId = product.Id,
@@ -1472,10 +1495,27 @@ public class ProductBatchImporterTests
             ExternalSku = "SKU-001",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
-        });
+        };
 
-        product.Photos.Add(BuildStoredPhoto(product.Id, _channelId, "1_1_thumbnail", "product-photos/importing.webp"));
-        product.Photos.Add(BuildStoredPhoto(product.Id, otherChannelId, "1_1_thumbnail", "product-photos/other.webp"));
+        ChannelProduct otherLink = new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = otherChannelId,
+            ExternalProductId = "987654321",
+            ExternalSku = "SKU-001",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+
+        product.ChannelProducts.Add(importingLink);
+        product.ChannelProducts.Add(otherLink);
+
+        // The canonical gallery and both channel galleries are separate sets: an empty card
+        // declaration may only affect the importing card's own set.
+        product.Photos.Add(BuildStoredProductPhoto(product.Id, "1_1_thumbnail", "product-photos/canonical.webp"));
+        importingLink.Photos.Add(BuildStoredChannelPhoto(importingLink.Id, "1_1_thumbnail", "product-photos/importing.webp"));
+        otherLink.Photos.Add(BuildStoredChannelPhoto(otherLink.Id, "1_1_thumbnail", "product-photos/other.webp"));
 
         await setupContext.Products.AddAsync(product);
         await setupContext.SaveChangesAsync();
@@ -1520,16 +1560,23 @@ public class ProductBatchImporterTests
         // Assert
         CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
 
-        List<ProductPhoto> photos = await assertContext.ProductPhotos
+        ProductPhoto canonicalPhoto = (await assertContext.ProductPhotos
             .IgnoreQueryFilters()
             .Where(p => p.ProductId == product.Id)
+            .ToListAsync()).Should().ContainSingle().Subject;
+        canonicalPhoto.Status.Should().Be(ProductPhotoStatus.Uploaded, "a channel never writes the canonical set");
+
+        List<ChannelProductPhotoRow> channelPhotos = await assertContext.ChannelProductPhotos
+            .IgnoreQueryFilters()
             .ToListAsync();
 
-        ProductPhoto importedChannelPhoto = photos.Should().ContainSingle(p => p.ChannelId == _channelId).Subject;
+        ChannelProductPhotoRow importedChannelPhoto = channelPhotos
+            .Should().ContainSingle(p => p.ChannelProductId == importingLink.Id).Subject;
         importedChannelPhoto.Status.Should().Be(ProductPhotoStatus.Removed);
         importedChannelPhoto.RemovedAt.Should().NotBeNull();
 
-        ProductPhoto otherChannelPhoto = photos.Should().ContainSingle(p => p.ChannelId == otherChannelId).Subject;
+        ChannelProductPhotoRow otherChannelPhoto = channelPhotos
+            .Should().ContainSingle(p => p.ChannelProductId == otherLink.Id).Subject;
         otherChannelPhoto.Status.Should().Be(ProductPhotoStatus.Uploaded);
 
         // Reconciliation only marks rows; the blob is collected by the sweeper.
@@ -1562,7 +1609,7 @@ public class ProductBatchImporterTests
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };
 
-        product.ChannelProducts.Add(new ChannelProduct
+        ChannelProduct importingLink = new ChannelProduct
         {
             Id = Guid.NewGuid(),
             ProductId = product.Id,
@@ -1571,10 +1618,24 @@ public class ProductBatchImporterTests
             ExternalSku = "SKU-001",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
-        });
+        };
 
-        product.Photos.Add(BuildStoredPhoto(product.Id, _channelId, "1_1_thumbnail", "product-photos/importing-channel.webp"));
-        product.Photos.Add(BuildStoredPhoto(product.Id, otherChannelId, "1_1_thumbnail", "product-photos/other-channel.webp"));
+        ChannelProduct otherLink = new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = otherChannelId,
+            ExternalProductId = "987654321",
+            ExternalSku = "SKU-001",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+
+        product.ChannelProducts.Add(importingLink);
+        product.ChannelProducts.Add(otherLink);
+
+        importingLink.Photos.Add(BuildStoredChannelPhoto(importingLink.Id, "1_1_thumbnail", "product-photos/importing-channel.webp"));
+        otherLink.Photos.Add(BuildStoredChannelPhoto(otherLink.Id, "1_1_thumbnail", "product-photos/other-channel.webp"));
 
         await setupContext.Products.AddAsync(product);
         await setupContext.SaveChangesAsync();
@@ -1585,8 +1646,8 @@ public class ProductBatchImporterTests
         Mock<IProductPhotoService> photoServiceMock = BuildPhotoServiceMock();
 
         photoServiceMock
-            .Setup(s => s.GetPublicUrl(It.IsAny<ProductPhoto>()))
-            .Returns<ProductPhoto>(p => "https://cdn.example.com/" + p.StorageKey);
+            .Setup(s => s.GetPublicUrl(It.IsAny<string>()))
+            .Returns<string>(key => "https://cdn.example.com/" + key);
 
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, photoServiceMock);
 
@@ -1598,9 +1659,9 @@ public class ProductBatchImporterTests
             Name = "Test Product",
             OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
-            Photos = new List<ChannelProductPhoto>
+            Photos = new List<CardPhoto>
             {
-                new ChannelProductPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 },
+                new CardPhoto { Url = "https://example.test/t.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 },
             },
         };
 
@@ -2301,9 +2362,8 @@ public class ProductBatchImporterTests
         channelUnit.WeightKg.Should().Be(1m);
     }
 
-    private static ProductPhoto BuildStoredPhoto(
+    private static ProductPhoto BuildStoredProductPhoto(
         Guid productId,
-        Guid channelId,
         string externalId,
         string storageKey)
     {
@@ -2311,12 +2371,32 @@ public class ProductBatchImporterTests
         {
             Id = Guid.NewGuid(),
             ProductId = productId,
-            ChannelId = channelId,
             ExternalId = externalId,
             DisplayOrder = 1,
             SizeVariant = "thumbnail",
             StorageKey = storageKey,
             OriginalFileName = "photo.webp",
+            ContentType = "image/webp",
+            SizeBytes = 64,
+            Source = "Wildberries",
+            Status = ProductPhotoStatus.Uploaded,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+    }
+
+    private static ChannelProductPhotoRow BuildStoredChannelPhoto(
+        Guid channelProductId,
+        string externalId,
+        string storageKey)
+    {
+        return new ChannelProductPhotoRow
+        {
+            Id = Guid.NewGuid(),
+            ChannelProductId = channelProductId,
+            ExternalId = externalId,
+            DisplayOrder = 1,
+            SizeVariant = "thumbnail",
+            StorageKey = storageKey,
             ContentType = "image/webp",
             SizeBytes = 64,
             Source = "Wildberries",
@@ -2473,9 +2553,14 @@ public class ProductBatchImporterTests
     {
         Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
         photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
+            .Setup(s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductPhotoImportResult());
+        photoServiceMock
+            .Setup(s => s.SyncChannelPhotosAsync(
+                It.IsAny<ChannelProduct>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());
@@ -2509,9 +2594,9 @@ public class ProductBatchImporterTests
             OfferId = "SKU-001",
             Barcodes = new List<string> { "1234567890123" },
             Description = "Test Description",
-            Photos = new List<ChannelProductPhoto>
+            Photos = new List<CardPhoto>
             {
-                new ChannelProductPhoto { Url = "https://cdn.wb.ru/photo-thumb.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 }, new ChannelProductPhoto { Url = "https://cdn.wb.ru/photo-large.webp", SizeVariant = "large", Width = 516, Height = 688, DisplayOrder = 1 },
+                new CardPhoto { Url = "https://cdn.wb.ru/photo-thumb.webp", SizeVariant = "thumbnail", Width = 246, Height = 328, DisplayOrder = 1 }, new CardPhoto { Url = "https://cdn.wb.ru/photo-large.webp", SizeVariant = "large", Width = 516, Height = 688, DisplayOrder = 1 },
             },
         };
     }

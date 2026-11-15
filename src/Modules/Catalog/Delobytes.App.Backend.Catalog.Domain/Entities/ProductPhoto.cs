@@ -4,19 +4,19 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
 /// <summary>
-/// A single size variant of a product photo stored in Object Storage.
+/// A single size variant of a photo in the product's own gallery, stored in Object Storage.
 /// One marketplace photo yields two rows: "thumbnail" and "large".
 /// </summary>
-public class ProductPhoto : ITenantScoped, IAuditableEntity, IRowVersionedEntity
+/// <remarks>
+/// Canonical-only: rows are written when the product is created from a card and never by a later
+/// import. A channel's gallery lives on <see cref="ChannelProductPhoto"/>; the absence of
+/// <c>ChannelId</c> here is what keeps the two sets apart.
+/// </remarks>
+public class ProductPhoto : ITenantScoped, IAuditableEntity, IRowVersionedEntity, IPhotoRow
 {
     public Guid Id { get; set; }
 
     public Guid ProductId { get; set; }
-
-    /// <summary>
-    /// Channel that declared this photo.
-    /// </summary>
-    public Guid ChannelId { get; set; }
 
     /// <summary>Position among the product's photos, 1-based; shared by both size variants.</summary>
     public int DisplayOrder { get; set; }
@@ -47,9 +47,7 @@ public class ProductPhoto : ITenantScoped, IAuditableEntity, IRowVersionedEntity
     /// <summary>Source marketplace, e.g. "Wildberries".</summary>
     public string Source { get; set; } = default!;
 
-    /// <summary>
-    /// Slot key within the channel, "{nmId}_{displayOrder}_{sizeVariant}"; no longer globally unique.
-    /// </summary>
+    /// <summary>Slot key within the canonical gallery, "{DisplayOrder}_{SizeVariant}".</summary>
     public string ExternalId { get; set; } = default!;
 
     public string? ErrorMessage { get; set; }

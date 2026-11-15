@@ -1,12 +1,15 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Numbering;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
+using Delobytes.App.Backend.Catalog.Domain;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Microsoft.Extensions.Logging;
+using ChannelProductPhotoRow = Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductPhoto;
+using CardPhoto = Delobytes.App.Backend.Integrations.Contracts.Models.ChannelProductPhoto;
 
 namespace Delobytes.App.Backend.Catalog.Application.Products;
 
@@ -103,7 +106,10 @@ public class ProductBatchImporter
         // transaction open across marketplace HTTP calls kept this batch busy for seconds, so
         // its ProductBatchImportCompletedEvent reached the aggregator long after the terminal
         // batch had already finalised the job.
-        List<PendingPhotoImport> pendingPhotoImports = new List<PendingPhotoImport>();
+        // Two queues on purpose: the canonical gallery is written only when the product is
+        // created, while every path refreshes the gallery of its own channel.
+        List<PendingCanonicalPhotoImport> pendingCanonicalPhotoImports = new List<PendingCanonicalPhotoImport>();
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports = new List<PendingChannelPhotoImport>();
 
         // Channel-product links observed during the transactional phase. Published only after the
         // commit, because the Sales-side projection must never learn about a link that was rolled
@@ -132,7 +138,14 @@ public class ProductBatchImporter
                         {
                             try
                             {
-                                ImportResult result = await ProcessCardAsync(card, message.JobRunId, message.ChannelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+                                ImportResult result = await ProcessCardAsync(
+                                    card,
+                                    message.JobRunId,
+                                    message.ChannelId,
+                                    pendingCanonicalPhotoImports,
+                                    pendingChannelPhotoImports,
+                                    pendingChannelProductLinks,
+                                    cancellationToken);
 
                                 // Now one flush per card instead of one per batch.
                                 await cardScope.SaveAsync(cancellationToken);
@@ -206,7 +219,7 @@ public class ProductBatchImporter
 
         // The transaction is closed: products, channel products, barcodes and packing units are
         // durable. Photos are downloaded and uploaded now, outside any database transaction.
-        await ImportPhotosAsync(pendingPhotoImports, cancellationToken);
+        await ImportPhotosAsync(pendingCanonicalPhotoImports, pendingChannelPhotoImports, cancellationToken);
 
         // Published after the photos so the Sales-side projection receives the primary photo URL
         // together with the link, instead of learning the link first and the photo never.
@@ -242,40 +255,28 @@ public class ProductBatchImporter
     /// <summary>
     /// Imports the photos collected during the transactional phase. A photo that cannot be
     /// imported is logged and skipped: it must neither fail the batch nor distort its counters,
-    /// since <see cref="IProductPhotoService.ImportPhotosAsync"/> keeps a Failed row so the next
-    /// import retries it.
+    /// since the photo service keeps a Failed row so the next import retries it.
     /// </summary>
     private async Task ImportPhotosAsync(
-        List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingCanonicalPhotoImport> pendingCanonicalPhotoImports,
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports,
         CancellationToken cancellationToken)
     {
-        if (pendingPhotoImports.Count == 0)
+        if (pendingCanonicalPhotoImports.Count == 0 && pendingChannelPhotoImports.Count == 0)
         {
             return;
         }
 
-        foreach (PendingPhotoImport pending in pendingPhotoImports)
+        foreach (PendingCanonicalPhotoImport pending in pendingCanonicalPhotoImports)
         {
             try
             {
-                ProductPhotoImportResult photoResult = await _photoService.ImportPhotosAsync(
+                ProductPhotoImportResult photoResult = await _photoService.ImportCanonicalPhotosAsync(
                     pending.Product,
-                    pending.ChannelId,
                     pending.Sources,
                     cancellationToken);
 
-                if (photoResult.Failed > 0 || photoResult.Removed > 0)
-                {
-                    _logger.LogWarning(
-                        "ExternalProductId={ExternalProductId}, ChannelId={ChannelId}: {Imported} photo(s) imported, {Replaced} replaced, {Skipped} skipped, {Removed} removed, {Failed} failed",
-                        pending.ExternalProductId,
-                        pending.ChannelId,
-                        photoResult.Imported,
-                        photoResult.Replaced,
-                        photoResult.Skipped,
-                        photoResult.Removed,
-                        photoResult.Failed);
-                }
+                LogPhotoResult(pending.ExternalProductId, pending.Product.Id, photoResult);
             }
             catch (OperationCanceledException)
             {
@@ -285,16 +286,61 @@ public class ProductBatchImporter
             {
                 _logger.LogError(
                     ex,
-                    "Failed to import photos for ExternalProductId={ExternalProductId}, ProductId={ProductId}",
+                    "Failed to import canonical photos for ExternalProductId={ExternalProductId}, ProductId={ProductId}",
                     pending.ExternalProductId,
                     pending.Product.Id);
             }
         }
 
-        // Test/design note: the photo service deliberately does not call SaveChanges Р Р†Р вЂљРІР‚Сњ
-        // it adds ProductPhoto rows to the tracked product and leaves the transaction boundary
-        // to the caller. This is that boundary.
+        foreach (PendingChannelPhotoImport pending in pendingChannelPhotoImports)
+        {
+            try
+            {
+                ProductPhotoImportResult photoResult = await _photoService.SyncChannelPhotosAsync(
+                    pending.ChannelProduct,
+                    pending.Sources,
+                    cancellationToken);
+
+                LogPhotoResult(
+                    pending.ExternalProductId,
+                    pending.ChannelProduct.ProductId,
+                    photoResult);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to import channel photos for ExternalProductId={ExternalProductId}, ProductId={ProductId}",
+                    pending.ExternalProductId,
+                    pending.ChannelProduct.ProductId);
+            }
+        }
+
+        // The photo service deliberately does not call SaveChanges: it adds rows to the tracked
+        // owner and leaves the transaction boundary to the caller. This is that boundary.
         await _store.SaveChangesAsync(cancellationToken);
+    }
+
+    private void LogPhotoResult(string externalProductId, Guid productId, ProductPhotoImportResult photoResult)
+    {
+        if (photoResult.Failed == 0 && photoResult.Removed == 0)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "ExternalProductId={ExternalProductId}, ProductId={ProductId}: {Imported} photo(s) imported, {Replaced} replaced, {Skipped} skipped, {Removed} removed, {Failed} failed",
+            externalProductId,
+            productId,
+            photoResult.Imported,
+            photoResult.Replaced,
+            photoResult.Skipped,
+            photoResult.Removed,
+            photoResult.Failed);
     }
 
     /// <summary>
@@ -306,7 +352,8 @@ public class ProductBatchImporter
         ChannelProductCard card,
         Guid jobRunId,
         Guid channelId,
-        List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingCanonicalPhotoImport> pendingCanonicalPhotoImports,
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
@@ -331,7 +378,12 @@ public class ProductBatchImporter
 
         if (existingChannelProduct != null)
         {
-            return await UpdateExistingProductAsync(existingChannelProduct, card, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+            return await UpdateExistingProductAsync(
+                existingChannelProduct,
+                card,
+                pendingChannelPhotoImports,
+                pendingChannelProductLinks,
+                cancellationToken);
         }
 
         // A card with neither barcode nor seller article carries nothing that could identify it.
@@ -366,10 +418,23 @@ public class ProductBatchImporter
 
         if (match.Product != null)
         {
-            return await LinkExistingProductAsync(match.Product, card, jobRunId, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+            return await LinkExistingProductAsync(
+                match.Product,
+                card,
+                jobRunId,
+                channelId,
+                pendingChannelPhotoImports,
+                pendingChannelProductLinks,
+                cancellationToken);
         }
 
-        return await CreateNewProductAsync(card, channelId, pendingPhotoImports, pendingChannelProductLinks, cancellationToken);
+        return await CreateNewProductAsync(
+            card,
+            channelId,
+            pendingCanonicalPhotoImports,
+            pendingChannelPhotoImports,
+            pendingChannelProductLinks,
+            cancellationToken);
     }
 
     /// <summary>
@@ -469,7 +534,7 @@ public class ProductBatchImporter
     private async Task<ImportResult> UpdateExistingProductAsync(
         ChannelProduct channelProduct,
         ChannelProductCard card,
-        List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
@@ -541,7 +606,9 @@ public class ProductBatchImporter
             hasChanges = true;
         }
 
-        QueuePhotos(channelProduct.Product, card, channelProduct.ChannelId, pendingPhotoImports);
+        // A re-import refreshes the card's own gallery only. The product's canonical gallery was
+        // written when the product was created and is never touched here.
+        QueueChannelPhotos(channelProduct, card, pendingChannelPhotoImports);
 
         // Correctness of the Sales-side projection must not depend on whether this card happened to
         // change anything: a link that was created before this event existed, or one whose earlier
@@ -575,7 +642,7 @@ public class ProductBatchImporter
         ChannelProductCard card,
         Guid jobRunId,
         Guid channelId,
-        List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
@@ -623,7 +690,7 @@ public class ProductBatchImporter
         EnsureCanonicalPackingUnit(product, card, now);
         SynchronizeChannelPackingUnit(product, channelId, card, now);
 
-        QueuePhotos(product, card, channelId, pendingPhotoImports);
+        QueueChannelPhotos(channelProduct, card, pendingChannelPhotoImports);
 
         QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
 
@@ -633,7 +700,8 @@ public class ProductBatchImporter
     private async Task<ImportResult> CreateNewProductAsync(
         ChannelProductCard card,
         Guid channelId,
-        List<PendingPhotoImport> pendingPhotoImports,
+        List<PendingCanonicalPhotoImport> pendingCanonicalPhotoImports,
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports,
         List<PendingChannelProductLink> pendingChannelProductLinks,
         CancellationToken cancellationToken)
     {
@@ -686,7 +754,10 @@ public class ProductBatchImporter
         EnsureCanonicalPackingUnit(product, card, now);
         SynchronizeChannelPackingUnit(product, channelId, card, now);
 
-        QueuePhotos(product, card, channelId, pendingPhotoImports);
+        // The only place the canonical gallery is written: this is the product's first appearance,
+        // so its card's photos are the best statement of its own gallery the catalogue will get.
+        QueueCanonicalPhotos(product, card, pendingCanonicalPhotoImports);
+        QueueChannelPhotos(channelProduct, card, pendingChannelPhotoImports);
 
         QueueChannelProductLink(channelProduct, pendingChannelProductLinks);
 
@@ -803,7 +874,7 @@ public class ProductBatchImporter
                     ExternalSku = channelProduct.ExternalSku,
                     Sku = channelProduct.Product.Sku,
                     ProductName = channelProduct.Product.Name,
-                    PhotoUrl = ResolvePrimaryPhotoUrl(channelProduct.Product, channelProduct.ChannelId),
+                    PhotoUrl = ResolvePrimaryPhotoUrl(channelProduct),
                 };
 
                 await _eventPublisher.PublishAsync(linkedEvent, cancellationToken);
@@ -823,17 +894,14 @@ public class ProductBatchImporter
     }
 
     /// <summary>
-    /// Resolves the public URL of the first uploaded thumbnail that the given channel's card shows.
+    /// Resolves the public URL of the first uploaded thumbnail the card itself shows.
     /// Read after the transaction, so the outcome reflects the committed rows only.
-    /// Legacy rows with <see cref="Guid.Empty"/> as their channel are excluded: their owner is
-    /// unknown, and the photo import of that card assigns it before this method runs.
     /// </summary>
-    private string? ResolvePrimaryPhotoUrl(Product product, Guid channelId)
+    private string? ResolvePrimaryPhotoUrl(ChannelProduct channelProduct)
     {
-        ProductPhoto? primaryPhoto = product.Photos
+        ChannelProductPhotoRow? primaryPhoto = channelProduct.Photos
             .Where(p => p.Status == ProductPhotoStatus.Uploaded
-                        && p.SizeVariant == ThumbnailSizeVariant
-                        && p.ChannelId == channelId)
+                        && p.SizeVariant == ThumbnailSizeVariant)
             .OrderBy(p => p.DisplayOrder)
             .FirstOrDefault();
 
@@ -842,28 +910,42 @@ public class ProductBatchImporter
             return null;
         }
 
-        return _photoService.GetPublicUrl(primaryPhoto);
+        return _photoService.GetPublicUrl(primaryPhoto.StorageKey);
     }
 
     /// <summary>
-    /// Records the photos of a card for download after the database transaction commits. The
-    /// tracked <see cref="Product"/> instance is kept, so the rows the photo service adds land in
-    /// the same context that owns the product. An empty source list is queued as well: it is how a
-    /// card whose photos were all removed in the marketplace reaches reconciliation.
+    /// Records the photos of a card for the product's own gallery after the database transaction
+    /// commits. Called only when the product is created.
     /// </summary>
-    private static void QueuePhotos(
+    private static void QueueCanonicalPhotos(
         Product product,
         ChannelProductCard card,
-        Guid channelId,
-        List<PendingPhotoImport> pendingPhotoImports)
+        List<PendingCanonicalPhotoImport> pendingCanonicalPhotoImports)
     {
-        List<MarketplacePhotoSource> photoSources = BuildPhotoSources(card);
-
-        pendingPhotoImports.Add(new PendingPhotoImport
+        pendingCanonicalPhotoImports.Add(new PendingCanonicalPhotoImport
         {
             Product = product,
-            ChannelId = channelId,
-            Sources = photoSources,
+            Sources = BuildPhotoSources(card),
+            ExternalProductId = card.ExternalProductId,
+        });
+    }
+
+    /// <summary>
+    /// Records the photos of a card for the card's own gallery after the database transaction
+    /// commits. The tracked <see cref="ChannelProduct"/> instance is kept, so the rows the photo
+    /// service adds land in the same context that owns the link. An empty source list is queued as
+    /// well: it is how a card whose photos were all removed in the marketplace reaches
+    /// reconciliation.
+    /// </summary>
+    private static void QueueChannelPhotos(
+        ChannelProduct channelProduct,
+        ChannelProductCard card,
+        List<PendingChannelPhotoImport> pendingChannelPhotoImports)
+    {
+        pendingChannelPhotoImports.Add(new PendingChannelPhotoImport
+        {
+            ChannelProduct = channelProduct,
+            Sources = BuildPhotoSources(card),
             ExternalProductId = card.ExternalProductId,
         });
     }
@@ -876,7 +958,7 @@ public class ProductBatchImporter
     {
         List<MarketplacePhotoSource> sources = new List<MarketplacePhotoSource>(card.Photos.Count);
 
-        foreach (ChannelProductPhoto photo in card.Photos)
+        foreach (CardPhoto photo in card.Photos)
         {
             if (string.IsNullOrEmpty(photo.Url))
             {
@@ -898,6 +980,10 @@ public class ProductBatchImporter
         return sources;
     }
 
+    /// <summary>
+    /// Type the channel reports for its barcode. Used for <see cref="ChannelProductBarcode"/> only:
+    /// canonical barcodes carry a symbology (<see cref="BarcodeTypes.Ean13"/>), not a channel code.
+    /// </summary>
     private static string ResolveBarcodeType(ChannelProductCard card)
     {
         return card.BarcodeType ?? card.ChannelCode;
@@ -1057,7 +1143,9 @@ public class ProductBatchImporter
     /// Called only from <see cref="CreateNewProductAsync"/>. Every other import path leaves
     /// <see cref="Product.Barcodes"/> alone, because a canonical barcode is the operator's
     /// identity for the product and a later sync must not rewrite it. The first value of a new
-    /// product is marked default, so the label printed for it is stable.
+    /// product is marked default, so the label printed for it is stable. Every row is written as
+    /// <see cref="BarcodeTypes.Ean13"/>: the field carries a symbology, while the type the channel
+    /// reports stays on the link.
     /// </remarks>
     private async Task AssignCanonicalBarcodesAsync(
         Product product,
@@ -1075,7 +1163,6 @@ public class ProductBatchImporter
             product.Id,
             cancellationToken);
 
-        string barcodeType = ResolveBarcodeType(card);
         DateTimeOffset now = _timeProvider.GetUtcNow();
         bool anyAssigned = false;
 
@@ -1097,7 +1184,7 @@ public class ProductBatchImporter
                 Id = Guid.NewGuid(),
                 ProductId = product.Id,
                 Value = barcodeValue,
-                Type = barcodeType,
+                Type = BarcodeTypes.Ean13,
                 IsDefault = !anyAssigned,
                 CreatedAt = now
             };
@@ -1208,13 +1295,23 @@ public class ProductBatchImporter
     }
 
     /// <summary>
-    /// A product whose photos still have to be downloaded once the transaction has committed.
+    /// A product whose own gallery still has to be downloaded once the transaction has committed.
     /// </summary>
-    private class PendingPhotoImport
+    private class PendingCanonicalPhotoImport
     {
         public Product Product { get; set; } = default!;
 
-        public Guid ChannelId { get; set; }
+        public List<MarketplacePhotoSource> Sources { get; set; } = new();
+
+        public string ExternalProductId { get; set; } = default!;
+    }
+
+    /// <summary>
+    /// A channel card whose gallery still has to be downloaded once the transaction has committed.
+    /// </summary>
+    private class PendingChannelPhotoImport
+    {
+        public ChannelProduct ChannelProduct { get; set; } = default!;
 
         public List<MarketplacePhotoSource> Sources { get; set; } = new();
 

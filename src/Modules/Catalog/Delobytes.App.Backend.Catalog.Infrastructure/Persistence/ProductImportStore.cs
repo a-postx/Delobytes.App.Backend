@@ -40,6 +40,7 @@ public class ProductImportStore : IProductImportStore
     {
         return _context.ChannelProducts
             .Include(cp => cp.Barcodes)
+            .Include(cp => cp.Photos)
             .Include(cp => cp.Product)
                 .ThenInclude(p => p.Barcodes)
             .Include(cp => cp.Product)

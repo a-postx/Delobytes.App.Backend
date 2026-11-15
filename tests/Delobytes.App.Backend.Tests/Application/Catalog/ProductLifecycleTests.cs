@@ -826,11 +826,11 @@ public class ProductLifecycleTests
 
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
 
-        List<ProductPhoto> deletedPhotos = new List<ProductPhoto>();
+        List<string> deletedPhotos = new List<string>();
         Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
         photoServiceMock
-            .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyList<ProductPhoto>, CancellationToken>((photos, _) => deletedPhotos.AddRange(photos))
+            .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<string>, CancellationToken>((keys, _) => deletedPhotos.AddRange(keys))
             .Returns(Task.CompletedTask);
 
         ProductDeletionService service = BuildDeletionService(
@@ -851,12 +851,12 @@ public class ProductLifecycleTests
 
         // Assert: both blobs were passed to the storage delete call
         photoServiceMock.Verify(
-            s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()),
+            s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         deletedPhotos.Should().HaveCount(2);
-        deletedPhotos.Should().Contain(p => p.StorageKey == photo1.StorageKey);
-        deletedPhotos.Should().Contain(p => p.StorageKey == photo2.StorageKey);
+        deletedPhotos.Should().Contain(photo1.StorageKey);
+        deletedPhotos.Should().Contain(photo2.StorageKey);
 
         // Product is still marked deleted regardless
         product.Status.Should().Be(ProductStatus.Deleted);
@@ -891,7 +891,7 @@ public class ProductLifecycleTests
 
         Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
         photoServiceMock
-            .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<ProductPhoto>>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.DeletePhotosAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("bucket unreachable"));
 
         ProductDeletionService service = BuildDeletionService(
@@ -1020,13 +1020,13 @@ public class ProductLifecycleTests
 
         photoServiceMock
             .Setup(s => s.DeletePhotosAsync(
-                It.IsAny<IReadOnlyList<ProductPhoto>>(),
+                It.IsAny<IReadOnlyList<string>>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         photoServiceMock
-            .Setup(s => s.GetPublicUrl(It.IsAny<ProductPhoto>()))
-            .Returns((ProductPhoto photo) => $"https://storage.example/{photo.StorageKey}");
+            .Setup(s => s.GetPublicUrl(It.IsAny<string>()))
+            .Returns((string storageKey) => $"https://storage.example/{storageKey}");
 
         return photoServiceMock;
     }

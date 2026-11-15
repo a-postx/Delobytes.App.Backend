@@ -15,9 +15,9 @@ using Xunit;
 namespace Delobytes.App.Backend.Tests.Application.Catalog.Products;
 
 /// <summary>
-/// Tests the photo mapping of <see cref="GetProductQueryHandler"/>: every <c>Uploaded</c> row of
-/// every channel is returned with its <c>ChannelId</c>, all size variants included, and nothing
-/// else is exposed.
+/// Tests the photo and channel mapping of <see cref="GetProductQueryHandler"/>: the product's own
+/// gallery returns every <c>Uploaded</c> canonical row, channel galleries and barcodes travel on
+/// the link, and nothing else is exposed.
 /// </summary>
 public class GetProductQueryHandlerTests
 {
@@ -32,21 +32,17 @@ public class GetProductQueryHandlerTests
         _handler = new GetProductQueryHandler(_repositoryMock.Object, _photoServiceMock.Object);
 
         _photoServiceMock
-            .Setup(s => s.GetPublicUrl(It.IsAny<ProductPhoto>()))
-            .Returns<ProductPhoto>(p => "https://cdn.test/" + p.StorageKey);
+            .Setup(s => s.GetPublicUrl(It.IsAny<string>()))
+            .Returns<string>(storageKey => "https://cdn.test/" + storageKey);
     }
 
     [Fact]
-    public async Task Handle_ReturnsPhotosOfAllChannelsWithChannelId()
+    public async Task Handle_ReturnsEveryUploadedCanonicalPhoto()
     {
-        Guid firstChannelId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-        Guid secondChannelId = Guid.Parse("55555555-5555-5555-5555-555555555555");
-
         Product product = BuildProduct();
-        product.Photos.Add(BuildPhoto(firstChannelId, 1, "thumbnail", ProductPhotoStatus.Uploaded));
-        product.Photos.Add(BuildPhoto(firstChannelId, 1, "large", ProductPhotoStatus.Uploaded));
-        product.Photos.Add(BuildPhoto(secondChannelId, 1, "thumbnail", ProductPhotoStatus.Uploaded));
-        product.Photos.Add(BuildPhoto(Guid.Empty, 2, "thumbnail", ProductPhotoStatus.Uploaded));
+        product.Photos.Add(BuildPhoto(1, "thumbnail", ProductPhotoStatus.Uploaded));
+        product.Photos.Add(BuildPhoto(1, "large", ProductPhotoStatus.Uploaded));
+        product.Photos.Add(BuildPhoto(2, "thumbnail", ProductPhotoStatus.Uploaded));
 
         _repositoryMock
             .Setup(r => r.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
@@ -57,24 +53,21 @@ public class GetProductQueryHandlerTests
             CancellationToken.None);
 
         response.Found.Should().BeTrue();
-        response.Photos.Should().HaveCount(4);
-        response.Photos!.Select(p => p.ChannelId).Should().BeEquivalentTo(
-            new[] { firstChannelId, firstChannelId, secondChannelId, Guid.Empty });
+        response.Photos.Should().HaveCount(3);
+        response.Photos!.Select(p => p.DisplayOrder).Should().Equal(1, 1, 2);
         response.Photos!.Select(p => p.SizeVariant).Should().BeEquivalentTo(
-            new[] { "thumbnail", "large", "thumbnail", "thumbnail" });
+            new[] { "thumbnail", "large", "thumbnail" });
         response.Photos!.Should().OnlyContain(p => p.Url.StartsWith("https://cdn.test/", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task Handle_ExcludesRemovedFailedAndPendingPhotos()
     {
-        Guid channelId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-
         Product product = BuildProduct();
-        product.Photos.Add(BuildPhoto(channelId, 1, "thumbnail", ProductPhotoStatus.Uploaded));
-        product.Photos.Add(BuildPhoto(channelId, 2, "thumbnail", ProductPhotoStatus.Removed));
-        product.Photos.Add(BuildPhoto(channelId, 3, "thumbnail", ProductPhotoStatus.Failed));
-        product.Photos.Add(BuildPhoto(channelId, 4, "thumbnail", ProductPhotoStatus.Pending));
+        product.Photos.Add(BuildPhoto(1, "thumbnail", ProductPhotoStatus.Uploaded));
+        product.Photos.Add(BuildPhoto(2, "thumbnail", ProductPhotoStatus.Removed));
+        product.Photos.Add(BuildPhoto(3, "thumbnail", ProductPhotoStatus.Failed));
+        product.Photos.Add(BuildPhoto(4, "thumbnail", ProductPhotoStatus.Pending));
 
         _repositoryMock
             .Setup(r => r.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
@@ -87,7 +80,6 @@ public class GetProductQueryHandlerTests
         ProductPhotoDto photo = response.Photos.Should().ContainSingle().Subject;
 
         photo.DisplayOrder.Should().Be(1);
-        photo.ChannelId.Should().Be(channelId);
     }
 
     [Fact]
@@ -106,7 +98,6 @@ public class GetProductQueryHandlerTests
     }
 
     private static ProductPhoto BuildPhoto(
-        Guid channelId,
         int displayOrder,
         string sizeVariant,
         ProductPhotoStatus status)
@@ -114,7 +105,6 @@ public class GetProductQueryHandlerTests
         return new ProductPhoto
         {
             Id = Guid.NewGuid(),
-            ChannelId = channelId,
             DisplayOrder = displayOrder,
             SizeVariant = sizeVariant,
             StorageKey = "product-photos/" + Guid.NewGuid().ToString("N") + ".webp",
@@ -245,6 +235,96 @@ public class GetProductQueryHandlerTests
 
         response.PackingUnit.Should().BeNull("a product may have no canonical row at all");
         response.ChannelLinks!.Should().ContainSingle().Which.PackingUnit!.LengthCm.Should().Be(40m);
+    }
+
+    [Fact]
+    public async Task Handle_ChannelLinkCarriesItsBarcodesAndPhotos()
+    {
+        Guid channelId = Guid.NewGuid();
+        Product product = BuildProduct();
+
+        ChannelProduct link = new ChannelProduct
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            ChannelId = channelId,
+            ExternalProductId = "1088660899",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Channel = new Channel
+            {
+                Id = channelId,
+                Name = "Wildberries",
+                Code = "wildberries",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+            },
+        };
+
+        link.Barcodes.Add(new ChannelProductBarcode
+        {
+            Id = Guid.NewGuid(),
+            ChannelProductId = link.Id,
+            Value = "4600000000001",
+            Type = "wildberries",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        link.Barcodes.Add(new ChannelProductBarcode
+        {
+            Id = Guid.NewGuid(),
+            ChannelProductId = link.Id,
+            Value = "4600000000002",
+            Type = "EAN13",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        link.Photos.Add(BuildChannelPhoto(1, "large", "product-photos/1-large.webp", ProductPhotoStatus.Uploaded));
+        link.Photos.Add(BuildChannelPhoto(1, "thumbnail", "product-photos/1-thumb.webp", ProductPhotoStatus.Uploaded));
+        link.Photos.Add(BuildChannelPhoto(2, "thumbnail", "product-photos/2-thumb.webp", ProductPhotoStatus.Uploaded));
+        link.Photos.Add(BuildChannelPhoto(3, "thumbnail", "product-photos/3-removed.webp", ProductPhotoStatus.Removed));
+
+        product.ChannelProducts.Add(link);
+
+        _repositoryMock
+            .Setup(r => r.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        GetProductResponse response = await _handler.Handle(
+            new GetProductQuery { Id = product.Id },
+            CancellationToken.None);
+
+        ProductChannelLinkDto dto = response.ChannelLinks.Should().ContainSingle().Subject;
+
+        dto.Barcodes.Should().HaveCount(2);
+        dto.Barcodes!.Select(b => b.Type).Should().BeEquivalentTo(new[] { "wildberries", "EAN13" });
+        dto.Barcodes!.Select(b => b.Value).Should().BeEquivalentTo(new[] { "4600000000001", "4600000000002" });
+
+        dto.Photos.Should().HaveCount(3, "a removed photo is not shown");
+        dto.Photos!.Select(p => p.DisplayOrder).Should().Equal(1, 1, 2);
+        dto.Photos!.Select(p => p.SizeVariant).Should().Equal("thumbnail", "large", "thumbnail");
+        dto.Photos!.Should().OnlyContain(p => p.Url.StartsWith("https://cdn.test/", StringComparison.Ordinal));
+    }
+
+    private static ChannelProductPhoto BuildChannelPhoto(
+        int displayOrder,
+        string sizeVariant,
+        string storageKey,
+        ProductPhotoStatus status)
+    {
+        return new ChannelProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ExternalId = $"{displayOrder}_{sizeVariant}",
+            DisplayOrder = displayOrder,
+            SizeVariant = sizeVariant,
+            StorageKey = storageKey,
+            ContentType = "image/webp",
+            SizeBytes = 128,
+            Source = "Wildberries",
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
     }
 
     private static Product BuildProduct()

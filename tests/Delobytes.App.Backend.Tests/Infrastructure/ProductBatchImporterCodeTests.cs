@@ -194,9 +194,14 @@ public class ProductBatchImporterCodeTests
     {
         Mock<IProductPhotoService> photoServiceMock = new Mock<IProductPhotoService>();
         photoServiceMock
-            .Setup(s => s.ImportPhotosAsync(
+            .Setup(s => s.ImportCanonicalPhotosAsync(
                 It.IsAny<Product>(),
-                It.IsAny<Guid>(),
+                It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductPhotoImportResult());
+        photoServiceMock
+            .Setup(s => s.SyncChannelPhotosAsync(
+                It.IsAny<ChannelProduct>(),
                 It.IsAny<IReadOnlyList<MarketplacePhotoSource>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());

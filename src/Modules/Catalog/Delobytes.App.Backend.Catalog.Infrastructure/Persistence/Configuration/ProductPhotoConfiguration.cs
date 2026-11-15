@@ -50,10 +50,6 @@ public class ProductPhotoConfiguration : IEntityTypeConfiguration<ProductPhoto>
             .HasMaxLength(200)
             .IsRequired();
 
-        builder.Property(p => p.ChannelId)
-            .IsRequired()
-            .HasDefaultValue(Guid.Empty);
-
         builder.Property(p => p.ContentHash)
             .HasMaxLength(64);
 
@@ -63,24 +59,18 @@ public class ProductPhotoConfiguration : IEntityTypeConfiguration<ProductPhoto>
         builder.Property(p => p.CreatedAt)
             .IsRequired();
 
-        // Re-imports always filter by (ProductId, ExternalId) to decide what is already there,
-        // so the lookup index leads with ProductId; the unique constraint below covers the write path.
-        builder.HasIndex(p => new { p.ProductId, p.ExternalId });
-        builder.HasIndex(p => new { p.ProductId, p.DisplayOrder, p.SizeVariant });
-
-        // Idempotency is enforced by the database, not only by a check in code:
-        // a concurrent re-import gets a unique-violation instead of a silent duplicate.
-        // TenantId is a shadow property, so it is referenced by name.
-        // ChannelId is part of the key because two channels may import identically shaped ExternalIds
-        // for one product; the filter keeps the superseded row of a replaced slot from blocking the new one.
+        // Idempotency of the canonical gallery is enforced by the database, not only by a check in
+        // code: a concurrent import of the creating card gets a unique-violation instead of a
+        // silent duplicate. TenantId is a shadow property, so it is referenced by name. The filter
+        // keeps the superseded row of a replaced slot from blocking the new one.
         builder.HasIndex(
                 "TenantId",
                 nameof(ProductPhoto.ProductId),
-                nameof(ProductPhoto.ChannelId),
-                nameof(ProductPhoto.ExternalId))
+                nameof(ProductPhoto.DisplayOrder),
+                nameof(ProductPhoto.SizeVariant))
             .IsUnique()
             .HasFilter("\"Status\" <> 3")
-            .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_ChannelId_ExternalId");
+            .HasDatabaseName("IX_ProductPhotos_TenantId_ProductId_DisplayOrder_SizeVariant");
 
         // Supports the sweeper's check for a blob still referenced by a live row.
         builder.HasIndex("TenantId", nameof(ProductPhoto.ProductId), nameof(ProductPhoto.ContentHash))

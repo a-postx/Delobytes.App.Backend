@@ -58,6 +58,101 @@ public class ProductPhotoService : IProductPhotoService
         _timeProvider = timeProvider;
     }
 
+    /// <inheritdoc/>
+    public Task<ProductPhotoImportResult> ImportCanonicalPhotosAsync(
+        Product product,
+        IReadOnlyList<MarketplacePhotoSource> photos,
+        CancellationToken cancellationToken)
+    {
+        PhotoSet rowSet = new PhotoSet
+        {
+            GetRows = () => product.Photos.Cast<IPhotoRow>().ToList(),
+            AddRow = source =>
+            {
+                ProductPhoto photo = new ProductPhoto
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = product.Id,
+                    ExternalId = source.ExternalId,
+                    DisplayOrder = source.DisplayOrder,
+                    SizeVariant = source.SizeVariant,
+                    Source = source.Source,
+                    ContentType = WebPContentType,
+                    OriginalFileName = string.Empty,
+                    StorageKey = string.Empty,
+                    Width = source.Width,
+                    Height = source.Height,
+                    Status = ProductPhotoStatus.Pending,
+
+                    // AuditableEntityInterceptor fills CreatedAt on save, but callers may read the
+                    // entity before SaveChanges is ever called, so the value is set here as well.
+                    CreatedAt = _timeProvider.GetUtcNow(),
+                };
+
+                product.Photos.Add(photo);
+
+                return photo;
+            },
+            RemoveRow = row => product.Photos.Remove((ProductPhoto)row),
+        };
+
+        return ReconcileAsync(rowSet, product.Id, photos, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<ProductPhotoImportResult> SyncChannelPhotosAsync(
+        ChannelProduct channelProduct,
+        IReadOnlyList<MarketplacePhotoSource> photos,
+        CancellationToken cancellationToken)
+    {
+        PhotoSet rowSet = new PhotoSet
+        {
+            GetRows = () => channelProduct.Photos.Cast<IPhotoRow>().ToList(),
+            AddRow = source =>
+            {
+                ChannelProductPhoto photo = new ChannelProductPhoto
+                {
+                    Id = Guid.NewGuid(),
+                    ChannelProductId = channelProduct.Id,
+                    ExternalId = source.ExternalId,
+                    DisplayOrder = source.DisplayOrder,
+                    SizeVariant = source.SizeVariant,
+                    Source = source.Source,
+                    ContentType = WebPContentType,
+                    StorageKey = string.Empty,
+                    Width = source.Width,
+                    Height = source.Height,
+                    Status = ProductPhotoStatus.Pending,
+                    CreatedAt = _timeProvider.GetUtcNow(),
+                };
+
+                channelProduct.Photos.Add(photo);
+
+                return photo;
+            },
+            RemoveRow = row => channelProduct.Photos.Remove((ChannelProductPhoto)row),
+        };
+
+        return ReconcileAsync(rowSet, channelProduct.ProductId, photos, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task DeletePhotosAsync(IReadOnlyList<string> storageKeys, CancellationToken cancellationToken)
+    {
+        if (storageKeys.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return _objectStorage.DeleteManyAsync(StorageArea.ProductPhotos, storageKeys, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public string GetPublicUrl(string storageKey)
+    {
+        return _objectStorage.GetPublicUrl(StorageArea.ProductPhotos, storageKey);
+    }
+
     // Stops reading one byte past the limit, so an unexpectedly huge or endless response
     // cannot exhaust memory before it is rejected.
     private static async Task CopyWithLimitAsync(
@@ -94,78 +189,7 @@ public class ProductPhotoService : IProductPhotoService
         return value.Length <= maxLength ? value : value[..maxLength];
     }
 
-    // Every row starts as Pending and is moved to Uploaded or Failed by the caller,
-    // so the row lifecycle has exactly one entry point.
-    private static ProductPhoto CreatePendingPhoto(
-        Product product,
-        MarketplacePhotoSource source,
-        Guid channelId,
-        DateTimeOffset now)
-    {
-        ProductPhoto photo = new ProductPhoto
-        {
-            Id = Guid.NewGuid(),
-            ProductId = product.Id,
-            ChannelId = channelId,
-            DisplayOrder = source.DisplayOrder,
-            SizeVariant = source.SizeVariant,
-            Source = source.Source,
-            ExternalId = source.ExternalId,
-            ContentType = WebPContentType,
-            OriginalFileName = string.Empty,
-            StorageKey = string.Empty,
-            Width = source.Width,
-            Height = source.Height,
-            Status = ProductPhotoStatus.Pending,
-
-            // AuditableEntityInterceptor fills CreatedAt on save, but callers may read the
-            // entity before SaveChanges is ever called, so the value is set here as well.
-            CreatedAt = now
-        };
-
-        product.Photos.Add(photo);
-
-        return photo;
-    }
-
-    private static ProductPhoto CreateUploadedPhoto(
-        Product product,
-        MarketplacePhotoSource source,
-        Guid channelId,
-        string contentHash,
-        string storageKey,
-        PhotoPayload download,
-        DateTimeOffset now)
-    {
-        Guid photoId = Guid.NewGuid();
-
-        ProductPhoto photo = new ProductPhoto
-        {
-            Id = photoId,
-            ProductId = product.Id,
-            ChannelId = channelId,
-            DisplayOrder = source.DisplayOrder,
-            SizeVariant = source.SizeVariant,
-            Source = source.Source,
-            ExternalId = source.ExternalId,
-            ContentHash = contentHash,
-            StorageKey = storageKey,
-            ContentType = WebPContentType,
-            OriginalFileName = $"{photoId:N}.{ProductPhotoKeys.Extension}",
-            SizeBytes = download.Bytes.Length,
-            Width = download.Width,
-            Height = download.Height,
-            Status = ProductPhotoStatus.Uploaded,
-            LastCheckedAt = now,
-            CreatedAt = now
-        };
-
-        product.Photos.Add(photo);
-
-        return photo;
-    }
-
-    private static void MarkFailed(ProductPhoto photo, string errorMessage, DateTimeOffset now)
+    private static void MarkFailed(IPhotoRow photo, string errorMessage, DateTimeOffset now)
     {
         photo.Status = ProductPhotoStatus.Failed;
         photo.ErrorMessage = Truncate(errorMessage, 1000);
@@ -175,41 +199,16 @@ public class ProductPhotoService : IProductPhotoService
 
     // A failed download or upload must not degrade a photo that is already served: the CDN can be
     // unreachable while the stored bytes are still correct. The error is recorded for visibility only.
-    private static void RecordCheckFailure(ProductPhoto photo, string errorMessage, DateTimeOffset now)
+    private static void RecordCheckFailure(IPhotoRow photo, string errorMessage, DateTimeOffset now)
     {
         photo.ErrorMessage = Truncate(errorMessage, 1000);
         photo.LastCheckedAt = now;
         photo.UpdatedAt = now;
     }
 
-    // The live row of a slot in this channel. Guid.Empty rows are legacy rows awaiting adoption by
-    // whichever channel imports them next; that is why they participate here.
-    private ProductPhoto? FindLivePhoto(Product product, Guid channelId, string externalId)
-    {
-        List<ProductPhoto> matches = product.Photos
-            .Where(p => p.Status != ProductPhotoStatus.Removed
-                        && string.Equals(p.ExternalId, externalId, StringComparison.Ordinal)
-                        && (p.ChannelId == channelId || p.ChannelId == Guid.Empty))
-            .OrderByDescending(p => p.CreatedAt)
-            .ToList();
-
-        if (matches.Count > 1)
-        {
-            _logger.LogWarning(
-                "Product {ProductId} has {Count} live photo rows for ExternalId {ExternalId} in ChannelId {ChannelId}; using the newest.",
-                product.Id,
-                matches.Count,
-                externalId,
-                channelId);
-        }
-
-        return matches.Count == 0 ? null : matches[0];
-    }
-
-    /// <inheritdoc/>
-    public async Task<ProductPhotoImportResult> ImportPhotosAsync(
-        Product product,
-        Guid channelId,
+    private async Task<ProductPhotoImportResult> ReconcileAsync(
+        PhotoSet rowSet,
+        Guid productId,
         IReadOnlyList<MarketplacePhotoSource> photos,
         CancellationToken cancellationToken)
     {
@@ -222,7 +221,7 @@ public class ProductPhotoService : IProductPhotoService
 
         // A duplicate ExternalId inside one message is processed once. Reconciliation below still
         // runs for an empty list, because "the card no longer declares any photo" is the signal
-        // that every live photo of this channel must be removed.
+        // that every live photo of this set must be removed.
         HashSet<string> handledInThisRun = new HashSet<string>(StringComparer.Ordinal);
 
         HttpClient httpClient = _httpClientFactory.CreateClient(HttpClientName);
@@ -238,8 +237,8 @@ public class ProductPhotoService : IProductPhotoService
             try
             {
                 PhotoImportOutcome outcome = await ReconcilePhotoAsync(
-                    product,
-                    channelId,
+                    rowSet,
+                    productId,
                     source,
                     tenantId,
                     httpClient,
@@ -274,23 +273,22 @@ public class ProductPhotoService : IProductPhotoService
                     ex,
                     "Unexpected failure while importing photo {ExternalId} for Product {ProductId}",
                     source.ExternalId,
-                    product.Id);
+                    productId);
                 result.Failed++;
             }
         }
 
-        RemoveUndeclaredPhotos(product, channelId, photos, result);
+        RemoveUndeclaredPhotos(rowSet, photos, productId, result);
 
         return result;
     }
 
-    // Marks every live row of this channel that the card no longer declares. Rows of other channels
-    // are never touched, and neither are Guid.Empty rows: no channel can declare them absent, their
-    // own next import adopts them.
+    // Marks every live row of this set that the card no longer declares. The other set (canonical
+    // versus another channel) is a different collection and is never touched from here.
     private void RemoveUndeclaredPhotos(
-        Product product,
-        Guid channelId,
+        PhotoSet rowSet,
         IReadOnlyList<MarketplacePhotoSource> photos,
+        Guid productId,
         ProductPhotoImportResult result)
     {
         HashSet<string> declaredExternalIds = photos
@@ -299,13 +297,12 @@ public class ProductPhotoService : IProductPhotoService
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
-        List<ProductPhoto> undeclared = product.Photos
+        List<IPhotoRow> undeclared = rowSet.GetRows()
             .Where(p => p.Status == ProductPhotoStatus.Uploaded
-                        && p.ChannelId == channelId
                         && !declaredExternalIds.Contains(p.ExternalId))
             .ToList();
 
-        foreach (ProductPhoto photo in undeclared)
+        foreach (IPhotoRow photo in undeclared)
         {
             photo.Status = ProductPhotoStatus.Removed;
             photo.RemovedAt = now;
@@ -318,55 +315,55 @@ public class ProductPhotoService : IProductPhotoService
             return;
         }
 
-        bool anyPhotoLeft = product.Photos.Any(p => p.Status == ProductPhotoStatus.Uploaded);
+        bool anyPhotoLeft = rowSet.GetRows().Any(p => p.Status == ProductPhotoStatus.Uploaded);
 
         if (!anyPhotoLeft)
         {
             _logger.LogWarning(
-                "Photo set of ChannelId {ChannelId} no longer declares any of the {Removed} photo(s) of Product {ProductId}, which now has no uploaded photos at all.",
-                channelId,
-                undeclared.Count,
-                product.Id);
+                "Photo set of Product {ProductId} no longer declares any of the {Removed} photo(s) it held, so it now has no uploaded photos at all.",
+                productId,
+                undeclared.Count);
         }
     }
 
-    /// <inheritdoc/>
-    public Task DeletePhotosAsync(IReadOnlyList<ProductPhoto> photos, CancellationToken cancellationToken)
+    // The live row of a slot in this set.
+    private IPhotoRow? FindLivePhoto(PhotoSet rowSet, string externalId)
     {
-        if (photos.Count == 0)
+        List<IPhotoRow> matches = rowSet.GetRows()
+            .Where(p => p.Status != ProductPhotoStatus.Removed
+                        && string.Equals(p.ExternalId, externalId, StringComparison.Ordinal))
+            .OrderByDescending(p => p.CreatedAt)
+            .ToList();
+
+        if (matches.Count > 1)
         {
-            return Task.CompletedTask;
+            _logger.LogWarning(
+                "Photo set has {Count} live photo rows for ExternalId {ExternalId}; using the newest.",
+                matches.Count,
+                externalId);
         }
 
-        List<string> keys = photos.Select(p => p.StorageKey).ToList();
-
-        return _objectStorage.DeleteManyAsync(StorageArea.ProductPhotos, keys, cancellationToken);
+        return matches.Count == 0 ? null : matches[0];
     }
 
-    /// <inheritdoc/>
-    public string GetPublicUrl(ProductPhoto photo)
-    {
-        return _objectStorage.GetPublicUrl(StorageArea.ProductPhotos, photo.StorageKey);
-    }
-
-    // Reconciles one declared slot of one channel's card. The bytes are always downloaded: the
-    // marketplace keeps the URL when the image in a slot is replaced and exposes no digest, so the
-    // hash of the payload is the only reliable change detector.
+    // Reconciles one declared slot of one set. The bytes are always downloaded: the marketplace
+    // keeps the URL when the image in a slot is replaced and exposes no digest, so the hash of the
+    // payload is the only reliable change detector.
     private async Task<PhotoImportOutcome> ReconcilePhotoAsync(
-        Product product,
-        Guid channelId,
+        PhotoSet rowSet,
+        Guid productId,
         MarketplacePhotoSource source,
         Guid tenantId,
         HttpClient httpClient,
         CancellationToken cancellationToken)
     {
-        ProductPhoto? livePhoto = FindLivePhoto(product, channelId, source.ExternalId);
+        IPhotoRow? livePhoto = FindLivePhoto(rowSet, source.ExternalId);
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
         (PhotoPayload? download, string? failureReason) = await DownloadAsync(
             httpClient,
             source,
-            product.Id,
+            productId,
             cancellationToken);
 
         if (download is null)
@@ -375,7 +372,7 @@ public class ProductPhotoService : IProductPhotoService
 
             if (livePhoto is null)
             {
-                ProductPhoto pendingPhoto = CreatePendingPhoto(product, source, channelId, _timeProvider.GetUtcNow());
+                IPhotoRow pendingPhoto = rowSet.AddRow(source);
                 MarkFailed(pendingPhoto, reason, now);
 
                 return PhotoImportOutcome.Failed;
@@ -410,12 +407,6 @@ public class ProductPhotoService : IProductPhotoService
                 // Adoption: the object behind StorageKey is by construction the bytes just hashed,
                 // so key, size and dimensions stay as persisted.
                 livePhoto.ContentHash = contentHash;
-
-                if (livePhoto.ChannelId == Guid.Empty)
-                {
-                    livePhoto.ChannelId = channelId;
-                }
-
                 livePhoto.LastCheckedAt = now;
                 livePhoto.UpdatedAt = now;
 
@@ -423,7 +414,7 @@ public class ProductPhotoService : IProductPhotoService
             }
         }
 
-        string storageKey = ProductPhotoKeys.Build(tenantId, product.Id, contentHash);
+        string storageKey = ProductPhotoKeys.Build(tenantId, productId, contentHash);
 
         try
         {
@@ -447,13 +438,13 @@ public class ProductPhotoService : IProductPhotoService
                 ex,
                 "Upload failed for photo {ExternalId} of Product {ProductId}",
                 source.ExternalId,
-                product.Id);
+                productId);
 
             string reason = "Upload to object storage failed: " + ex.Message;
 
             if (livePhoto is null)
             {
-                ProductPhoto pendingPhoto = CreatePendingPhoto(product, source, channelId, _timeProvider.GetUtcNow());
+                IPhotoRow pendingPhoto = rowSet.AddRow(source);
                 MarkFailed(pendingPhoto, reason, now);
             }
             else if (livePhoto.Status == ProductPhotoStatus.Uploaded)
@@ -468,7 +459,19 @@ public class ProductPhotoService : IProductPhotoService
             return PhotoImportOutcome.Failed;
         }
 
-        CreateUploadedPhoto(product, source, channelId, contentHash, storageKey, payload, now);
+        IPhotoRow uploaded = rowSet.AddRow(source);
+        uploaded.ContentHash = contentHash;
+        uploaded.StorageKey = storageKey;
+        uploaded.SizeBytes = payload.Bytes.Length;
+        uploaded.Width = payload.Width;
+        uploaded.Height = payload.Height;
+        uploaded.Status = ProductPhotoStatus.Uploaded;
+        uploaded.LastCheckedAt = now;
+
+        if (uploaded is ProductPhoto productPhoto)
+        {
+            productPhoto.OriginalFileName = $"{uploaded.Id:N}.{ProductPhotoKeys.Extension}";
+        }
 
         if (livePhoto is null)
         {
@@ -479,7 +482,7 @@ public class ProductPhotoService : IProductPhotoService
         // exists to keep a served object alive, and this row never had one.
         if (string.IsNullOrEmpty(livePhoto.StorageKey))
         {
-            product.Photos.Remove(livePhoto);
+            rowSet.RemoveRow(livePhoto);
         }
         else
         {
@@ -588,6 +591,19 @@ public class ProductPhotoService : IProductPhotoService
     // The downloaded bytes together with the size to persist: the rendered size read from the WebP
     // header, falling back to the marketplace-declared size when the header is not understood.
     private readonly record struct PhotoPayload(byte[] Bytes, int? Width, int? Height);
+
+    /// <summary>
+    /// A photo set being reconciled: how to read its current rows and how to add or drop one. The
+    /// same pipeline then serves the canonical gallery and each channel's gallery.
+    /// </summary>
+    private sealed class PhotoSet
+    {
+        public required Func<IReadOnlyList<IPhotoRow>> GetRows { get; init; }
+
+        public required Func<MarketplacePhotoSource, IPhotoRow> AddRow { get; init; }
+
+        public required Action<IPhotoRow> RemoveRow { get; init; }
+    }
 
     private enum PhotoImportOutcome
     {

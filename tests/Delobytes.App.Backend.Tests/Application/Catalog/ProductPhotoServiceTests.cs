@@ -135,25 +135,23 @@ public class ProductPhotoServiceTests
         first.Should().NotBe(second);
     }
 
-    // ---------- ImportPhotosAsync: unchanged content ----------
+    // ---------- ImportCanonicalPhotosAsync: unchanged content ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_WithMatchingContentHash_SkipsWithoutUpload()
+    public async Task ImportCanonicalPhotosAsync_WithMatchingContentHash_SkipsWithoutUpload()
     {
         Product product = BuildProduct();
         BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            ChannelId,
             Sha256Hex(ValidWebP),
             "product-photos/existing.webp");
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -168,17 +166,16 @@ public class ProductPhotoServiceTests
         VerifyNoUpload(storage);
     }
 
-    // ---------- ImportPhotosAsync: adoption of legacy rows ----------
+    // ---------- ImportCanonicalPhotosAsync: adoption of legacy rows ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_WithLegacyRowWithoutHash_AdoptsItInPlace()
+    public async Task ImportCanonicalPhotosAsync_WithLegacyRowWithoutHash_AdoptsItInPlace()
     {
         Product product = BuildProduct();
 
         ProductPhoto legacy = BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            Guid.Empty,
             null,
             "product-photos/legacy-by-photo-id.webp");
 
@@ -189,9 +186,8 @@ public class ProductPhotoServiceTests
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -203,7 +199,6 @@ public class ProductPhotoServiceTests
 
         adopted.Id.Should().Be(legacy.Id);
         adopted.ContentHash.Should().Be(Sha256Hex(ValidWebP));
-        adopted.ChannelId.Should().Be(ChannelId);
 
         // The object at the persisted key is by construction the bytes just hashed.
         adopted.StorageKey.Should().Be("product-photos/legacy-by-photo-id.webp");
@@ -214,26 +209,24 @@ public class ProductPhotoServiceTests
         VerifyNoUpload(storage);
     }
 
-    // ---------- ImportPhotosAsync: replacement ----------
+    // ---------- ImportCanonicalPhotosAsync: replacement ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenContentChanged_SupersedesTheOldRow()
+    public async Task ImportCanonicalPhotosAsync_WhenContentChanged_SupersedesTheOldRow()
     {
         Product product = BuildProduct();
 
         ProductPhoto previous = BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            ChannelId,
             Sha256Hex(ValidWebP),
             ProductPhotoKeys.Build(TenantId, product.Id, Sha256Hex(ValidWebP)));
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, OtherWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -259,19 +252,18 @@ public class ProductPhotoServiceTests
             .Should().Be(1, "a slot has exactly one live version");
     }
 
-    // ---------- ImportPhotosAsync: addition ----------
+    // ---------- ImportCanonicalPhotosAsync: addition ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_WithNewSlot_ImportsIt()
+    public async Task ImportCanonicalPhotosAsync_WithNewSlot_ImportsIt()
     {
         Product product = BuildProduct();
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -284,33 +276,30 @@ public class ProductPhotoServiceTests
         product.Photos.Single().Status.Should().Be(ProductPhotoStatus.Uploaded);
     }
 
-    // ---------- ImportPhotosAsync: removal ----------
+    // ---------- ImportCanonicalPhotosAsync: removal ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenSlotIsNoLongerDeclared_MarksItRemoved()
+    public async Task ImportCanonicalPhotosAsync_WhenSlotIsNoLongerDeclared_MarksItRemoved()
     {
         Product product = BuildProduct();
 
         ProductPhoto kept = BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            ChannelId,
             Sha256Hex(ValidWebP),
             "product-photos/kept.webp");
 
         ProductPhoto dropped = BuildUploadedPhoto(
             product,
             "1_2_thumbnail",
-            ChannelId,
             Sha256Hex(OtherWebP),
             "product-photos/dropped.webp");
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -331,22 +320,20 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WithEmptyDeclaration_RemovesEveryLivePhotoOfTheChannel()
+    public async Task ImportCanonicalPhotosAsync_WithEmptyDeclaration_RemovesEveryLivePhotoOfTheChannel()
     {
         Product product = BuildProduct();
         BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            ChannelId,
             Sha256Hex(ValidWebP),
             "product-photos/only.webp");
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             Array.Empty<MarketplacePhotoSource>(),
             CancellationToken.None);
 
@@ -360,86 +347,94 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WithEmptyDeclaration_DoesNotTouchOtherChannels()
+    public async Task SyncChannelPhotosAsync_WithEmptyDeclaration_DoesNotTouchTheCanonicalGallery()
     {
         Product product = BuildProduct();
         BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            OtherChannelId,
             Sha256Hex(OtherWebP),
-            "product-photos/other-channel.webp");
+            "product-photos/canonical.webp");
+
+        ChannelProduct link = BuildChannelProduct(product);
+        BuildUploadedChannelPhoto(
+            link,
+            "1_1_thumbnail",
+            Sha256Hex(OtherWebP),
+            "product-photos/channel.webp");
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
-            product,
-            ChannelId,
+        ProductPhotoImportResult result = await service.SyncChannelPhotosAsync(
+            link,
             Array.Empty<MarketplacePhotoSource>(),
             CancellationToken.None);
 
-        result.Removed.Should().Be(0);
+        result.Removed.Should().Be(1);
         product.Photos.Should().ContainSingle()
             .Which.Status.Should().Be(ProductPhotoStatus.Uploaded);
+        link.Photos.Should().ContainSingle()
+            .Which.Status.Should().Be(ProductPhotoStatus.Removed);
     }
 
-    // ---------- ImportPhotosAsync: channel scoping ----------
+    // ---------- SyncChannelPhotosAsync: channel scoping ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_TwoChannelsDeclaringTheSameSlot_KeepSeparateLiveRows()
+    public async Task SyncChannelPhotosAsync_TwoChannelsDeclaringTheSameSlot_KeepSeparateLiveRows()
     {
         Product product = BuildProduct();
-        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
+        ChannelProduct firstLink = BuildChannelProduct(product, ChannelId);
+        ChannelProduct secondLink = BuildChannelProduct(product, OtherChannelId);
 
+        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP, OtherWebP);
 
         MarketplacePhotoSource[] sources = { BuildSource("1_1_thumbnail", 1, "thumbnail") };
 
-        ProductPhotoImportResult first = await service.ImportPhotosAsync(
-            product, ChannelId, sources, CancellationToken.None);
+        ProductPhotoImportResult first = await service.SyncChannelPhotosAsync(
+            firstLink, sources, CancellationToken.None);
 
-        ProductPhotoImportResult second = await service.ImportPhotosAsync(
-            product, OtherChannelId, sources, CancellationToken.None);
+        ProductPhotoImportResult second = await service.SyncChannelPhotosAsync(
+            secondLink, sources, CancellationToken.None);
 
         first.Imported.Should().Be(1);
-        second.Imported.Should().Be(1, "the slot key is scoped by channel, not global");
+        second.Imported.Should().Be(1, "each card owns its own slot");
 
-        List<ProductPhoto> live = product.Photos
-            .Where(p => p.Status == ProductPhotoStatus.Uploaded)
-            .ToList();
+        firstLink.Photos.Should().ContainSingle(p => p.Status == ProductPhotoStatus.Uploaded);
+        secondLink.Photos.Should().ContainSingle(p => p.Status == ProductPhotoStatus.Uploaded);
+        product.Photos.Should().BeEmpty("a channel does not write the canonical gallery");
 
-        live.Should().HaveCount(2);
-        live.Select(p => p.ChannelId).Should().BeEquivalentTo(new[] { ChannelId, OtherChannelId });
-        live.Select(p => p.StorageKey).Should().OnlyHaveUniqueItems();
+        firstLink.Photos.Select(p => p.StorageKey)
+            .Should().NotIntersectWith(secondLink.Photos.Select(p => p.StorageKey));
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_TwoChannelsWithIdenticalBytes_ShareOneStorageKey()
+    public async Task SyncChannelPhotosAsync_TwoChannelsWithIdenticalBytes_ShareOneStorageKey()
     {
         Product product = BuildProduct();
-        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
+        ChannelProduct firstLink = BuildChannelProduct(product, ChannelId);
+        ChannelProduct secondLink = BuildChannelProduct(product, OtherChannelId);
 
+        Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP, ValidWebP);
 
         MarketplacePhotoSource[] sources = { BuildSource("1_1_thumbnail", 1, "thumbnail") };
 
-        await service.ImportPhotosAsync(product, ChannelId, sources, CancellationToken.None);
-        await service.ImportPhotosAsync(product, OtherChannelId, sources, CancellationToken.None);
+        await service.SyncChannelPhotosAsync(firstLink, sources, CancellationToken.None);
+        await service.SyncChannelPhotosAsync(secondLink, sources, CancellationToken.None);
 
-        List<ProductPhoto> live = product.Photos
-            .Where(p => p.Status == ProductPhotoStatus.Uploaded)
-            .ToList();
+        string firstKey = firstLink.Photos.Single().StorageKey;
+        string secondKey = secondLink.Photos.Single().StorageKey;
 
-        live.Should().HaveCount(2);
-        live.Select(p => p.StorageKey).Distinct().Should().ContainSingle();
+        firstKey.Should().Be(secondKey);
 
         // Uploaded once per run, both times to the same content-addressed key: the second channel
         // costs no extra object, which is what content addressing buys across channels.
         storage.Verify(
             s => s.UploadAsync(
                 StorageArea.ProductPhotos,
-                It.Is<string>(key => key == live[0].StorageKey),
+                It.Is<string>(key => key == firstKey),
                 It.IsAny<Stream>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
@@ -447,26 +442,24 @@ public class ProductPhotoServiceTests
             Times.Exactly(2));
     }
 
-    // ---------- ImportPhotosAsync: failures ----------
+    // ---------- ImportCanonicalPhotosAsync: failures ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenDownloadFails_KeepsTheGoodPhotoUploaded()
+    public async Task ImportCanonicalPhotosAsync_WhenDownloadFails_KeepsTheGoodPhotoUploaded()
     {
         Product product = BuildProduct();
 
         ProductPhoto existing = BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            ChannelId,
             Sha256Hex(ValidWebP),
             "product-photos/good.webp");
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildServiceWithStatus(storage, HttpStatusCode.NotFound);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -483,16 +476,15 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenFirstDownloadFails_CreatesAFailedRow()
+    public async Task ImportCanonicalPhotosAsync_WhenFirstDownloadFails_CreatesAFailedRow()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
 
         ProductPhotoService service = BuildServiceWithStatus(storage, HttpStatusCode.NotFound);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -501,7 +493,6 @@ public class ProductPhotoServiceTests
         ProductPhoto photo = product.Photos.Should().ContainSingle().Subject;
 
         photo.Status.Should().Be(ProductPhotoStatus.Failed);
-        photo.ChannelId.Should().Be(ChannelId);
         photo.ErrorMessage.Should().NotBeNull();
         photo.ContentHash.Should().BeNull();
 
@@ -509,14 +500,13 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenUploadFails_KeepsThePriorPhotoAndCreatesNoOrphan()
+    public async Task ImportCanonicalPhotosAsync_WhenUploadFails_KeepsThePriorPhotoAndCreatesNoOrphan()
     {
         Product product = BuildProduct();
 
         ProductPhoto existing = BuildUploadedPhoto(
             product,
             "1_1_thumbnail",
-            ChannelId,
             Sha256Hex(ValidWebP),
             "product-photos/good.webp");
 
@@ -533,9 +523,8 @@ public class ProductPhotoServiceTests
 
         ProductPhotoService service = BuildService(storage, OtherWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -548,7 +537,7 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenUploadThrows_CountsFailureAndContinuesWithRemainingSources()
+    public async Task ImportCanonicalPhotosAsync_WhenUploadThrows_CountsFailureAndContinuesWithRemainingSources()
     {
         Product product = BuildProduct();
 
@@ -572,7 +561,7 @@ public class ProductPhotoServiceTests
             BuildSource("1_1_large", 1, "large")
         };
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(product, ChannelId, sources, CancellationToken.None);
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(product, sources, CancellationToken.None);
 
         result.Failed.Should().Be(2);
         result.Imported.Should().Be(0);
@@ -584,7 +573,7 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenOneSourceFails_StillImportsTheOthers()
+    public async Task ImportCanonicalPhotosAsync_WhenOneSourceFails_StillImportsTheOthers()
     {
         Product product = BuildProduct();
 
@@ -619,7 +608,7 @@ public class ProductPhotoServiceTests
             BuildSource("1_1_large", 1, "large")
         };
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(product, ChannelId, sources, CancellationToken.None);
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(product, sources, CancellationToken.None);
 
         result.Failed.Should().Be(1);
         result.Imported.Should().Be(1);
@@ -627,10 +616,10 @@ public class ProductPhotoServiceTests
         product.Photos.Should().ContainSingle(p => p.Status == ProductPhotoStatus.Failed);
     }
 
-    // ---------- ImportPhotosAsync: duplicates, tenant, validation ----------
+    // ---------- ImportCanonicalPhotosAsync: duplicates, tenant, validation ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_SkipsDuplicateExternalIdWithinOneBatch()
+    public async Task ImportCanonicalPhotosAsync_SkipsDuplicateExternalIdWithinOneBatch()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
@@ -643,7 +632,7 @@ public class ProductPhotoServiceTests
             BuildSource("1_1_thumbnail", 1, "thumbnail")
         };
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(product, ChannelId, sources, CancellationToken.None);
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(product, sources, CancellationToken.None);
 
         result.Imported.Should().Be(1);
         result.Skipped.Should().Be(1);
@@ -651,16 +640,15 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WithoutTenant_Throws()
+    public async Task ImportCanonicalPhotosAsync_WithoutTenant_Throws()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
 
         ProductPhotoService service = BuildServiceWith(storage, null, HttpStatusCode.OK, ValidWebP);
 
-        Func<Task> act = async () => await service.ImportPhotosAsync(
+        Func<Task> act = async () => await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -668,7 +656,7 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WithInvalidWebP_FailsWithoutUploading()
+    public async Task ImportCanonicalPhotosAsync_WithInvalidWebP_FailsWithoutUploading()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
@@ -678,9 +666,8 @@ public class ProductPhotoServiceTests
 
         ProductPhotoService service = BuildService(storage, notWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -689,7 +676,7 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WithOversizedPayload_FailsWithoutUploading()
+    public async Task ImportCanonicalPhotosAsync_WithOversizedPayload_FailsWithoutUploading()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
@@ -699,9 +686,8 @@ public class ProductPhotoServiceTests
 
         ProductPhotoService service = BuildService(storage, tooLarge);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -710,16 +696,15 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenDownloadReturnsErrorStatus_FailsWithoutUploading()
+    public async Task ImportCanonicalPhotosAsync_WhenDownloadReturnsErrorStatus_FailsWithoutUploading()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
 
         ProductPhotoService service = BuildServiceWith(storage, TenantId, HttpStatusCode.NotFound, ValidWebP);
 
-        ProductPhotoImportResult result = await service.ImportPhotosAsync(
+        ProductPhotoImportResult result = await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -728,23 +713,21 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_AddsRowsWithStorageMetadata()
+    public async Task ImportCanonicalPhotosAsync_AddsRowsWithStorageMetadata()
     {
         Product product = BuildProduct();
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
 
         ProductPhotoService service = BuildService(storage, ValidWebP);
 
-        await service.ImportPhotosAsync(
+        await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
         ProductPhoto photo = product.Photos.Should().ContainSingle().Subject;
 
         photo.ProductId.Should().Be(product.Id);
-        photo.ChannelId.Should().Be(ChannelId);
         photo.ExternalId.Should().Be("1_1_thumbnail");
         photo.DisplayOrder.Should().Be(1);
         photo.SizeVariant.Should().Be("thumbnail");
@@ -767,10 +750,9 @@ public class ProductPhotoServiceTests
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage);
 
-        ProductPhoto first = BuildStoredPhoto("product-photos/a.webp");
-        ProductPhoto second = BuildStoredPhoto("product-photos/b.webp");
-
-        await service.DeletePhotosAsync(new[] { first, second }, CancellationToken.None);
+        await service.DeletePhotosAsync(
+            new[] { "product-photos/a.webp", "product-photos/b.webp" },
+            CancellationToken.None);
 
         storage.Verify(
             s => s.DeleteManyAsync(
@@ -789,7 +771,7 @@ public class ProductPhotoServiceTests
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage);
 
-        await service.DeletePhotosAsync(Array.Empty<ProductPhoto>(), CancellationToken.None);
+        await service.DeletePhotosAsync(Array.Empty<string>(), CancellationToken.None);
 
         storage.Verify(
             s => s.DeleteManyAsync(
@@ -809,15 +791,15 @@ public class ProductPhotoServiceTests
 
         ProductPhotoService service = BuildService(storage);
 
-        string url = service.GetPublicUrl(BuildStoredPhoto("product-photos/a.webp"));
+        string url = service.GetPublicUrl("product-photos/a.webp");
 
         url.Should().Be("https://cdn.example.com/product-photos/a.webp");
     }
 
-    // ---------- ImportPhotosAsync: rendered size ----------
+    // ---------- ImportCanonicalPhotosAsync: rendered size ----------
 
     [Fact]
-    public async Task ImportPhotosAsync_StoresTheRenderedSizeFromTheWebPHeader()
+    public async Task ImportCanonicalPhotosAsync_StoresTheRenderedSizeFromTheWebPHeader()
     {
         // A landscape source rendered into a 3:4 box: the declared 516x688 is a box the image
         // never fills, so accepting it would reserve the wrong space in the layout.
@@ -828,9 +810,8 @@ public class ProductPhotoServiceTests
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, landscape);
 
-        await service.ImportPhotosAsync(
+        await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -842,7 +823,7 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenTheHeaderIsNotUnderstood_KeepsTheDeclaredSize()
+    public async Task ImportCanonicalPhotosAsync_WhenTheHeaderIsNotUnderstood_KeepsTheDeclaredSize()
     {
         // The synthetic payload has a valid RIFF/WEBP signature but no readable chunk.
         Product product = BuildProduct();
@@ -850,9 +831,8 @@ public class ProductPhotoServiceTests
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildService(storage, ValidWebP);
 
-        await service.ImportPhotosAsync(
+        await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -863,16 +843,15 @@ public class ProductPhotoServiceTests
     }
 
     [Fact]
-    public async Task ImportPhotosAsync_WhenDownloadFails_RecordsTheDeclaredSizeOnTheFailedRow()
+    public async Task ImportCanonicalPhotosAsync_WhenDownloadFails_RecordsTheDeclaredSizeOnTheFailedRow()
     {
         Product product = BuildProduct();
 
         Mock<IObjectStorage> storage = new Mock<IObjectStorage>();
         ProductPhotoService service = BuildServiceWithStatus(storage, HttpStatusCode.NotFound);
 
-        await service.ImportPhotosAsync(
+        await service.ImportCanonicalPhotosAsync(
             product,
-            ChannelId,
             new[] { BuildSource("1_1_thumbnail", 1, "thumbnail") },
             CancellationToken.None);
 
@@ -969,7 +948,6 @@ public class ProductPhotoServiceTests
     private static ProductPhoto BuildUploadedPhoto(
         Product product,
         string externalId,
-        Guid channelId,
         string? contentHash,
         string storageKey)
     {
@@ -977,7 +955,6 @@ public class ProductPhotoServiceTests
         {
             Id = Guid.NewGuid(),
             ProductId = product.Id,
-            ChannelId = channelId,
             ExternalId = externalId,
             SizeVariant = "thumbnail",
             DisplayOrder = 1,
@@ -996,21 +973,45 @@ public class ProductPhotoServiceTests
         return photo;
     }
 
-    private static ProductPhoto BuildStoredPhoto(string storageKey)
+    private static ChannelProduct BuildChannelProduct(Product product, Guid? channelId = null)
     {
-        return new ProductPhoto
+        return new ChannelProduct
         {
             Id = Guid.NewGuid(),
-            ProductId = Guid.NewGuid(),
-            ExternalId = Guid.NewGuid().ToString("N"),
+            ProductId = product.Id,
+            ChannelId = channelId ?? ChannelId,
+            ExternalProductId = Guid.NewGuid().ToString("N"),
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+    }
+
+    // Added to channelProduct.Photos by the builder, for the same reason as BuildUploadedPhoto.
+    private static ChannelProductPhoto BuildUploadedChannelPhoto(
+        ChannelProduct channelProduct,
+        string externalId,
+        string? contentHash,
+        string storageKey)
+    {
+        ChannelProductPhoto photo = new ChannelProductPhoto
+        {
+            Id = Guid.NewGuid(),
+            ChannelProductId = channelProduct.Id,
+            ExternalId = externalId,
             SizeVariant = "thumbnail",
+            DisplayOrder = 1,
+            ContentHash = contentHash,
             StorageKey = storageKey,
-            OriginalFileName = "photo.webp",
             ContentType = "image/webp",
+            SizeBytes = 64,
             Source = "Wildberries",
             Status = ProductPhotoStatus.Uploaded,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };
+
+        channelProduct.Photos.Add(photo);
+
+        return photo;
     }
 
     private static Product BuildProduct()

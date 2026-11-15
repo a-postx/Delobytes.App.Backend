@@ -16,8 +16,9 @@ public class ProductBarcode : ITenantScoped, IAuditableEntity, IRowVersionedEnti
     public string Value { get; set; } = default!;
 
     /// <summary>
-    /// Barcode system or source, e.g. "EAN13", "WB", "Ozon".
-    /// Stored as free text to avoid migration on each new marketplace.
+    /// Barcode symbology, e.g. <see cref="BarcodeTypes.Ean13"/>. Not a channel code: the channel's
+    /// own copy of a barcode and its reported type live on <see cref="ChannelProductBarcode"/>.
+    /// Stored as free text so a new symbology needs no migration.
     /// </summary>
     public string? Type { get; set; }
 

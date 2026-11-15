@@ -89,6 +89,12 @@ public class ChannelProduct : ITenantScoped
     public ICollection<ChannelProductBarcode> Barcodes { get; set; } = new List<ChannelProductBarcode>();
 
     /// <summary>
+    /// Gets or sets the photos this channel reports for the card. Channel-owned data: replaced as a
+    /// whole by every import, and never promoted to <see cref="Product.Photos"/> after creation.
+    /// </summary>
+    public ICollection<ChannelProductPhoto> Photos { get; set; } = new List<ChannelProductPhoto>();
+
+    /// <summary>
     /// Gets or sets the date and time when the channel product was last updated.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }

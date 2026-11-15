@@ -12,7 +12,7 @@ public class ProductBarcodeDto
 
     public string Value { get; set; } = default!;
 
-    /// <summary>Barcode system or source, e.g. "EAN13", "WB", "Ozon".</summary>
+    /// <summary>Barcode symbology, e.g. "EAN13". A missing value is stored as "EAN13".</summary>
     public string? Type { get; set; }
 
     public bool IsDefault { get; set; }
