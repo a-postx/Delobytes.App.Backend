@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -538,6 +538,118 @@ public class WildberriesApiClientGetProductCardsTests
         card.ChannelSpecificData.Should().NotBeNullOrEmpty();
         card.ChannelSpecificData.Should().Contain("TestBrand");
         card.ChannelSpecificData.Should().Contain("dimensions");
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_ChannelSpecificData_OmitsVolatileMembers()
+    {
+        // Wildberries bumps updatedAt on its own, so keeping it in the snapshot made every card of
+        // every re-import look changed. The raw photo block carries the same kind of marker, and the
+        // normalised gallery replaces it.
+        string json = """
+        {
+            "cards": [
+                {
+                    "nmID": 601,
+                    "vendorCode": "VOLATILE",
+                    "title": "Volatile markers",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-11-15T09:00:00Z",
+                    "photos": [
+                        { "big": "https://basket.example/big.webp", "c246x328": "https://basket.example/246.webp", "c516x688": "https://basket.example/516.webp", "square": "https://basket.example/square.webp", "tm": "2026-11-15T09:00:00Z" }
+                    ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        ApiResponse<ProductCardsData> result = await RequestCardsAsync(json);
+
+        result.IsSuccess.Should().BeTrue();
+        ChannelProductCard card = result.Data!.Cards.First();
+
+        using JsonDocument channelData = JsonDocument.Parse(card.ChannelSpecificData!);
+        JsonElement root = channelData.RootElement;
+
+        root.TryGetProperty("updatedAt", out _).Should().BeFalse("updatedAt follows the marketplace clock");
+        root.TryGetProperty("createdAt", out _).Should().BeTrue("the creation date never moves");
+
+        // The gallery survives as the normalised list rather than the raw Wildberries block, so an
+        // edit to it still reaches the change detection.
+        JsonElement photos = root.GetProperty("photos");
+        photos.GetArrayLength().Should().Be(2);
+        photos[0].GetProperty("order").GetInt32().Should().Be(1);
+        photos[0].GetProperty("variant").GetString().Should().Be("large");
+        photos[0].GetProperty("url").GetString().Should().Be("https://basket.example/516.webp");
+        photos[1].GetProperty("variant").GetString().Should().Be("thumbnail");
+        photos[1].GetProperty("url").GetString().Should().Be("https://basket.example/246.webp");
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_FresherUpdatedAt_LeavesChannelSpecificDataIdentical()
+    {
+        // The regression the counters showed: two responses of one unchanged card differed only in
+        // the marketplace timestamp, and the import reported the card as updated.
+        string firstJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 602,
+                    "vendorCode": "STABLE",
+                    "title": "Stable card",
+                    "brand": "Brand",
+                    "updatedAt": "2026-11-15T09:00:00Z",
+                    "photos": [ { "c246x328": "https://basket.example/246.webp", "c516x688": "https://basket.example/516.webp" } ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        string secondJson = firstJson.Replace("2026-11-15T09:00:00Z", "2026-11-15T09:30:00Z", StringComparison.Ordinal);
+
+        ApiResponse<ProductCardsData> first = await RequestCardsAsync(firstJson);
+        ApiResponse<ProductCardsData> second = await RequestCardsAsync(secondJson);
+
+        first.Data!.Cards.First().ChannelSpecificData
+            .Should().Be(second.Data!.Cards.First().ChannelSpecificData);
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_ChangedGallery_ChangesChannelSpecificData()
+    {
+        string firstJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 603,
+                    "vendorCode": "GALLERY",
+                    "title": "Gallery",
+                    "photos": [ { "c246x328": "https://basket.example/246-old.webp", "c516x688": "https://basket.example/516-old.webp" } ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        string secondJson = firstJson.Replace("-old.webp", "-new.webp", StringComparison.Ordinal);
+
+        ApiResponse<ProductCardsData> first = await RequestCardsAsync(firstJson);
+        ApiResponse<ProductCardsData> second = await RequestCardsAsync(secondJson);
+
+        first.Data!.Cards.First().ChannelSpecificData
+            .Should().NotBe(second.Data!.Cards.First().ChannelSpecificData);
+    }
+
+    private static async Task<ApiResponse<ProductCardsData>> RequestCardsAsync(string json)
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, GetCardsListUrl).Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp);
+
+        return await client.GetProductCardsAsync(Guid.NewGuid(), null, 50, CancellationToken.None);
     }
 
     [Fact]

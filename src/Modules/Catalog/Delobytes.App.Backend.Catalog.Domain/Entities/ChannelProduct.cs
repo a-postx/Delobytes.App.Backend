@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Contracts.Interfaces;
+﻿using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Catalog.Domain.Entities;
 
@@ -49,8 +49,14 @@ public class ChannelProduct : ITenantScoped
     public string? Description { get; set; }
 
     /// <summary>
-    /// Gets or sets channel-specific data as JSON string.
+    /// Gets or sets channel-specific data as JSON string: the card's own fields plus its
+    /// normalised photo gallery, as the channel reported them on the last import.
     /// </summary>
+    /// <remarks>
+    /// The import compares this string with the incoming one to decide whether a card changed, so
+    /// it must hold only values that move when the seller edits the card. A marketplace timestamp
+    /// here would mark every card of every run as updated.
+    /// </remarks>
     public string? ChannelSpecificData { get; set; }
 
     /// <summary>

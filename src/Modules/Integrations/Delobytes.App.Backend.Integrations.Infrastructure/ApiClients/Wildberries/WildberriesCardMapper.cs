@@ -1,5 +1,5 @@
-using System.Globalization;
-using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json.Nodes;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberries.Dtos;
@@ -64,27 +64,31 @@ internal static class WildberriesCardMapper
             }
         }
 
+        List<ChannelProductPhoto> photos = BuildPhotos(dto.Photos);
+
         string? channelSpecificData = null;
         try
         {
-            Dictionary<string, object?> additionalData = new Dictionary<string, object?>
-            {
-                ["imtId"] = dto.ImtId,
-                ["nmUuid"] = dto.NmUuid,
-                ["subjectId"] = dto.SubjectId,
-                ["subjectName"] = dto.SubjectName,
-                ["brand"] = dto.Brand,
-                ["dimensions"] = dto.Dimensions,
-                ["characteristics"] = dto.Characteristics,
-                ["sizes"] = dto.Sizes,
-                ["tags"] = dto.Tags,
-                ["photos"] = dto.Photos,
-                ["video"] = dto.Video,
-                ["createdAt"] = dto.CreatedAt,
-                ["updatedAt"] = dto.UpdatedAt
-            };
-
-            channelSpecificData = JsonSerializer.Serialize(additionalData);
+            // updatedAt is deliberately absent: Wildberries bumps it on its own, so carrying it here
+            // marked every card of every re-import as changed. The raw photo block is absent for the
+            // same reason — its variants carry a refresh marker — and the normalised gallery below
+            // replaces it, so an actual gallery edit still reaches the comparison.
+            channelSpecificData = ChannelCardSnapshot.Build(
+                new List<KeyValuePair<string, JsonNode?>>
+                {
+                    new KeyValuePair<string, JsonNode?>("imtId", ChannelCardSnapshot.ToNode(dto.ImtId)),
+                    new KeyValuePair<string, JsonNode?>("nmUuid", ChannelCardSnapshot.ToNode(dto.NmUuid)),
+                    new KeyValuePair<string, JsonNode?>("subjectId", ChannelCardSnapshot.ToNode(dto.SubjectId)),
+                    new KeyValuePair<string, JsonNode?>("subjectName", ChannelCardSnapshot.ToNode(dto.SubjectName)),
+                    new KeyValuePair<string, JsonNode?>("brand", ChannelCardSnapshot.ToNode(dto.Brand)),
+                    new KeyValuePair<string, JsonNode?>("dimensions", ChannelCardSnapshot.ToNode(dto.Dimensions)),
+                    new KeyValuePair<string, JsonNode?>("characteristics", ChannelCardSnapshot.ToNode(dto.Characteristics)),
+                    new KeyValuePair<string, JsonNode?>("sizes", ChannelCardSnapshot.ToNode(dto.Sizes)),
+                    new KeyValuePair<string, JsonNode?>("tags", ChannelCardSnapshot.ToNode(dto.Tags)),
+                    new KeyValuePair<string, JsonNode?>("video", ChannelCardSnapshot.ToNode(dto.Video)),
+                    new KeyValuePair<string, JsonNode?>("createdAt", ChannelCardSnapshot.ToNode(dto.CreatedAt))
+                },
+                photos);
         }
         catch (Exception ex)
         {
@@ -105,7 +109,7 @@ internal static class WildberriesCardMapper
             HeightCm = dto.Dimensions?.Height,
             WeightKg = dto.Dimensions?.WeightBrutto,
             ChannelSpecificData = channelSpecificData,
-            Photos = BuildPhotos(dto.Photos)
+            Photos = photos
         };
     }
 

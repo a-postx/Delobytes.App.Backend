@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -425,6 +425,94 @@ public class ProductBatchImporterTests
                     e.RecordsUpdated == 1),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UnchangedChannelSpecificData_IsSkipped()
+    {
+        // The verdict reads the channel snapshot, so an identical card must report no change. Before
+        // the volatile members left the snapshot this branch was unreachable for Wildberries.
+        string databaseName = Guid.NewGuid().ToString();
+        await CreateChannelAsync(BuildCatalogDbContext(_tenantId, databaseName), _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        ChannelProductCard card = BuildCardWithSnapshot("{\"brand\":\"Brand\",\"photos\":[]}");
+
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 0 &&
+                    e.RecordsUpdated == 0 &&
+                    e.RecordsSkipped == 1),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ChangedChannelSpecificData_IsReportedAsUpdated()
+    {
+        string databaseName = Guid.NewGuid().ToString();
+        await CreateChannelAsync(BuildCatalogDbContext(_tenantId, databaseName), _tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        await importer.ImportAsync(
+            BuildMessage(BuildCardWithSnapshot("{\"brand\":\"Brand\",\"photos\":[]}")),
+            CancellationToken.None);
+
+        await importer.ImportAsync(
+            BuildMessage(BuildCardWithSnapshot("{\"brand\":\"Brand\",\"photos\":[{\"order\":1,\"variant\":\"large\",\"url\":\"https://cdn.wb.ru/new.webp\"}]}")),
+            CancellationToken.None);
+
+        publishEndpointMock.Verify(
+            p => p.Publish(
+                It.Is<ProductBatchImportCompletedEvent>(e =>
+                    e.RecordsProcessed == 1 &&
+                    e.RecordsCreated == 0 &&
+                    e.RecordsUpdated == 1 &&
+                    e.RecordsSkipped == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        ChannelProduct link = await consumerContext.ChannelProducts
+            .IgnoreQueryFilters()
+            .SingleAsync();
+
+        link.ChannelSpecificData.Should().Contain("https://cdn.wb.ru/new.webp",
+            "the stored snapshot follows the card");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ChannelSpecificDataSurvivesSaveAndReload()
+    {
+        // The verdict compares the reloaded column with the incoming snapshot, so a round trip that
+        // altered the string would report every card as updated on each run.
+        string databaseName = Guid.NewGuid().ToString();
+        await CreateChannelAsync(BuildCatalogDbContext(_tenantId, databaseName), _tenantId);
+
+        ChannelProductCard card = BuildCardWithSnapshot("{\"brand\":\"ТМ\",\"photos\":[]}");
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
+        ProductBatchImporter importer = BuildImporter(consumerContext, new Mock<IPublishEndpoint>().Object);
+
+        await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
+
+        CatalogDbContext assertContext = BuildCatalogDbContext(_tenantId, databaseName);
+
+        ChannelProduct stored = await assertContext.ChannelProducts
+            .IgnoreQueryFilters()
+            .SingleAsync();
+
+        stored.ChannelSpecificData.Should().Be(card.ChannelSpecificData);
     }
 
     [Fact]
@@ -2393,6 +2481,21 @@ public class ProductBatchImporterTests
             .ReturnsAsync(new ProductPhotoImportResult());
 
         return photoServiceMock;
+    }
+
+    private static ChannelProductCard BuildCardWithSnapshot(string channelSpecificData)
+    {
+        return new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Test Product",
+            OfferId = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Test Description",
+            ChannelSpecificData = channelSpecificData
+        };
     }
 
     private static ChannelProductCard BuildCardWithPhotos()

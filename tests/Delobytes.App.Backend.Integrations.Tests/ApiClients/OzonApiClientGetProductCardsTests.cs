@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -346,6 +346,77 @@ public class OzonApiClientGetProductCardsTests
 
         card.ChannelCode.Should().Be("ozon");
         card.BarcodeType.Should().Be("ozon");
+    }
+
+    [Fact]
+    public async Task GetProductCards_MapsChannelSpecificData()
+    {
+        // Ozon used to leave this member empty, so the import compared null with null and reported
+        // every card of every run as skipped. The snapshot makes Ozon behave like Wildberries.
+        ChannelProductCard card = await GetSingleCardAsync(Payload());
+
+        card.ChannelSpecificData.Should().NotBeNullOrEmpty();
+
+        using JsonDocument channelData = JsonDocument.Parse(card.ChannelSpecificData!);
+        JsonElement root = channelData.RootElement;
+
+        root.GetProperty("descriptionAttributeId").GetInt32().Should().Be(4191);
+        root.GetProperty("depth").GetDecimal().Should().Be(570m);
+        root.GetProperty("width").GetDecimal().Should().Be(240m);
+        root.GetProperty("height").GetDecimal().Should().Be(40m);
+        root.GetProperty("dimensionUnit").GetString().Should().Be("mm");
+        root.GetProperty("weight").GetDecimal().Should().Be(450m);
+        root.GetProperty("weightUnit").GetString().Should().Be("g");
+
+        // The attributes are kept whole: unlike the package measurements, they are the card's own
+        // content and are not projected onto the neutral fields.
+        root.GetProperty("attributes").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task GetProductCards_ChannelSpecificData_CarriesTheNormalisedGallery()
+    {
+        // Photos are part of the card, so an edit to the gallery has to mark it as updated. The
+        // snapshot carries the download variants rather than a copy of the payload.
+        ChannelProductCard card = await GetSingleCardAsync(Payload(
+            primaryImage: "https://cdn.example/primary.jpg",
+            images: ["https://cdn.example/1.jpg"]));
+
+        using JsonDocument channelData = JsonDocument.Parse(card.ChannelSpecificData!);
+        JsonElement photos = channelData.RootElement.GetProperty("photos");
+
+        photos.GetArrayLength().Should().Be(4);
+
+        photos[0].GetProperty("order").GetInt32().Should().Be(1);
+        photos[0].GetProperty("variant").GetString().Should().Be("large");
+        photos[0].GetProperty("url").GetString().Should()
+            .Be(OzonPhotoUrl.ToWebP("https://cdn.example/primary.jpg", OzonPhotoUrl.LargeMaxSide));
+
+        photos[1].GetProperty("order").GetInt32().Should().Be(1);
+        photos[1].GetProperty("variant").GetString().Should().Be("thumbnail");
+        photos[1].GetProperty("url").GetString().Should()
+            .Be(OzonPhotoUrl.ToWebP("https://cdn.example/primary.jpg", OzonPhotoUrl.ThumbnailMaxSide));
+
+        photos[2].GetProperty("order").GetInt32().Should().Be(2);
+        photos[3].GetProperty("order").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetProductCards_SamePayloadTwice_ProducesIdenticalChannelSpecificData()
+    {
+        ChannelProductCard first = await GetSingleCardAsync(Payload());
+        ChannelProductCard second = await GetSingleCardAsync(Payload());
+
+        first.ChannelSpecificData.Should().Be(second.ChannelSpecificData);
+    }
+
+    [Fact]
+    public async Task GetProductCards_ChangedGallery_ChangesChannelSpecificData()
+    {
+        ChannelProductCard before = await GetSingleCardAsync(Payload(images: ["https://cdn.example/1.jpg"]));
+        ChannelProductCard after = await GetSingleCardAsync(Payload(images: ["https://cdn.example/9.jpg"]));
+
+        before.ChannelSpecificData.Should().NotBe(after.ChannelSpecificData);
     }
 
     [Fact]

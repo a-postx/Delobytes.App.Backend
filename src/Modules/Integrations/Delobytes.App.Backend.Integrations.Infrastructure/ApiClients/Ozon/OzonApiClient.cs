@@ -1,8 +1,9 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -639,6 +640,8 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
             ? 1000m
             : 1m;
 
+        List<ChannelProductPhoto> photos = MapPhotos(item);
+
         return new ChannelProductCard
         {
             ExternalProductId = item.Sku.ToString(CultureInfo.InvariantCulture),
@@ -650,11 +653,34 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
             WidthCm = item.Width / dimensionDivisor,
             HeightCm = item.Height / dimensionDivisor,
             WeightKg = item.Weight / weightDivisor,
-            Photos = MapPhotos(item),
-            ChannelSpecificData = null,
+            Photos = photos,
+            ChannelSpecificData = BuildChannelSpecificData(item, photos),
             ChannelCode = ChannelCatalog.OzonCode,
             BarcodeType = ChannelCatalog.OzonCode,
         };
+    }
+
+    /// <summary>
+    /// Drives the change detection of the import for an Ozon and Wildberries card.
+    /// Values that changed when the seller edits the card are the only included ones.
+    /// </summary>
+    private static string BuildChannelSpecificData(
+        OzonProductAttributesItem item,
+        IReadOnlyList<ChannelProductPhoto> photos)
+    {
+        return ChannelCardSnapshot.Build(
+            new List<KeyValuePair<string, JsonNode?>>
+            {
+                new KeyValuePair<string, JsonNode?>("descriptionAttributeId", JsonValue.Create(DescriptionAttributeId)),
+                new KeyValuePair<string, JsonNode?>("attributes", ChannelCardSnapshot.ToNode(item.Attributes)),
+                new KeyValuePair<string, JsonNode?>("depth", ChannelCardSnapshot.ToNode(item.Depth)),
+                new KeyValuePair<string, JsonNode?>("width", ChannelCardSnapshot.ToNode(item.Width)),
+                new KeyValuePair<string, JsonNode?>("height", ChannelCardSnapshot.ToNode(item.Height)),
+                new KeyValuePair<string, JsonNode?>("dimensionUnit", ChannelCardSnapshot.ToNode(item.DimensionUnit)),
+                new KeyValuePair<string, JsonNode?>("weight", ChannelCardSnapshot.ToNode(item.Weight)),
+                new KeyValuePair<string, JsonNode?>("weightUnit", ChannelCardSnapshot.ToNode(item.WeightUnit))
+            },
+            photos);
     }
 
     /// <summary>
