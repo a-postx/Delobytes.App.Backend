@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.DTOs;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -127,6 +127,11 @@ public class ProductsImportOrchestrator
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
         ProductCardsCursor? cursor = DeserializeCursor(checkpoint?.Payload);
 
+        // Identifiers this run has already published, so a page that repeats a card cannot count it
+        // twice. Kept for the whole run: a channel is free to repeat a card across pages or inside
+        // one response, and neither is a card the import should process again.
+        HashSet<string> publishedOfferIds = new HashSet<string>(StringComparer.Ordinal);
+
         // Look-ahead buffer: a non-empty page is held back until the next API response proves
         // whether it was terminal. Without this, WB's empty trailing page (returned once the
         // cursor is exhausted) becomes its own instant batch that reaches the aggregator with
@@ -170,6 +175,12 @@ public class ProductsImportOrchestrator
                     ProductCardsData data = apiResponse.Data!;
                     List<ChannelProductCard> cards = data.Cards.ToList();
 
+                    // Wildberries has been seen returning a card twice inside one response (and more
+                    // cards than the requested limit), which published the repeated cards as their own
+                    // batch and inflated the run's counters. The cause is the channel's, but the count
+                    // is ours, so the page is filtered before it is published.
+                    cards = DropAlreadyPublished(cards, publishedOfferIds, jobRun.Id, pageNumber);
+
                     bool apiReportsMore = data.NextCursor != null;
 
                     // Cooperative cancellation fix: an operator may have cancelled the job while this
@@ -183,7 +194,7 @@ public class ProductsImportOrchestrator
                     bool isTerminalPage = !apiReportsMore || cancelled;
 
                     // A page carrying no cards but advertising a cursor is meaningless for the
-                    // import; advance without publishing anything (unless cancellation forces a stop).
+                    // import; skip it without publishing anything (unless cancellation forces a stop).
                     if (cards.Count == 0 && apiReportsMore && !cancelled)
                     {
                         _logger.LogInformation(
@@ -191,10 +202,25 @@ public class ProductsImportOrchestrator
                             jobRun.Id,
                             pageNumber);
 
-                        // Nothing is published, so the checkpoint may move past this page safely:
-                        // the buffered batch keeps its own cursor and stays refetchable.
-                        await _jobCheckpointRepository.UpsertAsync(
-                            BuildCheckpoint(jobRun.Id, data.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
+                        // The checkpoint may only move while nothing is waiting to be published. A
+                        // buffered page holds the cards already fetched but not yet sent: advancing
+                        // past them loses them for good, because a redelivery resumes from the
+                        // checkpoint and never refetches what it skipped. With only this page empty,
+                        // the buffer's own cursor is the newer of the two anyway.
+                        if (bufferedBatch == null)
+                        {
+                            await _jobCheckpointRepository.UpsertAsync(
+                                BuildCheckpoint(jobRun.Id, data.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
+                        }
+                        else
+                        {
+                            _logger.LogInformation(
+                                "JobRun {JobRunId}: page {Page} has no cards but a next cursor; checkpoint " +
+                                "stays at page {BufferedPage}, which a redelivery must refetch",
+                                jobRun.Id,
+                                pageNumber,
+                                pageNumber - 1);
+                        }
 
                         cursor = data.NextCursor;
                         continue;
@@ -282,6 +308,61 @@ public class ProductsImportOrchestrator
                 await FailJobAsync(jobRun, ex.Message, cancellationToken);
             }
         }
+    }
+
+    /// <summary>
+    /// Removes the cards this run has already published, and records the ones it keeps.
+    /// </summary>
+    /// <remarks>
+    /// A card is identified by its external product id, which is what the import also uses as the
+    /// channel link's identity. A page that repeats an identifier is the channel contradicting
+    /// itself: processing it again cannot create or update anything the first pass did not, but it
+    /// does add to the run's counters and re-queues the same photos.
+    /// </remarks>
+    /// <param name="cards">Cards of the page, in the order the channel returned them.</param>
+    /// <param name="publishedOfferIds">Identifiers published before this page; updated in place.</param>
+    /// <param name="jobRunId">Run the page belongs to, for logging.</param>
+    /// <param name="pageNumber">Page the cards came from, for logging.</param>
+    /// <returns>The cards of the page that were not published yet, in their original order.</returns>
+    private List<ChannelProductCard> DropAlreadyPublished(
+        List<ChannelProductCard> cards,
+        HashSet<string> publishedOfferIds,
+        Guid jobRunId,
+        int pageNumber)
+    {
+        if (cards.Count == 0)
+        {
+            return cards;
+        }
+
+        List<ChannelProductCard> kept = new List<ChannelProductCard>(cards.Count);
+        int dropped = 0;
+
+        foreach (ChannelProductCard card in cards)
+        {
+            if (publishedOfferIds.Add(card.ExternalProductId))
+            {
+                kept.Add(card);
+            }
+            else
+            {
+                dropped++;
+            }
+        }
+
+        if (dropped > 0)
+        {
+            _logger.LogWarning(
+                "JobRun {JobRunId}: page {Page} returned {Count} cards, {Dropped} of which repeat an " +
+                "identifier already published by this run. Dropped them; {Kept} cards remain.",
+                jobRunId,
+                pageNumber,
+                cards.Count,
+                dropped,
+                kept.Count);
+        }
+
+        return kept;
     }
 
     private int ResolvePageSize(Connection connection)

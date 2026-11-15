@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -82,7 +82,10 @@ public class ProductsImportOrchestratorPagingTests
         Harness harness = await RunAsync(pageSize: 400, batchSize: 200, pages: new[]
         {
             Page(Cards(1, 400), cursor: Cursor("c1")),
-            Page(Cards(1, 10), cursor: Cursor("c2")),
+            // Distinct identifiers, as a real second page has: the orchestrator now drops a card it
+            // has already published, so reusing page one's range here would empty this page and turn
+            // it into the "no cards but a cursor" case this test is not about.
+            Page(Cards(401, 10), cursor: Cursor("c2")),
             Page(Cards(1, 0), cursor: null),
         });
 
@@ -91,6 +94,24 @@ public class ProductsImportOrchestratorPagingTests
         string checkpointPayload = harness.CheckpointPayloads.Should().ContainSingle().Subject;
         using JsonDocument payload = JsonDocument.Parse(checkpointPayload);
         payload.RootElement.GetProperty("Token").GetString().Should().Be("c1");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_EmptyPageWithCursorWhileAPageIsBuffered_DoesNotAdvanceTheCheckpoint()
+    {
+        // Advancing here would checkpoint past cards that were fetched but not yet published. A
+        // redelivery resumes from the checkpoint, so those cards would never be imported at all.
+        Harness harness = await RunAsync(pageSize: 400, batchSize: 200, pages: new[]
+        {
+            Page(Cards(1, 400), cursor: Cursor("c1")),
+            Page(Cards(1, 0), cursor: Cursor("c2")),
+            Page(Cards(1, 0), cursor: null),
+        });
+
+        harness.Operations.Should().NotContain("checkpoint", "the buffered page is still unpublished");
+
+        harness.Published.Should().HaveCount(2);
+        harness.Published.SelectMany(batch => batch.Cards).Should().HaveCount(400);
     }
 
     [Fact]
@@ -148,6 +169,59 @@ public class ProductsImportOrchestratorPagingTests
         harness.Published.Should().BeEmpty("a failed page must not finalise the run");
         harness.JobRun.Status.Should().Be(JobStatus.Failed);
         harness.JobRun.Error.Should().Be("API is down");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_PageRepeatingCardsInsideItself_PublishesThemOnce()
+    {
+        // Observed with Wildberries: a page requested with limit=50 came back with 70 cards, 20 of
+        // which repeated an identifier already present in that same response. The run counted 140
+        // cards for a listing of 120.
+        List<ChannelProductCard> repeatedPage = Cards(51, 50);
+        repeatedPage.AddRange(Cards(51, 20));
+
+        Harness harness = await RunAsync(pageSize: 50, batchSize: 50, pages: new[]
+        {
+            Page(Cards(1, 50), cursor: Cursor("c1")),
+            Page(repeatedPage, cursor: Cursor("c2")),
+            Page(Cards(101, 20), cursor: Cursor("c3")),
+            Page(Cards(1, 0), cursor: null),
+        });
+
+        harness.Published.Should().HaveCount(3);
+        harness.Published.Select(batch => batch.Cards.Count).Should().Equal(50, 50, 20);
+
+        List<string> publishedIds = harness.Published
+            .SelectMany(batch => batch.Cards)
+            .Select(card => card.ExternalProductId)
+            .ToList();
+
+        publishedIds.Should().OnlyHaveUniqueItems();
+        publishedIds.Should().HaveCount(120);
+
+        harness.Published[2].IsLastBatch.Should().BeTrue();
+        harness.Published[2].TotalBatches.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_CardRepeatedOnALaterPage_PublishesItOnce()
+    {
+        // The same guard covers a card that reappears on a page after the one that published it,
+        // which is what a cursor boundary shifting under a concurrent edit would produce.
+        Harness harness = await RunAsync(pageSize: 50, batchSize: 50, pages: new[]
+        {
+            Page(Cards(1, 50), cursor: Cursor("c1")),
+            Page(Cards(41, 30), cursor: Cursor("c2")),
+            Page(Cards(1, 0), cursor: null),
+        });
+
+        List<string> publishedIds = harness.Published
+            .SelectMany(batch => batch.Cards)
+            .Select(card => card.ExternalProductId)
+            .ToList();
+
+        publishedIds.Should().OnlyHaveUniqueItems();
+        publishedIds.Should().HaveCount(70);
     }
 
     private async Task<Harness> RunAsync(int pageSize, int batchSize, PageResponse[] pages)
