@@ -73,6 +73,9 @@ internal static class WildberriesCardMapper
             // marked every card of every re-import as changed. The raw photo block is absent for the
             // same reason — its variants carry a refresh marker — and the normalised gallery below
             // replaces it, so an actual gallery edit still reaches the comparison.
+            //
+            // The collections are ordered by their own stable key, because Wildberries permutes them
+            // between two responses describing an unchanged card.
             channelSpecificData = ChannelCardSnapshot.Build(
                 new List<KeyValuePair<string, JsonNode?>>
                 {
@@ -82,9 +85,21 @@ internal static class WildberriesCardMapper
                     new KeyValuePair<string, JsonNode?>("subjectName", ChannelCardSnapshot.ToNode(dto.SubjectName)),
                     new KeyValuePair<string, JsonNode?>("brand", ChannelCardSnapshot.ToNode(dto.Brand)),
                     new KeyValuePair<string, JsonNode?>("dimensions", ChannelCardSnapshot.ToNode(dto.Dimensions)),
-                    new KeyValuePair<string, JsonNode?>("characteristics", ChannelCardSnapshot.ToNode(dto.Characteristics)),
-                    new KeyValuePair<string, JsonNode?>("sizes", ChannelCardSnapshot.ToNode(dto.Sizes)),
-                    new KeyValuePair<string, JsonNode?>("tags", ChannelCardSnapshot.ToNode(dto.Tags)),
+                    new KeyValuePair<string, JsonNode?>(
+                        "characteristics",
+                        ChannelCardSnapshot.ToOrderedArray(
+                            dto.Characteristics,
+                            characteristic => characteristic.Id)),
+                    new KeyValuePair<string, JsonNode?>(
+                        "sizes",
+                        ChannelCardSnapshot.ToOrderedArray(
+                            dto.Sizes,
+                            size => size.ChrtId)),
+                    new KeyValuePair<string, JsonNode?>(
+                        "tags",
+                        ChannelCardSnapshot.ToOrderedArray(
+                            dto.Tags,
+                            tag => tag.Id)),
                     new KeyValuePair<string, JsonNode?>("video", ChannelCardSnapshot.ToNode(dto.Video)),
                     new KeyValuePair<string, JsonNode?>("createdAt", ChannelCardSnapshot.ToNode(dto.CreatedAt))
                 },

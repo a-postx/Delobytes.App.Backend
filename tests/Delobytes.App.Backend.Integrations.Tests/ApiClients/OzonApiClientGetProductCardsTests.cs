@@ -487,6 +487,175 @@ public class OzonApiClientGetProductCardsTests
         requests.Should().Be(0, "a refusal beyond the tolerance must not spend an HTTP request");
     }
 
+    [Fact]
+    public async Task GetProductCards_PermutedAttributes_LeaveChannelSpecificDataIdentical()
+    {
+        // Both marketplaces permute their attribute array between responses describing an unchanged
+        // card, so the snapshot orders it. Without that, Ozon would repeat the Wildberries defect.
+        string firstJson = """
+        {
+            "result": [
+                {
+                    "id": 1,
+                    "sku": 1088660899,
+                    "offer_id": "ozon-1",
+                    "name": "Permuted attributes",
+                    "barcode": "4600000000001",
+                    "barcodes": ["4600000000001"],
+                    "depth": 570,
+                    "width": 240,
+                    "height": 40,
+                    "dimension_unit": "mm",
+                    "weight": 450,
+                    "weight_unit": "g",
+                    "primary_image": "https://cdn.example/primary.jpg",
+                    "images": [],
+                    "attributes": [
+                        { "id": 85, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Бренд" } ] },
+                        { "id": 4191, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Описание" } ] },
+                        { "id": 10096, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Цвет" } ] }
+                    ]
+                }
+            ],
+            "total": 1,
+            "last_id": ""
+        }
+        """;
+
+        string secondJson = """
+        {
+            "result": [
+                {
+                    "id": 1,
+                    "sku": 1088660899,
+                    "offer_id": "ozon-1",
+                    "name": "Permuted attributes",
+                    "barcode": "4600000000001",
+                    "barcodes": ["4600000000001"],
+                    "depth": 570,
+                    "width": 240,
+                    "height": 40,
+                    "dimension_unit": "mm",
+                    "weight": 450,
+                    "weight_unit": "g",
+                    "primary_image": "https://cdn.example/primary.jpg",
+                    "images": [],
+                    "attributes": [
+                        { "id": 10096, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Цвет" } ] },
+                        { "id": 85, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Бренд" } ] },
+                        { "id": 4191, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Описание" } ] }
+                    ]
+                }
+            ],
+            "total": 1,
+            "last_id": ""
+        }
+        """;
+
+        ChannelProductCard first = await GetSingleCardFromJsonAsync(firstJson);
+        ChannelProductCard second = await GetSingleCardFromJsonAsync(secondJson);
+
+        first.ChannelSpecificData!.Should().Be(second.ChannelSpecificData);
+    }
+
+    [Fact]
+    public async Task GetProductCards_AttributesAreOrderedById()
+    {
+        string json = """
+        {
+            "result": [
+                {
+                    "id": 1,
+                    "sku": 1088660899,
+                    "offer_id": "ozon-1",
+                    "name": "Ordered attributes",
+                    "barcode": "4600000000001",
+                    "barcodes": ["4600000000001"],
+                    "depth": 570,
+                    "width": 240,
+                    "height": 40,
+                    "dimension_unit": "mm",
+                    "weight": 450,
+                    "weight_unit": "g",
+                    "primary_image": "https://cdn.example/primary.jpg",
+                    "images": [],
+                    "attributes": [
+                        { "id": 10096, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Цвет" } ] },
+                        { "id": 85, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Бренд" } ] },
+                        { "id": 4191, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Описание" } ] }
+                    ]
+                }
+            ],
+            "total": 1,
+            "last_id": ""
+        }
+        """;
+
+        ChannelProductCard card = await GetSingleCardFromJsonAsync(json);
+
+        using JsonDocument channelData = JsonDocument.Parse(card.ChannelSpecificData!);
+        List<long> ids = channelData.RootElement.GetProperty("attributes")
+            .EnumerateArray()
+            .Select(attribute => attribute.GetProperty("id").GetInt64())
+            .ToList();
+
+        ids.Should().Equal(85, 4191, 10096);
+    }
+
+    [Fact]
+    public async Task GetProductCards_ChangedAttributeValue_ChangesChannelSpecificData()
+    {
+        string firstJson = """
+        {
+            "result": [
+                {
+                    "id": 1,
+                    "sku": 1088660899,
+                    "offer_id": "ozon-1",
+                    "name": "Changed value",
+                    "barcode": "4600000000001",
+                    "barcodes": ["4600000000001"],
+                    "depth": 570,
+                    "width": 240,
+                    "height": 40,
+                    "dimension_unit": "mm",
+                    "weight": 450,
+                    "weight_unit": "g",
+                    "primary_image": "https://cdn.example/primary.jpg",
+                    "images": [],
+                    "attributes": [
+                        { "id": 85, "complex_id": 0, "values": [ { "dictionary_value_id": 0, "value": "Бренд" } ] }
+                    ]
+                }
+            ],
+            "total": 1,
+            "last_id": ""
+        }
+        """;
+
+        string secondJson = firstJson.Replace("\"Бренд\"", "\"Другой бренд\"", StringComparison.Ordinal);
+
+        ChannelProductCard first = await GetSingleCardFromJsonAsync(firstJson);
+        ChannelProductCard second = await GetSingleCardFromJsonAsync(secondJson);
+
+        first.ChannelSpecificData!.Should().NotBe(second.ChannelSpecificData);
+    }
+
+    private async Task<ChannelProductCard> GetSingleCardFromJsonAsync(string json)
+    {
+        (OzonApiClient client, MockHttpMessageHandler mockHttp) = BuildClient(_connection);
+        mockHttp
+            .When(HttpMethod.Post, AttributesUrl)
+            .Respond("application/json", json);
+
+        ApiResponse<ProductCardsData> response = await client.GetProductCardsAsync(
+            _connectionId, cursor: null, limit: 100, CancellationToken.None);
+
+        response.IsSuccess.Should().BeTrue();
+
+        return response.Data!.Cards.Single();
+    }
+
     private async Task<ChannelProductCard?> GetSingleCardAsync(string payload)
     {
         (OzonApiClient client, MockHttpMessageHandler mockHttp) = BuildClient(_connection);

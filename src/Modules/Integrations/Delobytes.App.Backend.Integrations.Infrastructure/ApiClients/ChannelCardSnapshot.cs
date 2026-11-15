@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 
@@ -10,7 +10,11 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 /// </summary>
 /// <remarks>
 /// The import compares this string byte for byte to decide whether a card changed, so it may hold
-/// only values that change when the card itself changes.
+/// only information that changes when the card itself changes. Two things are therefore removed:
+/// values a marketplace refreshes on its own (Wildberries' <c>updatedAt</c>, the raw photo block
+/// with its cache-busting variants), and the order in which a marketplace happens to list a
+/// collection. Both marketplaces permute their attribute arrays from response to response without
+/// the seller editing anything, so collections are ordered by a stable key before serialization.
 /// </remarks>
 internal static class ChannelCardSnapshot
 {
@@ -49,6 +53,49 @@ internal static class ChannelCardSnapshot
         }
 
         return JsonSerializer.SerializeToNode(value, value.GetType());
+    }
+
+    /// <summary>
+    /// Converts a collection quoted by the channel into a JSON array ordered by
+    /// <paramref name="orderKey"/>.
+    /// </summary>
+    /// <remarks>
+    /// The order of the channel's own collection is not part of the card: Wildberries permutes its
+    /// attribute array between two responses of an unchanged card, which is what made the import
+    /// report those cards as updated on every run. Ordering by a stable key keeps the snapshot
+    /// sensitive to the content and blind to the permutation. Elements that the key cannot
+    /// distinguish keep a deterministic order through <paramref name="thenByKey"/> or, failing
+    /// that, the order they arrived in.
+    /// </remarks>
+    /// <typeparam name="T">Element type of the collection.</typeparam>
+    /// <param name="items">Collection as the channel reported it; null stays null.</param>
+    /// <param name="orderKey">Stable identity of an element.</param>
+    /// <param name="thenByKey">Optional second key, applied when the first one ties.</param>
+    /// <returns>The ordered JSON array, or null when the collection is null.</returns>
+    public static JsonNode? ToOrderedArray<T>(
+        IEnumerable<T>? items,
+        Func<T, long?> orderKey,
+        Func<T, long?>? thenByKey = null)
+    {
+        if (items == null)
+        {
+            return null;
+        }
+
+        // Numeric, not textual: as text "10096" sorts before "85", which is a stable order but not
+        // an obvious one to whoever reads the stored snapshot to diagnose a change.
+        IOrderedEnumerable<T> ordered = items
+            .OrderBy(item => orderKey(item) ?? long.MinValue)
+            .ThenBy(item => thenByKey == null ? 0L : thenByKey(item) ?? long.MinValue);
+
+        JsonArray array = new JsonArray();
+
+        foreach (T item in ordered)
+        {
+            array.Add(ToNode(item));
+        }
+
+        return array;
     }
 
     private static JsonArray BuildPhotos(IReadOnlyList<ChannelProductPhoto> photos)

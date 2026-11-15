@@ -642,6 +642,166 @@ public class WildberriesApiClientGetProductCardsTests
             .Should().NotBe(second.Data!.Cards.First().ChannelSpecificData);
     }
 
+    [Fact]
+    public async Task GetProductCardsAsync_PermutedCharacteristics_LeaveChannelSpecificDataIdentical()
+    {
+        // The regression the counters still showed after the volatile fields left the snapshot:
+        // Wildberries permutes the attribute array between two responses of an unchanged card, and
+        // an array compared in arrival order differs on every run.
+        string firstJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 701,
+                    "vendorCode": "PERMUTED",
+                    "title": "Permuted attributes",
+                    "characteristics": [
+                        { "id": 12, "name": "Цвет", "value": ["Чёрный"] },
+                        { "id": 3, "name": "Бренд", "value": ["Тест"] },
+                        { "id": 41, "name": "Материал", "value": ["Хлопок"] }
+                    ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        string secondJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 701,
+                    "vendorCode": "PERMUTED",
+                    "title": "Permuted attributes",
+                    "characteristics": [
+                        { "id": 41, "name": "Материал", "value": ["Хлопок"] },
+                        { "id": 12, "name": "Цвет", "value": ["Чёрный"] },
+                        { "id": 3, "name": "Бренд", "value": ["Тест"] }
+                    ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        ApiResponse<ProductCardsData> first = await RequestCardsAsync(firstJson);
+        ApiResponse<ProductCardsData> second = await RequestCardsAsync(secondJson);
+
+        first.Data!.Cards.First().ChannelSpecificData
+            .Should().Be(second.Data!.Cards.First().ChannelSpecificData);
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_CharacteristicsAreOrderedById()
+    {
+        string json = """
+        {
+            "cards": [
+                {
+                    "nmID": 702,
+                    "vendorCode": "ORDERED",
+                    "title": "Ordered attributes",
+                    "characteristics": [
+                        { "id": 41, "name": "Материал", "value": ["Хлопок"] },
+                        { "id": 3, "name": "Бренд", "value": ["Тест"] },
+                        { "id": 12, "name": "Цвет", "value": ["Чёрный"] }
+                    ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        ApiResponse<ProductCardsData> result = await RequestCardsAsync(json);
+
+        using JsonDocument channelData = JsonDocument.Parse(result.Data!.Cards.First().ChannelSpecificData!);
+        List<int> ids = channelData.RootElement.GetProperty("characteristics")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("id").GetInt32())
+            .ToList();
+
+        ids.Should().Equal(3, 12, 41);
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_ChangedCharacteristicValue_ChangesChannelSpecificData()
+    {
+        // Ordering must not cost the snapshot its sensitivity: the content still decides.
+        string firstJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 703,
+                    "vendorCode": "VALUE",
+                    "title": "Changed value",
+                    "characteristics": [ { "id": 12, "name": "Цвет", "value": ["Чёрный"] } ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        string secondJson = firstJson.Replace("Чёрный", "Белый", StringComparison.Ordinal);
+
+        ApiResponse<ProductCardsData> first = await RequestCardsAsync(firstJson);
+        ApiResponse<ProductCardsData> second = await RequestCardsAsync(secondJson);
+
+        first.Data!.Cards.First().ChannelSpecificData
+            .Should().NotBe(second.Data!.Cards.First().ChannelSpecificData);
+    }
+
+    [Fact]
+    public async Task GetProductCardsAsync_PermutedSizesAndTags_LeaveChannelSpecificDataIdentical()
+    {
+        string firstJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 704,
+                    "vendorCode": "PERMUTED-COLLECTIONS",
+                    "title": "Permuted collections",
+                    "sizes": [
+                        { "chrtID": 9002, "techSize": "M", "skus": ["2000000000002"] },
+                        { "chrtID": 9001, "techSize": "S", "skus": ["2000000000001"] }
+                    ],
+                    "tags": [
+                        { "id": 8, "name": "Новинка", "color": "red" },
+                        { "id": 2, "name": "Хит", "color": "green" }
+                    ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        string secondJson = """
+        {
+            "cards": [
+                {
+                    "nmID": 704,
+                    "vendorCode": "PERMUTED-COLLECTIONS",
+                    "title": "Permuted collections",
+                    "sizes": [
+                        { "chrtID": 9001, "techSize": "S", "skus": ["2000000000001"] },
+                        { "chrtID": 9002, "techSize": "M", "skus": ["2000000000002"] }
+                    ],
+                    "tags": [
+                        { "id": 2, "name": "Хит", "color": "green" },
+                        { "id": 8, "name": "Новинка", "color": "red" }
+                    ]
+                }
+            ],
+            "cursor": null
+        }
+        """;
+
+        ApiResponse<ProductCardsData> first = await RequestCardsAsync(firstJson);
+        ApiResponse<ProductCardsData> second = await RequestCardsAsync(secondJson);
+
+        first.Data!.Cards.First().ChannelSpecificData
+            .Should().Be(second.Data!.Cards.First().ChannelSpecificData);
+    }
+
     private static async Task<ApiResponse<ProductCardsData>> RequestCardsAsync(string json)
     {
         MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
@@ -921,17 +1081,26 @@ public class WildberriesApiClientGetProductCardsTests
         JsonElement characteristics = channelData.RootElement.GetProperty("characteristics");
         characteristics.GetArrayLength().Should().Be(4);
 
-        // Already-array values keep every element.
-        characteristics[0].GetProperty("value").EnumerateArray()
-            .Select(v => v.GetString()).Should().Equal("желтый", "черный");
-
-        // Scalar numbers become single-element string arrays, invariant-culture formatted.
-        characteristics[1].GetProperty("value").EnumerateArray()
+        // Looked up by id rather than by position: the snapshot orders the collection, so arrival
+        // order is not what it reports.
+        characteristics.EnumerateArray()
+            .Single(item => item.GetProperty("id").GetInt32() == 90673)
+            .GetProperty("value").EnumerateArray()
             .Select(v => v.GetString()).Should().Equal("0.6");
-        characteristics[2].GetProperty("value").EnumerateArray()
+        characteristics.EnumerateArray()
+            .Single(item => item.GetProperty("id").GetInt32() == 90630)
+            .GetProperty("value").EnumerateArray()
             .Select(v => v.GetString()).Should().Equal("20");
-        characteristics[3].GetProperty("value").EnumerateArray()
+        characteristics.EnumerateArray()
+            .Single(item => item.GetProperty("id").GetInt32() == 89008)
+            .GetProperty("value").EnumerateArray()
             .Select(v => v.GetString()).Should().Equal("450");
+
+        // Already-array values keep every element.
+        characteristics.EnumerateArray()
+            .Single(item => item.GetProperty("id").GetInt32() == 14177449)
+            .GetProperty("value").EnumerateArray()
+            .Select(v => v.GetString()).Should().Equal("желтый", "черный");
     }
 
     [Fact]
@@ -971,21 +1140,31 @@ public class WildberriesApiClientGetProductCardsTests
         using JsonDocument channelData = JsonDocument.Parse(result.Data!.Cards.First().ChannelSpecificData!);
         JsonElement characteristics = channelData.RootElement.GetProperty("characteristics");
 
-        characteristics[0].GetProperty("value").EnumerateArray()
-            .Select(v => v.GetString()).Should().Equal("42");
-        characteristics[1].GetProperty("value").EnumerateArray()
-            .Select(v => v.GetString()).Should().Equal("1.5");
-        characteristics[2].GetProperty("value").EnumerateArray()
-            .Select(v => v.GetString()).Should().Equal("Россия");
-        characteristics[3].GetProperty("value").EnumerateArray()
-            .Select(v => v.GetString()).Should().Equal("True");
-        characteristics[4].GetProperty("value").EnumerateArray()
-            .Select(v => v.GetString()).Should().Equal("а", "2", "False");
+        characteristics.GetArrayLength().Should().Be(7);
+
+        List<string> ValuesOf(int id)
+        {
+            return characteristics.EnumerateArray()
+                .Single(item => item.GetProperty("id").GetInt32() == id)
+                .GetProperty("value").EnumerateArray()
+                .Select(v => v.GetString())
+                .ToList();
+        }
+
+        ValuesOf(1).Should().Equal("42");
+        ValuesOf(2).Should().Equal("1.5");
+        ValuesOf(3).Should().Equal("Россия");
+        ValuesOf(4).Should().Equal("True");
+        ValuesOf(5).Should().Equal("а", "2", "False");
 
         // A JSON null and a missing "value" member both leave the property at its default, and
-        // MapToSnapshot writes nulls as-is, so both surface as "value": null.
-        characteristics[5].GetProperty("value").ValueKind.Should().Be(JsonValueKind.Null);
-        characteristics[6].GetProperty("value").ValueKind.Should().Be(JsonValueKind.Null);
+        // the snapshot writes nulls as-is, so both surface as "value": null.
+        characteristics.EnumerateArray()
+            .Single(item => item.GetProperty("id").GetInt32() == 6)
+            .GetProperty("value").ValueKind.Should().Be(JsonValueKind.Null);
+        characteristics.EnumerateArray()
+            .Single(item => item.GetProperty("id").GetInt32() == 7)
+            .GetProperty("value").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

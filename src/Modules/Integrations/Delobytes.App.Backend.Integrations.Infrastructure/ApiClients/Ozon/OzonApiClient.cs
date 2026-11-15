@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -661,8 +661,11 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
     }
 
     /// <summary>
-    /// Drives the change detection of the import for an Ozon and Wildberries card.
-    /// Values that changed when the seller edits the card are the only included ones.
+    /// Drives the change detection of the import for an Ozon card, exactly as the Wildberries mapper
+    /// does for its own. Only values that move when the seller edits the card are included; Ozon's
+    /// own timestamps stay out, so a marketplace-side touch cannot report every card of every run as
+    /// updated. The attributes are ordered by id, because their order in the response is not part of
+    /// the card.
     /// </summary>
     private static string BuildChannelSpecificData(
         OzonProductAttributesItem item,
@@ -672,7 +675,12 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
             new List<KeyValuePair<string, JsonNode?>>
             {
                 new KeyValuePair<string, JsonNode?>("descriptionAttributeId", JsonValue.Create(DescriptionAttributeId)),
-                new KeyValuePair<string, JsonNode?>("attributes", ChannelCardSnapshot.ToNode(item.Attributes)),
+                new KeyValuePair<string, JsonNode?>(
+                    "attributes",
+                    ChannelCardSnapshot.ToOrderedArray(
+                        item.Attributes,
+                        attribute => attribute.Id,
+                        attribute => attribute.ComplexId)),
                 new KeyValuePair<string, JsonNode?>("depth", ChannelCardSnapshot.ToNode(item.Depth)),
                 new KeyValuePair<string, JsonNode?>("width", ChannelCardSnapshot.ToNode(item.Width)),
                 new KeyValuePair<string, JsonNode?>("height", ChannelCardSnapshot.ToNode(item.Height)),
