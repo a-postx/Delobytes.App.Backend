@@ -38,7 +38,7 @@ public class GetProductBomHistoryQueryHandler : IRequestHandler<GetProductBomHis
             ComponentId = line.ComponentId,
             Quantity = line.Quantity,
             ValidFrom = line.ValidFrom,
-            IsActive = line.IsActive,
+            ValidTo = line.ValidTo,
             CreatedAt = line.CreatedAt,
             UpdatedAt = line.UpdatedAt,
             Component = line.Component == null ? null : new BomComponentDto {

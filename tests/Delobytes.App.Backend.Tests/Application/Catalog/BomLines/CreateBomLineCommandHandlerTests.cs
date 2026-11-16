@@ -92,10 +92,11 @@ public class CreateBomLineCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ExistingActiveLine_DeactivatesItAndAddsNewVersion()
+    public async Task Handle_ExistingOpenLine_ClosesItAtTheNewValidFromAndAddsVersion()
     {
         Guid productId = Guid.NewGuid();
         Guid componentId = Guid.NewGuid();
+        DateOnly newValidFrom = new DateOnly(2026, 2, 1);
 
         BomLine previous = new BomLine
         {
@@ -104,7 +105,6 @@ public class CreateBomLineCommandHandlerTests
             ComponentId = componentId,
             Quantity = 1m,
             ValidFrom = new DateOnly(2025, 1, 1),
-            IsActive = true,
         };
 
         Component component = new Component
@@ -122,7 +122,7 @@ public class CreateBomLineCommandHandlerTests
             .ReturnsAsync(component);
 
         _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
+            .Setup(repository => repository.GetOpenByProductIdAsync(
                 productId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<BomLine> { previous });
@@ -136,13 +136,15 @@ public class CreateBomLineCommandHandlerTests
             ProductId = productId,
             ComponentId = componentId,
             Quantity = 3.75m,
-            ValidFrom = new DateOnly(2026, 2, 1),
+            ValidFrom = newValidFrom,
         };
 
         CreateBomLineResponse response =
             await _handler.Handle(command, CancellationToken.None);
 
-        previous.IsActive.Should().BeFalse();
+        // Closing at the new version's start is what keeps the intervals adjacent instead of
+        // overlapping or leaving a gap: the old quantity applies up to newValidFrom, the new one from it.
+        previous.ValidTo.Should().Be(newValidFrom);
         previous.UpdatedAt.Should().NotBeNull();
 
         addedLine.Should().NotBeNull();
@@ -150,15 +152,109 @@ public class CreateBomLineCommandHandlerTests
         addedLine.ProductId.Should().Be(productId);
         addedLine.ComponentId.Should().Be(componentId);
         addedLine.Quantity.Should().Be(3.75m);
-        addedLine.ValidFrom.Should().Be(new DateOnly(2026, 2, 1));
-        addedLine.IsActive.Should().BeTrue();
+        addedLine.ValidFrom.Should().Be(newValidFrom);
+        addedLine.ValidTo.Should().BeNull();
 
         _bomLineRepositoryMock.Verify(
             repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
-    // ── Этап 5: автоматическая фиксация снапшота ─────────────────────────────────────
+    [Fact]
+    public async Task Handle_ValidFromNotLaterThanTheOpenVersion_ThrowsConflict()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+        DateOnly openValidFrom = new DateOnly(2025, 1, 1);
+
+        BomLine previous = new BomLine
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ComponentId = componentId,
+            Quantity = 1m,
+            ValidFrom = openValidFrom,
+        };
+
+        _componentRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(
+                componentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Component { Id = componentId, Name = "Material" });
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetOpenByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine> { previous });
+
+        CreateBomLineCommand command = new CreateBomLineCommand
+        {
+            ProductId = productId,
+            ComponentId = componentId,
+            Quantity = 2m,
+            ValidFrom = openValidFrom,
+        };
+
+        Func<Task> action = () => _handler.Handle(command, CancellationToken.None);
+
+        ExceptionAssertions<AppException> exception =
+            await action.Should().ThrowAsync<AppException>();
+
+        // An equal date would close the existing version on the day it started, producing an empty
+        // interval and silently deleting a version that had been in force; an earlier one would
+        // rewrite the past. Neither is a correction the caller can express here.
+        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomLineValidFromConflict);
+
+        previous.ValidTo.Should().BeNull();
+
+        _bomLineRepositoryMock.Verify(
+            repository => repository.Add(It.IsAny<BomLine>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_PreviousVersionNoLongerOpen_AddsVersionWithoutClosingAnything()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+
+        _componentRepositoryMock
+            .Setup(repository => repository.GetByIdAsync(
+                componentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Component { Id = componentId, Name = "Material" });
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetOpenByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine>());
+
+        BomLine? addedLine = null;
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.Add(It.IsAny<BomLine>()))
+            .Callback<BomLine>(line => addedLine = line);
+
+        CreateBomLineCommand command = new CreateBomLineCommand
+        {
+            ProductId = productId,
+            ComponentId = componentId,
+            Quantity = 2m,
+            ValidFrom = new DateOnly(2024, 1, 1),
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        // A component previously removed from the composition can be added back with a date that
+        // lies before the removal: nothing is open, so nothing has to be closed first.
+        addedLine.Should().NotBeNull();
+        addedLine!.ValidFrom.Should().Be(new DateOnly(2024, 1, 1));
+        addedLine.ValidTo.Should().BeNull();
+    }
+
+    // ── Этап 5: автоматическая фиксация снапшота ────────────────────────────────────
 
     [Fact]
     public async Task Handle_ValidCommand_CapturesSnapshotForProductWithBomChangedReason()
@@ -173,7 +269,7 @@ public class CreateBomLineCommandHandlerTests
             .ReturnsAsync(new Component { Id = componentId, Name = "Material" });
 
         _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
+            .Setup(repository => repository.GetOpenByProductIdAsync(
                 productId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<BomLine>());
@@ -210,10 +306,9 @@ public class CreateBomLineCommandHandlerTests
             ComponentId = componentId,
             Quantity = 1m,
             ValidFrom = new DateOnly(2025, 1, 1),
-            IsActive = true,
         };
 
-        bool previousLineWasActiveAtCapture = false;
+        bool previousLineWasOpenAtCapture = false;
         bool newLineExistedAtCapture = false;
         int addedLineCount = 0;
 
@@ -224,7 +319,7 @@ public class CreateBomLineCommandHandlerTests
             .ReturnsAsync(new Component { Id = componentId, Name = "Material" });
 
         _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
+            .Setup(repository => repository.GetOpenByProductIdAsync(
                 productId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<BomLine> { previous });
@@ -241,10 +336,9 @@ public class CreateBomLineCommandHandlerTests
             .Callback<IReadOnlyCollection<Guid>, string, CancellationToken>(
                 (_, _, _) =>
                 {
-                    // The snapshot has to reflect the composition as it was, so neither the
-                    // deactivation of the previous line nor the insertion of the new one may
-                    // have happened yet.
-                    previousLineWasActiveAtCapture = previous.IsActive;
+                    // The snapshot has to reflect the composition as it was, so neither the closing
+                    // of the previous version nor the insertion of the new one may have happened yet.
+                    previousLineWasOpenAtCapture = previous.ValidTo == null;
                     newLineExistedAtCapture = addedLineCount > 0;
                 })
             .Returns(Task.CompletedTask);
@@ -259,9 +353,9 @@ public class CreateBomLineCommandHandlerTests
 
         await _handler.Handle(command, CancellationToken.None);
 
-        previousLineWasActiveAtCapture.Should().BeTrue();
+        previousLineWasOpenAtCapture.Should().BeTrue();
         newLineExistedAtCapture.Should().BeFalse();
-        previous.IsActive.Should().BeFalse();
+        previous.ValidTo.Should().Be(new DateOnly(2026, 5, 1));
     }
 
     [Fact]

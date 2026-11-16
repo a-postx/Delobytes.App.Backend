@@ -71,16 +71,21 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
 
         await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "BomChanged", cancellationToken);
 
-        IReadOnlyList<BomLine> active = await _repository.GetActiveByProductIdAsync(request.ProductId, cancellationToken);
+        IReadOnlyList<BomLine> open = await _repository.GetOpenByProductIdAsync(request.ProductId, cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         // ValidFrom — календарная дата тенанта: UTC-дата на несколько часов отстаёт от
         // местной и сдвинула бы вступление состава в силу на предыдущий день.
         DateOnly today = await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
 
-        foreach (BomLine line in active)
+        // The whole composition is replaced, so every open version ends today. Closing is dated
+        // rather than flagged: a component dropped from the composition must stop being charged from
+        // this date onwards, while staying in force for every earlier date. CloseAt keeps a version
+        // that started today at an empty interval instead of an inverted one, and the effective-date
+        // query then ignores it while the history keeps the row.
+        foreach (BomLine line in open)
         {
-            line.IsActive = false;
+            line.CloseAt(today);
             line.UpdatedAt = now;
         }
 
@@ -92,7 +97,6 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
                 ComponentId = item.ComponentId,
                 Quantity = item.Quantity,
                 ValidFrom = today,
-                IsActive = true,
                 CreatedAt = now });
         }
 

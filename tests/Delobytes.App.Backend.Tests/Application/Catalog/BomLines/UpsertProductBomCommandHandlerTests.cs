@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
@@ -113,7 +118,7 @@ public class UpsertProductBomCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ReplacesAllActiveLinesWithNewLines()
+    public async Task Handle_ReplacesAllOpenLinesWithNewLines()
     {
         Guid productId = Guid.NewGuid();
         Guid firstComponentId = Guid.NewGuid();
@@ -126,13 +131,12 @@ public class UpsertProductBomCommandHandlerTests
             ComponentId = Guid.NewGuid(),
             Quantity = 5m,
             ValidFrom = new DateOnly(2025, 1, 1),
-            IsActive = true,
         };
 
         List<BomLine> addedLines = new List<BomLine>();
 
         _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
+            .Setup(repository => repository.GetOpenByProductIdAsync(
                 productId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<BomLine> { previous });
@@ -164,13 +168,15 @@ public class UpsertProductBomCommandHandlerTests
 
         response.Count.Should().Be(2);
 
-        previous.IsActive.Should().BeFalse();
+        // The previous version ends on the tenant's calendar day, not on the UTC date, and the new
+        // versions start on that same day: adjacent half-open intervals, no overlap and no gap.
+        previous.ValidTo.Should().Be(TenantToday);
         previous.UpdatedAt.Should().NotBeNull();
 
         addedLines.Should().HaveCount(2);
         addedLines.Should().OnlyContain(line =>
             line.ProductId == productId &&
-            line.IsActive);
+            line.ValidTo == null);
 
         addedLines
             .Select(line => line.ComponentId)
@@ -192,7 +198,102 @@ public class UpsertProductBomCommandHandlerTests
             Times.Once);
     }
 
-    // ── Этап 5: автоматическая фиксация снапшота ─────────────────────────────────────
+    [Fact]
+    public async Task Handle_ComponentDroppedFromComposition_GetsADatedEndNotAFlag()
+    {
+        Guid productId = Guid.NewGuid();
+        Guid keptComponentId = Guid.NewGuid();
+        Guid droppedComponentId = Guid.NewGuid();
+
+        BomLine keptLine = new BomLine
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ComponentId = keptComponentId,
+            Quantity = 1m,
+            ValidFrom = new DateOnly(2025, 6, 1),
+        };
+
+        BomLine droppedLine = new BomLine
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ComponentId = droppedComponentId,
+            Quantity = 5m,
+            ValidFrom = new DateOnly(2025, 6, 1),
+        };
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetOpenByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine> { keptLine, droppedLine });
+
+        UpsertProductBomCommand command = new UpsertProductBomCommand
+        {
+            ProductId = productId,
+            Lines = new List<UpsertProductBomItem>
+            {
+                new UpsertProductBomItem
+                {
+                    ComponentId = keptComponentId,
+                    Quantity = 2m,
+                },
+            },
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        // The dropped component must stop counting from today while staying in force for every
+        // earlier date. A boolean flag could express the first half only, which is why a cost
+        // calculated for a past date used to be unreproducible.
+        droppedLine.ValidTo.Should().Be(TenantToday);
+        droppedLine.ValidFrom.Should().Be(new DateOnly(2025, 6, 1));
+        keptLine.ValidTo.Should().Be(TenantToday);
+    }
+
+    [Fact]
+    public async Task Handle_VersionStartedToday_IsClosedWithoutInvertingItsInterval()
+    {
+        Guid productId = Guid.NewGuid();
+
+        BomLine sameDayVersion = new BomLine
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ComponentId = Guid.NewGuid(),
+            Quantity = 1m,
+            ValidFrom = TenantToday,
+        };
+
+        _bomLineRepositoryMock
+            .Setup(repository => repository.GetOpenByProductIdAsync(
+                productId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<BomLine> { sameDayVersion });
+
+        UpsertProductBomCommand command = new UpsertProductBomCommand
+        {
+            ProductId = productId,
+            Lines = new List<UpsertProductBomItem>
+            {
+                new UpsertProductBomItem
+                {
+                    ComponentId = Guid.NewGuid(),
+                    Quantity = 1m,
+                },
+            },
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Two edits on one day: the first version ends where it started, so the effective-date query
+        // ignores it while the history keeps the row. An earlier ValidTo would be an inverted range.
+        sameDayVersion.ValidTo.Should().Be(TenantToday);
+        sameDayVersion.IsEffectiveAt(TenantToday).Should().BeFalse();
+    }
+
+    // ── Этап 5: автоматическая фиксация снапшота ────────────────────────────────────
 
     [Fact]
     public async Task Handle_ValidCommand_CapturesSnapshotForProductWithBomChangedReason()
@@ -200,7 +301,7 @@ public class UpsertProductBomCommandHandlerTests
         Guid productId = Guid.NewGuid();
 
         _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
+            .Setup(repository => repository.GetOpenByProductIdAsync(
                 productId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<BomLine>());
@@ -230,7 +331,7 @@ public class UpsertProductBomCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ValidCommand_CapturesSnapshotBeforeActiveLinesAreDeactivated()
+    public async Task Handle_ValidCommand_CapturesSnapshotBeforeOpenLinesAreClosed()
     {
         Guid productId = Guid.NewGuid();
 
@@ -241,14 +342,13 @@ public class UpsertProductBomCommandHandlerTests
             ComponentId = Guid.NewGuid(),
             Quantity = 5m,
             ValidFrom = new DateOnly(2025, 1, 1),
-            IsActive = true,
         };
 
-        bool previousLineWasActiveAtCapture = false;
+        bool previousLineWasOpenAtCapture = false;
         int addedLineCount = 0;
 
         _bomLineRepositoryMock
-            .Setup(repository => repository.GetActiveByProductIdAsync(
+            .Setup(repository => repository.GetOpenByProductIdAsync(
                 productId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<BomLine> { previous });
@@ -267,7 +367,7 @@ public class UpsertProductBomCommandHandlerTests
                 {
                     // The full replacement must not have started yet, otherwise the snapshot
                     // would capture the new composition instead of the one being replaced.
-                    previousLineWasActiveAtCapture = previous.IsActive;
+                    previousLineWasOpenAtCapture = previous.ValidTo == null;
                     addedLineCount.Should().Be(0);
                 })
             .Returns(Task.CompletedTask);
@@ -287,8 +387,8 @@ public class UpsertProductBomCommandHandlerTests
 
         await _handler.Handle(command, CancellationToken.None);
 
-        previousLineWasActiveAtCapture.Should().BeTrue();
-        previous.IsActive.Should().BeFalse();
+        previousLineWasOpenAtCapture.Should().BeTrue();
+        previous.ValidTo.Should().Be(TenantToday);
     }
 
     [Fact]

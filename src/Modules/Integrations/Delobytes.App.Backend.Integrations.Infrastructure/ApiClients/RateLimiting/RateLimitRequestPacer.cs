@@ -9,10 +9,6 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.RateLimit
 /// within the caller's tolerance. A refusal that cannot be waited out is returned to the caller,
 /// which decides whether it becomes a deferred page or ends the run.
 /// </summary>
-/// <remarks>
-/// Channel-neutral: the loop and its stale-slot retry rule are the part that is easy to get wrong,
-/// so channels share this implementation instead of each carrying a copy of it.
-/// </remarks>
 internal sealed class RateLimitRequestPacer
 {
     /// <summary>

@@ -24,7 +24,7 @@ public class GetProductBomQueryHandler : IRequestHandler<GetProductBomQuery, Get
     public async Task<GetProductBomResponse> Handle(GetProductBomQuery request, CancellationToken cancellationToken)
     {
         IReadOnlyList<BomLine> lines = await _repository
-            .GetActiveByProductIdAsync(request.ProductId, cancellationToken);
+            .GetOpenByProductIdAsync(request.ProductId, cancellationToken);
 
         return new GetProductBomResponse { Items = lines.Select(Map).ToList() };
     }
@@ -37,7 +37,7 @@ public class GetProductBomQueryHandler : IRequestHandler<GetProductBomQuery, Get
             ComponentId = line.ComponentId,
             Quantity = line.Quantity,
             ValidFrom = line.ValidFrom,
-            IsActive = line.IsActive,
+            ValidTo = line.ValidTo,
             CreatedAt = line.CreatedAt,
             UpdatedAt = line.UpdatedAt,
             Component = line.Component == null ? null : new BomComponentDto {

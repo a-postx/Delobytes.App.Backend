@@ -117,7 +117,7 @@ public class BomLineRepositoryTests
                 BuildComponent(firstComponentId),
                 BuildComponent(secondComponentId));
             context.BomLines.AddRange(
-                BuildLine(productId, firstComponentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-4)),
+                BuildLine(productId, firstComponentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-4), new DateOnly(2026, 5, 1)),
                 BuildLine(productId, firstComponentId, new DateOnly(2026, 5, 1), 2m, DateTimeOffset.UtcNow.AddDays(-3)),
                 BuildLine(productId, secondComponentId, new DateOnly(2026, 2, 1), 3m, DateTimeOffset.UtcNow.AddDays(-2)));
             await context.SaveChangesAsync();
@@ -164,6 +164,154 @@ public class BomLineRepositoryTests
         result.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task GetEffectiveAtAsync_ExcludesComponentWhoseVersionEndedBeforeTheDate()
+    {
+        Guid tenantId = Guid.NewGuid();
+        Guid productId = Guid.NewGuid();
+        Guid keptComponentId = Guid.NewGuid();
+        Guid removedComponentId = Guid.NewGuid();
+        DateOnly removalDate = new DateOnly(2026, 3, 1);
+        DbContextOptions<CatalogDbContext> options = BuildOptions();
+
+        using (CatalogDbContext context = BuildContext(options, tenantId))
+        {
+            context.Components.AddRange(
+                BuildComponent(keptComponentId),
+                BuildComponent(removedComponentId));
+
+            // A composition of two components, replaced on removalDate by one that keeps a single
+            // component. Both rows of the replaced composition are closed on that date, exactly as
+            // the upsert handler closes them.
+            context.BomLines.AddRange(
+                BuildLine(productId, keptComponentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-10), removalDate),
+                BuildLine(productId, removedComponentId, new DateOnly(2026, 1, 1), 5m, DateTimeOffset.UtcNow.AddDays(-10), removalDate),
+                BuildLine(productId, keptComponentId, removalDate, 2m, DateTimeOffset.UtcNow.AddDays(-9)));
+            await context.SaveChangesAsync();
+        }
+
+        using CatalogDbContext readContext = BuildContext(options, tenantId);
+        BomLineRepository repository = new BomLineRepository(readContext);
+
+        IReadOnlyList<BomLine> afterRemoval = await repository.GetEffectiveAtAsync(
+            productId,
+            new DateOnly(2026, 4, 1),
+            CancellationToken.None);
+
+        // The removed component must not be charged for a date after it left the composition. This is
+        // the regression the flag-based model allowed: it recorded that the component was gone but
+        // not when, so the resolver kept counting it indefinitely.
+        afterRemoval.Should().ContainSingle();
+        afterRemoval[0].ComponentId.Should().Be(keptComponentId);
+        afterRemoval[0].Quantity.Should().Be(2m);
+
+        IReadOnlyList<BomLine> beforeRemoval = await repository.GetEffectiveAtAsync(
+            productId,
+            new DateOnly(2026, 2, 1),
+            CancellationToken.None);
+
+        // Before the removal both components are still charged, with the quantities of that version.
+        beforeRemoval.Should().HaveCount(2);
+        beforeRemoval.Single(line => line.ComponentId == removedComponentId).Quantity.Should().Be(5m);
+        beforeRemoval.Single(line => line.ComponentId == keptComponentId).Quantity.Should().Be(1m);
+    }
+
+    [Fact]
+    public async Task GetEffectiveAtAsync_ExcludesVersionOnItsValidToDate()
+    {
+        Guid tenantId = Guid.NewGuid();
+        Guid productId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+        DateOnly validTo = new DateOnly(2026, 3, 1);
+        DbContextOptions<CatalogDbContext> options = BuildOptions();
+
+        using (CatalogDbContext context = BuildContext(options, tenantId))
+        {
+            context.Components.Add(BuildComponent(componentId));
+            context.BomLines.Add(BuildLine(
+                productId,
+                componentId,
+                new DateOnly(2026, 1, 1),
+                3m,
+                DateTimeOffset.UtcNow,
+                validTo));
+            await context.SaveChangesAsync();
+        }
+
+        using CatalogDbContext readContext = BuildContext(options, tenantId);
+        BomLineRepository repository = new BomLineRepository(readContext);
+
+        IReadOnlyList<BomLine> onLastDay = await repository.GetEffectiveAtAsync(
+            productId,
+            validTo.AddDays(-1),
+            CancellationToken.None);
+
+        IReadOnlyList<BomLine> onValidTo = await repository.GetEffectiveAtAsync(
+            productId,
+            validTo,
+            CancellationToken.None);
+
+        // Half-open interval: ValidTo is the first date on which the version no longer applies, so
+        // the day before it still counts and the day itself does not.
+        onLastDay.Should().ContainSingle().Which.Quantity.Should().Be(3m);
+        onValidTo.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetOpenByProductIdAsync_ReturnsOnlyVersionsStillInForce()
+    {
+        Guid tenantId = Guid.NewGuid();
+        Guid productId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+        DbContextOptions<CatalogDbContext> options = BuildOptions();
+
+        using (CatalogDbContext context = BuildContext(options, tenantId))
+        {
+            context.Components.Add(BuildComponent(componentId));
+            context.BomLines.AddRange(
+                BuildLine(productId, componentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-2), new DateOnly(2026, 2, 1)),
+                BuildLine(productId, componentId, new DateOnly(2026, 2, 1), 2m, DateTimeOffset.UtcNow.AddDays(-1)));
+            await context.SaveChangesAsync();
+        }
+
+        using CatalogDbContext readContext = BuildContext(options, tenantId);
+        BomLineRepository repository = new BomLineRepository(readContext);
+
+        IReadOnlyList<BomLine> result = await repository.GetOpenByProductIdAsync(productId, CancellationToken.None);
+
+        result.Should().ContainSingle();
+        result[0].Quantity.Should().Be(2m);
+        result[0].ValidTo.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProductIdsByComponentIdAsync_ExcludesProductsThatNoLongerUseTheComponent()
+    {
+        Guid tenantId = Guid.NewGuid();
+        Guid liveProductId = Guid.NewGuid();
+        Guid removedProductId = Guid.NewGuid();
+        Guid componentId = Guid.NewGuid();
+        DbContextOptions<CatalogDbContext> options = BuildOptions();
+
+        using (CatalogDbContext context = BuildContext(options, tenantId))
+        {
+            context.Components.Add(BuildComponent(componentId));
+            context.BomLines.AddRange(
+                BuildLine(liveProductId, componentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-2)),
+                BuildLine(removedProductId, componentId, new DateOnly(2026, 1, 1), 1m, DateTimeOffset.UtcNow.AddDays(-2), new DateOnly(2026, 2, 1)));
+            await context.SaveChangesAsync();
+        }
+
+        using CatalogDbContext readContext = BuildContext(options, tenantId);
+        BomLineRepository repository = new BomLineRepository(readContext);
+
+        IReadOnlyList<Guid> productIds = await repository.GetProductIdsByComponentIdAsync(componentId, CancellationToken.None);
+
+        // A product that dropped the component needs no cost snapshot when that component's price
+        // changes: the component is no longer part of its cost.
+        productIds.Should().ContainSingle().Which.Should().Be(liveProductId);
+    }
+
     private static DbContextOptions<CatalogDbContext> BuildOptions()
     {
         return new DbContextOptionsBuilder<CatalogDbContext>()
@@ -185,7 +333,8 @@ public class BomLineRepositoryTests
         Guid componentId,
         DateOnly validFrom,
         decimal quantity,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        DateOnly? validTo = null)
     {
         return new BomLine
         {
@@ -194,7 +343,7 @@ public class BomLineRepositoryTests
             ComponentId = componentId,
             Quantity = quantity,
             ValidFrom = validFrom,
-            IsActive = true,
+            ValidTo = validTo,
             CreatedAt = createdAt,
         };
     }

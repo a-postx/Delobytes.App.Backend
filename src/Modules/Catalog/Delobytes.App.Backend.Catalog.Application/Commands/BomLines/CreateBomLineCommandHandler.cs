@@ -48,13 +48,22 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
 
         await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "BomChanged", cancellationToken);
 
-        IReadOnlyList<BomLine> active = await _repository.GetActiveByProductIdAsync(request.ProductId, cancellationToken);
+        IReadOnlyList<BomLine> open = await _repository.GetOpenByProductIdAsync(request.ProductId, cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        BomLine? previous = active.FirstOrDefault(b => b.ComponentId == request.ComponentId);
+        BomLine? previous = open.FirstOrDefault(b => b.ComponentId == request.ComponentId);
 
         if (previous != null)
         {
-            previous.IsActive = false;
+            // The caller may post a future-dated version, and the current one has to keep applying
+            // until that date. Closing it at "today" — which is what a flag-based update did — would
+            // create a gap in which the component is silently absent, and closing it at the new
+            // ValidFrom only makes sense if the new version starts later.
+            if (request.ValidFrom <= previous.ValidFrom)
+            {
+                throw new AppException(ErrorCodes.Catalog.BomLineValidFromConflict);
+            }
+
+            previous.CloseAt(request.ValidFrom);
             previous.UpdatedAt = now;
         }
 
@@ -64,7 +73,6 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
             ComponentId = request.ComponentId,
             Quantity = request.Quantity,
             ValidFrom = request.ValidFrom,
-            IsActive = true,
             CreatedAt = now
         };
 

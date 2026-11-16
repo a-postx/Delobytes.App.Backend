@@ -255,7 +255,50 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ComponentPriceChange_IgnoresProductsWhoseBomLineIsInactive()
+    public async Task BomLineRemoval_StopsChargingTheComponentAndCapturesTheCostBeforeIt()
+    {
+        Guid productId = Guid.NewGuid();
+        await SeedProductAsync(productId);
+        Component keptComponent = await SeedComponentAsync("Ткань", ComponentCategory.Material, pricePerUnit: 100m);
+        Component removedComponent = await SeedComponentAsync("Фурнитура", ComponentCategory.Material, pricePerUnit: 50m);
+
+        BomLine keptLine = await SeedBomLineAsync(productId, keptComponent.Id, quantity: 2m);
+        BomLine removedLine = await SeedBomLineAsync(productId, removedComponent.Id, quantity: 4m);
+
+        // Baseline: 2 * 100 + 4 * 50 = 400.
+        (await CalculateAsync(productId)).TotalCost.Should().Be(400m);
+
+        DeleteBomLineCommandHandler handler = new DeleteBomLineCommandHandler(
+            _bomLineRepository,
+            _snapshotService,
+            TenantTimeTestDoubles.TenantContext(TenantId).Object,
+            TenantTimeTestDoubles.TenantTimeService(TenantId, _today).Object);
+
+        await handler.Handle(new DeleteBomLineCommand { Id = removedLine.Id }, CancellationToken.None);
+
+        await _context.SaveChangesAsync();
+
+        // The removed component no longer contributes: 2 * 100 = 200. Before the interval existed
+        // this figure stayed at 400 forever, because the flag said the row was inactive while the
+        // resolver never looked at it.
+        (await CalculateAsync(productId)).TotalCost.Should().Be(200m);
+
+        // The kept line was never closed by the removal.
+        keptLine.ValidTo.Should().BeNull();
+
+        List<ProductCostSnapshot> snapshots = await _context.ProductCostSnapshots
+            .Where(snapshot => snapshot.ProductId == productId)
+            .ToListAsync();
+
+        // The snapshot holds the composition as it was immediately before the removal.
+        snapshots.Should().ContainSingle();
+        snapshots[0].TriggerReason.Should().Be("BomLineRemoved");
+        snapshots[0].TotalCost.Should().Be(400m);
+        snapshots[0].MaterialCost.Should().Be(400m);
+    }
+
+    [Fact]
+    public async Task ComponentPriceChange_IgnoresProductsWhoseBomLineEnded()
     {
         Component component = await SeedComponentAsync("Ткань", ComponentCategory.Material, pricePerUnit: 100m);
 
@@ -265,7 +308,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
 
         Guid archivedProductId = Guid.NewGuid();
         await SeedProductAsync(archivedProductId);
-        await SeedBomLineAsync(archivedProductId, component.Id, quantity: 1m, isActive: false);
+        await SeedBomLineAsync(archivedProductId, component.Id, quantity: 1m, validTo: _today.AddDays(-10));
 
         IReadOnlyList<Guid> affectedProductIds = await _bomLineRepository
             .GetProductIdsByComponentIdAsync(component.Id, CancellationToken.None);
@@ -584,19 +627,22 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
         return component;
     }
 
-    private async Task SeedBomLineAsync(Guid productId, Guid componentId, decimal quantity, bool isActive = true)
+    private async Task<BomLine> SeedBomLineAsync(Guid productId, Guid componentId, decimal quantity, DateOnly? validTo = null)
     {
-        _context.BomLines.Add(new BomLine
+        BomLine line = new BomLine
         {
             Id = Guid.NewGuid(),
             ProductId = productId,
             ComponentId = componentId,
             Quantity = quantity,
             ValidFrom = _today.AddDays(-30),
-            IsActive = isActive,
+            ValidTo = validTo,
             CreatedAt = DateTimeOffset.UtcNow,
-        });
+        };
 
+        _context.BomLines.Add(line);
         await _context.SaveChangesAsync();
+
+        return line;
     }
 }
