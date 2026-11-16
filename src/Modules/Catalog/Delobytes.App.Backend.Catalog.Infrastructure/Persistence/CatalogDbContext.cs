@@ -16,7 +16,6 @@ public class CatalogDbContext : TenantScopedDbContext
     }
 
     public DbSet<Channel> Channels => Set<Channel>();
-    public DbSet<ChannelParameterSet> ChannelParameterSets => Set<ChannelParameterSet>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ChannelProduct> ChannelProducts => Set<ChannelProduct>();
     public DbSet<ChannelProductBarcode> ChannelProductBarcodes => Set<ChannelProductBarcode>();
@@ -31,8 +30,6 @@ public class CatalogDbContext : TenantScopedDbContext
     public DbSet<WorkRate> WorkRates => Set<WorkRate>();
     public DbSet<WorkRateVersion> WorkRateVersions => Set<WorkRateVersion>();
     public DbSet<ProductWorkRate> ProductWorkRates => Set<ProductWorkRate>();
-    public DbSet<ProductChannelInput> ProductChannelInputs => Set<ProductChannelInput>();
-    public DbSet<MarginCalculationSnapshot> MarginCalculationSnapshots => Set<MarginCalculationSnapshot>();
     public DbSet<ProductCostSnapshot> ProductCostSnapshots => Set<ProductCostSnapshot>();
     public DbSet<NumberingSequence> NumberingSequences => Set<NumberingSequence>();
     public DbSet<NumberingScheme> NumberingSchemes => Set<NumberingScheme>();

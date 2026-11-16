@@ -32,8 +32,8 @@ public class ComponentPriceConfiguration : IEntityTypeConfiguration<ComponentPri
 
         builder.Property(p => p.UpdatedAt);
 
-        // Composite index over tenant, component and effective date (shadow TenantId, as in ChannelParameterSets
-        // the leading tenant column). Explicit names keep identifiers inside PostgreSQL's 63-character limit.
+        // Composite index over tenant, component and effective date, with the shadow TenantId as
+        // the leading column. Explicit names keep identifiers inside PostgreSQL's 63-character limit.
         builder.HasIndex("TenantId", nameof(ComponentPrice.ComponentId), nameof(ComponentPrice.ValidFrom))
             .HasDatabaseName("IX_ComponentPrices_TenantId_ComponentId_ValidFrom");
 

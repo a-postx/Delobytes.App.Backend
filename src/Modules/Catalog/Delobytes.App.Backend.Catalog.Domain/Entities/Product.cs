@@ -51,8 +51,6 @@ public class Product : ITenantScoped, IAuditableEntity, IRowVersionedEntity
 
     public ICollection<BomLine> BomLines { get; set; } = new List<BomLine>();
 
-    public ICollection<ProductChannelInput> ProductChannelInputs { get; set; } = new List<ProductChannelInput>();
-
     public ICollection<ProductWorkRate> ProductWorkRates { get; set; } = new List<ProductWorkRate>();
 
     public ICollection<PackingUnit> PackingUnits { get; set; } = new List<PackingUnit>();

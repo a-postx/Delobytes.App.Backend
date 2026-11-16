@@ -55,7 +55,6 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddScoped<IChannelRepository, ChannelRepository>();
-        services.AddScoped<IChannelParameterSetRepository, ChannelParameterSetRepository>();
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IComponentRepository, ComponentRepository>();
         services.AddScoped<IComponentPriceRepository, ComponentPriceRepository>();

@@ -69,11 +69,6 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .HasForeignKey(b => b.ProductId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasMany(p => p.ProductChannelInputs)
-            .WithOne(pci => pci.Product)
-            .HasForeignKey(pci => pci.ProductId)
-            .OnDelete(DeleteBehavior.Cascade);
-
         builder.HasMany(p => p.ProductWorkRates)
             .WithOne(pwr => pwr.Product)
             .HasForeignKey(pwr => pwr.ProductId)
