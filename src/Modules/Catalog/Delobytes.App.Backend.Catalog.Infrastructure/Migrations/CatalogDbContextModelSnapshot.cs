@@ -38,9 +38,6 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
 
@@ -66,13 +63,16 @@ namespace Delobytes.App.Backend.Catalog.Infrastructure.Migrations
                     b.Property<DateOnly>("ValidFrom")
                         .HasColumnType("date");
 
+                    b.Property<DateOnly?>("ValidTo")
+                        .HasColumnType("date");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ComponentId");
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("ProductId", "IsActive");
+                    b.HasIndex("ProductId", "ValidTo");
 
                     b.HasIndex("ProductId", "ComponentId", "ValidFrom");
 

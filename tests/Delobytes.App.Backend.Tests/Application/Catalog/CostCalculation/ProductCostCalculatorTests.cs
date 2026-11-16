@@ -447,7 +447,6 @@ public class ProductCostCalculatorTests
             ComponentId = component.Id,
             Quantity = quantity,
             ValidFrom = new DateOnly(2026, 1, 1),
-            IsActive = true,
             Component = component,
         };
     }
