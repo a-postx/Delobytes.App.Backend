@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
+using Delobytes.App.Backend.Finance.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
@@ -34,6 +35,7 @@ public static class MigrationExtensions
         await ApplyAsync<IntegrationsDbContext>(scope, logger, "Integrations");
         await ApplyAsync<CatalogDbContext>(scope, logger, "Catalog");
         await ApplyAsync<SalesDbContext>(scope, logger, "Sales");
+        await ApplyAsync<FinanceDbContext>(scope, logger, "Finance");
 
         await SeedIdentityDataAsync(scope, logger);
         await SeedIntegrationsDataAsync(scope, logger);

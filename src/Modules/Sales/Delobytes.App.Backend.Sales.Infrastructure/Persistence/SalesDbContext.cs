@@ -22,7 +22,6 @@ public class SalesDbContext : TenantScopedDbContext
 
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
-    public DbSet<OrderSettlement> OrderSettlements => Set<OrderSettlement>();
     public DbSet<Return> Returns => Set<Return>();
     public DbSet<ChannelProductRef> ChannelProductRefs => Set<ChannelProductRef>();
 

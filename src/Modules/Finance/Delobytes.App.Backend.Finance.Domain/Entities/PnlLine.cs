@@ -1,18 +1,28 @@
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
-using Delobytes.App.Backend.Sales.Domain.Enums;
+using Delobytes.App.Backend.Finance.Domain.Enums;
 
-namespace Delobytes.App.Backend.Sales.Domain.Entities;
+namespace Delobytes.App.Backend.Finance.Domain.Entities;
 
 /// <summary>
-/// Resolved money for an order line, each amount carrying its provenance. One row per line.
+/// One line of the profit-and-loss statement: the money resolved for a single sale, each amount
+/// carrying its provenance. One row per Sales order line.
 /// </summary>
 /// <remarks>
-/// Facts and derived values are separated by design: <see cref="OrderLine"/> holds what the
-/// channel reported, this entity holds what was resolved from it. Every amount is paired with a
+/// <para>
+/// <see cref="OrderLineId"/> is a soft reference to the Sales module. No foreign key can exist:
+/// the row lives in another module, another schema and another DbContext, and the modules may only
+/// know each other through <c>*.Contracts</c>. The correspondence is enforced by the unique index
+/// on <c>(TenantId, OrderLineId)</c> and by the writer, not by the database.
+/// </para>
+/// <para>
+/// Facts and derived values are separated by design: Sales owns what the channel reported, this
+/// entity holds what was resolved from it. Every amount is paired with a
 /// <see cref="ValueSource"/> so a consumer can tell a channel-reported number from a configured one.
 /// A null amount together with <see cref="ValueSource.Unknown"/> is a valid terminal state (for
 /// instance Wildberries and Yandex Market supply no commission in their order APIs) and must be
 /// surfaced as "not calculated" rather than substituted with a zero.
+/// </para>
 /// <para>
 /// Amounts are stored as money, never as a rate: the channel bills a fixed sum per line, a rate
 /// would have to be re-applied and could drift away from what was actually charged. A rate belongs
@@ -25,21 +35,21 @@ namespace Delobytes.App.Backend.Sales.Domain.Entities;
 /// </para>
 /// <para>
 /// Upgrade path, not implemented: if per-revision audit of financial facts is required later,
-/// promote immutable <c>OrderSettlementEntry</c> rows — one per fact, per source, per financial
-/// period — and recompute this entity from them. Today the immutable trail is the raw API payload
-/// retained in the Integrations module, attributable through the JobRun of the import that produced
-/// the amounts.
+/// promote immutable <c>PnlEntry</c> rows — one per fact, per source, per financial period — and
+/// recompute this line from them. Today the immutable trail is the raw API payload retained in the
+/// Integrations module, attributable through the JobRun of the import that produced the amounts.
 /// </para>
 /// </remarks>
-public class OrderSettlement : ITenantScoped, IRowVersionedEntity
+public class PnlLine : ITenantScoped, IRowVersionedEntity
 {
     /// <summary>
-    /// Gets or sets the settlement unique identifier.
+    /// Gets or sets the P&amp;L line unique identifier.
     /// </summary>
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the order line this settlement belongs to.
+    /// Gets or sets the identifier of the Sales order line this P&amp;L line was resolved for.
+    /// A soft reference across module boundaries — see the type remarks.
     /// </summary>
     public Guid OrderLineId { get; set; }
 
@@ -104,13 +114,13 @@ public class OrderSettlement : ITenantScoped, IRowVersionedEntity
     public ValueSource NetRevenueSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the settlement state. Named after settlement, not margin: margin also needs
-    /// cost of goods, which this entity does not have.
+    /// Gets or sets the line state. Named after the P&amp;L line, not after margin: margin also
+    /// needs cost of goods, which this entity does not have.
     /// </summary>
-    public SettlementState State { get; set; } = SettlementState.NotCalculated;
+    public PnlLineState State { get; set; } = PnlLineState.NotCalculated;
 
     /// <summary>
-    /// Gets or sets the settlement currency.
+    /// Gets or sets the line currency.
     /// </summary>
     public string Currency { get; set; } = default!;
 
@@ -144,9 +154,4 @@ public class OrderSettlement : ITenantScoped, IRowVersionedEntity
     /// Gets or sets the row version for optimistic concurrency (PostgreSQL xmin).
     /// </summary>
     public uint RowVersion { get; set; }
-
-    /// <summary>
-    /// Gets or sets the order line this settlement belongs to.
-    /// </summary>
-    public OrderLine OrderLine { get; set; } = default!;
 }

@@ -63,6 +63,8 @@
     <ProjectReference Include="..\Modules\Integrations\Delobytes.App.Backend.Integrations.Api\Delobytes.App.Backend.Integrations.Api.csproj" />
     <ProjectReference Include="..\Modules\Sales\Delobytes.App.Backend.Sales.Infrastructure\Delobytes.App.Backend.Sales.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Sales\Delobytes.App.Backend.Sales.Api\Delobytes.App.Backend.Sales.Api.csproj" />
+    <ProjectReference Include="..\Modules\Finance\Delobytes.App.Backend.Finance.Infrastructure\Delobytes.App.Backend.Finance.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Finance\Delobytes.App.Backend.Finance.Api\Delobytes.App.Backend.Finance.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

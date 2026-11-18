@@ -85,11 +85,6 @@ public class OrderLineConfiguration : IEntityTypeConfiguration<OrderLine>
             .HasForeignKey(l => l.OrderId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasMany(l => l.Settlements)
-            .WithOne(s => s.OrderLine)
-            .HasForeignKey(s => s.OrderLineId)
-            .OnDelete(DeleteBehavior.Cascade);
-
         builder.HasMany(l => l.Returns)
             .WithOne(r => r.OrderLine)
             .HasForeignKey(r => r.OrderLineId)

@@ -1,0 +1,38 @@
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Finance.Domain.Entities;
+using Delobytes.App.Backend.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Delobytes.App.Backend.Finance.Infrastructure.Persistence;
+
+/// <summary>
+/// EF Core DbContext for the Finance module.
+/// </summary>
+public class FinanceDbContext : TenantScopedDbContext
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FinanceDbContext"/> class.
+    /// </summary>
+    /// <param name="options">DbContext options.</param>
+    /// <param name="tenantContext">Tenant context for query filtering.</param>
+    public FinanceDbContext(DbContextOptions<FinanceDbContext> options, ITenantContext tenantContext)
+        : base(options, tenantContext)
+    {
+    }
+
+    /// <summary>
+    /// Gets the P&amp;L lines resolved by the module.
+    /// </summary>
+    public DbSet<PnlLine> PnlLines => Set<PnlLine>();
+
+    /// <inheritdoc/>
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.HasDefaultSchema("finance");
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(FinanceDbContext).Assembly);
+
+        ApplyTenantQueryFilters(modelBuilder);
+    }
+}

@@ -18,7 +18,7 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("sales")
-                .HasAnnotation("ProductVersion", "8.0.2")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -280,115 +280,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                     b.ToTable("OrderLines", "sales");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Sales.Domain.Entities.OrderSettlement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal?>("AcquiringAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("AcquiringSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<decimal?>("CommissionAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("CommissionSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<decimal?>("DeliveryFeeAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("DeliveryFeeSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateOnly?>("FinancialPeriodFrom")
-                        .HasColumnType("date");
-
-                    b.Property<DateOnly?>("FinancialPeriodTo")
-                        .HasColumnType("date");
-
-                    b.Property<decimal?>("NetRevenueAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("NetRevenueSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<Guid>("OrderLineId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal?>("PayoutAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("PayoutSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<decimal?>("RefundAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("RefundSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset?>("ResolvedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<uint>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderLineId");
-
-                    b.HasIndex("TenantId");
-
-                    b.HasIndex("TenantId", "OrderLineId")
-                        .IsUnique();
-
-                    b.ToTable("OrderSettlements", "sales");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Sales.Domain.Entities.Return", b =>
                 {
                     b.Property<Guid>("Id")
@@ -460,17 +351,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
                     b.Navigation("Order");
                 });
 
-            modelBuilder.Entity("Delobytes.App.Backend.Sales.Domain.Entities.OrderSettlement", b =>
-                {
-                    b.HasOne("Delobytes.App.Backend.Sales.Domain.Entities.OrderLine", "OrderLine")
-                        .WithMany("Settlements")
-                        .HasForeignKey("OrderLineId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("OrderLine");
-                });
-
             modelBuilder.Entity("Delobytes.App.Backend.Sales.Domain.Entities.Return", b =>
                 {
                     b.HasOne("Delobytes.App.Backend.Sales.Domain.Entities.OrderLine", "OrderLine")
@@ -490,8 +370,6 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
             modelBuilder.Entity("Delobytes.App.Backend.Sales.Domain.Entities.OrderLine", b =>
                 {
                     b.Navigation("Returns");
-
-                    b.Navigation("Settlements");
                 });
 #pragma warning restore 612, 618
         }

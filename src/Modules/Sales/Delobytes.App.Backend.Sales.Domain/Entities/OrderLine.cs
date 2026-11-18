@@ -118,11 +118,6 @@ public class OrderLine : ITenantScoped
     public Order Order { get; set; } = default!;
 
     /// <summary>
-    /// Gets or sets the resolved money for this line.
-    /// </summary>
-    public ICollection<OrderSettlement> Settlements { get; set; } = new List<OrderSettlement>();
-
-    /// <summary>
     /// Gets or sets the returns registered for this line.
     /// </summary>
     public ICollection<Return> Returns { get; set; } = new List<Return>();

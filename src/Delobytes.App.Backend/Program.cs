@@ -7,6 +7,7 @@ using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Api;
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Extensions;
+using Delobytes.App.Backend.Finance.Api;
 using Delobytes.App.Backend.Identity.Api;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Integrations.Api;
@@ -131,6 +132,7 @@ public partial class Program
             builder.Services.AddIntegrationsApi();
             builder.Services.AddCatalogApi();
             builder.Services.AddSalesApi();
+            builder.Services.AddFinanceApi();
 
             builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
             {

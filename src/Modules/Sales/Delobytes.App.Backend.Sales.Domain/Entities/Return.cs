@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Domain.Enums;
 

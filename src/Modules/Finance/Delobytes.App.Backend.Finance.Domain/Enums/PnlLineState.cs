@@ -1,9 +1,9 @@
-namespace Delobytes.App.Backend.Sales.Domain.Enums;
+namespace Delobytes.App.Backend.Finance.Domain.Enums;
 
 /// <summary>
-/// Whether the money on a settlement is resolvable, still expected, or currently calculable.
+/// Whether the money on a P&amp;L line is resolvable, still expected, or currently calculable.
 /// </summary>
-public enum SettlementState
+public enum PnlLineState
 {
     /// <summary>
     /// Insufficient inputs that this channel will never provide — for example no commission in the

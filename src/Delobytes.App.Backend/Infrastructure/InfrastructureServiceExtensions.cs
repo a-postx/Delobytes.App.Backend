@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Catalog.Application.Options;
 using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
+using Delobytes.App.Backend.Finance.Infrastructure;
 using Delobytes.App.Backend.Identity.Infrastructure;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
 using Delobytes.App.Backend.Infrastructure.Storage;
@@ -85,6 +86,7 @@ public static class InfrastructureServiceExtensions
             secrets?.GoogleClientSecret);
         services.AddCatalogInfrastructure(secrets?.ConnectionString);
         services.AddSalesInfrastructure(secrets?.ConnectionString);
+        services.AddFinanceInfrastructure(secrets?.ConnectionString);
         services.AddIntegrationsInfrastructure(secrets?.ConnectionString, configuration);
 
         return services;
