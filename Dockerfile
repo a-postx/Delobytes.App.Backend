@@ -29,6 +29,10 @@ COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/Delobytes.App.Backen
 COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Application/Delobytes.App.Backend.Sales.Application.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Application/"]
 COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Contracts/Delobytes.App.Backend.Sales.Contracts.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Contracts/"]
 COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Infrastructure/Delobytes.App.Backend.Sales.Infrastructure.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Infrastructure/"]
+COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Api/Delobytes.App.Backend.Finance.Api.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Api/"]
+COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Domain/Delobytes.App.Backend.Finance.Domain.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Domain/"]
+COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Contracts/Delobytes.App.Backend.Finance.Contracts.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Contracts/"]
+COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Infrastructure/Delobytes.App.Backend.Finance.Infrastructure.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Infrastructure/"]
 
 # Восстанавливаем зависимости через главный проект
 RUN dotnet restore "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj"
