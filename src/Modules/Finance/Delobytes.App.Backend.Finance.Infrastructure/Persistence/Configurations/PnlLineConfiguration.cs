@@ -19,6 +19,14 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
         builder.Property(line => line.OrderLineId)
             .IsRequired();
 
+        builder.Property(line => line.RevenueAmount)
+            .HasPrecision(18, 2);
+
+        builder.Property(line => line.RevenueSource)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.Property(line => line.CommissionAmount)
             .HasPrecision(18, 2);
 
@@ -33,14 +41,6 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
             .HasPrecision(18, 2);
 
         builder.Property(line => line.AcquiringSource)
-            .IsRequired()
-            .HasConversion<string>()
-            .HasMaxLength(32);
-
-        builder.Property(line => line.PayoutAmount)
-            .HasPrecision(18, 2);
-
-        builder.Property(line => line.PayoutSource)
             .IsRequired()
             .HasConversion<string>()
             .HasMaxLength(32);
@@ -68,6 +68,17 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
             .IsRequired()
             .HasConversion<string>()
             .HasMaxLength(32);
+
+        builder.Property(line => line.ControlTotalAmount)
+            .HasPrecision(18, 2);
+
+        builder.Property(line => line.ControlDifferenceAmount)
+            .HasPrecision(18, 2);
+
+        builder.Property(line => line.EntryCount)
+            .IsRequired();
+
+        builder.Property(line => line.ComputedAt);
 
         builder.Property(line => line.State)
             .IsRequired()

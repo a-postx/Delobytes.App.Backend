@@ -5,8 +5,8 @@ using Delobytes.App.Backend.Finance.Domain.Enums;
 namespace Delobytes.App.Backend.Finance.Domain.Entities;
 
 /// <summary>
-/// One line of the profit-and-loss statement: the money resolved for a single sale, each amount
-/// carrying its provenance. One row per Sales order line.
+/// The result of one sale: the totals aggregated from the <see cref="PnlEntry"/> journal of a
+/// single Sales order line. Derived, never entered by hand.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,28 +16,28 @@ namespace Delobytes.App.Backend.Finance.Domain.Entities;
 /// on <c>(TenantId, OrderLineId)</c> and by the writer, not by the database.
 /// </para>
 /// <para>
-/// Facts and derived values are separated by design: Sales owns what the channel reported, this
-/// entity holds what was resolved from it. Every amount is paired with a
-/// <see cref="ValueSource"/> so a consumer can tell a channel-reported number from a configured one.
-/// A null amount together with <see cref="ValueSource.Unknown"/> is a valid terminal state (for
-/// instance Wildberries and Yandex Market supply no commission in their order APIs) and must be
-/// surfaced as "not calculated" rather than substituted with a zero.
+/// Every amount here is a sum over the journal, so this row must stay rebuildable from it: the only
+/// writer is the projection that recomputes a line when its entries change, and a full rebuild from
+/// the journal must always produce the same values. Component amounts are signed — income positive,
+/// an expense negative — because they are summed from entries that carry their direction explicitly.
 /// </para>
 /// <para>
-/// Amounts are stored as money, never as a rate: the channel bills a fixed sum per line, a rate
-/// would have to be re-applied and could drift away from what was actually charged. A rate belongs
-/// in the raw payload, which the Integrations module retains in its RawApiResponses table.
+/// <see cref="ControlTotalAmount"/> is the channel's own figure for the money it remitted and is
+/// deliberately excluded from <see cref="NetRevenueAmount"/>: it already covers the commission, the
+/// acquiring fee and the delivery fee, so including it would count them twice.
+/// <see cref="ControlDifferenceAmount"/> is what the components fail to explain; a non-zero value is
+/// a defect in the mapping, not a rounding artefact.
+/// </para>
+/// <para>
+/// A line with no entries is simply not closed yet — that is what
+/// <see cref="PnlLineState.NotCalculated"/> means. There is no separate "waiting" flag: absence of
+/// entries is the only thing to wait for, and whether money will ever arrive is a property of the
+/// Sales line, not of this row.
 /// </para>
 /// <para>
 /// Tax is deliberately absent. It is charged on revenue rather than per sale, cannot be attributed
 /// to one line before the reporting period closes, and is derived from the versioned tenant profile
 /// instead.
-/// </para>
-/// <para>
-/// Upgrade path, not implemented: if per-revision audit of financial facts is required later,
-/// promote immutable <c>PnlEntry</c> rows — one per fact, per source, per financial period — and
-/// recompute this line from them. Today the immutable trail is the raw API payload retained in the
-/// Integrations module, attributable through the JobRun of the import that produced the amounts.
 /// </para>
 /// </remarks>
 public class PnlLine : ITenantScoped, IRowVersionedEntity
@@ -48,13 +48,23 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Gets or sets the identifier of the Sales order line this P&amp;L line was resolved for.
-    /// A soft reference across module boundaries — see the type remarks.
+    /// Gets or sets the identifier of the Sales order line the totals belong to. A soft reference
+    /// across module boundaries — see the type remarks.
     /// </summary>
     public Guid OrderLineId { get; set; }
 
     /// <summary>
-    /// Gets or sets the commission charged by the channel. Null when not reported.
+    /// Gets or sets the signed sum of the sale entries.
+    /// </summary>
+    public decimal? RevenueAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets where <see cref="RevenueAmount"/> came from.
+    /// </summary>
+    public ValueSource RevenueSource { get; set; } = ValueSource.Unknown;
+
+    /// <summary>
+    /// Gets or sets the signed sum of the commission entries.
     /// </summary>
     public decimal? CommissionAmount { get; set; }
 
@@ -64,7 +74,7 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public ValueSource CommissionSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the acquiring fee. Null when not reported.
+    /// Gets or sets the signed sum of the acquiring entries.
     /// </summary>
     public decimal? AcquiringAmount { get; set; }
 
@@ -74,17 +84,7 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public ValueSource AcquiringSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the payout amount. Null when not reported.
-    /// </summary>
-    public decimal? PayoutAmount { get; set; }
-
-    /// <summary>
-    /// Gets or sets where <see cref="PayoutAmount"/> came from.
-    /// </summary>
-    public ValueSource PayoutSource { get; set; } = ValueSource.Unknown;
-
-    /// <summary>
-    /// Gets or sets the delivery fee attributed to this line. Null when not reported.
+    /// Gets or sets the signed sum of the delivery entries.
     /// </summary>
     public decimal? DeliveryFeeAmount { get; set; }
 
@@ -94,7 +94,7 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public ValueSource DeliveryFeeSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the refund amount. Null when not reported.
+    /// Gets or sets the signed sum of the refund entries.
     /// </summary>
     public decimal? RefundAmount { get; set; }
 
@@ -104,7 +104,8 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public ValueSource RefundSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the derived net revenue. Null whenever any input is missing — never zero.
+    /// Gets or sets the signed sum of every component — the money the sale left before cost of
+    /// goods.
     /// </summary>
     public decimal? NetRevenueAmount { get; set; }
 
@@ -114,8 +115,31 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public ValueSource NetRevenueSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
-    /// Gets or sets the line state. Named after the P&amp;L line, not after margin: margin also
-    /// needs cost of goods, which this entity does not have.
+    /// Gets or sets the channel-reported total for the money it remitted. Null when the channel
+    /// reported none. Excluded from <see cref="NetRevenueAmount"/>.
+    /// </summary>
+    public decimal? ControlTotalAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets <see cref="NetRevenueAmount"/> minus <see cref="ControlTotalAmount"/>. Null
+    /// when there is no control total; non-zero means the components do not explain the payout.
+    /// </summary>
+    public decimal? ControlDifferenceAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of component entries behind the totals. Zero means the journal holds
+    /// nothing for this line yet.
+    /// </summary>
+    public int EntryCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the time the totals were last recomputed from the journal.
+    /// </summary>
+    public DateTimeOffset? ComputedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the line state. Derived from the journal: entries present means calculated,
+    /// none means nothing has arrived yet.
     /// </summary>
     public PnlLineState State { get; set; } = PnlLineState.NotCalculated;
 

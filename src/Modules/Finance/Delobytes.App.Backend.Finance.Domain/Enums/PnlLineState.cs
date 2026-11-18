@@ -1,23 +1,19 @@
 namespace Delobytes.App.Backend.Finance.Domain.Enums;
 
 /// <summary>
-/// Whether the money on a P&amp;L line is resolvable, still expected, or currently calculable.
+/// Whether the journal holds anything for a P&amp;L line. There is no "waiting" state: a line with
+/// no entries is not closed yet, and whether money will ever arrive is a property of the Sales line
+/// rather than of the aggregate.
 /// </summary>
 public enum PnlLineState
 {
     /// <summary>
-    /// Insufficient inputs that this channel will never provide — for example no commission in the
-    /// order API. This is a terminal state, not a failure.
+    /// The journal holds no entries for the line, or does not exist for it at all.
     /// </summary>
     NotCalculated = 0,
 
     /// <summary>
-    /// Inputs are expected later, from a financial report or a subsequent call.
-    /// </summary>
-    Pending = 1,
-
-    /// <summary>
-    /// All inputs required for this entity's scope are present.
+    /// The totals were computed from at least one component entry.
     /// </summary>
     Calculated = 2,
 }

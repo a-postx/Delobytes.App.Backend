@@ -23,6 +23,120 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Delobytes.App.Backend.Finance.Domain.Entities.PnlEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateOnly>("DocumentDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ExternalEntryId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ExternalLineId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ExternalOrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ExternalProductId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateOnly>("PeriodFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("PeriodTo")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ReportInstanceKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("SupersededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SupersededByEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "DocumentDate");
+
+                    b.HasIndex("TenantId", "ChannelId", "ExternalLineId")
+                        .HasFilter("\"SupersededByEntryId\" IS NULL");
+
+                    b.HasIndex("TenantId", "ChannelId", "ExternalOrderId", "ExternalProductId")
+                        .HasFilter("\"SupersededByEntryId\" IS NULL");
+
+                    b.HasIndex("TenantId", "Source", "ReportInstanceKey", "ExternalEntryId", "ExternalProductId", "Kind", "Type")
+                        .IsUnique();
+
+                    b.ToTable("PnlEntries", "finance", t =>
+                        {
+                            t.HasCheckConstraint("CK_PnlEntries_AmountNonNegative", "\"Amount\" >= 0");
+
+                            t.HasCheckConstraint("CK_PnlEntries_LineOrOrder", "\"ExternalLineId\" IS NOT NULL OR \"ExternalOrderId\" IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Finance.Domain.Entities.PnlLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -47,6 +161,17 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<DateTimeOffset?>("ComputedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("ControlDifferenceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal?>("ControlTotalAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -63,6 +188,9 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("integer");
 
                     b.Property<DateOnly?>("FinancialPeriodFrom")
                         .HasColumnType("date");
@@ -82,15 +210,6 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                     b.Property<Guid>("OrderLineId")
                         .HasColumnType("uuid");
 
-                    b.Property<decimal?>("PayoutAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("PayoutSource")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<decimal?>("RefundAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -102,6 +221,15 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("RevenueAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("RevenueSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
