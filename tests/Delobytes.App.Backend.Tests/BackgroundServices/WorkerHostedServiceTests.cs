@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
-using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -36,7 +36,7 @@ public partial class WorkerHostedServiceTests
 {
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _connectionId = Guid.NewGuid();
-    private readonly Mock<ITenantRepository> _tenantRepositoryMock = new Mock<ITenantRepository>();
+    private readonly Mock<ITenantDirectory> _tenantDirectoryMock = new Mock<ITenantDirectory>();
     private readonly Mock<IJobRunRepository> _jobRunRepositoryMock = new Mock<IJobRunRepository>();
     private readonly Mock<ITenantSettingsProvider> _tenantSettingsProviderMock = new Mock<ITenantSettingsProvider>();
     private readonly Mock<IEventPublisher> _eventPublisherMock = new Mock<IEventPublisher>();
@@ -44,8 +44,8 @@ public partial class WorkerHostedServiceTests
 
     public WorkerHostedServiceTests()
     {
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid> { _tenantId });
 
         _tenantSettingsProviderMock
@@ -70,8 +70,8 @@ public partial class WorkerHostedServiceTests
     [Fact]
     public async Task Tick_WhenNoActiveTenants_DoesNothing()
     {
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid>());
 
         WorkerHostedService worker = BuildWorker();
@@ -84,6 +84,36 @@ public partial class WorkerHostedServiceTests
         _eventPublisherMock.Verify(
             p => p.PublishAsync(It.IsAny<It.IsAnyType>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task Tick_WhenPageIsFull_RequestsNextPageWithLastReturnedIdAsCursor()
+    {
+        int pageSize = GetTenantPageSize();
+
+        List<Guid> firstPage = Enumerable.Range(0, pageSize)
+            .Select(_ => Guid.NewGuid())
+            .ToList();
+        Guid lastOnFirstPage = firstPage[firstPage.Count - 1];
+        Guid secondPageTenantId = Guid.NewGuid();
+
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstPage);
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(lastOnFirstPage, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { secondPageTenantId });
+
+        WorkerHostedService worker = BuildWorker();
+
+        await RunSingleTickAsync(worker);
+
+        _tenantDirectoryMock.Verify(
+            r => r.GetActiveTenantIdsAsync(lastOnFirstPage, It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _jobRunRepositoryMock.Verify(
+            r => r.GetPendingJobsAsync(secondPageTenantId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -255,8 +285,8 @@ public partial class WorkerHostedServiceTests
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
 
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid> { tenantAId, tenantBId });
 
         _tenantSettingsProviderMock
@@ -284,8 +314,8 @@ public partial class WorkerHostedServiceTests
         Guid failingTenantId = Guid.NewGuid();
         Guid healthyTenantId = Guid.NewGuid();
 
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid> { failingTenantId, healthyTenantId });
 
         _tenantSettingsProviderMock
@@ -317,8 +347,8 @@ public partial class WorkerHostedServiceTests
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
 
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid> { tenantAId, tenantBId });
 
         _tenantSettingsProviderMock
@@ -354,8 +384,8 @@ public partial class WorkerHostedServiceTests
     [Fact]
     public async Task ExecuteAsync_WhenATickThrows_KeepsTicking()
     {
-        _tenantRepositoryMock
-            .SetupSequence(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .SetupSequence(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("db unavailable"))
             .ReturnsAsync(new List<Guid> { _tenantId });
 
@@ -376,10 +406,20 @@ public partial class WorkerHostedServiceTests
 
     // Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™ Helpers Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™Р В Р вЂ Р Р†Р вЂљРЎСљР В РІР‚С™
 
+    private static int GetTenantPageSize()
+    {
+        FieldInfo? field = typeof(WorkerHostedService)
+            .GetField("TenantPageSize", BindingFlags.Static | BindingFlags.NonPublic);
+
+        field.Should().NotBeNull("WorkerHostedService is expected to expose a private TenantPageSize constant");
+
+        return (int)field!.GetRawConstantValue()!;
+    }
+
     private WorkerHostedService BuildWorker(int tickIntervalSeconds = 3600)
     {
         ServiceCollection services = new ServiceCollection();
-        services.AddSingleton(_tenantRepositoryMock.Object);
+        services.AddSingleton(_tenantDirectoryMock.Object);
         services.AddSingleton(_jobRunRepositoryMock.Object);
         services.AddSingleton(_tenantSettingsProviderMock.Object);
         services.AddSingleton(_eventPublisherMock.Object);

@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
@@ -39,8 +37,4 @@ public class TenantRepository : ITenantRepository
     /// <inheritdoc/>
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         => _context.SaveChangesAsync(cancellationToken);
-
-    /// <inheritdoc/>
-    public Task<List<Guid>> GetAllActiveTenantIdsAsync(CancellationToken cancellationToken)
-        => _context.Tenants.Where(t => t.IsActive).Select(t => t.Id).ToListAsync(cancellationToken);
 }

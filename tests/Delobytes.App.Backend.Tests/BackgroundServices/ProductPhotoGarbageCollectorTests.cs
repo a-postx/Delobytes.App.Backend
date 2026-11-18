@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Application.Options;
@@ -10,7 +11,7 @@ using Delobytes.App.Backend.Catalog.Infrastructure.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
-using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,7 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
     private readonly string _databaseName;
     private readonly MessageTenantContext _tenantContext;
     private readonly Mock<IObjectStorage> _storageMock;
-    private readonly Mock<ITenantRepository> _tenantRepositoryMock;
+    private readonly Mock<ITenantDirectory> _tenantDirectoryMock;
     private readonly ServiceProvider _provider;
     private readonly ProductPhotoGarbageCollector _collector;
 
@@ -45,10 +46,10 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         _databaseName = "photo-gc-" + Guid.NewGuid().ToString("N");
         _tenantContext = new MessageTenantContext();
         _storageMock = new Mock<IObjectStorage>();
-        _tenantRepositoryMock = new Mock<ITenantRepository>();
+        _tenantDirectoryMock = new Mock<ITenantDirectory>();
 
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid> { TenantId });
 
         ServiceCollection services = new ServiceCollection();
@@ -57,7 +58,7 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         services.AddSingleton<ITenantContextSetter>(_tenantContext);
         services.AddSingleton(_tenantContext);
         services.AddSingleton(_storageMock.Object);
-        services.AddScoped(_ => _tenantRepositoryMock.Object);
+        services.AddScoped(_ => _tenantDirectoryMock.Object);
         services.AddSingleton<DbContextOptions<CatalogDbContext>>(
             new DbContextOptionsBuilder<CatalogDbContext>()
                 .UseInMemoryDatabase(_databaseName)
@@ -202,12 +203,40 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleanup_WhenTenantPageIsFull_WalksTheNextPageAndCleansIt()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        int pageSize = GetTenantPageSize();
+
+        List<Guid> firstPage = Enumerable.Range(0, pageSize - 1)
+            .Select(_ => Guid.NewGuid())
+            .ToList();
+        firstPage.Add(TenantId);
+
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstPage);
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(TenantId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid> { OtherTenantId });
+
+        await SeedPhotoAsync(TenantId, ProductPhotoStatus.Removed, "product-photos/first-page.webp", now.AddDays(-40));
+        await SeedPhotoAsync(OtherTenantId, ProductPhotoStatus.Removed, "product-photos/second-page.webp", now.AddDays(-40));
+
+        ProductPhotoGcResult result = await _collector.CleanupAsync(now, CancellationToken.None);
+
+        result.DeletedPhotos.Should().Be(2);
+        result.DeletedBlobs.Should().Be(2);
+        result.FailedTenants.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Cleanup_FailingTenant_IsCountedAndDoesNotStopTheOthers()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid> { TenantId, OtherTenantId });
 
         _storageMock
@@ -234,8 +263,8 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
     [Fact]
     public async Task Cleanup_WithNoActiveTenants_DoesNothing()
     {
-        _tenantRepositoryMock
-            .Setup(r => r.GetAllActiveTenantIdsAsync(It.IsAny<CancellationToken>()))
+        _tenantDirectoryMock
+            .Setup(r => r.GetActiveTenantIdsAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Guid>());
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -457,5 +486,15 @@ public class ProductPhotoGarbageCollectorTests : IDisposable
         return await context.ProductPhotos
             .IgnoreQueryFilters()
             .ToListAsync();
+    }
+
+    private static int GetTenantPageSize()
+    {
+        FieldInfo? field = typeof(ProductPhotoGarbageCollector)
+            .GetField("TenantPageSize", BindingFlags.Static | BindingFlags.NonPublic);
+
+        field.Should().NotBeNull("ProductPhotoGarbageCollector is expected to expose a private TenantPageSize constant");
+
+        return (int)field!.GetRawConstantValue()!;
     }
 }

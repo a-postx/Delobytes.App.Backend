@@ -4,7 +4,7 @@ using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
-using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Contracts.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,6 +22,7 @@ public class ProductPhotoGarbageCollector : BackgroundService
 {
     private const int DefaultRetentionDays = 30;
     private const int DefaultIntervalHours = 24;
+    private const int TenantPageSize = 200;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ProductPhotoRetentionOptions _options;
@@ -85,42 +86,57 @@ public class ProductPhotoGarbageCollector : BackgroundService
     {
         ProductPhotoGcResult result = new ProductPhotoGcResult();
         DateTimeOffset threshold = now.AddDays(-GetRetentionDays());
+        Guid? cursor = null;
 
-        List<Guid> tenantIds;
-
-        using (IServiceScope lookupScope = _scopeFactory.CreateScope())
+        while (true)
         {
-            ITenantRepository tenantRepository = lookupScope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            tenantIds = await tenantRepository.GetAllActiveTenantIdsAsync(cancellationToken);
-        }
+            List<Guid> tenantIds = await GetTenantPageAsync(cursor, cancellationToken);
 
-        foreach (Guid tenantId in tenantIds)
-        {
-            try
+            foreach (Guid tenantId in tenantIds)
             {
-                (int deletedPhotos, int deletedBlobs) = await CleanupTenantAsync(tenantId, threshold, cancellationToken);
+                try
+                {
+                    (int deletedPhotos, int deletedBlobs) = await CleanupTenantAsync(tenantId, threshold, cancellationToken);
 
-                result.DeletedPhotos += deletedPhotos;
-                result.DeletedBlobs += deletedBlobs;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                result.FailedTenants++;
+                    result.DeletedPhotos += deletedPhotos;
+                    result.DeletedBlobs += deletedBlobs;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    result.FailedTenants++;
 
-                // The failed tenant's scope is disposed with its dirty change tracker, so nothing
-                // of it can leak into the remaining tenants; its rows are retried on the next tick.
-                _logger.LogError(
-                    ex,
-                    "ProductPhotoGarbageCollector: cleanup failed for TenantId {TenantId}; its rows are retried on the next tick.",
-                    tenantId);
+                    // The failed tenant's scope is disposed with its dirty change tracker, so nothing
+                    // of it can leak into the remaining tenants; its rows are retried on the next tick.
+                    _logger.LogError(
+                        ex,
+                        "ProductPhotoGarbageCollector: cleanup failed for TenantId {TenantId}; its rows are retried on the next tick.",
+                        tenantId);
+                }
             }
+
+            if (tenantIds.Count < TenantPageSize)
+            {
+                break;
+            }
+
+            cursor = tenantIds[tenantIds.Count - 1];
         }
 
         return result;
+    }
+
+    private async Task<List<Guid>> GetTenantPageAsync(Guid? cursor, CancellationToken cancellationToken)
+    {
+        // Scope живёт одну страницу: держать DbContext Identity весь многочасовой обход не нужно.
+        using IServiceScope lookupScope = _scopeFactory.CreateScope();
+
+        ITenantDirectory tenantDirectory = lookupScope.ServiceProvider.GetRequiredService<ITenantDirectory>();
+
+        return await tenantDirectory.GetActiveTenantIdsAsync(cursor, TenantPageSize, cancellationToken);
     }
 
     private async Task<(int DeletedPhotos, int DeletedBlobs)> CleanupTenantAsync(

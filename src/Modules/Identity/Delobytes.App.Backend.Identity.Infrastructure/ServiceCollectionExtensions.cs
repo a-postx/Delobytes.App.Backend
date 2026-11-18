@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
@@ -68,6 +69,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IInvitationRepository, Persistence.Repositories.InvitationRepository>();
         services.AddScoped<ITenantTaxProfileRepository, Persistence.Repositories.TenantTaxProfileRepository>();
         services.AddScoped<ITenantSettingsProvider, Services.TenantSettingsProvider>();
+        services.AddScoped<ITenantDirectory, Services.TenantDirectory>();
         services.AddScoped<ITenantTimeService, Services.TenantTimeService>();
 
         services.AddScoped<AuditableEntityInterceptor>();

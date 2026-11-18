@@ -1,6 +1,6 @@
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
-using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -20,6 +20,8 @@ namespace Delobytes.App.Backend.BackgroundServices;
 /// </summary>
 public class WorkerHostedService : BackgroundService
 {
+    private const int TenantPageSize = 200;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BackgroundJobsOptions _options;
     private readonly ILogger<WorkerHostedService> _logger;
@@ -60,25 +62,41 @@ public class WorkerHostedService : BackgroundService
 
     private async Task TickAsync(CancellationToken cancellationToken)
     {
-        List<Guid> tenantIds;
+        Guid? cursor = null;
 
-        using (IServiceScope lookupScope = _scopeFactory.CreateScope())
+        while (true)
         {
-            ITenantRepository tenantRepository = lookupScope.ServiceProvider.GetRequiredService<ITenantRepository>();
-            tenantIds = await tenantRepository.GetAllActiveTenantIdsAsync(cancellationToken);
-        }
+            List<Guid> tenantIds = await GetTenantPageAsync(cursor, cancellationToken);
 
-        foreach (Guid tenantId in tenantIds)
-        {
-            try
+            foreach (Guid tenantId in tenantIds)
             {
-                await ProcessTenantAsync(tenantId, cancellationToken);
+                try
+                {
+                    await ProcessTenantAsync(tenantId, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "WorkerHostedService: failed to dispatch pending jobs for tenant {TenantId}.", tenantId);
+                }
             }
-            catch (Exception ex)
+
+            if (tenantIds.Count < TenantPageSize)
             {
-                _logger.LogError(ex, "WorkerHostedService: failed to dispatch pending jobs for tenant {TenantId}.", tenantId);
+                break;
             }
+
+            cursor = tenantIds[tenantIds.Count - 1];
         }
+    }
+
+    private async Task<List<Guid>> GetTenantPageAsync(Guid? cursor, CancellationToken cancellationToken)
+    {
+        // Scope живёт одну страницу: тик не должен держать DbContext Identity всё время обхода.
+        using IServiceScope lookupScope = _scopeFactory.CreateScope();
+
+        ITenantDirectory tenantDirectory = lookupScope.ServiceProvider.GetRequiredService<ITenantDirectory>();
+
+        return await tenantDirectory.GetActiveTenantIdsAsync(cursor, TenantPageSize, cancellationToken);
     }
 
     private async Task ProcessTenantAsync(Guid tenantId, CancellationToken cancellationToken)
