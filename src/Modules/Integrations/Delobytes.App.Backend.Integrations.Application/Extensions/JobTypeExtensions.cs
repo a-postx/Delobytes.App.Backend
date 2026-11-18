@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Domain.Enums;
+﻿using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Application.Extensions;
 
@@ -35,6 +35,16 @@ public static class JobTypeExtensions
     public const string OzonProductsImport = "ozon-products-import";
 
     /// <summary>
+    /// API type token for <see cref="JobType.WbFinanceReportImport"/>.
+    /// </summary>
+    public const string WbFinanceReportImport = "wb-finance-report-import";
+
+    /// <summary>
+    /// API type token for <see cref="JobType.OzonFinanceAccrualsImport"/>.
+    /// </summary>
+    public const string OzonFinanceAccrualsImport = "ozon-finance-accruals-import";
+
+    /// <summary>
     /// Returns the API type token for the given job type.
     /// </summary>
     public static string ToStringCamelCase(this JobType jobType)
@@ -46,6 +56,8 @@ public static class JobTypeExtensions
             JobType.OzonOrdersImportFbo => OzonOrdersImportFbo,
             JobType.OzonOrdersImportFbs => OzonOrdersImportFbs,
             JobType.OzonProductsImport => OzonProductsImport,
+            JobType.WbFinanceReportImport => WbFinanceReportImport,
+            JobType.OzonFinanceAccrualsImport => OzonFinanceAccrualsImport,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(jobType),
                 jobType,
@@ -117,3 +129,4 @@ public static class JobTypeExtensions
         return jobType == JobType.ProductsImport || jobType == JobType.OzonProductsImport;
     }
 }
+

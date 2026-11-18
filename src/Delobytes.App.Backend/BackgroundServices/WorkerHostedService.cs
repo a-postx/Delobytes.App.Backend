@@ -161,6 +161,12 @@ public class WorkerHostedService : BackgroundService
                         cancellationToken);
                     break;
 
+                case ChannelJobKind.FinanceImport:
+                    await eventPublisher.PublishAsync(
+                        new FinanceEntriesImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = jobRun.ConnectionId },
+                        cancellationToken);
+                    break;
+
                 case ChannelJobKind.OrdersImport:
                     // One event type for every orders import flavour: the consumer reads the job
                     // type (and therefore the channel fetchers) from the JobRun itself.
@@ -185,3 +191,4 @@ public class WorkerHostedService : BackgroundService
         }
     }
 }
+

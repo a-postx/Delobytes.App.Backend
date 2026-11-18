@@ -160,6 +160,42 @@ public class IntegrationsController : ControllerBase
     }
 
     /// <summary>
+    /// Starts an operator-triggered finance re-import of an explicit date range. This is the
+    /// recovery path for a late report, a re-issued period or a lost event; the watermark is not
+    /// advanced by the request itself.
+    /// </summary>
+    /// <param name="request">Connection, job type and range.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The identifier of the created job run.</returns>
+    [HttpPost("finance-import")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> StartFinanceImport(
+        [FromBody] StartFinanceImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!JobTypeExtensions.TryFromString(request.Type, out JobType jobType))
+        {
+            return BadRequest(new
+            {
+                error = $"Неизвестный тип задачи '{request.Type}'.",
+            });
+        }
+
+        Guid jobRunId = await _mediator.Send(
+            new StartFinanceImportCommand
+            {
+                ConnectionId = request.ConnectionId,
+                JobType = jobType,
+                FromDate = request.FromDate,
+                ToDate = request.ToDate,
+            },
+            cancellationToken);
+
+        return Accepted(new { JobRunId = jobRunId });
+    }
+
+    /// <summary>
     /// Requests cancellation of a job run. Job types started by the scheduler are not cancellable.
     /// </summary>
     [HttpDelete("jobs/{id:guid}/cancel")]

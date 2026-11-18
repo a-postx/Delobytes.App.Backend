@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Domain.Enums;
+﻿using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Application.Jobs;
 
@@ -10,6 +10,7 @@ public enum ChannelJobKind
 {
     ProductsImport = 0,
     OrdersImport = 1,
+    FinanceImport = 2,
 }
 
 /// <summary>
@@ -41,3 +42,4 @@ public interface IChannelJobTypeRegistry
     /// </summary>
     public string? GetRateLimitMethod(string? channelCode, JobType jobType);
 }
+

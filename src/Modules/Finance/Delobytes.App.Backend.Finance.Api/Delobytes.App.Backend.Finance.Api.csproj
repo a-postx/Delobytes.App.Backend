@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Finance.Domain\Delobytes.App.Backend.Finance.Domain.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Finance.Application\Delobytes.App.Backend.Finance.Application.csproj" />
   </ItemGroup>
 
 </Project>
+

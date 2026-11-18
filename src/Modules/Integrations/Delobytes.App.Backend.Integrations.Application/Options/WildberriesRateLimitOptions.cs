@@ -64,6 +64,15 @@ public class WildberriesRateLimitOptions
     private static readonly Dictionary<string, MethodRateLimitPolicy> BuiltInMethodDefaults =
         new Dictionary<string, MethodRateLimitPolicy>(StringComparer.Ordinal)
         {
+            [WildberriesApiMethodRegistry.FinanceSalesReportsDetailed] = new MethodRateLimitPolicy
+            {
+                // The documented allowance is one request per minute for a personal or service
+                // token. Starting below it and speeding up would earn a 429 for no gain, so both
+                // the start and the floor stay at the allowance.
+                InitialIntervalSeconds = 60,
+                MinIntervalSeconds = 60,
+                FallbackIntervalSeconds = 3600,
+            },
             [WildberriesApiMethodRegistry.ContentCardsList] = new MethodRateLimitPolicy
             {
                 InitialIntervalSeconds = 1,
@@ -173,3 +182,4 @@ public class WildberriesRateLimitOptions
         public required int SpeedUpAfterSuccesses { get; init; }
     }
 }
+

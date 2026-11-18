@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -23,10 +23,14 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 /// Ozon marketplace API client. Reads FBO and FBS orders, and the full catalogue of on-sale product
 /// cards through the attributes endpoint.
 /// </summary>
-public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder
+public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder, IFinanceEntriesSource
 {
     private const string DefaultApiBaseUrl = "https://api-seller.ozon.ru";
     private const string FboListPath = "/v3/posting/fbo/list";
+
+    private const string FinanceAccrualsPath = "/v1/finance/accrual/by-day";
+
+    private const string FinanceAccrualsMethod = "finance/accrual/by-day";
     private const string FbsListPath = "/v4/posting/fbs/list";
 
     /// <summary>
@@ -862,7 +866,132 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
         return value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
     }
 
+    /// <inheritdoc/>
+    public async Task<FinanceEntriesPage> GetFinanceEntriesAsync(
+        Guid connectionId,
+        FinanceEntriesRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
+
+        RateLimitScope scope = new RateLimitScope(
+            ChannelCatalog.OzonCode,
+            connection.ApiKey,
+            FinanceAccrualsMethod);
+
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
+
+        if (!acquireResult.Acquired)
+        {
+            return new FinanceEntriesPage
+            {
+                Throttled = true,
+                RetryAt = acquireResult.NextRequestAllowedAt,
+            };
+        }
+
+        string cursor = request.Cursor ?? string.Empty;
+
+        object body = new
+        {
+            date = request.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            last_id = cursor,
+        };
+
+        using HttpRequestMessage httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{BaseUrl}{FinanceAccrualsPath}")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(body, SerializerOptions), Encoding.UTF8, "application/json"),
+        };
+
+        httpRequest.Options.Set(OzonAuthHandler.ConnectionIdOptionKey, connectionId);
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+
+        RateLimitSignal rateLimitSignal = OzonRateLimitHeaders.Parse(response);
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
+                scope, rateLimitSignal, cancellationToken);
+
+            _logger.LogWarning(
+                "Ozon finance accruals were throttled (429, x-request-id {RequestId}); the next attempt is not due before {NextAttempt:O}.",
+                rateLimitSignal.RequestId,
+                retryAt);
+
+            return new FinanceEntriesPage
+            {
+                Throttled = true,
+                RetryAt = retryAt,
+            };
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            _logger.LogWarning(
+                "Ozon finance accruals rejected the key with {StatusCode}. The key role must allow the finance method. Response: {Response}",
+                (int)response.StatusCode,
+                TruncateForLog(responseBody));
+
+            throw new UnauthorizedAccessException(
+                $"Ozon finance API returned {(int)response.StatusCode}. The API key role must allow the finance method.");
+        }
+
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            _logger.LogWarning(
+                "Ozon finance API returned {StatusCode} (x-request-id {RequestId}). Response: {Response}",
+                (int)response.StatusCode,
+                rateLimitSignal.RequestId,
+                TruncateForLog(responseBody));
+
+            throw new HttpRequestException(
+                $"Ozon finance API returned {(int)response.StatusCode}.",
+                null,
+                response.StatusCode);
+        }
+
+        OzonAccrualsResponse? page =
+            await response.Content.ReadFromJsonAsync<OzonAccrualsResponse>(SerializerOptions, cancellationToken);
+
+        List<OzonAccrual> accruals = page?.Accruals ?? new List<OzonAccrual>();
+
+        OzonFinanceMappingResult mappingResult = OzonFinanceMapper.Map(accruals);
+
+        string? lastId = string.IsNullOrEmpty(page?.LastId) ? null : page.LastId;
+
+        if (lastId != null && string.Equals(lastId, cursor, StringComparison.Ordinal))
+        {
+            // Guards against an endless loop if the beta ever repeats a cursor. The page is already
+            // read, so it is returned and the window is treated as finished.
+            _logger.LogWarning(
+                "Ozon finance accruals repeated last_id {LastId}; stopping the page loop.", lastId);
+
+            lastId = null;
+        }
+
+        return new FinanceEntriesPage
+        {
+            Entries = mappingResult.Entries,
+            NextCursor = lastId,
+            Diagnostics = mappingResult.Diagnostics,
+            IsComplete = lastId == null || accruals.Count == 0,
+        };
+    }
+
     private static OrdersPage CreateThrottledPage(DateTimeOffset retryAt)
+
     {
         return new OrdersPage
         {
@@ -904,3 +1033,4 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
         public string? Inn { get; init; }
     }
 }
+

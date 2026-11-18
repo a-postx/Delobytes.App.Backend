@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Sales.Application.Models;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 
 namespace Delobytes.App.Backend.Sales.Application.Interfaces;
@@ -42,6 +43,15 @@ public interface IOrdersImportStore
     /// Reports whether any of the order's lines was added or meaningfully modified.
     /// </summary>
     public bool HasMeaningfulLineChanges(Order order);
+
+    /// <summary>
+    /// Describes every line of the order together with the two facts the change event needs: whether
+    /// the row was added by this import and whether a fact that decides the production cost changed.
+    /// Must be called after <see cref="DetectChanges"/> and before the save resets the entry states.
+    /// </summary>
+    /// <param name="order">Tracked order whose lines are described.</param>
+    /// <returns>One entry per line, in the order the lines are held.</returns>
+    public IReadOnlyList<OrderLineChange> DescribeLineChanges(Order order);
 
     /// <summary>
     /// Runs <paramref name="operation"/> and persists its changes, retrying when the save loses a

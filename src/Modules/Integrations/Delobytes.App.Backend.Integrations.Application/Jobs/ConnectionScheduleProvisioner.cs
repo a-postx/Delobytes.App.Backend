@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Contracts.Interfaces;
+﻿using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -82,7 +82,9 @@ public class ConnectionScheduleProvisioner
         }
 
         string? channelCode = connection.SystemChannelTemplate?.Code;
-        IReadOnlyList<JobType> jobTypes = _jobTypes.GetJobTypes(channelCode, ChannelJobKind.OrdersImport);
+        List<JobType> jobTypes = _jobTypes.GetJobTypes(channelCode, ChannelJobKind.OrdersImport)
+            .Concat(_jobTypes.GetJobTypes(channelCode, ChannelJobKind.FinanceImport))
+            .ToList();
 
         if (jobTypes.Count == 0)
         {
@@ -133,3 +135,4 @@ public class ConnectionScheduleProvisioner
             _backgroundJobsOptions.DefaultOrdersImportCronExpression);
     }
 }
+

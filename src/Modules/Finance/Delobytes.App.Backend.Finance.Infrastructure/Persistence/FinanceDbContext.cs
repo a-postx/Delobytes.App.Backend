@@ -25,6 +25,21 @@ public class FinanceDbContext : TenantScopedDbContext
     /// </summary>
     public DbSet<PnlLine> PnlLines => Set<PnlLine>();
 
+    /// <summary>
+    /// Gets the immutable journal of channel money facts.
+    /// </summary>
+    public DbSet<PnlEntry> PnlEntries => Set<PnlEntry>();
+
+    /// <summary>
+    /// Gets the projection of Sales order lines the journal is attributed against.
+    /// </summary>
+    public DbSet<OrderLineRef> OrderLineRefs => Set<OrderLineRef>();
+
+    /// <summary>
+    /// Gets the production costs resolved by Catalog.
+    /// </summary>
+    public DbSet<OrderLineCost> OrderLineCosts => Set<OrderLineCost>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

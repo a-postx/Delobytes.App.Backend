@@ -73,6 +73,8 @@ public sealed class JobRunStarter
             case JobType.WbOrdersImport:
             case JobType.OzonOrdersImportFbo:
             case JobType.OzonOrdersImportFbs:
+            case JobType.WbFinanceReportImport:
+            case JobType.OzonFinanceAccrualsImport:
                 break;
 
             default:
@@ -87,3 +89,4 @@ public sealed class JobRunStarter
         return jobRun;
     }
 }
+

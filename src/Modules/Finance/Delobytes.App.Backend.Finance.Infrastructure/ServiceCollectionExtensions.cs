@@ -1,6 +1,15 @@
+﻿using System.Reflection;
+using Delobytes.App.Backend.Finance.Application.Ingestion;
+using Delobytes.App.Backend.Finance.Application.Interfaces;
+using Delobytes.App.Backend.Finance.Application.Journal;
+using Delobytes.App.Backend.Finance.Application.Projection;
+using Delobytes.App.Backend.Finance.Infrastructure.Messaging;
 using Delobytes.App.Backend.Finance.Infrastructure.Persistence;
+using Delobytes.App.Backend.Finance.Infrastructure.Persistence.Stores;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Delobytes.App.Backend.Finance.Infrastructure;
 
@@ -26,6 +35,30 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__FinanceMigrationsHistory", "finance")));
 
+        services.AddScoped<IPnlJournalStore, PnlJournalStore>();
+        services.AddScoped<IOrderLineRefStore, OrderLineRefStore>();
+        services.AddScoped<IOrderLineCostStore, OrderLineCostStore>();
+        services.AddScoped<IPnlLineStore, PnlLineStore>();
+        services.AddScoped<IPnlReadStore, PnlReadStore>();
+        services.AddScoped<JournalAppender>();
+        services.AddScoped<PnlLineProjector>();
+        services.AddScoped<FinanceEntriesBatchImporter>();
+        services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+
+        // Registered independently of Integrations' own TryAddSingleton call: Finance must not
+        // depend on that module being loaded first.
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+
         return services;
     }
+
+    /// <summary>
+    /// Registers Finance module MassTransit consumers.
+    /// </summary>
+    /// <param name="configurator">MassTransit bus registration configurator.</param>
+    public static void AddFinanceConsumers(this IBusRegistrationConfigurator configurator)
+    {
+        configurator.AddConsumers(Assembly.GetExecutingAssembly());
+    }
 }
+

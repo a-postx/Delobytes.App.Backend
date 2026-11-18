@@ -1,6 +1,8 @@
 using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Filters;
+using Delobytes.App.Backend.Finance.Infrastructure;
+using Delobytes.App.Backend.Finance.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Infrastructure;
 using Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
@@ -32,6 +34,7 @@ internal static class MassTransitExtensions
             bus.AddIntegrationsConsumers();
             bus.AddCatalogConsumers();
             bus.AddSalesConsumers();
+            bus.AddFinanceConsumers();
 
             if (!string.IsNullOrWhiteSpace(messageBusConnectionString))
             {
@@ -107,6 +110,17 @@ internal static class MassTransitExtensions
     // in the InMemory branch, so RabbitMQ silently ran with default concurrency/retry instead.
     private static void ConfigureSharedEndpoints(IBusFactoryConfigurator cfg, IBusRegistrationContext ctx)
     {
+        // Finance entries touch the same P&L lines, so their batches are processed strictly one at
+        // a time; the exponential backoff absorbs a transient database race.
+        cfg.ReceiveEndpoint("finance-entries-import", e =>
+        {
+            e.ConfigureConsumer<FinanceEntriesBatchImportRequestedConsumer>(ctx);
+
+            e.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5)));
+
+            e.UseConcurrencyLimit(1);
+        });
+
         // Configure products import orchestration endpoint
         cfg.ReceiveEndpoint("integrations-products-import", e =>
         {
@@ -129,3 +143,4 @@ internal static class MassTransitExtensions
         });
     }
 }
+

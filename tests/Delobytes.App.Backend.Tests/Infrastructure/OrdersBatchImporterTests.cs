@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -844,7 +844,7 @@ public class OrdersBatchImporterTests
         Mock<ITenantContext> tenantContextMock = new Mock<ITenantContext>();
         tenantContextMock.Setup(tc => tc.TenantId).Returns(tenantId);
 
-        return new OrdersBatchImporter(store, eventPublisher, tenantContextMock.Object, loggerMock.Object, TimeProvider.System);
+        return new OrdersBatchImporter(store, eventPublisher, tenantContextMock.Object, loggerMock.Object, TimeProvider.System, Microsoft.Extensions.Options.Options.Create(new Delobytes.App.Backend.Sales.Application.Options.SalesImportOptions()));
     }
 
     private SalesDbContext BuildSalesDbContext(
@@ -1076,3 +1076,4 @@ public class OrdersBatchImporterTests
         }
     }
 }
+

@@ -42,4 +42,18 @@ public class ChannelProductRepository : IChannelProductRepository
     {
         return _context.SaveChangesAsync(cancellationToken);
     }
+
+    /// <inheritdoc/>
+    public Task<Guid?> FindChannelProductIdAsync(
+        Guid channelId,
+        string externalProductId,
+        CancellationToken cancellationToken)
+    {
+        // The natural key is unique, so at most one row matches.
+        return _context.ChannelProducts
+            .AsNoTracking()
+            .Where(cp => cp.ChannelId == channelId && cp.ExternalProductId == externalProductId)
+            .Select(cp => (Guid?)cp.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 }

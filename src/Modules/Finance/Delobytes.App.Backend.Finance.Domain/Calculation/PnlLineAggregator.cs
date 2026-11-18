@@ -10,7 +10,7 @@ namespace Delobytes.App.Backend.Finance.Domain.Calculation;
 /// <remarks>
 /// Superseded entries are skipped rather than deleted: the journal keeps every version and the
 /// aggregate reads only the current one. Control totals are collected separately and never summed
-/// into the result — a payout already covers the commission, the acquiring fee and the delivery
+/// into the result - a payout already covers the commission, the acquiring fee and the delivery
 /// fee, so adding it would count them twice.
 /// </remarks>
 public static class PnlLineAggregator
@@ -34,10 +34,21 @@ public static class PnlLineAggregator
         decimal acquiring = 0m;
         decimal delivery = 0m;
         decimal refund = 0m;
+        decimal compensation = 0m;
         decimal controlTotal = 0m;
 
-        int entryCount = 0;
+        bool hasRevenue = false;
+        bool hasCommission = false;
+        bool hasAcquiring = false;
+        bool hasDelivery = false;
+        bool hasRefund = false;
+        bool hasCompensation = false;
         bool hasControlTotal = false;
+        bool hasSale = false;
+
+        DateOnly? saleDate = null;
+
+        int entryCount = 0;
 
         foreach (PnlEntry entry in entries)
         {
@@ -76,18 +87,34 @@ public static class PnlLineAggregator
             {
                 case PnlEntryType.Sale:
                     revenue += signed;
+                    hasRevenue = true;
+                    hasSale = true;
+
+                    if (saleDate == null || entry.DocumentDate < saleDate.Value)
+                    {
+                        saleDate = entry.DocumentDate;
+                    }
+
                     break;
                 case PnlEntryType.Commission:
                     commission += signed;
+                    hasCommission = true;
                     break;
                 case PnlEntryType.Acquiring:
                     acquiring += signed;
+                    hasAcquiring = true;
                     break;
                 case PnlEntryType.Logistics:
                     delivery += signed;
+                    hasDelivery = true;
                     break;
                 case PnlEntryType.Refund:
                     refund += signed;
+                    hasRefund = true;
+                    break;
+                case PnlEntryType.Compensation:
+                    compensation += signed;
+                    hasCompensation = true;
                     break;
                 case PnlEntryType.Payout:
                     throw new InvalidOperationException(
@@ -98,18 +125,21 @@ public static class PnlLineAggregator
             }
         }
 
-        decimal netRevenue = revenue + commission + acquiring + delivery + refund;
+        decimal netRevenue = revenue + commission + acquiring + delivery + refund + compensation;
 
         return new PnlLineTotals(
-            revenue,
-            commission,
-            acquiring,
-            delivery,
-            refund,
-            netRevenue,
+            hasRevenue ? revenue : null,
+            hasCommission ? commission : null,
+            hasAcquiring ? acquiring : null,
+            hasDelivery ? delivery : null,
+            hasRefund ? refund : null,
+            hasCompensation ? compensation : null,
+            entryCount > 0 ? netRevenue : null,
             hasControlTotal ? controlTotal : null,
             hasControlTotal ? netRevenue - controlTotal : null,
-            entryCount);
+            entryCount,
+            hasSale,
+            saleDate);
     }
 
     private static decimal Signed(PnlEntry entry)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -59,7 +59,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(5);
+        configurations.Should().HaveCount(7);
         configurations.Select(c => c.JobType)
             .Should().BeEquivalentTo(new[]
             {
@@ -68,6 +68,8 @@ public class DataSeederSeedJobTypeConfigurationsTests
                 JobType.OzonOrdersImportFbo,
                 JobType.OzonOrdersImportFbs,
                 JobType.OzonProductsImport,
+                JobType.WbFinanceReportImport,
+                JobType.OzonFinanceAccrualsImport,
             });
     }
 
@@ -141,7 +143,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(5);
+        configurations.Should().HaveCount(7);
     }
 
     [Fact]
@@ -168,7 +170,7 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(5);
+        configurations.Should().HaveCount(7);
 
         JobTypeConfiguration products = configurations.Single(c => c.JobType == JobType.ProductsImport);
         products.TimeoutMinutes.Should().Be(45);
@@ -196,7 +198,8 @@ public class DataSeederSeedJobTypeConfigurationsTests
 
         List<JobTypeConfiguration> configurations = await ReadConfigurationsAsync(options);
 
-        configurations.Should().HaveCount(5);
+        configurations.Should().HaveCount(7);
         configurations.Single(c => c.JobType == JobType.ProductsImport).TimeoutMinutes.Should().Be(60);
     }
 }
+

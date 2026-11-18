@@ -128,7 +128,7 @@ public class SchedulerHostedService : BackgroundService
 
             // A schedule left over from a previous channel mapping (e.g. an OrdersImport schedule
             // on an Ozon connection) would make every tick create a job the consumer cannot run.
-            if (_jobTypes.ResolveKind(schedule.JobType) == ChannelJobKind.OrdersImport
+            if (_jobTypes.ResolveKind(schedule.JobType) is ChannelJobKind.OrdersImport or ChannelJobKind.FinanceImport
                 && !_jobTypes.IsServedByChannel(channelCode, schedule.JobType))
             {
                 // NextRunAt is deliberately not advanced: the schedule stays visible as due, so an
@@ -330,3 +330,4 @@ public class SchedulerHostedService : BackgroundService
         return new DateTimeOffset(nextUtc, TimeSpan.Zero);
     }
 }
+

@@ -22,4 +22,18 @@ public interface IChannelProductRepository
 
     /// <summary>Persists every pending change.</summary>
     public Task SaveChangesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves the channel product of a marketplace item by its natural key
+    /// <c>(ChannelId, ExternalProductId)</c>. Not filtered by <c>IsActive</c>: an archived card still
+    /// owns historical order lines, and refusing to resolve it would lose their cost.
+    /// </summary>
+    /// <param name="channelId">Channel identifier.</param>
+    /// <param name="externalProductId">Channel-side product identity.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The channel product identifier, or null when the item is unknown.</returns>
+    public Task<Guid?> FindChannelProductIdAsync(
+        Guid channelId,
+        string externalProductId,
+        CancellationToken cancellationToken);
 }

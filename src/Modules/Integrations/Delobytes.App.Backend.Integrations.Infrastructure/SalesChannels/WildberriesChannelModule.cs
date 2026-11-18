@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -34,11 +34,17 @@ public sealed class WildberriesChannelModule : ChannelModule
     {
         (JobType.ProductsImport, ChannelJobKind.ProductsImport),
         (JobType.WbOrdersImport, ChannelJobKind.OrdersImport),
+        (JobType.WbFinanceReportImport, ChannelJobKind.FinanceImport),
     };
 
     public override string? GetRateLimitMethod(JobType jobType)
     {
-        return jobType == JobType.WbOrdersImport ? WildberriesApiMethodRegistry.SupplierOrders : null;
+        return jobType switch
+        {
+            JobType.WbOrdersImport => WildberriesApiMethodRegistry.SupplierOrders,
+            JobType.WbFinanceReportImport => WildberriesApiMethodRegistry.FinanceSalesReportsDetailed,
+            _ => null,
+        };
     }
 
     public override void RegisterProducts(IServiceCollection services)
@@ -120,6 +126,10 @@ public sealed class WildberriesChannelModule : ChannelModule
         services.AddKeyedTransient<IChannelApiClient>(
             ChannelCatalog.WildberriesCode,
             (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
+
+        services.AddKeyedScoped<IFinanceEntriesSource>(
+            ChannelCatalog.WildberriesCode,
+            (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
     }
 
     public override void RegisterApiKeyValidator(IServiceCollection services)
@@ -142,3 +152,5 @@ public sealed class WildberriesChannelModule : ChannelModule
             .Value.ToTuning(JobType.WbOrdersImport);
     }
 }
+
+

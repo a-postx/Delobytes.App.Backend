@@ -1,6 +1,8 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
 
@@ -28,6 +30,7 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     private readonly IRawApiResponseRepository _rawApiResponseRepository;
     private readonly ILogger<RawApiResponseCaptureHandler> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly int _maxPayloadBytes;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RawApiResponseCaptureHandler"/> class.
@@ -36,12 +39,16 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
         IJobRunExecutionContext jobRunExecutionContext,
         IRawApiResponseRepository rawApiResponseRepository,
         ILogger<RawApiResponseCaptureHandler> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOptions<RawApiResponseCaptureOptions>? options = null)
     {
         _jobRunExecutionContext = jobRunExecutionContext;
         _rawApiResponseRepository = rawApiResponseRepository;
         _logger = logger;
         _timeProvider = timeProvider;
+        _maxPayloadBytes = options?.Value.MaxPayloadBytes > 0
+            ? options.Value.MaxPayloadBytes
+            : RawApiResponseCaptureOptions.DefaultMaxPayloadBytes;
     }
 
     /// <inheritdoc/>
@@ -118,6 +125,24 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             : endpoint;
     }
 
+    private string CapPayload(string payload)
+    {
+        if (string.IsNullOrEmpty(payload) || payload.Length <= _maxPayloadBytes)
+        {
+            return payload;
+        }
+
+        _logger.LogWarning(
+            "Raw API payload truncated at {MaxBytes} characters; the full length is {FullLength} characters.",
+            _maxPayloadBytes,
+            payload.Length);
+
+        return string.Concat(
+            payload.AsSpan(0, _maxPayloadBytes),
+            $" [truncated; {payload.Length} bytes]");
+    }
+
+
     /// <summary>
     /// Reads the channel's correlation id. Taken from the response where one exists, otherwise from
     /// the request headers: the retry policy copies headers onto every attempt, so the value stays
@@ -168,8 +193,8 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
             ChannelId = _jobRunExecutionContext.ChannelId,
             ChannelRequestId = ReadRequestId(request, response),
             Endpoint = endpoint,
-            RequestPayload = requestBody,
-            ResponsePayload = responseBody,
+            RequestPayload = CapPayload(requestBody),
+            ResponsePayload = CapPayload(responseBody),
             HttpStatusCode = httpStatusCode,
             ReceivedAt = receivedAt,
         };
@@ -190,3 +215,4 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
         }
     }
 }
+

@@ -1,0 +1,131 @@
+using System;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
+using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using RichardSzalay.MockHttp;
+using Xunit;
+
+namespace Delobytes.App.Backend.Integrations.Tests.ApiClients;
+
+/// <summary>
+/// Tests for the Ozon accruals page fetch: the request body, the cursor propagation and the end of
+/// data signalled by an empty <c>last_id</c>.
+/// </summary>
+public class OzonApiClientFinanceAccrualsTests
+{
+    private const string AccrualsUrl = "https://api-seller.ozon.ru/v1/finance/accrual/by-day";
+
+    [Fact]
+    public async Task GetEntriesAsync_SendsTheDateAndCursorAndReturnsTheNextOne()
+    {
+        string? capturedBody = null;
+
+        string json = """
+        {
+          "accruals": [
+            {
+              "accrual_id": 1, "date": "2026-11-16", "total_amount": { "amount": "-3.34", "currency": "RUB" },
+              "unit_number": "14512295-0639", "accrued_category": "ITEM",
+              "item_fees": { "fees": [ { "sku": 5, "fees": [ { "type_id": 1, "accrued": { "amount": "-3.34", "currency": "RUB" } } ] } ] }
+            }
+          ],
+          "last_id": "next-page"
+        }
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, AccrualsUrl)
+            .With(req =>
+            {
+                capturedBody = req.Content!.ReadAsStringAsync().Result;
+                return true;
+            })
+            .Respond("application/json", json);
+
+        OzonApiClient client = BuildClient(mockHttp);
+
+        FinanceEntriesPage page = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 11, 16), To = new DateOnly(2026, 11, 16) },
+            CancellationToken.None);
+
+        capturedBody.Should().Contain("\"date\":\"2026-11-16\"");
+        capturedBody.Should().Contain("\"last_id\":\"\"");
+
+        page.NextCursor.Should().Be("next-page");
+        page.IsComplete.Should().BeFalse();
+        page.Entries.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_EmptyLastId_IsTheEndOfData()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, AccrualsUrl)
+            .Respond("application/json", """{ "accruals": [], "last_id": "" }""");
+
+        OzonApiClient client = BuildClient(mockHttp);
+
+        FinanceEntriesPage page = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 11, 16), To = new DateOnly(2026, 11, 16) },
+            CancellationToken.None);
+
+        page.IsComplete.Should().BeTrue();
+        page.NextCursor.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_RepeatedLastId_StopsTheLoop()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, AccrualsUrl)
+            .Respond("application/json", """{ "accruals": [], "last_id": "same" }""");
+
+        OzonApiClient client = BuildClient(mockHttp);
+
+        FinanceEntriesPage page = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest
+            {
+                From = new DateOnly(2026, 11, 16),
+                To = new DateOnly(2026, 11, 16),
+                Cursor = "same",
+            },
+            CancellationToken.None);
+
+        page.NextCursor.Should().BeNull();
+        page.IsComplete.Should().BeTrue();
+    }
+
+    private static OzonApiClient BuildClient(MockHttpMessageHandler mockHttp)
+    {
+        OzonApiClient client = new OzonApiClient(
+            mockHttp.ToHttpClient(),
+            Mock.Of<IHttpClientFactory>(),
+            new FixedConnectionResolver(),
+            new AlwaysAllowRateLimiter(),
+            NullLogger<OzonApiClient>.Instance,
+            TimeProvider.System);
+
+        client.SetTemplate(new SystemChannelTemplate
+        {
+            Id = Guid.NewGuid(),
+            Code = "ozon",
+            DisplayName = "Ozon",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        return client;
+    }
+}

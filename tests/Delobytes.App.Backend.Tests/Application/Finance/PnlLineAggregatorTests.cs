@@ -10,9 +10,9 @@ namespace Delobytes.App.Backend.Tests.Application.Finance;
 
 /// <summary>
 /// Tests for PnlLineAggregator. The journal is append-only and money arrives in parts, so these
-/// tests pin the three rules the totals depend on: the sign comes from the direction rather than
-/// from the amount, a superseded version does not count, and a control total is a check rather than
-/// an addend.
+/// tests pin the rules the totals depend on: the sign comes from the direction rather than from the
+/// amount, a superseded version does not count, a control total is a check rather than an addend,
+/// and a component that was never reported stays null rather than becoming zero.
 /// </summary>
 public class PnlLineAggregatorTests
 {
@@ -37,11 +37,37 @@ public class PnlLineAggregatorTests
         totals.CommissionAmount.Should().Be(-15.33m);
         totals.AcquiringAmount.Should().Be(8.16m);
         totals.DeliveryFeeAmount.Should().Be(-53.84m);
-        totals.RefundAmount.Should().Be(0m);
+        totals.RefundAmount.Should().BeNull();
+        totals.CompensationAmount.Should().BeNull();
         totals.NetRevenueAmount.Should().Be(142.99m);
         totals.EntryCount.Should().Be(4);
         totals.ControlTotalAmount.Should().BeNull();
         totals.ControlDifferenceAmount.Should().BeNull();
+        totals.HasSale.Should().BeTrue();
+        totals.SaleDate.Should().Be(new DateOnly(2026, 8, 1));
+    }
+
+    [Fact]
+    public void Calculate_Compensation_IsSummedIntoNetRevenue()
+    {
+        // Arrange: the Ozon posting of the sample report — sale, marketplace-funded bonus and
+        // coinvestment, commission and logistics.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 920.38m),
+            Entry(PnlEntryType.Compensation, 663.62m),
+            Entry(PnlEntryType.Commission, 823.68m, PnlEntryDirection.Expense),
+            Entry(PnlEntryType.Logistics, 159.1m, PnlEntryDirection.Expense),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert: the compensation is revenue of its own, and the components reconcile to the
+        // control total of 601.22 once it is included.
+        totals.CompensationAmount.Should().Be(663.62m);
+        totals.NetRevenueAmount.Should().Be(601.22m);
+        totals.EntryCount.Should().Be(4);
     }
 
     [Fact]
@@ -63,6 +89,7 @@ public class PnlLineAggregatorTests
         totals.RevenueAmount.Should().Be(90m);
         totals.NetRevenueAmount.Should().Be(90m);
         totals.EntryCount.Should().Be(1);
+        totals.HasSale.Should().BeTrue();
     }
 
     [Fact]
@@ -112,10 +139,76 @@ public class PnlLineAggregatorTests
         // Act
         PnlLineTotals totals = PnlLineAggregator.Calculate(Array.Empty<PnlEntry>());
 
-        // Assert
-        totals.NetRevenueAmount.Should().Be(0m);
+        // Assert: nothing reported is not the same as every component being zero.
+        totals.NetRevenueAmount.Should().BeNull();
+        totals.RevenueAmount.Should().BeNull();
+        totals.CommissionAmount.Should().BeNull();
+        totals.AcquiringAmount.Should().BeNull();
+        totals.DeliveryFeeAmount.Should().BeNull();
+        totals.RefundAmount.Should().BeNull();
+        totals.CompensationAmount.Should().BeNull();
         totals.EntryCount.Should().Be(0);
         totals.ControlTotalAmount.Should().BeNull();
+        totals.HasSale.Should().BeFalse();
+        totals.SaleDate.Should().BeNull();
+    }
+
+    [Fact]
+    public void Calculate_ExplicitZeroComponent_IsZeroNotNull()
+    {
+        // Arrange: the channel reported a zero acquiring fee, which is a fact, unlike a missing one.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 100m),
+            Entry(PnlEntryType.Acquiring, 0m, PnlEntryDirection.Expense),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert
+        totals.AcquiringAmount.Should().Be(0m);
+        totals.CompensationAmount.Should().BeNull();
+        totals.RefundAmount.Should().BeNull();
+        totals.NetRevenueAmount.Should().Be(100m);
+    }
+
+    [Fact]
+    public void Calculate_OnlyNonSaleComponents_ReportsNoSale()
+    {
+        // Arrange: a cancellation leaves only a logistics charge; no sale happened, so no cost of
+        // goods may be applied by a later projection.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Logistics, 53.84m, PnlEntryDirection.Expense),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert
+        totals.HasSale.Should().BeFalse();
+        totals.SaleDate.Should().BeNull();
+        totals.RevenueAmount.Should().BeNull();
+        totals.NetRevenueAmount.Should().Be(-53.84m);
+    }
+
+    [Fact]
+    public void Calculate_SeveralSaleEntries_TakesEarliestDocumentDate()
+    {
+        // Arrange
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 100m, documentDate: new DateOnly(2026, 8, 5)),
+            Entry(PnlEntryType.Sale, 50m, documentDate: new DateOnly(2026, 8, 2)),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert
+        totals.SaleDate.Should().Be(new DateOnly(2026, 8, 2));
+        totals.RevenueAmount.Should().Be(150m);
     }
 
     [Fact]
@@ -174,7 +267,8 @@ public class PnlLineAggregatorTests
         PnlEntryDirection direction = PnlEntryDirection.Income,
         PnlEntryKind kind = PnlEntryKind.Component,
         Guid? supersededBy = null,
-        Guid? id = null)
+        Guid? id = null,
+        DateOnly? documentDate = null)
     {
         return new PnlEntry
         {
@@ -191,7 +285,7 @@ public class PnlLineAggregatorTests
             Amount = amount,
             Direction = direction,
             Currency = "RUB",
-            DocumentDate = new DateOnly(2026, 8, 1),
+            DocumentDate = documentDate ?? new DateOnly(2026, 8, 1),
             PeriodFrom = new DateOnly(2026, 7, 27),
             PeriodTo = new DateOnly(2026, 8, 2),
             ImportedAt = new DateTimeOffset(2026, 8, 3, 0, 0, 0, TimeSpan.Zero),

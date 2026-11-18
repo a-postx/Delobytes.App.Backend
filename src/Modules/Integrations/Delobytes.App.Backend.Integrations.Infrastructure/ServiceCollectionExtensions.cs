@@ -1,6 +1,8 @@
 using System.Reflection;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Integrations.Application.Finance;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -104,6 +106,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrdersImportCheckpointStore>();
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<OrdersBackfillWalker>();
+        services.AddOptions<FinanceImportOptions>();
+        services.AddScoped<FinanceImportOrchestrator>();
         services.AddScoped<BatchImportFinalizer>();
         services.AddScoped<ImportRunCompletion>();
         services.AddScoped<OrdersImportWatermarkWriter>();
@@ -191,3 +195,4 @@ public static class ServiceCollectionExtensions
         configurator.AddConsumers(Assembly.GetExecutingAssembly());
     }
 }
+

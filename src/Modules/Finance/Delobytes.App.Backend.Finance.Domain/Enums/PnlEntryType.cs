@@ -32,8 +32,17 @@ public enum PnlEntryType
     Refund = 4,
 
     /// <summary>
-    /// The total the channel reports as remitted for the same document. Only valid together with
-    /// <see cref="PnlEntryKind.ControlTotal"/>, and never summed into the result.
+    /// The net cash movement the channel reports for the same document: the payout of a sale or the
+    /// charge of a delivery row. Only valid together with <see cref="PnlEntryKind.ControlTotal"/>,
+    /// and never summed into the result. The direction carries the sign, so a payout entry may be an
+    /// <see cref="PnlEntryDirection.Expense"/> when the document reports money leaving the seller.
     /// </summary>
     Payout = 5,
+
+    /// <summary>
+    /// The marketplace-funded part of the buyer's discount: money the channel adds on top of what the
+    /// buyer paid. It is revenue for the seller, so it is summed into the net revenue as its own
+    /// component.
+    /// </summary>
+    Compensation = 6,
 }

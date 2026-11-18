@@ -1,0 +1,207 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Finance.Application.Interfaces;
+using Delobytes.App.Backend.Finance.Application.Queries;
+using Delobytes.App.Backend.Finance.Application.ReadModels;
+using Delobytes.App.Backend.Finance.Domain.Enums;
+using FluentAssertions;
+using Moq;
+using Xunit;
+
+namespace Delobytes.App.Backend.Tests.Application.Finance;
+
+/// <summary>
+/// Tests for the P&amp;L read handlers: the profile is resolved once per distinct date, a line
+/// without a sale has no tax or margin, and the summary groups by product and period.
+/// </summary>
+public class PnlQueryHandlerTests
+{
+    private static readonly Guid TenantId = Guid.NewGuid();
+
+    [Fact]
+    public async Task GetLines_TwoLinesOfOneDate_ResolvesTheProfileOnce()
+    {
+        // Arrange
+        PnlLinePage page = new PnlLinePage
+        {
+            Rows = new List<PnlLineRow>
+            {
+                Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m),
+                Row(new DateOnly(2026, 8, 1), 200m, 180m, 20m),
+            },
+            ExcludedByCurrency = 3,
+        };
+
+        Mock<ITenantSettingsProvider> provider = BuildProvider();
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(page),
+            BuildTenantContext(),
+            provider.Object,
+            BuildTimeService());
+
+        // Act
+        PnlLinesResponse response = await handler.Handle(
+            new GetPnlLinesQuery { Filter = new PnlQueryFilter(), Take = 100 },
+            CancellationToken.None);
+
+        // Assert
+        response.Lines.Should().HaveCount(2);
+        response.Currency.Should().Be("RUB");
+        response.ExcludedByCurrency.Should().Be(3);
+
+        provider.Verify(
+            p => p.GetTaxProfileAtAsync(TenantId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
+        response.Lines[0].Margin.Should().BeApproximately(74m, 0.0001m);
+        response.Lines[0].Roi.Should().BeApproximately(7.4m, 0.0001m);
+        response.Lines[0].ComponentsReconciled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetLines_LineWithoutSale_HasNoTaxOrMargin()
+    {
+        PnlLineRow row = Row(saleDate: null, revenue: null, netRevenue: null, cost: null);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].EstimatedTax.Should().BeNull();
+        response.Lines[0].Margin.Should().BeNull();
+        response.Lines[0].MarginPercent.Should().BeNull();
+        response.Lines[0].Roi.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupsByProductAndMonth()
+    {
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId),
+            Row(new DateOnly(2026, 8, 15), 100m, 90m, 10m, productId),
+            Row(new DateOnly(2026, 9, 1), 200m, 180m, 20m, productId),
+        };
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlSummaryResponse response = await handler.Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        response.Rows.Should().HaveCount(2);
+        response.Rows[0].PeriodStart.Should().Be(new DateOnly(2026, 8, 1));
+        response.Rows[0].Lines.Should().Be(2);
+        response.Rows[0].RevenueAmount.Should().Be(200m);
+        response.Rows[1].PeriodStart.Should().Be(new DateOnly(2026, 9, 1));
+    }
+
+    private static PnlLineRow Row(DateOnly? saleDate, decimal? revenue, decimal? netRevenue, decimal? cost, Guid? productId = null)
+    {
+        return new PnlLineRow
+        {
+            OrderLineId = Guid.NewGuid(),
+            ChannelId = Guid.NewGuid(),
+            ProductId = productId,
+            Currency = "RUB",
+            SaleDate = saleDate,
+            State = saleDate.HasValue ? PnlLineState.Calculated : PnlLineState.NotCalculated,
+            RevenueAmount = revenue,
+            NetRevenueAmount = netRevenue,
+            ProductionCostAmount = cost,
+            ControlDifferenceAmount = 0m,
+            ProductionCostIsComplete = true,
+            CostStatus = OrderLineCostStatus.Resolved,
+        };
+    }
+
+    private static ITenantContext BuildTenantContext()
+    {
+        Mock<ITenantContext> tenant = new Mock<ITenantContext>();
+        tenant.SetupGet(t => t.TenantId).Returns(TenantId);
+        return tenant.Object;
+    }
+
+    private static Mock<ITenantSettingsProvider> BuildProvider()
+    {
+        Mock<ITenantSettingsProvider> provider = new Mock<ITenantSettingsProvider>();
+
+        provider
+            .Setup(p => p.GetAccountingSettingsAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
+
+        provider
+            .Setup(p => p.GetTaxProfileAtAsync(TenantId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TenantTaxProfileSnapshot
+            {
+                Regime = TaxRegime.UsnIncome,
+                RatePercent = 6m,
+                Vat = VatType.None,
+            });
+
+        return provider;
+    }
+
+    private static ITenantTimeService BuildTimeService()
+    {
+        Mock<ITenantTimeService> time = new Mock<ITenantTimeService>();
+        time.Setup(t => t.GetTimeZoneAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TimeZoneInfo.Utc);
+        return time.Object;
+    }
+
+    private sealed class FakeStore : IPnlReadStore
+    {
+        private readonly PnlLinePage _page;
+        private readonly IReadOnlyList<PnlLineRow> _rows;
+
+        public FakeStore(PnlLinePage page, IReadOnlyList<PnlLineRow>? rows = null)
+        {
+            _page = page;
+            _rows = rows ?? page.Rows;
+        }
+
+        public Task<PnlLinePage> GetLinesAsync(
+            string currency,
+            PnlLineFilter filter,
+            int take,
+            string? afterToken,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_page);
+        }
+
+        public Task<IReadOnlyList<PnlLineRow>> GetForSummaryAsync(
+            string currency,
+            PnlLineFilter filter,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_rows);
+        }
+
+        public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
+            DateOnly from,
+            DateOnly to,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new PnlDiagnosticsResult());
+        }
+    }
+}
+
+

@@ -61,6 +61,14 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
             .HasConversion<string>()
             .HasMaxLength(32);
 
+        builder.Property(line => line.CompensationAmount)
+            .HasPrecision(18, 2);
+
+        builder.Property(line => line.CompensationSource)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         builder.Property(line => line.NetRevenueAmount)
             .HasPrecision(18, 2);
 
@@ -77,6 +85,13 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
 
         builder.Property(line => line.EntryCount)
             .IsRequired();
+
+        builder.Property(line => line.ProductionCostAmount)
+            .HasPrecision(18, 2);
+
+        builder.Property(line => line.ProductionCostIsComplete);
+
+        builder.Property(line => line.SaleDate);
 
         builder.Property(line => line.ComputedAt);
 

@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Models;
+﻿using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Application.Options;
@@ -52,6 +52,12 @@ public class WildberriesImportOptions
     public int MaxOrdersPerResponse { get; set; } = DefaultMaxOrdersPerResponse;
 
     /// <summary>
+    /// Number of weekly finance report rows requested per call. The API maximum is 100 000, but a
+    /// page that large is tens of megabytes against a 1 GB budget, so 20 000 is the default.
+    /// </summary>
+    public int FinanceReportPageLimit { get; set; } = 20000;
+
+    /// <summary>
     /// Narrowest window the orders importer is allowed to request when narrowing a window that
     /// exceeded <see cref="MaxOrdersPerResponse"/>. Below this width the endpoint cannot be asked
     /// for less data, so a still-partial response at this width is a hard failure.
@@ -86,3 +92,4 @@ public class WildberriesImportOptions
         };
     }
 }
+

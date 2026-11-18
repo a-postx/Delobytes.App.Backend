@@ -27,7 +27,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberri
 /// into snapshots belongs to <see cref="WildberriesOrderMapper"/> and
 /// <see cref="WildberriesCardMapper"/>.
 /// </summary>
-public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder
+public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersSource, IChannelApiClientTemplateBinder, IFinanceEntriesSource
 {
     private const int DeserializationMaxAttempts = 3;
     private const int ResponseBodyLogLimit = 500;
@@ -633,6 +633,152 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         };
     }
 
+    /// <inheritdoc/>
+    public async Task<FinanceEntriesPage> GetFinanceEntriesAsync(
+        Guid connectionId,
+        FinanceEntriesRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_templateId == null)
+        {
+            throw new InvalidOperationException(
+                "Template must be bound before calling API methods. Obtain the client from IChannelApiClientFactory.");
+        }
+
+        string baseUrl = await _endpointResolver.GetEndpointUrlAsync(
+            _templateId.Value,
+            ChannelEndpointType.Finance,
+            cancellationToken);
+
+        Connection connection = await _connectionResolver.ResolveByIdAsync(connectionId, cancellationToken);
+
+        RateLimitScope scope = new RateLimitScope(
+            ChannelCode,
+            connection.ApiKey,
+            WildberriesApiMethodRegistry.FinanceSalesReportsDetailed);
+
+        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
+
+        if (!acquireResult.Acquired)
+        {
+            return new FinanceEntriesPage
+            {
+                Throttled = true,
+                RetryAt = acquireResult.NextRequestAllowedAt,
+            };
+        }
+
+        long rrdId = 0;
+
+        if (!string.IsNullOrEmpty(request.Cursor))
+        {
+            long.TryParse(request.Cursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out rrdId);
+        }
+
+        int limit = _options.FinanceReportPageLimit > 0 ? _options.FinanceReportPageLimit : 20000;
+
+        object body = new
+        {
+            dateFrom = request.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            dateTo = request.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            period = "weekly",
+            limit,
+            rrdId,
+            fields = WildberriesFinanceMapper.Fields,
+        };
+
+        string requestJson = JsonSerializer.Serialize(body);
+
+        using HttpRequestMessage httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{baseUrl}/api/finance/v1/sales-reports/detailed")
+        {
+            Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
+        };
+
+        httpRequest.Options.Set(WildberriesAuthHandler.ConnectionIdOptionKey, connectionId);
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+
+        RateLimitSignal rateLimitSignal = WildberriesRateLimitHeaders.Parse(response);
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            DateTimeOffset retryAt = await _rateLimiter.ReportRateLimitedAsync(
+                scope,
+                rateLimitSignal,
+                cancellationToken);
+
+            _logger.LogWarning(
+                "Wildberries finance report was throttled (429, x-request-id {RequestId}); the next attempt is not due before {NextAttempt:O}.",
+                rateLimitSignal.RequestId,
+                retryAt);
+
+            return new FinanceEntriesPage
+            {
+                Throttled = true,
+                RetryAt = retryAt,
+            };
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            _logger.LogWarning(
+                "Wildberries finance report rejected the token with {StatusCode}. The token must have the «Финансы» category enabled. Response: {Response}",
+                (int)response.StatusCode,
+                TruncateForLog(responseBody));
+
+            throw new UnauthorizedAccessException(
+                $"Wildberries finance API returned {(int)response.StatusCode}. Enable the «Финансы» category for the token; retrying cannot fix a missing scope.");
+        }
+
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return new FinanceEntriesPage { IsComplete = true };
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            _logger.LogWarning(
+                "Wildberries finance API returned {StatusCode} (x-request-id {RequestId}). Response: {Response}",
+                (int)response.StatusCode,
+                rateLimitSignal.RequestId,
+                TruncateForLog(responseBody));
+
+            throw new HttpRequestException(
+                $"Wildberries finance API returned {(int)response.StatusCode}.",
+                null,
+                response.StatusCode);
+        }
+
+        List<WildberriesFinanceReportRow>? rows =
+            await response.Content.ReadFromJsonAsync<List<WildberriesFinanceReportRow>>(cancellationToken);
+
+        rows ??= new List<WildberriesFinanceReportRow>();
+
+        WildberriesFinanceMappingResult mappingResult = WildberriesFinanceMapper.Map(rows);
+
+        string? nextCursor = rows.Count > 0
+            ? rows[rows.Count - 1].RrdId.ToString(CultureInfo.InvariantCulture)
+            : null;
+
+        return new FinanceEntriesPage
+        {
+            Entries = mappingResult.Entries,
+            NextCursor = nextCursor,
+            Diagnostics = mappingResult.Diagnostics,
+            IsComplete = false,
+        };
+    }
+
     private static OrdersPage CreateThrottledPage(DateTimeOffset retryAt)
     {
         return new OrdersPage
@@ -729,3 +875,4 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
         public string? Trademark { get; init; }
     }
 }
+

@@ -80,6 +80,9 @@ public class OrderLineConfiguration : IEntityTypeConfiguration<OrderLine>
         // ChannelProductId is already unique and encodes the channel.
         builder.HasIndex("TenantId", nameof(OrderLine.ChannelProductId));
 
+        // Serves the catalogue-link backfill by external product and the re-publish paging.
+        builder.HasIndex("TenantId", nameof(OrderLine.ExternalProductId));
+
         builder.HasOne(l => l.Order)
             .WithMany(o => o.Lines)
             .HasForeignKey(l => l.OrderId)

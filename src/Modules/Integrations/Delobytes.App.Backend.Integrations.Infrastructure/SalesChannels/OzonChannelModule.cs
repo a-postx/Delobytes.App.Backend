@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
+﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -33,6 +33,7 @@ public sealed class OzonChannelModule : ChannelModule
         (JobType.OzonOrdersImportFbo, ChannelJobKind.OrdersImport),
         (JobType.OzonOrdersImportFbs, ChannelJobKind.OrdersImport),
         (JobType.OzonProductsImport, ChannelJobKind.ProductsImport),
+        (JobType.OzonFinanceAccrualsImport, ChannelJobKind.FinanceImport),
     };
 
     public override string? GetRateLimitMethod(JobType jobType)
@@ -85,6 +86,10 @@ public sealed class OzonChannelModule : ChannelModule
             });
 
         services.AddKeyedTransient<IChannelApiClient>(
+            ChannelCatalog.OzonCode,
+            (sp, _) => sp.GetRequiredService<OzonApiClient>());
+
+        services.AddKeyedScoped<IFinanceEntriesSource>(
             ChannelCatalog.OzonCode,
             (sp, _) => sp.GetRequiredService<OzonApiClient>());
     }
@@ -146,3 +151,5 @@ public sealed class OzonChannelModule : ChannelModule
             .Value.ToTuning(jobType);
     }
 }
+
+

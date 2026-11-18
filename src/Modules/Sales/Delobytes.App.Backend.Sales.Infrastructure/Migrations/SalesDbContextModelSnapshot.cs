@@ -274,6 +274,8 @@ namespace Delobytes.App.Backend.Sales.Infrastructure.Migrations
 
                     b.HasIndex("TenantId", "ChannelProductId");
 
+                    b.HasIndex("TenantId", "ExternalProductId");
+
                     b.HasIndex("TenantId", "OrderId", "LineKey")
                         .IsUnique();
 

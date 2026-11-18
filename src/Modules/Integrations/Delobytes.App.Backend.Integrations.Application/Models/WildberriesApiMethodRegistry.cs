@@ -22,11 +22,18 @@ public static class WildberriesApiMethodRegistry
     /// </summary>
     public const string SellerInfo = "seller-info";
 
+    /// <summary>
+    /// <c>POST /api/finance/v1/sales-reports/detailed</c> — weekly detailed sales report used by
+    /// the finance import.
+    /// </summary>
+    public const string FinanceSalesReportsDetailed = "finance/sales-reports/detailed";
+
     private static readonly HashSet<string> KnownMethods = new HashSet<string>(StringComparer.Ordinal)
     {
         SupplierOrders,
         ContentCardsList,
         SellerInfo,
+        FinanceSalesReportsDetailed,
     };
 
     /// <summary>
@@ -43,3 +50,4 @@ public static class WildberriesApiMethodRegistry
         return KnownMethods.Contains(method);
     }
 }
+

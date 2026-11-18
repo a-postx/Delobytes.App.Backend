@@ -6,7 +6,8 @@ namespace Delobytes.App.Backend.Finance.Domain.Entities;
 
 /// <summary>
 /// The result of one sale: the totals aggregated from the <see cref="PnlEntry"/> journal of a
-/// single Sales order line. Derived, never entered by hand.
+/// single Sales order line, plus the production cost resolved for that line. Derived, never entered
+/// by hand.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,11 +23,18 @@ namespace Delobytes.App.Backend.Finance.Domain.Entities;
 /// an expense negative — because they are summed from entries that carry their direction explicitly.
 /// </para>
 /// <para>
-/// <see cref="ControlTotalAmount"/> is the channel's own figure for the money it remitted and is
-/// deliberately excluded from <see cref="NetRevenueAmount"/>: it already covers the commission, the
-/// acquiring fee and the delivery fee, so including it would count them twice.
-/// <see cref="ControlDifferenceAmount"/> is what the components fail to explain; a non-zero value is
-/// a defect in the mapping, not a rounding artefact.
+/// <see cref="ControlTotalAmount"/> is the net cash movement the channel reports for the unit, not
+/// "the money the channel remitted": a Wildberries logistics row reports money leaving the seller,
+/// so a payout entry may be an expense. It is deliberately excluded from
+/// <see cref="NetRevenueAmount"/> because it already covers the commission, the acquiring fee and
+/// the delivery fee. <see cref="ControlDifferenceAmount"/> is what the components fail to explain; a
+/// non-zero value is a defect in the mapping or a legitimately skipped channel operation, not a
+/// rounding artefact.
+/// </para>
+/// <para>
+/// The row is rebuilt from the journal and the cost fact, so it must stay reproducible: the only
+/// writer is the projection that recomputes a line when either changes, and a full rebuild must
+/// always produce the same values.
 /// </para>
 /// <para>
 /// A line with no entries is simply not closed yet — that is what
@@ -104,6 +112,16 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public ValueSource RefundSource { get; set; } = ValueSource.Unknown;
 
     /// <summary>
+    /// Gets or sets the signed sum of the marketplace-funded discount compensation entries.
+    /// </summary>
+    public decimal? CompensationAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets where <see cref="CompensationAmount"/> came from.
+    /// </summary>
+    public ValueSource CompensationSource { get; set; } = ValueSource.Unknown;
+
+    /// <summary>
     /// Gets or sets the signed sum of every component — the money the sale left before cost of
     /// goods.
     /// </summary>
@@ -125,6 +143,24 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     /// when there is no control total; non-zero means the components do not explain the payout.
     /// </summary>
     public decimal? ControlDifferenceAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the production cost resolved for the line, or null while no cost fact exists.
+    /// Applied only when the line has a sale; a logistics-only row keeps its negative result without
+    /// cost of goods.
+    /// </summary>
+    public decimal? ProductionCostAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the production cost covers every input. Null when
+    /// there is no cost fact.
+    /// </summary>
+    public bool? ProductionCostIsComplete { get; set; }
+
+    /// <summary>
+    /// Gets or sets the date of the earliest sale entry. The tax profile is selected against it.
+    /// </summary>
+    public DateOnly? SaleDate { get; set; }
 
     /// <summary>
     /// Gets or sets the number of component entries behind the totals. Zero means the journal holds

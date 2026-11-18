@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -171,8 +171,10 @@ public class ChannelProductLinkedConsumerTests
     {
         return new ChannelProductLinker(
             new ChannelProductRefRepository(context),
+            Mock.Of<Delobytes.App.Backend.Sales.Application.Interfaces.IEventPublisher>(),
             Mock.Of<ILogger<ChannelProductLinker>>(),
-            TimeProvider.System);
+            TimeProvider.System,
+            Microsoft.Extensions.Options.Options.Create(new Delobytes.App.Backend.Sales.Application.Options.SalesImportOptions()));
     }
 
     private SalesDbContext BuildSalesDbContext(string databaseName)
@@ -188,3 +190,4 @@ public class ChannelProductLinkedConsumerTests
         return new SalesDbContext(options, tenantContextMock.Object);
     }
 }
+

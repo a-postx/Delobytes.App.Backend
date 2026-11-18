@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Integrations.Domain.Enums;
+﻿namespace Delobytes.App.Backend.Integrations.Domain.Enums;
 
 /// <summary>
 /// Defines types of channel API endpoints for different operation categories.
@@ -43,5 +43,11 @@ public enum ChannelEndpointType
     /// <summary>
     /// Suppliers-specific operations.
     /// </summary>
-    Suppliers = 7
+    Suppliers = 7,
+
+    /// <summary>
+    /// Financial reports and accruals.
+    /// </summary>
+    Finance = 8
 }
+

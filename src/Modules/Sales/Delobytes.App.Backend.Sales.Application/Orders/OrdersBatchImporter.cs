@@ -2,9 +2,14 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Sales.Application.Interfaces;
+using Delobytes.App.Backend.Sales.Application.Models;
+using Delobytes.App.Backend.Sales.Application.Options;
+
 using Delobytes.App.Backend.Sales.Domain.Entities;
+using Delobytes.App.Backend.Sales.Contracts.Events;
 using Delobytes.App.Backend.Sales.Domain.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Delobytes.App.Backend.Sales.Application.Orders;
 
@@ -21,6 +26,8 @@ public class OrdersBatchImporter
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<OrdersBatchImporter> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IOptions<SalesImportOptions> _options;
+
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrdersBatchImporter"/> class.
@@ -30,19 +37,23 @@ public class OrdersBatchImporter
     /// <param name="tenantContext">Tenant context, used for diagnostics.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="timeProvider">Clock source.</param>
+    /// <param name="options">Import tuning.</param>
     public OrdersBatchImporter(
         IOrdersImportStore store,
         IEventPublisher eventPublisher,
         ITenantContext tenantContext,
         ILogger<OrdersBatchImporter> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOptions<SalesImportOptions> options)
     {
         _store = store;
         _eventPublisher = eventPublisher;
         _tenantContext = tenantContext;
         _logger = logger;
         _timeProvider = timeProvider;
+        _options = options;
     }
+
 
     /// <summary>
     /// Processes the OrdersBatchImportRequestedEvent message.
@@ -65,6 +76,9 @@ public class OrdersBatchImporter
         int skipped = 0;
         int failed = 0;
 
+        List<ChangedOrderLine> changedLines = new();
+
+
         // Loaded once for the whole batch: a single round trip resolving every line's
         // ExternalProductId is cheaper than one query per line.
         Dictionary<string, Guid> channelProductIdsByExternalProductId = await _store.LoadChannelProductIdsAsync(
@@ -74,7 +88,7 @@ public class OrdersBatchImporter
         {
             try
             {
-                OrderUpsertStatus status = await _store.ExecuteWithSaveAsync(
+                OrderUpsertOutcome outcome = await _store.ExecuteWithSaveAsync(
                     () => UpsertOrderAsync(
                         message.ChannelId,
                         message.ConnectionId,
@@ -84,18 +98,21 @@ public class OrdersBatchImporter
                     orderSnapshot.ExternalOrderId,
                     cancellationToken);
 
-                switch (status)
+                switch (outcome.Status)
                 {
                     case OrderUpsertStatus.Created:
                         created++;
+                        changedLines.AddRange(outcome.Lines);
                         break;
                     case OrderUpsertStatus.Updated:
                         updated++;
+                        changedLines.AddRange(outcome.Lines);
                         break;
                     case OrderUpsertStatus.Skipped:
                         skipped++;
                         break;
                 }
+
             }
             catch (Exception ex)
             {
@@ -120,6 +137,8 @@ public class OrdersBatchImporter
 
         await _eventPublisher.PublishAsync(completedEvent, cancellationToken);
 
+        await PublishChangedLinesAsync(changedLines, cancellationToken);
+
         _logger.LogInformation(
             "OrdersBatchImporter completed batch. JobRunId={JobRunId}, BatchId={BatchId}, Created={Created}, Updated={Updated}, Skipped={Skipped}, Failed={Failed}",
             message.JobRunId,
@@ -139,12 +158,13 @@ public class OrdersBatchImporter
             .ToList();
     }
 
-    private async Task<OrderUpsertStatus> UpsertOrderAsync(
+    private async Task<OrderUpsertOutcome> UpsertOrderAsync(
         Guid channelId,
         Guid connectionId,
         ChannelOrderSnapshot snapshot,
         Dictionary<string, Guid> channelProductIdsByExternalProductId,
         CancellationToken cancellationToken)
+
     {
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
@@ -195,19 +215,56 @@ public class OrdersBatchImporter
         if (isNew)
         {
             order.LastImportedAt = now;
-            return OrderUpsertStatus.Created;
+            return new OrderUpsertOutcome(OrderUpsertStatus.Created, DescribeChangedLines(order));
         }
 
         if (orderChanged || anyLineChanged)
         {
             order.LastImportedAt = now;
             order.UpdatedAt = now;
-            return OrderUpsertStatus.Updated;
+            return new OrderUpsertOutcome(OrderUpsertStatus.Updated, DescribeChangedLines(order));
         }
 
         // Everything matched: no UPDATE is issued, so LastImportedAt deliberately stays put.
-        return OrderUpsertStatus.Skipped;
+        return new OrderUpsertOutcome(OrderUpsertStatus.Skipped, Array.Empty<ChangedOrderLine>());
     }
+
+    /// <summary>
+    /// Projects the tracked lines into the event payload. Derived from the change-tracking state, so
+    /// it must run before the save resets it; a skipped order is never published.
+    /// </summary>
+    private IReadOnlyList<ChangedOrderLine> DescribeChangedLines(Order order)
+    {
+        IReadOnlyList<OrderLineChange> changes = _store.DescribeLineChanges(order);
+        Dictionary<Guid, OrderLineChange> byLineId = changes.ToDictionary(c => c.OrderLineId);
+
+        List<ChangedOrderLine> lines = new(order.Lines.Count);
+
+        foreach (OrderLine line in order.Lines)
+        {
+            OrderLineChange change = byLineId[line.Id];
+
+            lines.Add(new ChangedOrderLine
+            {
+                OrderLineId = line.Id,
+                OrderId = order.Id,
+                ChannelId = order.ChannelId,
+                ExternalOrderId = order.ExternalOrderId,
+                ExternalLineId = line.ExternalLineId,
+                ExternalProductId = line.ExternalProductId,
+                ChannelProductId = line.ChannelProductId,
+                Quantity = line.Quantity,
+                OrderDate = order.OrderDate,
+                Currency = line.Currency,
+                IsCancelled = line.IsCancelled,
+                IsNew = change.IsNew,
+                CostRelevantChange = change.CostRelevantChange,
+            });
+        }
+
+        return lines;
+    }
+
 
     /// <summary>
     /// Copies the fields the snapshot reports directly. Everything the cart's own line set decides
@@ -413,6 +470,39 @@ public class OrdersBatchImporter
         };
     }
 
+    private async Task PublishChangedLinesAsync(
+        List<ChangedOrderLine> changedLines,
+        CancellationToken cancellationToken)
+    {
+        if (changedLines.Count == 0)
+        {
+            return;
+        }
+
+        int chunkSize = _options.Value.OrderLinesChangedChunkSize > 0
+            ? _options.Value.OrderLinesChangedChunkSize
+            : 500;
+
+        for (int offset = 0; offset < changedLines.Count; offset += chunkSize)
+        {
+            List<ChangedOrderLine> chunk = changedLines.GetRange(
+                offset,
+                Math.Min(chunkSize, changedLines.Count - offset));
+
+            await _eventPublisher.PublishAsync(
+                new OrderLinesChangedEvent { Lines = chunk },
+                cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// The outcome of one order upsert: the counter status and the lines to publish when the order
+    /// was created or updated.
+    /// </summary>
+    private sealed record OrderUpsertOutcome(
+        OrderUpsertStatus Status,
+        IReadOnlyList<ChangedOrderLine> Lines);
+
     private enum OrderUpsertStatus
     {
         Created,
@@ -420,3 +510,5 @@ public class OrdersBatchImporter
         Skipped,
     }
 }
+
+

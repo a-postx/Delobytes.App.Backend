@@ -95,8 +95,10 @@ public class OzonProductOrderIdentifierCompatibilityTests
         ChannelProductRefRepository repository = new ChannelProductRefRepository(context);
         ChannelProductLinker linker = new ChannelProductLinker(
             repository,
+            Mock.Of<Delobytes.App.Backend.Sales.Application.Interfaces.IEventPublisher>(),
             NullLogger<ChannelProductLinker>.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            Microsoft.Extensions.Options.Options.Create(new Delobytes.App.Backend.Sales.Application.Options.SalesImportOptions()));
 
         await linker.UpdateChannelProductRefAsync(
             new ChannelProductLinkedEvent
@@ -143,7 +145,8 @@ public class OzonProductOrderIdentifierCompatibilityTests
             eventPublisher.Object,
             tenantContext.Object,
             NullLogger<OrdersBatchImporter>.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            Microsoft.Extensions.Options.Options.Create(new Delobytes.App.Backend.Sales.Application.Options.SalesImportOptions()));
 
         ChannelOrderSnapshot snapshot = new ChannelOrderSnapshot
         {
@@ -407,6 +410,13 @@ public class OzonProductOrderIdentifierCompatibilityTests
             return false;
         }
 
+        public IReadOnlyList<Delobytes.App.Backend.Sales.Application.Models.OrderLineChange> DescribeLineChanges(Order order)
+        {
+            return order.Lines
+                .Select(line => new Delobytes.App.Backend.Sales.Application.Models.OrderLineChange(line.Id, false, false))
+                .ToList();
+        }
+
         public Task<TResult> ExecuteWithSaveAsync<TResult>(
             Func<Task<TResult>> operation,
             string externalOrderId,
@@ -436,3 +446,4 @@ public class OzonProductOrderIdentifierCompatibilityTests
         }
     }
 }
+

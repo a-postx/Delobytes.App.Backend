@@ -1,4 +1,4 @@
-using Delobytes.App.Backend.Integrations.Application.Models;
+﻿using Delobytes.App.Backend.Integrations.Application.Models;
 using FluentAssertions;
 using Xunit;
 
@@ -17,10 +17,11 @@ public class WildberriesApiMethodRegistryTests
         {
             WildberriesApiMethodRegistry.SupplierOrders,
             WildberriesApiMethodRegistry.ContentCardsList,
-            WildberriesApiMethodRegistry.SellerInfo
+            WildberriesApiMethodRegistry.SellerInfo,
+            WildberriesApiMethodRegistry.FinanceSalesReportsDetailed
         });
 
-        WildberriesApiMethodRegistry.All.Should().HaveCount(3);
+        WildberriesApiMethodRegistry.All.Should().HaveCount(4);
     }
 
     [Fact]
@@ -29,6 +30,7 @@ public class WildberriesApiMethodRegistryTests
         WildberriesApiMethodRegistry.IsKnown(WildberriesApiMethodRegistry.SupplierOrders).Should().BeTrue();
         WildberriesApiMethodRegistry.IsKnown(WildberriesApiMethodRegistry.ContentCardsList).Should().BeTrue();
         WildberriesApiMethodRegistry.IsKnown(WildberriesApiMethodRegistry.SellerInfo).Should().BeTrue();
+        WildberriesApiMethodRegistry.IsKnown(WildberriesApiMethodRegistry.FinanceSalesReportsDetailed).Should().BeTrue();
     }
 
     [Fact]
@@ -37,3 +39,4 @@ public class WildberriesApiMethodRegistryTests
         WildberriesApiMethodRegistry.IsKnown("unknown/method").Should().BeFalse();
     }
 }
+

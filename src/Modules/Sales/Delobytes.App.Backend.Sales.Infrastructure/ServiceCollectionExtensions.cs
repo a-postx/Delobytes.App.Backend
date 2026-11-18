@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Delobytes.App.Backend.Sales.Application.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Sales.Application.Orders;
@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
                 npgsqlOptions.MigrationsHistoryTable("__SalesMigrationsHistory", "sales")));
 
         services.AddScoped<IOrdersImportStore, OrdersImportStore>();
+        services.AddOptions<Delobytes.App.Backend.Sales.Application.Options.SalesImportOptions>();
         services.AddScoped<OrdersBatchImporter>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
         services.AddScoped<IChannelProductRefRepository, ChannelProductRefRepository>();
@@ -45,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProductOrdersChecker>();
         services.AddScoped<ChannelProductLinker>();
         services.AddScoped<IOrderStatsRepository, OrderStatsRepository>();
+        services.AddScoped<IOrderLineRepublishRepository, OrderLineRepublishRepository>();
 
         // Registered independently of Integrations' own TryAddSingleton call: Sales must not
         // depend on that module being loaded first.
@@ -62,3 +64,5 @@ public static class ServiceCollectionExtensions
         configurator.AddConsumers(Assembly.GetExecutingAssembly());
     }
 }
+
+

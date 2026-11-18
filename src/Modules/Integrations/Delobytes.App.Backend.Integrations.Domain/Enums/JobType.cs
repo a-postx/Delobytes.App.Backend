@@ -1,4 +1,4 @@
-namespace Delobytes.App.Backend.Integrations.Domain.Enums;
+﻿namespace Delobytes.App.Backend.Integrations.Domain.Enums;
 
 public enum JobType
 {
@@ -22,5 +22,16 @@ public enum JobType
     /// <summary>
     /// Manually started Ozon product cards import.
     /// </summary>
-    OzonProductsImport = 6
+    OzonProductsImport = 6,
+
+    /// <summary>
+    /// Scheduled Wildberries weekly finance report import.
+    /// </summary>
+    WbFinanceReportImport = 7,
+
+    /// <summary>
+    /// Scheduled Ozon daily finance accruals import.
+    /// </summary>
+    OzonFinanceAccrualsImport = 8
 }
+

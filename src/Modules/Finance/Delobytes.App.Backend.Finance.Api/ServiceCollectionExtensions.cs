@@ -1,3 +1,5 @@
+﻿using Delobytes.App.Backend.Finance.Application.Queries;
+using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
@@ -31,4 +33,14 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers Finance&#39;s MediatR handlers.
+    /// </summary>
+    public static MediatRServiceConfiguration AddFinanceHandlers(this MediatRServiceConfiguration configuration)
+    {
+        configuration.RegisterServicesFromAssembly(typeof(GetPnlLinesQuery).Assembly);
+        return configuration;
+    }
 }
+

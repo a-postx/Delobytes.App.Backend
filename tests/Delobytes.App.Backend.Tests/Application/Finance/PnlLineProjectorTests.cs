@@ -1,0 +1,276 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Finance.Application.Models;
+using Delobytes.App.Backend.Finance.Application.Projection;
+using Delobytes.App.Backend.Finance.Domain.Entities;
+using Delobytes.App.Backend.Finance.Domain.Enums;
+using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
+using FluentAssertions;
+using Xunit;
+
+namespace Delobytes.App.Backend.Tests.Application.Finance;
+
+/// <summary>
+/// Tests for PnlLineProjector. The projection is derived from two facts that arrive independently,
+/// so these tests pin both orders: money before the order line and the order line before money, plus
+/// the rule that cost of goods never applies without a sale.
+/// </summary>
+public class PnlLineProjectorTests
+{
+    private static readonly Guid ChannelId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly DateTimeOffset Now = new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task RecomputeAsync_EntriesArrivedBeforeTheRef_CalculatesTheLine()
+    {
+        // Arrange: the journal was written first, the order line projection arrived later.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, new InMemoryOrderLineCostStore(), lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.State.Should().Be(PnlLineState.Calculated);
+        stored.RevenueAmount.Should().Be(204m);
+        stored.RevenueSource.Should().Be(ValueSource.ChannelFinanceReport);
+        stored.NetRevenueSource.Should().Be(ValueSource.Derived);
+        stored.EntryCount.Should().Be(1);
+        stored.SaleDate.Should().Be(new DateOnly(2026, 8, 1));
+        stored.Currency.Should().Be("RUB");
+        stored.ComputedAt.Should().Be(Now);
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_NoEntries_LeavesTheLineNotCalculated()
+    {
+        // Arrange: the order line is registered and no money has arrived yet.
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+
+        PnlLineProjector projector = CreateProjector(
+            new InMemoryPnlJournalStore(),
+            refs,
+            new InMemoryOrderLineCostStore(),
+            lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.State.Should().Be(PnlLineState.NotCalculated);
+        stored.RevenueAmount.Should().BeNull();
+        stored.NetRevenueAmount.Should().BeNull();
+        stored.EntryCount.Should().Be(0);
+        stored.SaleDate.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecomputeForKeysAsync_CostArrivedBeforeTheRef_IsAppliedOnceTheLineIsKnown()
+    {
+        // Arrange: the cost is stored against a line the projection has not seen yet.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+        costs.Costs[line.OrderLineId] = ResolvedCost(line.OrderLineId, 100m);
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, costs, lines);
+
+        // Act
+        await projector.RecomputeForKeysAsync(
+            new[] { OrderLineAttributionKey.ForLine(ChannelId, line.ExternalLineId!) },
+            CancellationToken.None);
+
+        // Assert
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.ProductionCostAmount.Should().Be(100m);
+        stored.ProductionCostIsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_ProductNotLinkedCost_DoesNotApplyCostOfGoods()
+    {
+        // Arrange
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+
+        OrderLineCost cost = ResolvedCost(line.OrderLineId, 100m);
+        cost.Status = OrderLineCostStatus.ProductNotLinked;
+        cost.ProductId = null;
+        cost.TotalCost = null;
+        costs.Costs[line.OrderLineId] = cost;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, costs, lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.ProductionCostAmount.Should().BeNull();
+        stored.ProductionCostIsComplete.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_LineWithoutASale_KeepsItsResultWithoutCostOfGoods()
+    {
+        // Arrange: a non-buyout leaves only the logistics charge.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(LogisticsEntry(53.84m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+        costs.Costs[line.OrderLineId] = ResolvedCost(line.OrderLineId, 100m);
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, costs, lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.State.Should().Be(PnlLineState.Calculated);
+        stored.NetRevenueAmount.Should().Be(-53.84m);
+        stored.ProductionCostAmount.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_SecondPassWithEntries_MovesTheLineToCalculated()
+    {
+        // Arrange: the first recompute runs before any money arrives.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, new InMemoryOrderLineCostStore(), lines);
+
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        SingleLine(lines, line.OrderLineId).State.Should().Be(PnlLineState.NotCalculated);
+
+        // Act
+        journal.Entries.Add(SaleEntry(204m));
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        SingleLine(lines, line.OrderLineId).State.Should().Be(PnlLineState.Calculated);
+        SingleLine(lines, line.OrderLineId).RevenueAmount.Should().Be(204m);
+    }
+
+    private static PnlLineProjector CreateProjector(
+        InMemoryPnlJournalStore journal,
+        InMemoryOrderLineRefStore refs,
+        InMemoryOrderLineCostStore costs,
+        InMemoryPnlLineStore lines)
+    {
+        return new PnlLineProjector(journal, refs, costs, lines, new FixedTimeProvider(Now));
+    }
+
+    private static PnlLine SingleLine(InMemoryPnlLineStore lines, Guid orderLineId)
+    {
+        lines.Lines.Should().ContainKey(orderLineId);
+
+        return lines.Lines[orderLineId];
+    }
+
+    private static OrderLineRef Ref(Guid orderLineId)
+    {
+        return new OrderLineRef
+        {
+            OrderLineId = orderLineId,
+            OrderId = Guid.NewGuid(),
+            ChannelId = ChannelId,
+            ExternalOrderId = "order-1",
+            ExternalLineId = "srid-1",
+            ExternalProductId = "174371959",
+            Quantity = 1,
+            OrderDate = Now,
+            Currency = "RUB",
+            UpdatedAt = Now,
+        };
+    }
+
+    private static PnlEntry SaleEntry(decimal amount)
+    {
+        return new PnlEntry
+        {
+            Id = Guid.NewGuid(),
+            Source = PnlSource.WbReport,
+            ReportInstanceKey = "799692300:2026-08-03",
+            ExternalEntryId = "rrd-1",
+            ChannelId = ChannelId,
+            ExternalOrderId = null,
+            ExternalLineId = "srid-1",
+            ExternalProductId = "174371959",
+            Kind = PnlEntryKind.Component,
+            Type = PnlEntryType.Sale,
+            Amount = amount,
+            Direction = PnlEntryDirection.Income,
+            Currency = "RUB",
+            DocumentDate = new DateOnly(2026, 8, 1),
+            PeriodFrom = new DateOnly(2026, 7, 27),
+            PeriodTo = new DateOnly(2026, 8, 2),
+        };
+    }
+
+    private static PnlEntry LogisticsEntry(decimal amount)
+    {
+        PnlEntry entry = SaleEntry(amount);
+        entry.ExternalEntryId = "rrd-2";
+        entry.Type = PnlEntryType.Logistics;
+        entry.Direction = PnlEntryDirection.Expense;
+
+        return entry;
+    }
+
+    private static OrderLineCost ResolvedCost(Guid orderLineId, decimal totalCost)
+    {
+        return new OrderLineCost
+        {
+            OrderLineId = orderLineId,
+            Status = OrderLineCostStatus.Resolved,
+            ProductId = Guid.NewGuid(),
+            AsOfDate = new DateOnly(2026, 8, 1),
+            Quantity = 1,
+            UnitTotalCost = totalCost,
+            TotalCost = totalCost,
+            IsComplete = true,
+            ResolvedAt = Now,
+            CreatedAt = Now,
+        };
+    }
+}

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -164,7 +164,7 @@ public class ConnectionCreatedEventConsumerTests
         await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
         proposed.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs },
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs, JobType.OzonFinanceAccrualsImport },
             "both schemas share one connection and are always scheduled; sequencing is enforced by the scheduler");
         proposed.Should().OnlyContain(s => s.ConnectionId == connection.Id);
         proposed.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
@@ -184,8 +184,9 @@ public class ConnectionCreatedEventConsumerTests
 
         await CreateConsumer().Consume(CreateContext(BuildEvent(connection)));
 
-        proposed.Should().ContainSingle();
-        proposed[0].JobType.Should().Be(JobType.WbOrdersImport);
+        proposed.Should().HaveCount(2);
+        proposed.Should().ContainSingle(s => s.JobType == JobType.WbFinanceReportImport);
+        proposed.Single(s => s.JobType == JobType.WbOrdersImport).JobType.Should().Be(JobType.WbOrdersImport);
     }
 
     [Fact]
@@ -340,3 +341,4 @@ internal sealed class StubTenantContext : ITenantContext
 {
     public Guid? TenantId { get; set; }
 }
+

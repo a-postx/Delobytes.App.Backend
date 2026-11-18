@@ -1,4 +1,5 @@
-using Delobytes.App.Backend.Sales.Application.Interfaces;
+﻿using Delobytes.App.Backend.Sales.Application.Interfaces;
+using Delobytes.App.Backend.Sales.Application.Models;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -174,6 +175,41 @@ public class OrdersImportStore : IOrdersImportStore
     }
 
     /// <inheritdoc/>
+    public IReadOnlyList<OrderLineChange> DescribeLineChanges(Order order)
+    {
+        bool orderDateChanged = _context.Entry(order)
+            .Property(nameof(Order.OrderDate))
+            .IsModified;
+
+        List<OrderLineChange> changes = new(order.Lines.Count);
+
+        foreach (OrderLine line in order.Lines)
+        {
+            EntityEntry<OrderLine> lineEntry = _context.Entry(line);
+
+            bool isNew = lineEntry.State == EntityState.Added;
+
+            bool costRelevant =
+                isNew
+                || orderDateChanged
+                || IsModified(lineEntry, nameof(OrderLine.ExternalProductId))
+                || IsModified(lineEntry, nameof(OrderLine.ChannelProductId))
+                || IsModified(lineEntry, nameof(OrderLine.Quantity));
+
+            changes.Add(new OrderLineChange(line.Id, isNew, costRelevant));
+        }
+
+        return changes;
+    }
+
+    private static bool IsModified(EntityEntry<OrderLine> entry, string propertyName)
+    {
+        PropertyEntry property = entry.Property(propertyName);
+
+        return property.IsModified;
+    }
+
+    /// <inheritdoc/>
     public async Task<TResult> ExecuteWithSaveAsync<TResult>(
         Func<Task<TResult>> operation,
         string externalOrderId,
@@ -263,3 +299,4 @@ public class OrdersImportStore : IOrdersImportStore
         return ex is DbUpdateConcurrencyException;
     }
 }
+

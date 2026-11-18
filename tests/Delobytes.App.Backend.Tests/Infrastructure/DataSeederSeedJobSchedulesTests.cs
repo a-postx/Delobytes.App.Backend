@@ -137,8 +137,9 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(1);
-        JobSchedule schedule = schedules[0];
+        schedules.Should().HaveCount(2);
+        schedules.Should().ContainSingle(s => s.JobType == JobType.WbFinanceReportImport);
+        JobSchedule schedule = schedules.Single(s => s.JobType == JobType.WbOrdersImport);
         schedule.ConnectionId.Should().Be(connection.Id);
         schedule.JobType.Should().Be(JobType.WbOrdersImport);
         schedule.CronExpression.Should().Be("0 * * * *");
@@ -183,7 +184,7 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(1);
+        schedules.Should().HaveCount(2);
     }
 
     [Fact]
@@ -221,9 +222,10 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(1);
-        schedules[0].NextRunAt.Should().Be(preservedNextRunAt);
-        schedules[0].LastRunAt.Should().Be(preservedLastRunAt);
+        schedules.Should().HaveCount(2);
+        JobSchedule orders = schedules.Single(s => s.JobType == JobType.WbOrdersImport);
+        orders.NextRunAt.Should().Be(preservedNextRunAt);
+        orders.LastRunAt.Should().Be(preservedLastRunAt);
     }
 
     [Fact]
@@ -258,8 +260,8 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(1);
-        schedules[0].IsEnabled.Should().BeFalse();
+        schedules.Should().HaveCount(2);
+        schedules.Single(s => s.JobType == JobType.WbOrdersImport).IsEnabled.Should().BeFalse();
     }
 
     [Fact]
@@ -295,8 +297,8 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(3);
-        schedules.Select(s => s.ConnectionId).Should().BeEquivalentTo(new[] { first.Id, second.Id, third.Id });
+        schedules.Should().HaveCount(6);
+        schedules.Select(s => s.ConnectionId).Distinct().Should().BeEquivalentTo(new[] { first.Id, second.Id, third.Id });
     }
 
     [Fact]
@@ -316,9 +318,9 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(2);
-        schedules.Single(s => s.ConnectionId == connectionA.Id).TenantId.Should().Be(tenantAId);
-        schedules.Single(s => s.ConnectionId == connectionB.Id).TenantId.Should().Be(tenantBId);
+        schedules.Should().HaveCount(4);
+        schedules.First(s => s.ConnectionId == connectionA.Id).TenantId.Should().Be(tenantAId);
+        schedules.First(s => s.ConnectionId == connectionB.Id).TenantId.Should().Be(tenantBId);
     }
 
     [Fact]
@@ -339,12 +341,13 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(1);
-        schedules[0].CronExpression.Should().Be("*/15 * * * *");
-        schedules[0].NextRunAt.Should().NotBeNull();
+        schedules.Should().HaveCount(2);
+        JobSchedule orders = schedules.Single(s => s.JobType == JobType.WbOrdersImport);
+        orders.CronExpression.Should().Be("*/15 * * * *");
+        orders.NextRunAt.Should().NotBeNull();
 
         // Every 15 minutes: the first run lands within the coming quarter hour.
-        schedules[0].NextRunAt!.Value.Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(16));
+        orders.NextRunAt!.Value.Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(16));
     }
 
     [Fact]
@@ -360,7 +363,7 @@ public class DataSeederSeedJobSchedulesTests
         schedules.Should().BeEmpty();
     }
 
-    // в”Ђв”Ђ Channel в†’ orders job type в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+    // -- Channel > orders job type ----------------------------------------------------------------
 
     [Fact]
     public async Task SeedJobSchedulesAsync_OzonConnection_SeedsBothOzonOrdersTypes()
@@ -378,9 +381,9 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(2);
+        schedules.Should().HaveCount(3);
         schedules.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs, JobType.OzonFinanceAccrualsImport });
         schedules.Should().OnlyContain(s => s.IsEnabled);
         schedules.Should().OnlyContain(s => s.ConnectionId == connection.Id);
         schedules.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
@@ -402,8 +405,9 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().ContainSingle();
-        schedules[0].JobType.Should().Be(JobType.WbOrdersImport);
+        schedules.Should().HaveCount(2);
+        schedules.Should().ContainSingle(s => s.JobType == JobType.WbFinanceReportImport);
+        schedules.Single(s => s.JobType == JobType.WbOrdersImport).JobType.Should().Be(JobType.WbOrdersImport);
     }
 
     [Fact]
@@ -445,13 +449,13 @@ public class DataSeederSeedJobSchedulesTests
 
         // One schedule per job type: Wildberries maps to OrdersImport alone, Ozon always maps to
         // both schemas, which the scheduler then serialises on the shared connection.
-        schedules.Should().HaveCount(3);
+        schedules.Should().HaveCount(5);
         schedules.Where(s => s.ConnectionId == wildberriesConnection.Id)
             .Select(s => s.JobType)
-            .Should().BeEquivalentTo(new[] { JobType.WbOrdersImport });
+            .Should().BeEquivalentTo(new[] { JobType.WbOrdersImport, JobType.WbFinanceReportImport });
         schedules.Where(s => s.ConnectionId == ozonConnection.Id)
             .Select(s => s.JobType)
-            .Should().BeEquivalentTo(new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
+            .Should().BeEquivalentTo(new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs, JobType.OzonFinanceAccrualsImport });
         schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
@@ -470,13 +474,13 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().HaveCount(2);
+        schedules.Should().HaveCount(3);
         schedules.Select(s => s.JobType).Should().BeEquivalentTo(
-            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs });
+            new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs, JobType.OzonFinanceAccrualsImport });
         schedules.Should().OnlyContain(s => s.IsEnabled);
     }
 
-    // в”Ђв”Ђ Cleanup of what earlier versions of the seeder created в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+    // -- Cleanup of what earlier versions of the seeder created ----------------------------------
 
     [Fact]
     public async Task SeedJobSchedulesAsync_StaleOrdersImportOnOzonConnection_IsDisabledAndLoggedAsWarning()
@@ -543,8 +547,9 @@ public class DataSeederSeedJobSchedulesTests
 
         List<JobSchedule> schedules = await ReadSchedulesAsync(options);
 
-        schedules.Should().ContainSingle();
-        schedules[0].JobType.Should().Be(JobType.WbOrdersImport);
+        schedules.Should().HaveCount(2);
+        schedules.Should().ContainSingle(s => s.JobType == JobType.WbFinanceReportImport);
+        schedules.Single(s => s.JobType == JobType.WbOrdersImport).JobType.Should().Be(JobType.WbOrdersImport);
         schedules[0].IsEnabled.Should().BeTrue();
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
     }
@@ -606,3 +611,6 @@ public class DataSeederSeedJobSchedulesTests
         }
     }
 }
+
+
+

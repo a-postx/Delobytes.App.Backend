@@ -45,6 +45,23 @@ public class ChannelProductRefRepository : IChannelProductRefRepository
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<OrderLine>> LoadOrderLinesToRelinkAsync(
+        Guid channelId,
+        string externalProductId,
+        Guid channelProductId,
+        CancellationToken cancellationToken)
+    {
+        // OrderLine carries no ChannelId, so the channel filter has to go through its order.
+        return await _context.OrderLines
+            .Include(l => l.Order)
+            .Where(l =>
+                l.ExternalProductId == externalProductId
+                && l.Order.ChannelId == channelId
+                && (l.ChannelProductId == null || l.ChannelProductId != channelProductId))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public void Add(ChannelProductRef projection)
     {
         _context.ChannelProductRefs.Add(projection);

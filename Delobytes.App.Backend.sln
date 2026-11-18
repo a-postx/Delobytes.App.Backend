@@ -75,6 +75,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Finan
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Finance.Api", "src\Modules\Finance\Delobytes.App.Backend.Finance.Api\Delobytes.App.Backend.Finance.Api.csproj", "{52B1C009-95B0-4EA1-994C-9EE8813BBA2E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Delobytes.App.Backend.Finance.Application", "src\Modules\Finance\Delobytes.App.Backend.Finance.Application\Delobytes.App.Backend.Finance.Application.csproj", "{C054C7B8-BA58-4145-A06C-16AE5E0D9926}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -421,6 +423,18 @@ Global
 		{52B1C009-95B0-4EA1-994C-9EE8813BBA2E}.Release|x64.Build.0 = Release|Any CPU
 		{52B1C009-95B0-4EA1-994C-9EE8813BBA2E}.Release|x86.ActiveCfg = Release|Any CPU
 		{52B1C009-95B0-4EA1-994C-9EE8813BBA2E}.Release|x86.Build.0 = Release|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Debug|x64.Build.0 = Debug|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Debug|x86.Build.0 = Debug|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Release|x64.ActiveCfg = Release|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Release|x64.Build.0 = Release|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Release|x86.ActiveCfg = Release|Any CPU
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -460,6 +474,7 @@ Global
 		{F4ACE280-9E3B-4C99-8CD9-0BF8E354CD68} = {7B1579E9-4B26-85A4-1160-E9E8D7D21757}
 		{6C7A12F3-5FED-45DA-BD58-9CDD9B797847} = {7B1579E9-4B26-85A4-1160-E9E8D7D21757}
 		{52B1C009-95B0-4EA1-994C-9EE8813BBA2E} = {7B1579E9-4B26-85A4-1160-E9E8D7D21757}
+		{C054C7B8-BA58-4145-A06C-16AE5E0D9926} = {7B1579E9-4B26-85A4-1160-E9E8D7D21757}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A7527D03-2D70-4CFC-892B-1F843B9CA53F}

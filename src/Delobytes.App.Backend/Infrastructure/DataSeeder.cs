@@ -32,7 +32,7 @@ public static class DataSeeder
                 DisplayName = "Wildberries",
                 ApiBaseUrl = "https://suppliers-api.wildberries.ru",
                 ApiVersion = "v1",
-                Description = "РРЅС‚РµРіСЂР°С†РёСЏ СЃ Wildberries",
+                Description = "Интеграция с Wildberries",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -43,7 +43,7 @@ public static class DataSeeder
                 DisplayName = "Ozon",
                 ApiBaseUrl = "https://api-seller.ozon.ru",
                 ApiVersion = "v3",
-                Description = "РРЅС‚РµРіСЂР°С†РёСЏ СЃ Ozon",
+                Description = "Интеграция с Ozon",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -51,10 +51,10 @@ public static class DataSeeder
             {
                 Id = Guid.NewGuid(),
                 Code = "yandex.kit",
-                DisplayName = "РЇРЅРґРµРєСЃ.РљРёС‚",
+                DisplayName = "Яндекс.Кит",
                 ApiBaseUrl = "https://api.kit.yandex.net/v1",
                 ApiVersion = "v1",
-                Description = "РРЅС‚РµРіСЂР°С†РёСЏ СЃ РЇРЅРґРµРєСЃ.РљРёС‚",
+                Description = "Интеграция с Яндекс.Кит",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             }
@@ -122,7 +122,7 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Common,
                 BaseUrl = "https://common-api.wildberries.ru",
-                Description = "РћР±С‰РёРµ РѕРїРµСЂР°С†РёРё WB (РёРЅС„РѕСЂРјР°С†РёСЏ Рѕ РїСЂРѕРґР°РІС†Рµ)",
+                Description = "Общие операции WB (информация о продавце)",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -132,7 +132,7 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Content,
                 BaseUrl = "https://content-api.wildberries.ru",
-                Description = "РЈРїСЂР°РІР»РµРЅРёРµ РєР°С‚Р°Р»РѕРіРѕРј Рё С‚РѕРІР°СЂР°РјРё WB",
+                Description = "Управление каталогом и товарами WB",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -142,7 +142,7 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Statistics,
                 BaseUrl = "https://statistics-api.wildberries.ru",
-                Description = "РЎС‚Р°С‚РёСЃС‚РёРєР° Рё РѕС‚С‡РµС‚С‹ WB",
+                Description = "Статистика и отчёты WB",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -152,7 +152,7 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Analytics,
                 BaseUrl = "https://seller-analytics-api.wildberries.ru",
-                Description = "РђРЅР°Р»РёС‚РёРєР° РїСЂРѕРґР°РІС†Р° WB",
+                Description = "Аналитика продавца WB",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -162,7 +162,7 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Suppliers,
                 BaseUrl = "https://suppliers-api.wildberries.ru",
-                Description = "API РїРѕСЃС‚Р°РІС‰РёРєРѕРІ WB",
+                Description = "API поставщиков WB",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -172,7 +172,7 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Prices,
                 BaseUrl = "https://discounts-prices-api.wildberries.ru",
-                Description = "РЈРїСЂР°РІР»РµРЅРёРµ С†РµРЅР°РјРё WB",
+                Description = "Управление ценами WB",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -182,7 +182,18 @@ public static class DataSeeder
                 SystemChannelTemplateId = wildberriesId,
                 EndpointType = ChannelEndpointType.Promotions,
                 BaseUrl = "https://advert-api.wildberries.ru",
-                Description = "Р РµРєР»Р°РјРЅС‹Рµ РєР°РјРїР°РЅРёРё WB",
+                Description = "Рекламные кампании WB",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+
+            new SystemChannelEndpoint
+            {
+                Id = Guid.NewGuid(),
+                SystemChannelTemplateId = wildberriesId,
+                EndpointType = ChannelEndpointType.Finance,
+                BaseUrl = "https://finance-api.wildberries.ru",
+                Description = "Финансовые отчёты WB",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             },
@@ -194,7 +205,17 @@ public static class DataSeeder
                 SystemChannelTemplateId = ozonId,
                 EndpointType = ChannelEndpointType.Common,
                 BaseUrl = "https://api-seller.ozon.ru",
-                Description = "Р’СЃРµ РѕРїРµСЂР°С†РёРё Ozon",
+                Description = "Все операции Ozon",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new SystemChannelEndpoint
+            {
+                Id = Guid.NewGuid(),
+                SystemChannelTemplateId = ozonId,
+                EndpointType = ChannelEndpointType.Finance,
+                BaseUrl = "https://api-seller.ozon.ru",
+                Description = "Финансовые начисления Ozon",
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow
             }
@@ -283,7 +304,8 @@ public static class DataSeeder
         {
             string? channelCode = connection.SystemChannelTemplate?.Code;
 
-            foreach (JobType jobType in jobTypes.GetJobTypes(channelCode, ChannelJobKind.OrdersImport))
+            foreach (JobType jobType in jobTypes.GetJobTypes(channelCode, ChannelJobKind.OrdersImport)
+                .Concat(jobTypes.GetJobTypes(channelCode, ChannelJobKind.FinanceImport)))
             {
                 if (existingSchedules.Exists(s => s.ConnectionId == connection.Id && s.JobType == jobType))
                 {
@@ -431,6 +453,18 @@ public static class DataSeeder
                 JobType = JobType.OzonProductsImport,
                 TimeoutMinutes = 60,
                 BatchSize = 200,
+            },
+            new JobTypeConfiguration
+            {
+                JobType = JobType.WbFinanceReportImport,
+                TimeoutMinutes = 30,
+                BatchSize = 1000,
+            },
+            new JobTypeConfiguration
+            {
+                JobType = JobType.OzonFinanceAccrualsImport,
+                TimeoutMinutes = 30,
+                BatchSize = 1000,
             },
         };
 

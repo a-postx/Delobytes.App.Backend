@@ -122,6 +122,7 @@ public partial class Program
                 cfg.AddIntegrationsHandlers();
                 cfg.AddCatalogHandlers();
                 cfg.AddSalesHandlers();
+                cfg.AddFinanceHandlers();
 
                 // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
                 cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
