@@ -28,7 +28,10 @@ namespace Delobytes.App.Backend.Finance.Domain.Calculation;
 /// control total. Non-zero means the components do not explain what the channel paid.
 /// </param>
 /// <param name="EntryCount">Number of component entries behind the totals; zero means nothing has arrived yet.</param>
-/// <param name="HasSale">True when at least one current sale entry exists.</param>
+/// <param name="HasSale">
+/// True when at least one current sale with <c>Income</c> direction exists. A reversal is a sale
+/// entry with the opposite direction and does not count: no unit left the seller.
+/// </param>
 /// <param name="SaleDate">The earliest <c>DocumentDate</c> of the current sale entries, or null.</param>
 /// <param name="ReportPeriodTo">
 /// The last day of the reporting period of the current sale entries, or null. The expected-document

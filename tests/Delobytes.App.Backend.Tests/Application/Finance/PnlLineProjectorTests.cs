@@ -353,6 +353,40 @@ public class PnlLineProjectorTests
         stored.MissingDocumentTypes.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task RecomputeAsync_ReversalOnly_ExpectsNoLogisticsAndAppliesNoCost()
+    {
+        // Arrange: the sale was reversed, so only its reversal sits in the journal. No unit left the
+        // seller: the line owes no delivery document and no cost of goods.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        PnlEntry reversal = SaleEntry(204m);
+        reversal.Direction = PnlEntryDirection.Expense;
+        journal.Entries.Add(reversal);
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+        costs.Costs[line.OrderLineId] = ResolvedCost(line.OrderLineId, 100m);
+
+        InMemoryPnlExpectationStore expectations = new InMemoryPnlExpectationStore();
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, costs, lines, expectations);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        expectations.Expectations.Should().BeEmpty();
+
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.CompletenessState.Should().Be(PnlLineCompleteness.Complete);
+        stored.MissingDocumentTypes.Should().BeEmpty();
+        stored.NetRevenueAmount.Should().Be(-204m);
+        stored.ProductionCostAmount.Should().BeNull();
+    }
+
     private static PnlLineProjector CreateProjector(
         InMemoryPnlJournalStore journal,
         InMemoryOrderLineRefStore refs,

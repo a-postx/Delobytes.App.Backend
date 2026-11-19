@@ -16,15 +16,19 @@ namespace Delobytes.App.Backend.Finance.Application.Projection;
 public static class PnlLineCompletenessResolver
 {
     /// <summary>
-    /// Resolves the completeness of a line from its expectations.
+    /// Resolves the completeness of a line from the states it is about to reach.
     /// </summary>
-    /// <param name="expectations">Every expectation of the line, open and closed.</param>
+    /// <param name="entries">
+    /// Every expectation of the line with the state this pass intends to leave it in. The projection
+    /// resolves from these rather than from the stored entities, so nothing is mutated before the
+    /// whole line has been calculated.
+    /// </param>
     /// <returns>The completeness, the outstanding document types and the earliest open deadline.</returns>
-    public static PnlLineCompletenessResult Resolve(IEnumerable<PnlLineExpectation> expectations)
+    public static PnlLineCompletenessResult Resolve(IEnumerable<PnlLineCompletenessEntry> entries)
     {
-        ArgumentNullException.ThrowIfNull(expectations);
+        ArgumentNullException.ThrowIfNull(entries);
 
-        List<PnlLineExpectation> all = expectations.ToList();
+        List<PnlLineCompletenessEntry> all = entries.ToList();
 
         if (all.Count == 0)
         {
@@ -34,7 +38,7 @@ public static class PnlLineCompletenessResolver
                 null);
         }
 
-        List<PnlLineExpectation> open = all
+        List<PnlLineCompletenessEntry> open = all
             .Where(e => Finance.Application.Expectation.ExpectationPolicy.IsOpen(e.State))
             .ToList();
 
@@ -69,7 +73,31 @@ public static class PnlLineCompletenessResolver
 
         return new PnlLineCompletenessResult(state, missing, expectedBy);
     }
+
+    /// <summary>
+    /// Resolves the completeness of a line from its expectations.
+    /// </summary>
+    /// <param name="expectations">Every expectation of the line, open and closed.</param>
+    /// <returns>The completeness, the outstanding document types and the earliest open deadline.</returns>
+    public static PnlLineCompletenessResult Resolve(IEnumerable<PnlLineExpectation> expectations)
+    {
+        ArgumentNullException.ThrowIfNull(expectations);
+
+        return Resolve(expectations
+            .Select(e => new PnlLineCompletenessEntry(e.State, e.ExpectedType, e.ExpectedBy)));
+    }
 }
+
+/// <summary>
+/// One expectation as the resolution sees it: its intended state, not its stored one.
+/// </summary>
+/// <param name="State">State the expectation is in, or is about to be in.</param>
+/// <param name="ExpectedType">Document type expected.</param>
+/// <param name="ExpectedBy">Deadline of the expectation.</param>
+public readonly record struct PnlLineCompletenessEntry(
+    PnlExpectationState State,
+    PnlEntryType ExpectedType,
+    DateTimeOffset ExpectedBy);
 
 /// <summary>
 /// Completeness of one line, as the projection stores it.

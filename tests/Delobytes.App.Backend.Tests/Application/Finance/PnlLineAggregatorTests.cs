@@ -261,6 +261,46 @@ public class PnlLineAggregatorTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    [Fact]
+    public void Calculate_SaleAndItsReversal_NetRevenueIsZero()
+    {
+        // Arrange: a unit sold and then reversed. The reversal is booked as a sale with the opposite
+        // direction, so it offsets the revenue. HasSale stays true because a sale did happen in this
+        // line; netting the units by quantity so that a fully reversed sale stops claiming cost of
+        // goods is a separate, quantity-aware concern.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 204m, documentDate: new DateOnly(2026, 8, 1)),
+            Entry(PnlEntryType.Sale, 204m, PnlEntryDirection.Expense, documentDate: new DateOnly(2026, 8, 2)),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert
+        totals.NetRevenueAmount.Should().Be(0m);
+        totals.RevenueAmount.Should().Be(0m);
+        totals.EntryCount.Should().Be(2);
+        totals.HasSale.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Calculate_ReversalOnly_ReportsNoSale()
+    {
+        // Arrange: the sale itself belongs to an earlier report; only its reversal is in this one.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 204m, PnlEntryDirection.Expense),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert
+        totals.NetRevenueAmount.Should().Be(-204m);
+        totals.HasSale.Should().BeFalse();
+    }
+
     private static PnlEntry Entry(
         PnlEntryType type,
         decimal amount,

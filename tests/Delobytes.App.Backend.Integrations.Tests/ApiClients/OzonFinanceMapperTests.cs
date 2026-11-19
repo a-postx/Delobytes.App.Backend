@@ -145,6 +145,26 @@ public class OzonFinanceMapperTests
     }
 
     [Fact]
+    public void Map_ItemAccrual_CarriesTheUnitAsItsLineIdentifier()
+    {
+        // Arrange: an ITEM accrual names only the unit, the same identity a POSTING accrual puts in
+        // its line slot. Written into the order slot instead, it can never reach the order line that
+        // the posting was projected from.
+        OzonFinanceMappingResult result = Map(FixtureB);
+
+        // Act
+        List<ChannelFinanceEntrySnapshot> itemEntries = result.Entries
+            .Where(e => e.ExternalEntryId == "69844499507")
+            .ToList();
+
+        // Assert
+        itemEntries.Should().HaveCount(2);
+        itemEntries.Should().OnlyContain(e => e.ExternalLineId == "14512295-0639");
+        itemEntries.Should().OnlyContain(e => e.ExternalOrderId == null);
+        itemEntries.Should().OnlyContain(e => e.ExternalProductId == "5022694666");
+    }
+
+    [Fact]
     public void Map_MultiSkuPosting_EmitsNoControlTotalAndSumsDuplicatePairs()
     {
         string json = """

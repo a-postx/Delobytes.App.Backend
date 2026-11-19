@@ -89,7 +89,14 @@ public static class PnlLineAggregator
                 case PnlEntryType.Sale:
                     revenue += signed;
                     hasRevenue = true;
-                    hasSale = true;
+
+                    // A reversal is booked as a sale with the opposite direction. It is money, but
+                    // it is not a sale: no unit left the seller, so no cost of goods applies and no
+                    // delivery document is owed for it.
+                    if (entry.Direction == PnlEntryDirection.Income)
+                    {
+                        hasSale = true;
+                    }
 
                     if (saleDate == null || entry.DocumentDate < saleDate.Value)
                     {

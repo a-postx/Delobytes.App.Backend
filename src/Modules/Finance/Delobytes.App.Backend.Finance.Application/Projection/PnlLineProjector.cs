@@ -290,44 +290,60 @@ public class PnlLineProjector
         PnlLineExpectation? expectation = existing
             .FirstOrDefault(e => e.ExpectedType == PnlEntryType.Logistics);
 
+        // The delivery row arrived, or the sale it belonged to is gone: either way the expectation
+        // is resolved by the document rather than by a decision.
+        bool closeByDocument = expectation != null
+            && !expectsLogistics
+            && ExpectationPolicy.IsOpen(expectation.State);
+
         PnlLineExpectation? created = null;
 
-        if (expectsLogistics)
+        if (expectsLogistics && expectation == null && totals.ReportPeriodTo.HasValue)
         {
-            if (expectation == null && totals.ReportPeriodTo.HasValue)
+            created = new PnlLineExpectation
             {
-                created = new PnlLineExpectation
-                {
-                    Id = Guid.NewGuid(),
-                    OrderLineId = line.OrderLineId,
-                    ExpectedType = PnlEntryType.Logistics,
-                    Source = PnlSource.WbReport,
-                    ExpectedBy = ExpectationPolicy.DeadlineOf(totals.ReportPeriodTo.Value),
-                    State = PnlExpectationState.Expected,
-                    Currency = currency,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                };
-            }
+                Id = Guid.NewGuid(),
+                OrderLineId = line.OrderLineId,
+                ExpectedType = PnlEntryType.Logistics,
+                Source = PnlSource.WbReport,
+                ExpectedBy = ExpectationPolicy.DeadlineOf(totals.ReportPeriodTo.Value),
+                State = PnlExpectationState.Expected,
+                Currency = currency,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
         }
-        else if (expectation != null && ExpectationPolicy.IsOpen(expectation.State))
+
+        // Completeness is resolved from the states this pass intends to reach, so no entity is
+        // mutated before the whole line has been calculated. A throw anywhere above leaves the
+        // stored expectation exactly as it was, the same way it leaves the line untouched.
+        List<PnlLineCompletenessEntry> projected = existing
+            .Select(e => new PnlLineCompletenessEntry(
+                closeByDocument && ReferenceEquals(e, expectation)
+                    ? PnlExpectationState.ClosedByDocument
+                    : e.State,
+                e.ExpectedType,
+                e.ExpectedBy))
+            .ToList();
+
+        if (created != null)
         {
-            // The delivery row arrived, or the sale it belonged to is gone: either way the
-            // expectation is resolved by the document rather than by a decision.
-            expectation.State = PnlExpectationState.ClosedByDocument;
-            expectation.ClosedAt = now;
-            expectation.UpdatedAt = now;
+            projected.Add(new PnlLineCompletenessEntry(
+                created.State, created.ExpectedType, created.ExpectedBy));
         }
 
-        IEnumerable<PnlLineExpectation> effective = created == null
-            ? existing
-            : existing.Append(created);
-
-        PnlLineCompletenessResult completeness = PnlLineCompletenessResolver.Resolve(effective);
+        PnlLineCompletenessResult completeness = PnlLineCompletenessResolver.Resolve(projected);
 
         line.CompletenessState = completeness.State;
         line.MissingDocumentTypes = completeness.MissingDocumentTypes.ToList();
         line.ExpectedBy = completeness.ExpectedBy;
+
+        if (closeByDocument)
+        {
+            expectation!.State = PnlExpectationState.ClosedByDocument;
+            expectation.ClosedAt = now;
+            expectation.UpdatedAt = now;
+        }
 
         return created;
     }

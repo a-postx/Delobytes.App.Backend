@@ -90,8 +90,8 @@ internal static class OzonFinanceMapper
 
             entries.Add(CreateEntry(
                 context,
-                externalLineId: null,
-                externalOrderId: accrual.UnitNumber,
+                externalLineId: accrual.UnitNumber,
+                externalOrderId: null,
                 externalProductId: sku.ToString(CultureInfo.InvariantCulture),
                 FinanceEntryKind.Component,
                 FinanceEntryType.Acquiring,
@@ -265,12 +265,8 @@ internal static class OzonFinanceMapper
 
         entries.Add(CreateEntry(
             context,
-            externalLineId: string.Equals(accrual.AccruedCategory, PostingCategory, StringComparison.Ordinal)
-                ? accrual.UnitNumber
-                : null,
-            externalOrderId: string.Equals(accrual.AccruedCategory, ItemCategory, StringComparison.Ordinal)
-                ? accrual.UnitNumber
-                : null,
+            externalLineId: accrual.UnitNumber,
+            externalOrderId: null,
             externalProductId: productId,
             FinanceEntryKind.ControlTotal,
             FinanceEntryType.Payout,
