@@ -255,6 +255,125 @@ public partial class JobRunRepositoryTests
     }
 
     [Fact]
+    public async Task GetPendingJobsOlderThanAsync_ReturnsOnlyStalePendingJobs_AcrossAllTenants()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantAId = Guid.NewGuid();
+        Guid tenantBId = Guid.NewGuid();
+        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
+        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        SystemChannelTemplate template = BuildTemplate();
+
+        Connection connectionA = BuildConnection(template.Id);
+        Connection connectionB = BuildConnection(template.Id);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset createdBefore = now.AddMinutes(-120);
+
+        Guid staleJobId;
+        Guid freshJobId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connectionA);
+
+            JobRun staleJob = BuildJobRun(connectionA.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-11));
+            ctx.JobRuns.Add(staleJob);
+
+            JobRun freshJob = BuildJobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-10));
+            ctx.JobRuns.Add(freshJob);
+
+            JobRun runningJob = BuildJobRun(connectionA.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, now.AddHours(-11));
+            runningJob.StartedAt = now.AddHours(-11);
+            ctx.JobRuns.Add(runningJob);
+
+            ctx.JobRuns.Add(BuildJobRun(connectionA.Id, JobType.WbFinanceReportImport, JobStatus.Success, now.AddHours(-11)));
+
+            await ctx.SaveChangesAsync();
+
+            staleJobId = staleJob.Id;
+            freshJobId = freshJob.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantBMock.Object))
+        {
+            ctx.Connections.Add(connectionB);
+            // A never-dispatched Pending row of another tenant is the case the watchdog exists for.
+            ctx.JobRuns.Add(BuildJobRun(connectionB.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-12)));
+            await ctx.SaveChangesAsync();
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            List<JobRun> stalePending = await repository.GetPendingJobsOlderThanAsync(
+                createdBefore,
+                now,
+                CancellationToken.None);
+
+            stalePending.Should().HaveCount(2, "the watchdog must see stale Pending rows for every tenant");
+            stalePending.Should().Contain(j => j.Id == staleJobId);
+            stalePending.Should().Contain(j => j.ConnectionId == connectionB.Id);
+            stalePending.Should().OnlyContain(j => j.Status == JobStatus.Pending);
+            stalePending.Select(j => j.Id).Should().NotContain(freshJobId);
+        }
+    }
+
+    [Fact]
+    public async Task GetPendingJobsOlderThanAsync_SkipsRowsDeferredToTheFuture_ButReturnsExpiredDeferrals()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        Connection connection = BuildConnection(template.Id);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset createdBefore = now.AddMinutes(-120);
+
+        Guid deferredJobId;
+        Guid expiredDeferralJobId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(connection);
+
+            JobRun deferredJob = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-5));
+            deferredJob.NotBefore = now.AddMinutes(30);
+            ctx.JobRuns.Add(deferredJob);
+
+            JobRun expiredDeferralJob = BuildJobRun(connection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-5));
+            expiredDeferralJob.NotBefore = now.AddMinutes(-1);
+            ctx.JobRuns.Add(expiredDeferralJob);
+
+            await ctx.SaveChangesAsync();
+
+            deferredJobId = deferredJob.Id;
+            expiredDeferralJobId = expiredDeferralJob.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            List<JobRun> stalePending = await repository.GetPendingJobsOlderThanAsync(
+                createdBefore,
+                now,
+                CancellationToken.None);
+
+            stalePending.Select(j => j.Id).Should().Contain(
+                expiredDeferralJobId,
+                "a deferral that has already passed no longer explains a Pending row");
+            stalePending.Select(j => j.Id).Should().NotContain(
+                deferredJobId,
+                "a run waiting on the rate limiter is not stuck");
+        }
+    }
+
+    [Fact]
     public async Task UpdateAsync_PersistsStatusTransition()
     {
         DbContextOptions<IntegrationsDbContext> options = BuildOptions();

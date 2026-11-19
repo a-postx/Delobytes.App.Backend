@@ -173,6 +173,23 @@ public class JobRunRepository : IJobRunRepository
     }
 
     /// <inheritdoc/>
+    public Task<List<JobRun>> GetPendingJobsOlderThanAsync(
+        DateTimeOffset createdBefore,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // Watchdog must see every tenant's stuck jobs, not just the caller's current tenant.
+        // A row deferred to a future NotBefore is waiting on the rate limiter on purpose, so it is
+        // not stuck and must not be failed while its deferral is still ahead.
+        return _context.JobRuns
+            .IgnoreQueryFilters()
+            .Where(j => j.Status == JobStatus.Pending
+                && j.CreatedAt < createdBefore
+                && (j.NotBefore == null || j.NotBefore <= now))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public Task<ProductsImportJob?> GetProductsImportJobAsync(Guid jobRunId, CancellationToken cancellationToken)
     {
         return _context.ProductsImportJobs.FirstOrDefaultAsync(p => p.JobRunId == jobRunId, cancellationToken);

@@ -9,10 +9,11 @@ using Microsoft.Extensions.Options;
 namespace Delobytes.App.Backend.BackgroundServices;
 
 /// <summary>
-/// Ticks on a fixed interval and transitions every Running <see cref="JobRun"/> that has
-/// exceeded its per-type timeout (<see cref="JobTypeConfiguration.TimeoutMinutes"/>) to Failed.
-/// Terminal: no automatic retry here, a fresh run is created either by the next schedule tick
-/// (SchedulerHostedService) or by a manual restart.
+/// Ticks on a fixed interval and transitions to Failed every job run that got stuck: a Running
+/// <see cref="JobRun"/> that exceeded its per-type timeout (<see cref="JobTypeConfiguration.TimeoutMinutes"/>),
+/// or a Pending one that was never dispatched within
+/// <see cref="WatchdogOptions.PendingTimeoutMinutes"/>. Terminal: no automatic retry here, a fresh
+/// run is created either by the next schedule tick (SchedulerHostedService) or by a manual restart.
 /// </summary>
 public class WatchdogHostedService : BackgroundService
 {
@@ -67,6 +68,22 @@ public class WatchdogHostedService : BackgroundService
         return TimeSpan.FromMinutes(_options.IntervalMinutes);
     }
 
+    // A non-positive pending timeout would fail every Pending row on the first tick, so a
+    // misconfiguration falls back to the documented default instead of taking imports down.
+    private int GetPendingTimeoutMinutes()
+    {
+        if (_options.PendingTimeoutMinutes <= 0)
+        {
+            _logger.LogWarning(
+                "WatchdogHostedService: invalid pending timeout {PendingTimeoutMinutes} minute(s), falling back to 120.",
+                _options.PendingTimeoutMinutes);
+
+            return 120;
+        }
+
+        return _options.PendingTimeoutMinutes;
+    }
+
     private async Task TickAsync(CancellationToken cancellationToken)
     {
         List<StuckJobCandidate> stuckJobs = await CollectStuckJobsAsync(cancellationToken);
@@ -76,7 +93,7 @@ public class WatchdogHostedService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("WatchdogHostedService: {Count} job run(s) exceeded their timeout.", stuckJobs.Count);
+        _logger.LogInformation("WatchdogHostedService: {Count} stuck job run(s) found.", stuckJobs.Count);
 
         foreach (StuckJobCandidate stuckJob in stuckJobs)
         {
@@ -127,8 +144,28 @@ public class WatchdogHostedService : BackgroundService
             foreach (JobRun jobRun in runningOlderThanThreshold.Where(j => j.JobType == jobType))
             {
                 Guid tenantId = (Guid)context.Entry(jobRun).Property("TenantId").CurrentValue!;
-                candidates.Add(new StuckJobCandidate(jobRun.Id, tenantId, configuration.TimeoutMinutes));
+                candidates.Add(new StuckJobCandidate(
+                    jobRun.Id,
+                    tenantId,
+                    JobStatus.Running,
+                    configuration.TimeoutMinutes));
             }
+        }
+
+        int pendingTimeoutMinutes = GetPendingTimeoutMinutes();
+        DateTimeOffset pendingThreshold = now.AddMinutes(-pendingTimeoutMinutes);
+
+        List<JobRun> stalePending = await jobRunRepository.GetPendingJobsOlderThanAsync(
+            pendingThreshold,
+            now,
+            cancellationToken);
+
+        // No per-type timeout applies here: a Pending row is not executing anything, so the only
+        // meaningful question is whether it has been waiting to be dispatched for too long.
+        foreach (JobRun jobRun in stalePending)
+        {
+            Guid tenantId = (Guid)context.Entry(jobRun).Property("TenantId").CurrentValue!;
+            candidates.Add(new StuckJobCandidate(jobRun.Id, tenantId, JobStatus.Pending, pendingTimeoutMinutes));
         }
 
         return candidates;
@@ -149,25 +186,31 @@ public class WatchdogHostedService : BackgroundService
 
             JobRun? jobRun = await jobRunRepository.GetByIdAsync(stuckJob.JobRunId, cancellationToken);
 
-            if (jobRun == null || jobRun.Status != JobStatus.Running)
+            if (jobRun == null || jobRun.Status != stuckJob.StuckStatus)
             {
-                // Completed, cancelled or already timed out concurrently between the lookup
+                // Completed, cancelled or already reconciled concurrently between the lookup
                 // scope above and this scope.
                 return;
             }
 
+            string error = stuckJob.StuckStatus == JobStatus.Pending
+                ? $"Job stayed Pending for more than {stuckJob.TimeoutMinutes} minutes without being dispatched"
+                : $"Job exceeded timeout of {stuckJob.TimeoutMinutes} minutes";
+
             jobRun.Status = JobStatus.Failed;
-            jobRun.Error = $"Job exceeded timeout of {stuckJob.TimeoutMinutes} minutes";
+            jobRun.Error = error;
             jobRun.CompletedAt = _timeProvider.GetUtcNow();
 
             await jobRunRepository.UpdateAsync(jobRun, cancellationToken);
 
             _logger.LogWarning(
-                "WatchdogHostedService: JobRun {JobRunId} ({JobType}, tenant {TenantId}) timed out after {TimeoutMinutes} minute(s).",
+                "WatchdogHostedService: JobRun {JobRunId} ({JobType}, tenant {TenantId}) failed from {StuckStatus} after {TimeoutMinutes} minute(s): {Error}",
                 jobRun.Id,
                 jobRun.JobType,
                 stuckJob.TenantId,
-                stuckJob.TimeoutMinutes);
+                stuckJob.StuckStatus,
+                stuckJob.TimeoutMinutes,
+                error);
         }
         finally
         {
@@ -175,5 +218,9 @@ public class WatchdogHostedService : BackgroundService
         }
     }
 
-    private sealed record StuckJobCandidate(Guid JobRunId, Guid TenantId, int TimeoutMinutes);
+    private sealed record StuckJobCandidate(
+        Guid JobRunId,
+        Guid TenantId,
+        JobStatus StuckStatus,
+        int TimeoutMinutes);
 }

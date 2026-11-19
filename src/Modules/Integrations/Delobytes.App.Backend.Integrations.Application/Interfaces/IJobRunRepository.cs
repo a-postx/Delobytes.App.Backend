@@ -92,6 +92,17 @@ public interface IJobRunRepository
     public Task<List<JobRun>> GetRunningJobsOlderThanAsync(DateTimeOffset threshold, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns every Pending job run (across all tenants) created before
+    /// <paramref name="createdBefore"/> and not deferred to a future instant, for the watchdog to
+    /// reconcile runs that were never dispatched. A row whose <c>NotBefore</c> is still ahead of
+    /// <paramref name="now"/> is waiting on purpose and is not returned.
+    /// </summary>
+    public Task<List<JobRun>> GetPendingJobsOlderThanAsync(
+        DateTimeOffset createdBefore,
+        DateTimeOffset now,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Finds the type-specific ProductsImport data for the given job run.
     /// </summary>
     public Task<ProductsImportJob?> GetProductsImportJobAsync(Guid jobRunId, CancellationToken cancellationToken);

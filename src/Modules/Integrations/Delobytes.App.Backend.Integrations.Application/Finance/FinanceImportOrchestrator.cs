@@ -168,10 +168,11 @@ public class FinanceImportOrchestrator
 
             if (page.Throttled)
             {
-                await FailAsync(
-                    run,
-                    $"Finance API is rate limited, next attempt at {page.RetryAt:O}.",
-                    cancellationToken);
+                // A rate-limited page is not a failure: the run stays Pending and is re-dispatched
+                // once NotBefore passes, instead of losing the whole window until the next schedule
+                // tick. CancellationToken.None because a cancelled consume must still persist the
+                // deferral, or the worker re-publishes the run in a tight loop.
+                await DeferAsync(run, page.RetryAt);
                 return;
             }
 
@@ -287,6 +288,23 @@ public class FinanceImportOrchestrator
                 LastJobRunId = run.Id,
             },
             cancellationToken);
+    }
+
+    private async Task DeferAsync(JobRun run, DateTimeOffset? retryAt)
+    {
+        DateTimeOffset nextAttemptAt = retryAt ?? _timeProvider.GetUtcNow().AddMinutes(1);
+
+        run.NotBefore = nextAttemptAt;
+
+        // CancellationToken.None on purpose: if the consume is cancelled while the API is
+        // throttled, the deferral must still be persisted, otherwise the run stays immediately due
+        // and the worker re-publishes it on every tick.
+        await _jobRuns.UpdateAsync(run, CancellationToken.None);
+
+        _logger.LogInformation(
+            "Finance import deferred: the channel rate limiter allows the next attempt at {NextAttemptAt:O}. JobRunId={JobRunId}",
+            nextAttemptAt,
+            run.Id);
     }
 
     private async Task FailAsync(JobRun run, string error, CancellationToken cancellationToken)

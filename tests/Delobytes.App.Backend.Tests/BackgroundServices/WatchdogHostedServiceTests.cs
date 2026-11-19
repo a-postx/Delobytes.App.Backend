@@ -176,6 +176,68 @@ public class WatchdogHostedServiceTests : IDisposable
         reloaded.Error.Should().BeNull();
     }
 
+    // ── Pending jobs never dispatched ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Tick_PendingJobOlderThanPendingTimeout_IsFailedWithDispatchError()
+    {
+        // Nothing re-marks a Pending row as dispatched, so a consumer that fails before the run
+        // enters Running leaves it Pending forever and blocking its schedule.
+        JobRun stuckPending = await SeedJobRunAsync(
+            JobType.WbFinanceReportImport,
+            DateTimeOffset.UtcNow.AddHours(-6),
+            status: JobStatus.Pending);
+
+        WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
+
+        await RunSingleTickAsync(watchdog);
+
+        JobRun reloaded = await ReadJobRunAsync(stuckPending.Id);
+
+        reloaded.Status.Should().Be(JobStatus.Failed);
+        reloaded.Error.Should().Be(
+            "Job stayed Pending for more than 120 minutes without being dispatched");
+        reloaded.CompletedAt.Should().NotBeNull("a failed job must carry its terminal timestamp");
+    }
+
+    [Fact]
+    public async Task Tick_PendingJobWithinPendingTimeout_IsLeftPending()
+    {
+        JobRun freshPending = await SeedJobRunAsync(
+            JobType.WbOrdersImport,
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            status: JobStatus.Pending);
+
+        WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
+
+        await RunSingleTickAsync(watchdog);
+
+        JobRun reloaded = await ReadJobRunAsync(freshPending.Id);
+
+        reloaded.Status.Should().Be(JobStatus.Pending, "a job may legitimately wait behind a running one");
+        reloaded.Error.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Tick_PendingJobDeferredToTheFuture_IsLeftPending()
+    {
+        // A run deferred by the rate limiter is waiting on purpose, not stuck.
+        JobRun deferred = await SeedJobRunAsync(
+            JobType.WbFinanceReportImport,
+            DateTimeOffset.UtcNow.AddHours(-6),
+            status: JobStatus.Pending,
+            notBefore: DateTimeOffset.UtcNow.AddMinutes(30));
+
+        WatchdogHostedService watchdog = BuildWatchdog(new JobRunRepository(_context));
+
+        await RunSingleTickAsync(watchdog);
+
+        JobRun reloaded = await ReadJobRunAsync(deferred.Id);
+
+        reloaded.Status.Should().Be(JobStatus.Pending);
+        reloaded.Error.Should().BeNull();
+    }
+
     // ── Races and fault isolation ────────────────────────────────────────────────────────
 
     [Fact]
@@ -189,7 +251,13 @@ public class WatchdogHostedServiceTests : IDisposable
         Mock<IJobRunRepository> repositoryMock = new Mock<IJobRunRepository>();
         repositoryMock
             .Setup(r => r.GetRunningJobsOlderThanAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<JobRun> { stuck });
+            .ReturnsAsync(new List<JobRun>());
+        repositoryMock
+            .Setup(r => r.GetPendingJobsOlderThanAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<JobRun>());
         repositoryMock
             .Setup(r => r.GetByIdAsync(stuck.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JobRun
@@ -227,6 +295,12 @@ public class WatchdogHostedServiceTests : IDisposable
             .Setup(r => r.GetRunningJobsOlderThanAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun> { failingJob, healthyJob });
         repositoryMock
+            .Setup(r => r.GetPendingJobsOlderThanAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<JobRun>());
+        repositoryMock
             .Setup(r => r.GetByIdAsync(failingJob.Id, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("concurrent update"));
         repositoryMock
@@ -252,6 +326,12 @@ public class WatchdogHostedServiceTests : IDisposable
         Mock<IJobRunRepository> repositoryMock = new Mock<IJobRunRepository>();
         repositoryMock
             .Setup(r => r.GetRunningJobsOlderThanAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<JobRun>());
+        repositoryMock
+            .Setup(r => r.GetPendingJobsOlderThanAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<JobRun>());
 
         WatchdogHostedService watchdog = BuildWatchdog(repositoryMock.Object);
@@ -345,7 +425,8 @@ public class WatchdogHostedServiceTests : IDisposable
         JobType jobType,
         DateTimeOffset startedAt,
         Guid? tenantId = null,
-        JobStatus status = JobStatus.Running)
+        JobStatus status = JobStatus.Running,
+        DateTimeOffset? notBefore = null)
     {
         JobRun jobRun = new JobRun
         {
@@ -356,6 +437,7 @@ public class WatchdogHostedServiceTests : IDisposable
             RequestedByUserId = null,
             CreatedAt = startedAt,
             StartedAt = status == JobStatus.Pending ? null : startedAt,
+            NotBefore = notBefore,
         };
 
         _tenantContext.SetTenantId(tenantId ?? _tenantId);
