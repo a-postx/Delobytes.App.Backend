@@ -15,6 +15,12 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 public static class DataSeeder
 {
     /// <summary>
+    /// Watchdog timeout of a finance import run, in minutes. A run holds its slot for the whole
+    /// window, including the pauses a channel's rate limiter imposes.
+    /// </summary>
+    private const int FinanceTimeoutMinutes = 180;
+
+    /// <summary>
     /// Seeds SystemChannelTemplate data if it does not already exist.
     /// Idempotent: checks by Code and skips existing records.
     /// </summary>
@@ -456,14 +462,17 @@ public static class DataSeeder
             },
             new JobTypeConfiguration
             {
+                // A finance run holds its slot while the channel paces it: a Wildberries weekly
+                // report allows one request per minute and a 429 can defer the run for tens of
+                // minutes. Thirty minutes covered neither a re-issued window nor a deep backfill.
                 JobType = JobType.WbFinanceReportImport,
-                TimeoutMinutes = 30,
+                TimeoutMinutes = FinanceTimeoutMinutes,
                 BatchSize = 1000,
             },
             new JobTypeConfiguration
             {
                 JobType = JobType.OzonFinanceAccrualsImport,
-                TimeoutMinutes = 30,
+                TimeoutMinutes = FinanceTimeoutMinutes,
                 BatchSize = 1000,
             },
         };
@@ -472,19 +481,35 @@ public static class DataSeeder
 
         foreach (JobTypeConfiguration configuration in configurations)
         {
-            bool exists = await context.JobTypeConfigurations
-                .AnyAsync(c => c.JobType == configuration.JobType);
+            JobTypeConfiguration? existing = await context.JobTypeConfigurations
+                .FirstOrDefaultAsync(c => c.JobType == configuration.JobType);
 
-            if (!exists)
+            if (existing == null)
             {
                 context.JobTypeConfigurations.Add(configuration);
                 seededCount++;
                 logger.LogInformation("Seeding JobTypeConfiguration: {JobType}", configuration.JobType);
+                continue;
             }
-            else
+
+            if (IsFinanceJobType(configuration.JobType)
+                && existing.TimeoutMinutes < configuration.TimeoutMinutes)
             {
-                logger.LogDebug("JobTypeConfiguration {JobType} already exists, skipping.", configuration.JobType);
+                // Only ever raised, never lowered: a lower value would have been set deliberately,
+                // while a stale one is the 30-minute default these types shipped with and re-breaks
+                // the import on the first channel pause.
+                logger.LogInformation(
+                    "Raising the watchdog timeout of JobTypeConfiguration {JobType} from {OldValue} to {NewValue} minute(s).",
+                    existing.JobType,
+                    existing.TimeoutMinutes,
+                    configuration.TimeoutMinutes);
+
+                existing.TimeoutMinutes = configuration.TimeoutMinutes;
+                seededCount++;
+                continue;
             }
+
+            logger.LogDebug("JobTypeConfiguration {JobType} already exists, skipping.", configuration.JobType);
         }
 
         if (seededCount > 0)
@@ -492,5 +517,10 @@ public static class DataSeeder
             await context.SaveChangesAsync();
             logger.LogInformation("Seeded {Count} JobTypeConfiguration(s).", seededCount);
         }
+    }
+
+    private static bool IsFinanceJobType(JobType jobType)
+    {
+        return jobType is JobType.WbFinanceReportImport or JobType.OzonFinanceAccrualsImport;
     }
 }

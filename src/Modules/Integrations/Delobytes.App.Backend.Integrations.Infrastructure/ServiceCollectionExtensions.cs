@@ -107,6 +107,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrdersBatchPublisher>();
         services.AddScoped<OrdersBackfillWalker>();
         services.AddOptions<FinanceImportOptions>();
+        services.AddScoped<FinanceImportCheckpointStore>();
+        services.AddScoped<FinanceImportWatermarkWriter>();
         services.AddScoped<FinanceImportOrchestrator>();
         services.AddScoped<BatchImportFinalizer>();
         services.AddScoped<ImportRunCompletion>();

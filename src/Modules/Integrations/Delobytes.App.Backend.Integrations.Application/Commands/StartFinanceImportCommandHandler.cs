@@ -39,8 +39,7 @@ public class StartFinanceImportCommand : IRequest<Guid>, IRequireRole
 public class StartFinanceImportCommandHandler : IRequestHandler<StartFinanceImportCommand, Guid>
 {
     private readonly JobRunStarter _jobRunStarter;
-    private readonly IJobCheckpointRepository _checkpoints;
-    private readonly TimeProvider _timeProvider;
+    private readonly FinanceImportCheckpointStore _checkpoints;
     private readonly ILogger<StartFinanceImportCommandHandler> _logger;
 
     /// <summary>
@@ -48,13 +47,11 @@ public class StartFinanceImportCommandHandler : IRequestHandler<StartFinanceImpo
     /// </summary>
     public StartFinanceImportCommandHandler(
         JobRunStarter jobRunStarter,
-        IJobCheckpointRepository checkpoints,
-        TimeProvider timeProvider,
+        FinanceImportCheckpointStore checkpoints,
         ILogger<StartFinanceImportCommandHandler> logger)
     {
         _jobRunStarter = jobRunStarter;
         _checkpoints = checkpoints;
-        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -78,20 +75,13 @@ public class StartFinanceImportCommandHandler : IRequestHandler<StartFinanceImpo
             requestedByUserId: null,
             cancellationToken);
 
-        FinanceImportOrchestrator.RunState state = new()
+        FinanceImportCheckpointPayload state = new()
         {
             ExplicitFrom = request.FromDate,
             ExplicitTo = request.ToDate,
         };
 
-        await _checkpoints.UpsertAsync(
-            new JobCheckpoint
-            {
-                JobRunId = run.Id,
-                Payload = JsonSerializer.Serialize(state),
-                UpdatedAt = _timeProvider.GetUtcNow(),
-            },
-            cancellationToken);
+        await _checkpoints.SaveAsync(run.Id, state, cancellationToken);
 
         _logger.LogInformation(
             "Manual finance import requested. JobRunId={JobRunId}, JobType={JobType}, From={From}, To={To}",

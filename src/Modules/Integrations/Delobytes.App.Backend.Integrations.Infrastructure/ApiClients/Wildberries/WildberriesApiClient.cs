@@ -766,16 +766,22 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
         WildberriesFinanceMappingResult mappingResult = WildberriesFinanceMapper.Map(rows);
 
-        string? nextCursor = rows.Count > 0
-            ? rows[rows.Count - 1].RrdId.ToString(CultureInfo.InvariantCulture)
-            : null;
+        // The report has no explicit end marker: the API returns fewer rows than the requested
+        // limit only on the last page. Reporting every non-empty page as "more follows" made the
+        // reader issue one extra request per window, and under the one-request-per-minute finance
+        // allowance that extra request deferred the whole window on every attempt.
+        bool isLastPage = rows.Count < limit;
+
+        string? nextCursor = isLastPage
+            ? null
+            : rows[rows.Count - 1].RrdId.ToString(CultureInfo.InvariantCulture);
 
         return new FinanceEntriesPage
         {
             Entries = mappingResult.Entries,
             NextCursor = nextCursor,
             Diagnostics = mappingResult.Diagnostics,
-            IsComplete = false,
+            IsComplete = isLastPage,
         };
     }
 

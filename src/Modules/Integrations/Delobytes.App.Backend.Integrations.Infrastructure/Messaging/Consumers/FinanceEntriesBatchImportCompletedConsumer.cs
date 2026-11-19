@@ -1,10 +1,7 @@
-using System.Text.Json;
 using Delobytes.App.Backend.Integrations.Application.Finance;
-using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
-using Delobytes.App.Backend.Integrations.Domain.Enums;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 
@@ -16,29 +13,27 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Messaging.Consumers;
 /// </summary>
 public class FinanceEntriesBatchImportCompletedConsumer : IConsumer<FinanceEntriesBatchImportCompletedEvent>
 {
-    private readonly IJobRunRepository _jobRuns;
-    private readonly IJobCheckpointRepository _checkpoints;
-    private readonly ISyncCheckpointRepository _watermarks;
     private readonly ImportRunCompletion _completion;
-    private readonly TimeProvider _timeProvider;
+    private readonly FinanceImportCheckpointStore _checkpoints;
+    private readonly FinanceImportWatermarkWriter _watermarks;
     private readonly ILogger<FinanceEntriesBatchImportCompletedConsumer> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FinanceEntriesBatchImportCompletedConsumer"/> class.
     /// </summary>
+    /// <param name="completion">Batch aggregation and finalisation.</param>
+    /// <param name="checkpoints">Finance import checkpoint store.</param>
+    /// <param name="watermarks">Finance import watermark writer.</param>
+    /// <param name="logger">Logger instance.</param>
     public FinanceEntriesBatchImportCompletedConsumer(
-        IJobRunRepository jobRuns,
-        IJobCheckpointRepository checkpoints,
-        ISyncCheckpointRepository watermarks,
         ImportRunCompletion completion,
-        TimeProvider timeProvider,
+        FinanceImportCheckpointStore checkpoints,
+        FinanceImportWatermarkWriter watermarks,
         ILogger<FinanceEntriesBatchImportCompletedConsumer> logger)
     {
-        _jobRuns = jobRuns;
+        _completion = completion;
         _checkpoints = checkpoints;
         _watermarks = watermarks;
-        _completion = completion;
-        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -46,14 +41,6 @@ public class FinanceEntriesBatchImportCompletedConsumer : IConsumer<FinanceEntri
     public async Task Consume(ConsumeContext<FinanceEntriesBatchImportCompletedEvent> context)
     {
         FinanceEntriesBatchImportCompletedEvent message = context.Message;
-
-        JobRun? run = await _jobRuns.GetByIdAsync(message.JobRunId, context.CancellationToken);
-
-        if (run == null)
-        {
-            _logger.LogWarning("JobRun {JobRunId} not found for finance batch result.", message.JobRunId);
-            return;
-        }
 
         ImportRunResult? result = await _completion.RecordBatchAsync(
             new ImportBatchDelivery(
@@ -67,16 +54,22 @@ public class FinanceEntriesBatchImportCompletedConsumer : IConsumer<FinanceEntri
                 ErrorMessage: null,
                 IsLastBatch: false,
                 ExpectedBatchCount: null,
-                FallbackBatchCount: run.ExpectedBatchCount,
+                FallbackBatchCount: null,
                 CanFinalize: true,
                 RepublishesCompletionForRedelivery: false),
             context.CancellationToken);
+
+        if (result == null)
+        {
+            _logger.LogWarning("JobRun {JobRunId} not found for finance batch result.", message.JobRunId);
+            return;
+        }
 
         await AccumulateDiagnosticsAsync(message, context.CancellationToken);
 
         if (result is { IsFinalized: true })
         {
-            await AdvanceWatermarkAsync(run, context.CancellationToken);
+            await AdvanceWatermarkAsync(result.JobRun, context.CancellationToken);
         }
     }
 
@@ -84,14 +77,8 @@ public class FinanceEntriesBatchImportCompletedConsumer : IConsumer<FinanceEntri
         FinanceEntriesBatchImportCompletedEvent message,
         CancellationToken cancellationToken)
     {
-        JobCheckpoint? checkpoint = await _checkpoints.GetByJobRunIdAsync(message.JobRunId, cancellationToken);
-
-        if (checkpoint == null)
-        {
-            return;
-        }
-
-        FinanceImportOrchestrator.RunState? state = Deserialize(checkpoint.Payload);
+        FinanceImportCheckpointPayload? state = await _checkpoints
+            .TryLoadAsync(message.JobRunId, cancellationToken);
 
         if (state == null)
         {
@@ -101,58 +88,19 @@ public class FinanceEntriesBatchImportCompletedConsumer : IConsumer<FinanceEntri
         state.Diagnostics.Unattributed += message.Unattributed;
         state.Diagnostics.UnmatchedInstanceRows += message.UnmatchedInstanceRows;
 
-        checkpoint.Payload = JsonSerializer.Serialize(state);
-        checkpoint.UpdatedAt = _timeProvider.GetUtcNow();
-
-        await _checkpoints.UpsertAsync(checkpoint, cancellationToken);
+        await _checkpoints.SaveAsync(message.JobRunId, state, cancellationToken);
     }
 
     private async Task AdvanceWatermarkAsync(JobRun run, CancellationToken cancellationToken)
     {
-        JobCheckpoint? checkpoint = await _checkpoints.GetByJobRunIdAsync(run.Id, cancellationToken);
-        FinanceImportOrchestrator.RunState? state = checkpoint == null ? null : Deserialize(checkpoint.Payload);
+        FinanceImportCheckpointPayload? state = await _checkpoints
+            .TryLoadAsync(run.Id, cancellationToken);
 
         if (state?.WindowEnd == null)
         {
             return;
         }
 
-        SyncCheckpoint? existing = await _watermarks.GetAsync(run.ConnectionId, run.JobType, cancellationToken);
-
-        await _watermarks.UpsertAsync(
-            new SyncCheckpoint
-            {
-                Id = existing?.Id ?? Guid.NewGuid(),
-                ConnectionId = run.ConnectionId,
-                JobType = run.JobType,
-                LastChangedAt = new DateTimeOffset(
-                    state.WindowEnd.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-                LastSuccessAt = _timeProvider.GetUtcNow(),
-                LastJobRunId = run.Id,
-            },
-            cancellationToken);
-
-        _logger.LogInformation(
-            "Advanced finance watermark to {WindowEnd} for connection {ConnectionId}, job type {JobType}.",
-            state.WindowEnd,
-            run.ConnectionId,
-            run.JobType);
-    }
-
-    private static FinanceImportOrchestrator.RunState? Deserialize(string? payload)
-    {
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<FinanceImportOrchestrator.RunState>(payload);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        await _watermarks.WriteAsync(run, state.WindowEnd.Value, cancellationToken);
     }
 }

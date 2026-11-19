@@ -78,7 +78,10 @@ public class WildberriesApiClientFinanceReportTests
         capturedBody.Should().Contain("\"retailPriceWithDisc\"");
         capturedBody.Should().Contain("\"commissionPercent\"");
 
-        page.IsComplete.Should().BeFalse();
+        // An empty document is the whole document: the report has no end marker, and asking for a
+        // second page of nothing just burns one of the channel's minute-wide request slots.
+        page.IsComplete.Should().BeTrue();
+        page.NextCursor.Should().BeNull();
     }
 
     [Fact]
@@ -103,7 +106,9 @@ public class WildberriesApiClientFinanceReportTests
             })
             .Respond("application/json", json);
 
-        WildberriesApiClient client = BuildClient(mockHttp);
+        // A full page means the report continues; a short page means it ended. The requested
+        // limit is the only signal the API gives, so the page size is pinned here to the row count.
+        WildberriesApiClient client = BuildClient(mockHttp, financePageLimit: 2);
 
         FinanceEntriesPage page = await client.GetFinanceEntriesAsync(
             Guid.NewGuid(),
@@ -117,6 +122,37 @@ public class WildberriesApiClientFinanceReportTests
 
         capturedBody.Should().Contain("\"rrdId\":42");
         page.NextCursor.Should().Be("43");
+        page.IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_PageShorterThanTheLimit_IsTheEndOfData()
+    {
+        string json = """
+        [
+          { "reportId": 1, "createDate": "2026-08-03", "dateFrom": "2026-07-27", "dateTo": "2026-08-02", "currency": "RUB", "rrdId": 43, "nmId": 5, "srid": "s1", "sellerOperName": "Продажа", "rrDate": "2026-08-01", "retailAmount": "50", "forPay": "50" }
+        ]
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, ReportUrl)
+            .Respond("application/json", json);
+
+        WildberriesApiClient client = BuildClient(mockHttp, financePageLimit: 2);
+
+        FinanceEntriesPage page = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest
+            {
+                From = new DateOnly(2026, 7, 27),
+                To = new DateOnly(2026, 8, 2),
+                Cursor = "42",
+            },
+            CancellationToken.None);
+
+        page.IsComplete.Should().BeTrue();
+        page.NextCursor.Should().BeNull();
     }
 
     [Fact]
@@ -186,7 +222,7 @@ public class WildberriesApiClientFinanceReportTests
         page.RetryAt.Should().NotBeNull();
     }
 
-    private static WildberriesApiClient BuildClient(MockHttpMessageHandler mockHttp)
+    private static WildberriesApiClient BuildClient(MockHttpMessageHandler mockHttp, int financePageLimit = 20000)
     {
         HttpClient typedClient = mockHttp.ToHttpClient();
 
@@ -198,12 +234,17 @@ public class WildberriesApiClientFinanceReportTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(FinanceBaseUrl);
 
+        WildberriesImportOptions options = new WildberriesImportOptions
+        {
+            FinanceReportPageLimit = financePageLimit,
+        };
+
         WildberriesApiClient client = new WildberriesApiClient(
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
             new AlwaysAllowRateLimiter(),
-            Options.Create(new WildberriesImportOptions()),
+            Options.Create(options),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System);
 
