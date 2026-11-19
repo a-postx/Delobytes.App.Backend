@@ -80,20 +80,43 @@ public static class PnlTaxCalculator
     }
 
     /// <summary>
-    /// Computes the margin.
+    /// Computes the margin before tax: what the sale left after the production cost. Tax is a
+    /// period-level layer, so it is applied by <see cref="TaxAdjustedMargin"/> instead of here.
     /// </summary>
     /// <param name="netRevenue">Net revenue.</param>
     /// <param name="productionCost">Production cost.</param>
-    /// <param name="estimatedTax">Estimated tax.</param>
-    /// <returns>The margin, or null when an input is missing.</returns>
-    public static decimal? Margin(decimal? netRevenue, decimal? productionCost, decimal? estimatedTax)
+    /// <param name="costComplete">
+    /// Whether the cost covers every input. Null when no cost fact exists.
+    /// </param>
+    /// <returns>
+    /// The margin, or null when an input is missing or the cost is incomplete: a margin built on a
+    /// partial cost is not a conservative estimate, it is an overstated figure.
+    /// </returns>
+    public static decimal? Margin(decimal? netRevenue, decimal? productionCost, bool? costComplete)
     {
-        if (!netRevenue.HasValue || !productionCost.HasValue || !estimatedTax.HasValue)
+        if (!netRevenue.HasValue || !productionCost.HasValue || costComplete != true)
         {
             return null;
         }
 
-        return netRevenue.Value - productionCost.Value - estimatedTax.Value;
+        return netRevenue.Value - productionCost.Value;
+    }
+
+    /// <summary>
+    /// Subtracts the estimated tax from the pre-tax margin. The tax layer is optional: without a
+    /// tenant tax profile the pre-tax margin stays available and only this figure is unknown.
+    /// </summary>
+    /// <param name="margin">Pre-tax margin.</param>
+    /// <param name="estimatedTax">Estimated tax, or null when no profile applies.</param>
+    /// <returns>The margin net of the estimated tax, or null when an input is missing.</returns>
+    public static decimal? TaxAdjustedMargin(decimal? margin, decimal? estimatedTax)
+    {
+        if (!margin.HasValue || !estimatedTax.HasValue)
+        {
+            return null;
+        }
+
+        return margin.Value - estimatedTax.Value;
     }
 
     /// <summary>

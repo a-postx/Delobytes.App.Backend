@@ -81,12 +81,21 @@ public class PnlTaxCalculatorTests
     }
 
     [Fact]
-    public void Margin_RequiresAllInputs()
+    public void Margin_RequiresRevenueAndACompleteCost()
     {
-        PnlTaxCalculator.Margin(1000m, 400m, 50m).Should().Be(550m);
-        PnlTaxCalculator.Margin(1000m, null, 50m).Should().BeNull();
-        PnlTaxCalculator.Margin(null, 400m, 50m).Should().BeNull();
+        PnlTaxCalculator.Margin(1000m, 400m, true).Should().Be(600m);
+        PnlTaxCalculator.Margin(1000m, null, true).Should().BeNull();
+        PnlTaxCalculator.Margin(null, 400m, true).Should().BeNull();
+        PnlTaxCalculator.Margin(1000m, 400m, false).Should().BeNull();
         PnlTaxCalculator.Margin(1000m, 400m, null).Should().BeNull();
+    }
+
+    [Fact]
+    public void TaxAdjustedMargin_IsOptionalAndDoesNotGateThePreTaxMargin()
+    {
+        PnlTaxCalculator.TaxAdjustedMargin(600m, 36m).Should().Be(564m);
+        PnlTaxCalculator.TaxAdjustedMargin(600m, null).Should().BeNull();
+        PnlTaxCalculator.TaxAdjustedMargin(null, 36m).Should().BeNull();
     }
 
     [Fact]

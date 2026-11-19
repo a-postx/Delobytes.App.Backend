@@ -58,9 +58,53 @@ public class PnlQueryHandlerTests
             Times.Once);
 
         response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
-        response.Lines[0].Margin.Should().BeApproximately(74m, 0.0001m);
-        response.Lines[0].Roi.Should().BeApproximately(7.4m, 0.0001m);
+        response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
+        response.Lines[0].TaxAdjustedMargin.Should().BeApproximately(74m, 0.0001m);
+        response.Lines[0].Roi.Should().BeApproximately(8m, 0.0001m);
         response.Lines[0].ComponentsReconciled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetLines_WithoutTaxProfile_StillReportsThePreTaxMargin()
+    {
+        PnlLineRow row = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m);
+
+        Mock<ITenantSettingsProvider> provider = BuildProviderWithoutTaxProfile();
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            provider.Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].EstimatedTax.Should().BeNull();
+        response.Lines[0].TaxAdjustedMargin.Should().BeNull();
+        response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
+        response.Lines[0].MarginPercent.Should().BeApproximately(0.8m, 0.0001m);
+        response.Lines[0].Roi.Should().BeApproximately(8m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetLines_IncompleteProductionCost_HasNoMarginEvenWithATaxProfile()
+    {
+        PnlLineRow row = Row(new DateOnly(2026, 8, 1), 100m, 90m, 0m, costComplete: false);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].Margin.Should().BeNull();
+        response.Lines[0].TaxAdjustedMargin.Should().BeNull();
+        response.Lines[0].MarginPercent.Should().BeNull();
+        response.Lines[0].Roi.Should().BeNull();
+        response.Lines[0].CostComplete.Should().BeFalse();
+        response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
     }
 
     [Fact]
@@ -78,6 +122,7 @@ public class PnlQueryHandlerTests
 
         response.Lines[0].EstimatedTax.Should().BeNull();
         response.Lines[0].Margin.Should().BeNull();
+        response.Lines[0].TaxAdjustedMargin.Should().BeNull();
         response.Lines[0].MarginPercent.Should().BeNull();
         response.Lines[0].Roi.Should().BeNull();
     }
@@ -176,7 +221,13 @@ public class PnlQueryHandlerTests
         response.Rows.Single(r => r.ProductId == null).IsUnlinkedProduct.Should().BeTrue();
     }
 
-    private static PnlLineRow Row(DateOnly? saleDate, decimal? revenue, decimal? netRevenue, decimal? cost, Guid? productId = null)
+    private static PnlLineRow Row(
+        DateOnly? saleDate,
+        decimal? revenue,
+        decimal? netRevenue,
+        decimal? cost,
+        Guid? productId = null,
+        bool costComplete = true)
     {
         return new PnlLineRow
         {
@@ -190,7 +241,7 @@ public class PnlQueryHandlerTests
             NetRevenueAmount = netRevenue,
             ProductionCostAmount = cost,
             ControlDifferenceAmount = 0m,
-            ProductionCostIsComplete = true,
+            ProductionCostIsComplete = cost.HasValue ? costComplete : null,
             CostStatus = OrderLineCostStatus.Resolved,
         };
     }
@@ -218,6 +269,21 @@ public class PnlQueryHandlerTests
                 RatePercent = 6m,
                 Vat = VatType.None,
             });
+
+        return provider;
+    }
+
+    private static Mock<ITenantSettingsProvider> BuildProviderWithoutTaxProfile()
+    {
+        Mock<ITenantSettingsProvider> provider = new Mock<ITenantSettingsProvider>();
+
+        provider
+            .Setup(p => p.GetAccountingSettingsAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
+
+        provider
+            .Setup(p => p.GetTaxProfileAtAsync(TenantId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TenantTaxProfileSnapshot?)null);
 
         return provider;
     }
