@@ -28,6 +28,13 @@ public sealed class FinanceMappingDiagnostics
     /// <summary>Gets or sets accruals where the commission had to fall back to the sale commission.</summary>
     public int CommissionFallbacks { get; set; }
 
+    /// <summary>
+    /// Gets or sets sale rows where the seller-price split did not reproduce the reported payout, so
+    /// the row was booked as the channel's composite instead.
+    /// </summary>
+    public int SplitFallbacks { get; set; }
+
+
     /// <summary>Gets or sets appended entries that matched no order line yet.</summary>
     public int Unattributed { get; set; }
 
@@ -47,6 +54,7 @@ public sealed class FinanceMappingDiagnostics
         Reversals += other.Reversals;
         SaleAmountMismatches += other.SaleAmountMismatches;
         CommissionFallbacks += other.CommissionFallbacks;
+        SplitFallbacks += other.SplitFallbacks;
         Unattributed += other.Unattributed;
         UnmatchedInstanceRows += other.UnmatchedInstanceRows;
     }

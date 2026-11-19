@@ -13,6 +13,7 @@ internal static class WildberriesFinanceMapper
 {
     private const string SaleOperation = "Продажа";
     private const string LogisticsOperation = "Логистика";
+    private const decimal ControlTolerance = 0.01m;
 
     private static readonly string[] RequestedFields =
     {
@@ -28,6 +29,8 @@ internal static class WildberriesFinanceMapper
         "saleDt",
         "rrDate",
         "retailAmount",
+        "retailPriceWithDisc",
+        "commissionPercent",
         "acquiringFee",
         "vw",
         "vwNds",
@@ -88,13 +91,21 @@ internal static class WildberriesFinanceMapper
             {
                 decimal retail = row.RetailAmount ?? 0m;
 
-                if (retail != 0m)
+                if (retail < 0m)
                 {
-                    if (retail < 0m)
-                    {
-                        diagnostics.Reversals++;
-                    }
+                    diagnostics.Reversals++;
+                }
 
+                // The report separates the buyer's payment from the seller's price, and the gap is
+                // the marketplace-funded discount (СПП), which is revenue for the seller. Where both
+                // figures and the commission rate are present, the row is booked as its parts and
+                // checked against forPay; the composite below stays for rows that do not report
+                // enough to split, because booking the sale at the buyer's payment alone understates
+                // revenue and hides the commission inside an income adjustment.
+                SaleSplit split = default;
+
+                if (retail != 0m && TryMapSellerPriceSplit(row, retail, out split))
+                {
                     Emit(
                         entries,
                         row,
@@ -107,51 +118,128 @@ internal static class WildberriesFinanceMapper
                         periodTo,
                         FinanceEntryKind.Component,
                         FinanceEntryType.Sale,
-                        retail,
-                        retail >= 0m ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                        split.BuyerPaid,
+                        split.Reversal ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+
+                    if (split.Compensation != 0m)
+                    {
+                        Emit(
+                            entries,
+                            row,
+                            reportInstanceKey,
+                            externalEntryId,
+                            externalProductId,
+                            currency,
+                            documentDate,
+                            periodFrom,
+                            periodTo,
+                            FinanceEntryKind.Component,
+                            FinanceEntryType.Compensation,
+                            split.Compensation,
+                            split.Reversal ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                    }
+
+                    if (split.Commission != 0m)
+                    {
+                        Emit(
+                            entries,
+                            row,
+                            reportInstanceKey,
+                            externalEntryId,
+                            externalProductId,
+                            currency,
+                            documentDate,
+                            periodFrom,
+                            periodTo,
+                            FinanceEntryKind.Component,
+                            FinanceEntryType.Commission,
+                            split.Commission,
+                            split.Reversal ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                    }
+
+                    if (split.Acquiring != 0m)
+                    {
+                        Emit(
+                            entries,
+                            row,
+                            reportInstanceKey,
+                            externalEntryId,
+                            externalProductId,
+                            currency,
+                            documentDate,
+                            periodFrom,
+                            periodTo,
+                            FinanceEntryKind.Component,
+                            FinanceEntryType.Acquiring,
+                            split.Acquiring,
+                            split.Reversal ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                    }
                 }
-
-                decimal acquiring = row.AcquiringFee ?? 0m;
-
-                if (acquiring != 0m)
+                else
                 {
-                    Emit(
-                        entries,
-                        row,
-                        reportInstanceKey,
-                        externalEntryId,
-                        externalProductId,
-                        currency,
-                        documentDate,
-                        periodFrom,
-                        periodTo,
-                        FinanceEntryKind.Component,
-                        FinanceEntryType.Acquiring,
-                        acquiring,
-                        acquiring >= 0m ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
-                }
+                    if (retail != 0m)
+                    {
+                        diagnostics.SplitFallbacks++;
 
-                // The commission is recorded exactly as reported: a signed composite of vw, its VAT
-                // and the reward. Deriving it from the sale price drifts as soon as the channel
-                // changes a rate and makes the control total stop reconciling.
-                decimal commission = (row.Vw ?? 0m) + (row.VwNds ?? 0m) + (row.PpvzReward ?? 0m);
+                        Emit(
+                            entries,
+                            row,
+                            reportInstanceKey,
+                            externalEntryId,
+                            externalProductId,
+                            currency,
+                            documentDate,
+                            periodFrom,
+                            periodTo,
+                            FinanceEntryKind.Component,
+                            FinanceEntryType.Sale,
+                            retail,
+                            retail >= 0m ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                    }
 
-                if (commission != 0m)
-                {
-                    Emit(
-                        entries,
-                        row,
-                        reportInstanceKey,
-                        externalEntryId,
-                        externalProductId,
-                        currency,
-                        documentDate,
-                        periodFrom,
-                        periodTo,
-                        FinanceEntryKind.Component,
-                        FinanceEntryType.Commission,
-                        commission,
-                        commission >= 0m ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                    decimal acquiring = row.AcquiringFee ?? 0m;
+
+                    if (acquiring != 0m)
+                    {
+                        Emit(
+                            entries,
+                            row,
+                            reportInstanceKey,
+                            externalEntryId,
+                            externalProductId,
+                            currency,
+                            documentDate,
+                            periodFrom,
+                            periodTo,
+                            FinanceEntryKind.Component,
+                            FinanceEntryType.Acquiring,
+                            acquiring,
+                            acquiring >= 0m ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                    }
+
+                    // Fallback: the commission is the signed composite of vw, its VAT and the reward.
+                    // It is a net figure — the marketplace-funded discount is already folded inside —
+                    // so it is the only self-consistent reading of a row that does not report the
+                    // seller's price or the commission rate.
+                    decimal commission = (row.Vw ?? 0m) + (row.VwNds ?? 0m) + (row.PpvzReward ?? 0m);
+
+                    if (commission != 0m)
+                    {
+                        Emit(
+                            entries,
+                            row,
+                            reportInstanceKey,
+                            externalEntryId,
+                            externalProductId,
+                            currency,
+                            documentDate,
+                            periodFrom,
+                            periodTo,
+                            FinanceEntryKind.Component,
+                            FinanceEntryType.Commission,
+                            commission,
+                            commission >= 0m ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                    }
                 }
 
                 decimal forPay = row.ForPay ?? 0m;
@@ -310,6 +398,64 @@ internal static class WildberriesFinanceMapper
         date = default;
         return false;
     }
+
+    /// <summary>
+    /// Splits a sale row into the seller's own components: what the buyer paid, the discount the
+    /// marketplace financed, the commission charged on the seller's price and the acquiring fee.
+    /// </summary>
+    /// <remarks>
+    /// The split is taken only when it reproduces the channel's own payout to the kopeck. Both the
+    /// rate and the discount are read from the row, so a row that does not add up — a changed tariff
+    /// shape, an operation the report prices differently — is left to the reported composite instead
+    /// of replacing revenue with an unverifiable figure.
+    /// </remarks>
+    private static bool TryMapSellerPriceSplit(
+        WildberriesFinanceReportRow row,
+        decimal retailAmount,
+        out SaleSplit split)
+    {
+        split = default;
+
+        decimal sellerPrice = Math.Abs(row.RetailPriceWithDisc ?? 0m);
+        decimal buyerPaid = Math.Abs(retailAmount);
+        decimal commissionPercent = row.CommissionPercent ?? 0m;
+
+        if (sellerPrice <= 0m
+            || buyerPaid <= 0m
+            || sellerPrice < buyerPaid
+            || commissionPercent <= 0m
+            || commissionPercent >= 100m)
+        {
+            return false;
+        }
+
+        bool reversal = retailAmount < 0m;
+        decimal compensation = sellerPrice - buyerPaid;
+        decimal commission = decimal.Round(
+            sellerPrice * commissionPercent / 100m,
+            6,
+            MidpointRounding.AwayFromZero);
+        decimal acquiring = Math.Abs(row.AcquiringFee ?? 0m);
+
+        decimal sign = reversal ? -1m : 1m;
+        decimal derived = sign * (buyerPaid + compensation - commission - acquiring);
+
+        if (Math.Abs(derived - (row.ForPay ?? 0m)) > ControlTolerance)
+        {
+            return false;
+        }
+
+        split = new SaleSplit(buyerPaid, compensation, commission, acquiring, reversal);
+
+        return true;
+    }
+
+    private readonly record struct SaleSplit(
+        decimal BuyerPaid,
+        decimal Compensation,
+        decimal Commission,
+        decimal Acquiring,
+        bool Reversal);
 }
 
 /// <summary>

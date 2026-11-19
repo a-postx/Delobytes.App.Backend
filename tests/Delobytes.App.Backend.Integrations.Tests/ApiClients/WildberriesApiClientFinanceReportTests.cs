@@ -72,7 +72,11 @@ public class WildberriesApiClientFinanceReportTests
         capturedBody.Should().Contain("\"dateTo\":\"2026-08-02\"");
         capturedBody.Should().Contain("\"retailAmount\"");
         capturedBody.Should().Contain("\"deliveryService\"");
-        capturedBody.Should().NotContain("retailPriceWithDisc");
+
+        // The seller's price and the commission rate are what let the mapper book the sale at the
+        // price the seller actually receives instead of the buyer's payment.
+        capturedBody.Should().Contain("\"retailPriceWithDisc\"");
+        capturedBody.Should().Contain("\"commissionPercent\"");
 
         page.IsComplete.Should().BeFalse();
     }

@@ -46,6 +46,23 @@ internal sealed class WildberriesFinanceReportRow
     [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
     public decimal? RetailAmount { get; set; }
 
+    /// <summary>
+    /// Gets or sets the seller's price before the marketplace-funded discount (СПП). The buyer pays
+    /// <see cref="RetailAmount"/>; the difference is financed by Wildberries and is revenue the
+    /// seller actually receives.
+    /// </summary>
+    [JsonPropertyName("retailPriceWithDisc")]
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
+    public decimal? RetailPriceWithDisc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the commission rate as a percentage of <see cref="RetailPriceWithDisc"/>. Used
+    /// only to split the reported commission composite into its parts.
+    /// </summary>
+    [JsonPropertyName("commissionPercent")]
+    [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
+    public decimal? CommissionPercent { get; set; }
+
     [JsonPropertyName("acquiringFee")]
     [JsonConverter(typeof(JsonNumberOrStringDecimalConverter))]
     public decimal? AcquiringFee { get; set; }

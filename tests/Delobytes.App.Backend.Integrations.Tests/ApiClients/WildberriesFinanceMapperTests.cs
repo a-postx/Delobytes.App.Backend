@@ -53,6 +53,7 @@ public class WildberriesFinanceMapperTests
         "rrDate": "2026-08-01",
         "retailAmount": "204",
         "retailPriceWithDisc": "340",
+        "commissionPercent": 34.5,
         "acquiringFee": "8.16",
         "vw": "-21.0991803278688525",
         "vwNds": "-4.64",
@@ -72,8 +73,9 @@ public class WildberriesFinanceMapperTests
         result.Diagnostics.RowsWithoutSrid.Should().Be(0);
         result.Diagnostics.RowsWithoutRrDate.Should().Be(0);
         result.Diagnostics.Reversals.Should().Be(0);
+        result.Diagnostics.SplitFallbacks.Should().Be(0);
 
-        result.Entries.Should().HaveCount(6);
+        result.Entries.Should().HaveCount(7);
 
         result.Entries.Should().OnlyContain(e => e.Source == FinanceEntrySource.WbReport);
         result.Entries.Should().OnlyContain(e => e.ReportInstanceKey == "799692300:2026-08-03");
@@ -86,9 +88,13 @@ public class WildberriesFinanceMapperTests
 
         AssertEntry(result, "3131711029842", FinanceEntryKind.Component, FinanceEntryType.Logistics, 53.84m, FinanceEntryDirection.Expense);
         AssertEntry(result, "3131711029842", FinanceEntryKind.ControlTotal, FinanceEntryType.Payout, 53.84m, FinanceEntryDirection.Expense);
+
+        // The buyer paid 204 of the seller's price 340: Wildberries financed the 40 % difference,
+        // and the commission is 34.5 % of 340. 204 + 136 - 117.3 - 8.16 = 214.54, which is forPay.
         AssertEntry(result, "3131711029843", FinanceEntryKind.Component, FinanceEntryType.Sale, 204m, FinanceEntryDirection.Income);
+        AssertEntry(result, "3131711029843", FinanceEntryKind.Component, FinanceEntryType.Compensation, 136m, FinanceEntryDirection.Income);
+        AssertEntry(result, "3131711029843", FinanceEntryKind.Component, FinanceEntryType.Commission, 117.3m, FinanceEntryDirection.Expense);
         AssertEntry(result, "3131711029843", FinanceEntryKind.Component, FinanceEntryType.Acquiring, 8.16m, FinanceEntryDirection.Expense);
-        AssertEntry(result, "3131711029843", FinanceEntryKind.Component, FinanceEntryType.Commission, 18.6981803278688525m, FinanceEntryDirection.Income);
         AssertEntry(result, "3131711029843", FinanceEntryKind.ControlTotal, FinanceEntryType.Payout, 214.54m, FinanceEntryDirection.Income);
 
         decimal netRevenue = result.Entries
@@ -99,9 +105,94 @@ public class WildberriesFinanceMapperTests
             .Where(e => e.Kind == FinanceEntryKind.ControlTotal)
             .Sum(e => e.Direction == FinanceEntryDirection.Income ? e.Amount : -e.Amount);
 
-        netRevenue.Should().BeApproximately(160.6981803278688525m, 0.000000001m);
+        netRevenue.Should().Be(160.70m);
         controlTotal.Should().Be(160.70m);
         Math.Abs(netRevenue - controlTotal).Should().BeLessThan(0.01m);
+    }
+
+    [Fact]
+    public void Fields_RequestTheSellerPriceAndTheCommissionRate()
+    {
+        WildberriesFinanceMapper.Fields.Should().Contain("retailPriceWithDisc");
+        WildberriesFinanceMapper.Fields.Should().Contain("commissionPercent");
+    }
+
+    [Fact]
+    public void Map_SaleWithoutCommissionRate_KeepsTheReportedComposite()
+    {
+        string json = """
+        [
+          {
+            "reportId": 1, "createDate": "2026-08-03", "dateFrom": "2026-07-27", "dateTo": "2026-08-02",
+            "currency": "RUB", "rrdId": 12, "nmId": 5, "srid": "srid-1", "sellerOperName": "Продажа",
+            "rrDate": "2026-08-01", "retailAmount": "204", "retailPriceWithDisc": "340",
+            "acquiringFee": "8.16", "vw": "-21.0991803278688525", "vwNds": "-4.64", "ppvzReward": "7.041",
+            "forPay": "214.54", "deliveryService": "0"
+          }
+        ]
+        """;
+
+        WildberriesFinanceMappingResult result = Map(json);
+
+        result.Diagnostics.SplitFallbacks.Should().Be(1);
+        AssertEntry(result, "12", FinanceEntryKind.Component, FinanceEntryType.Sale, 204m, FinanceEntryDirection.Income);
+        AssertEntry(result, "12", FinanceEntryKind.Component, FinanceEntryType.Commission, 18.6981803278688525m, FinanceEntryDirection.Income);
+        result.Entries.Should().NotContain(e => e.Type == FinanceEntryType.Compensation);
+    }
+
+    [Fact]
+    public void Map_SplitThatDoesNotReproduceThePayout_IsRejectedAndCounted()
+    {
+        string json = """
+        [
+          {
+            "reportId": 1, "createDate": "2026-08-03", "dateFrom": "2026-07-27", "dateTo": "2026-08-02",
+            "currency": "RUB", "rrdId": 13, "nmId": 5, "srid": "srid-1", "sellerOperName": "Продажа",
+            "rrDate": "2026-08-01", "retailAmount": "204", "retailPriceWithDisc": "340",
+            "commissionPercent": 34.5, "acquiringFee": "8.16", "vw": "-21.0991803278688525",
+            "vwNds": "-4.64", "ppvzReward": "7.041", "forPay": "100", "deliveryService": "0"
+          }
+        ]
+        """;
+
+        WildberriesFinanceMappingResult result = Map(json);
+
+        result.Diagnostics.SplitFallbacks.Should().Be(1);
+        AssertEntry(result, "13", FinanceEntryKind.Component, FinanceEntryType.Commission, 18.6981803278688525m, FinanceEntryDirection.Income);
+        result.Entries.Should().NotContain(e => e.Type == FinanceEntryType.Compensation);
+    }
+
+    [Fact]
+    public void Map_NegativeSaleWithSellerPrice_ReversesEveryComponent()
+    {
+        string json = """
+        [
+          {
+            "reportId": 1, "createDate": "2026-08-03", "dateFrom": "2026-07-27", "dateTo": "2026-08-02",
+            "currency": "RUB", "rrdId": 14, "nmId": 5, "srid": "srid-1", "sellerOperName": "Продажа",
+            "rrDate": "2026-08-01", "retailAmount": "-204", "retailPriceWithDisc": "-340",
+            "commissionPercent": 34.5, "acquiringFee": "8.16", "vw": "-21.0991803278688525",
+            "vwNds": "-4.64", "ppvzReward": "7.041", "forPay": "-214.54", "deliveryService": "0"
+          }
+        ]
+        """;
+
+        WildberriesFinanceMappingResult result = Map(json);
+
+        result.Diagnostics.Reversals.Should().Be(1);
+        result.Diagnostics.SplitFallbacks.Should().Be(0);
+
+        AssertEntry(result, "14", FinanceEntryKind.Component, FinanceEntryType.Sale, 204m, FinanceEntryDirection.Expense);
+        AssertEntry(result, "14", FinanceEntryKind.Component, FinanceEntryType.Compensation, 136m, FinanceEntryDirection.Expense);
+        AssertEntry(result, "14", FinanceEntryKind.Component, FinanceEntryType.Commission, 117.3m, FinanceEntryDirection.Income);
+        AssertEntry(result, "14", FinanceEntryKind.Component, FinanceEntryType.Acquiring, 8.16m, FinanceEntryDirection.Income);
+        AssertEntry(result, "14", FinanceEntryKind.ControlTotal, FinanceEntryType.Payout, 214.54m, FinanceEntryDirection.Expense);
+
+        decimal netRevenue = result.Entries
+            .Where(e => e.Kind == FinanceEntryKind.Component)
+            .Sum(e => e.Direction == FinanceEntryDirection.Income ? e.Amount : -e.Amount);
+
+        netRevenue.Should().Be(-214.54m);
     }
 
     [Fact]
