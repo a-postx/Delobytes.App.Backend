@@ -35,7 +35,8 @@ public class OrderLinesChangedConsumerTests
             refs,
             new InMemoryOrderLineCostStore(),
             lines,
-            new FixedTimeProvider(Now));
+            new FixedTimeProvider(Now),
+            NullLogger<PnlLineProjector>.Instance);
 
         OrderLinesChangedConsumer consumer = new OrderLinesChangedConsumer(
             refs,

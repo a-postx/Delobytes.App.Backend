@@ -9,6 +9,7 @@ using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Finance.Domain.Enums;
 using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Delobytes.App.Backend.Tests.Application.Finance;
@@ -191,13 +192,79 @@ public class PnlLineProjectorTests
         SingleLine(lines, line.OrderLineId).RevenueAmount.Should().Be(204m);
     }
 
+    [Fact]
+    public async Task RecomputeAsync_OneLineFailsCalculation_OtherLinesStillRecompute()
+    {
+        // Arrange: the bad line's journal entry carries a negative amount, which
+        // PnlLineAggregator.Calculate rejects. The good line must still get its result.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m, externalLineId: "srid-good", externalEntryId: "rrd-good"));
+
+        PnlEntry badEntry = SaleEntry(-10m, externalLineId: "srid-bad", externalEntryId: "rrd-bad");
+        journal.Entries.Add(badEntry);
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef goodLine = Ref(Guid.NewGuid(), "srid-good");
+        OrderLineRef badLine = Ref(Guid.NewGuid(), "srid-bad");
+        refs.Refs[goodLine.OrderLineId] = goodLine;
+        refs.Refs[badLine.OrderLineId] = badLine;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, new InMemoryOrderLineCostStore(), lines);
+
+        // Act
+        PnlRecomputeResult result = await projector.RecomputeAsync(
+            new[] { goodLine.OrderLineId, badLine.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        result.Succeeded.Should().Be(1);
+        result.Failed.Should().Be(1);
+        result.FailedOrderLineIds.Should().ContainSingle().Which.Should().Be(badLine.OrderLineId);
+
+        SingleLine(lines, goodLine.OrderLineId).RevenueAmount.Should().Be(204m);
+        lines.Lines.Should().NotContainKey(badLine.OrderLineId, "a line that never finished its calculation must not be staged");
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_ExistingLineFailsCalculation_LeavesItsStoredResultUnchanged()
+    {
+        // Arrange: the line already has a good result from an earlier pass.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, new InMemoryOrderLineCostStore(), lines);
+
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+        SingleLine(lines, line.OrderLineId).RevenueAmount.Should().Be(204m);
+
+        // A later arrival corrupts the journal for this line: the stored result must survive.
+        journal.Entries.Clear();
+        journal.Entries.Add(SaleEntry(-10m));
+
+        // Act
+        PnlRecomputeResult result = await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        result.Succeeded.Should().Be(0);
+        result.Failed.Should().Be(1);
+        result.FailedOrderLineIds.Should().ContainSingle().Which.Should().Be(line.OrderLineId);
+
+        SingleLine(lines, line.OrderLineId).RevenueAmount.Should().Be(204m);
+    }
+
     private static PnlLineProjector CreateProjector(
         InMemoryPnlJournalStore journal,
         InMemoryOrderLineRefStore refs,
         InMemoryOrderLineCostStore costs,
         InMemoryPnlLineStore lines)
     {
-        return new PnlLineProjector(journal, refs, costs, lines, new FixedTimeProvider(Now));
+        return new PnlLineProjector(
+            journal, refs, costs, lines, new FixedTimeProvider(Now), NullLogger<PnlLineProjector>.Instance);
     }
 
     private static PnlLine SingleLine(InMemoryPnlLineStore lines, Guid orderLineId)
@@ -207,7 +274,7 @@ public class PnlLineProjectorTests
         return lines.Lines[orderLineId];
     }
 
-    private static OrderLineRef Ref(Guid orderLineId)
+    private static OrderLineRef Ref(Guid orderLineId, string externalLineId = "srid-1")
     {
         return new OrderLineRef
         {
@@ -215,7 +282,7 @@ public class PnlLineProjectorTests
             OrderId = Guid.NewGuid(),
             ChannelId = ChannelId,
             ExternalOrderId = "order-1",
-            ExternalLineId = "srid-1",
+            ExternalLineId = externalLineId,
             ExternalProductId = "174371959",
             Quantity = 1,
             OrderDate = Now,
@@ -224,17 +291,17 @@ public class PnlLineProjectorTests
         };
     }
 
-    private static PnlEntry SaleEntry(decimal amount)
+    private static PnlEntry SaleEntry(decimal amount, string externalLineId = "srid-1", string externalEntryId = "rrd-1")
     {
         return new PnlEntry
         {
             Id = Guid.NewGuid(),
             Source = PnlSource.WbReport,
             ReportInstanceKey = "799692300:2026-08-03",
-            ExternalEntryId = "rrd-1",
+            ExternalEntryId = externalEntryId,
             ChannelId = ChannelId,
             ExternalOrderId = null,
-            ExternalLineId = "srid-1",
+            ExternalLineId = externalLineId,
             ExternalProductId = "174371959",
             Kind = PnlEntryKind.Component,
             Type = PnlEntryType.Sale,

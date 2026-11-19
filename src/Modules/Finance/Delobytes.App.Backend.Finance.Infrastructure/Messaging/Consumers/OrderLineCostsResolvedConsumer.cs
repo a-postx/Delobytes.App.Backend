@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Contracts.Events;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
+using Delobytes.App.Backend.Finance.Application.Models;
 using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Finance.Domain.Enums;
@@ -53,6 +54,7 @@ public class OrderLineCostsResolvedConsumer : IConsumer<OrderLineCostsResolvedEv
 
         int accepted = 0;
         int ignored = 0;
+        int recomputeFailed = 0;
 
         foreach (OrderLineCostResult result in results)
         {
@@ -86,13 +88,17 @@ public class OrderLineCostsResolvedConsumer : IConsumer<OrderLineCostsResolvedEv
 
             accepted++;
 
-            await _projector.RecomputeAsync(new[] { result.OrderLineId }, context.CancellationToken);
+            PnlRecomputeResult recomputeResult = await _projector.RecomputeAsync(
+                new[] { result.OrderLineId }, context.CancellationToken);
+
+            recomputeFailed += recomputeResult.Failed;
         }
 
         _logger.LogInformation(
-            "Stored order line costs. Accepted={Accepted}, Ignored={Ignored}",
+            "Stored order line costs. Accepted={Accepted}, Ignored={Ignored}, RecomputeFailed={RecomputeFailed}",
             accepted,
-            ignored);
+            ignored,
+            recomputeFailed);
     }
 
     private static Finance.Domain.Enums.OrderLineCostStatus MapStatus(Catalog.Contracts.Events.OrderLineCostStatus status)

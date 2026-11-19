@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Finance.Application.Interfaces;
+using Delobytes.App.Backend.Finance.Application.Models;
 using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Sales.Contracts.Events;
@@ -76,10 +77,20 @@ public class OrderLinesChangedConsumer : IConsumer<OrderLinesChangedEvent>
 
         await _orderLineRefs.UpsertAsync(refs, context.CancellationToken);
 
-        await _projector.RecomputeAsync(lineIds, context.CancellationToken);
+        PnlRecomputeResult result = await _projector.RecomputeAsync(lineIds, context.CancellationToken);
+
+        if (result.Failed > 0)
+        {
+            _logger.LogWarning(
+                "Some P&L lines could not be recomputed. FailedCount={FailedCount}, FailedOrderLineIds={FailedOrderLineIds}",
+                result.Failed,
+                result.FailedOrderLineIds);
+        }
 
         _logger.LogInformation(
-            "Upserted order line refs and recomputed P&L lines. LinesCount={LinesCount}",
-            lines.Count);
+            "Upserted order line refs and recomputed P&L lines. LinesCount={LinesCount}, Succeeded={Succeeded}, Failed={Failed}",
+            lines.Count,
+            result.Succeeded,
+            result.Failed);
     }
 }

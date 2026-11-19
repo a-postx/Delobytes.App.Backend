@@ -98,7 +98,8 @@ public class FinanceEntriesBatchImporter
 
         JournalAppendResult result = await _appender.AppendAsync(entries, cancellationToken);
 
-        await _projector.RecomputeAsync(result.AffectedOrderLineIds, cancellationToken);
+        PnlRecomputeResult recomputeResult = await _projector.RecomputeAsync(
+            result.AffectedOrderLineIds, cancellationToken);
 
         FinanceEntriesBatchImportCompletedEvent completedEvent = new FinanceEntriesBatchImportCompletedEvent
         {
@@ -109,6 +110,7 @@ public class FinanceEntriesBatchImporter
             Superseded = result.Superseded,
             Rejected = result.Rejected,
             Failed = failed,
+            RecomputeFailed = recomputeResult.Failed,
             Unattributed = result.Unattributed,
             UnmatchedInstanceRows = result.UnmatchedInstanceRows,
         };
@@ -116,7 +118,7 @@ public class FinanceEntriesBatchImporter
         await _eventPublisher.PublishAsync(completedEvent, cancellationToken);
 
         _logger.LogInformation(
-            "FinanceEntriesBatchImporter completed batch. JobRunId={JobRunId}, BatchId={BatchId}, Appended={Appended}, Duplicates={Duplicates}, Superseded={Superseded}, Rejected={Rejected}, Failed={Failed}, Unattributed={Unattributed}, UnmatchedInstanceRows={UnmatchedInstanceRows}",
+            "FinanceEntriesBatchImporter completed batch. JobRunId={JobRunId}, BatchId={BatchId}, Appended={Appended}, Duplicates={Duplicates}, Superseded={Superseded}, Rejected={Rejected}, Failed={Failed}, RecomputeFailed={RecomputeFailed}, Unattributed={Unattributed}, UnmatchedInstanceRows={UnmatchedInstanceRows}",
             message.JobRunId,
             message.BatchId,
             result.Appended,
@@ -124,6 +126,7 @@ public class FinanceEntriesBatchImporter
             result.Superseded,
             result.Rejected,
             failed,
+            recomputeResult.Failed,
             result.Unattributed,
             result.UnmatchedInstanceRows);
     }

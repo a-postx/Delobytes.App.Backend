@@ -178,12 +178,78 @@ public class FinanceEntriesBatchImporterTests
             .Should().Equal(1, 0);
     }
 
+    [Fact]
+    public async Task ProcessAsync_RecomputeFailsForOneLine_StillPublishesWithRecomputeFailedCounter()
+    {
+        // Arrange: the journal already carries a corrupted entry for the line (a payout typed as a
+        // component), so PnlLineAggregator.Calculate throws once this line is recomputed. The
+        // import of the new, valid entry must still succeed and still publish its completed event.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, refs);
+
+        Guid orderLineId = Guid.NewGuid();
+        refs.Refs[orderLineId] = new OrderLineRef
+        {
+            OrderLineId = orderLineId,
+            OrderId = Guid.NewGuid(),
+            ChannelId = ChannelId,
+            ExternalOrderId = "order-1",
+            ExternalLineId = "srid-1",
+            ExternalProductId = "174371959",
+            Quantity = 1,
+            OrderDate = Now,
+            Currency = "RUB",
+            UpdatedAt = Now,
+        };
+
+        journal.Entries.Add(new PnlEntry
+        {
+            Id = Guid.NewGuid(),
+            Source = PnlSource.WbReport,
+            ReportInstanceKey = "corrupt:1",
+            ExternalEntryId = "rrd-corrupt",
+            ChannelId = ChannelId,
+            ExternalLineId = "srid-1",
+            ExternalProductId = "174371959",
+            Kind = PnlEntryKind.Component,
+            Type = PnlEntryType.Payout,
+            Amount = 50m,
+            Direction = PnlEntryDirection.Income,
+            Currency = "RUB",
+            DocumentDate = new DateOnly(2026, 8, 1),
+            PeriodFrom = new DateOnly(2026, 7, 27),
+            PeriodTo = new DateOnly(2026, 8, 2),
+        });
+
+        FinanceEntriesBatchImportRequestedEvent message = new FinanceEntriesBatchImportRequestedEvent
+        {
+            JobRunId = Guid.NewGuid(),
+            ChannelId = ChannelId,
+            BatchId = Guid.NewGuid(),
+            Entries = new List<ChannelFinanceEntrySnapshot> { Snapshot("799692300:2026-08-03", "rrd-1") },
+        };
+
+        // Act
+        await importer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        FinanceEntriesBatchImportCompletedEvent completed = publisher.Events
+            .OfType<FinanceEntriesBatchImportCompletedEvent>()
+            .Should().ContainSingle().Subject;
+
+        completed.Appended.Should().Be(1);
+        completed.RecomputeFailed.Should().Be(1);
+    }
+
     private static FinanceEntriesBatchImporter CreateImporter(
         InMemoryPnlJournalStore journal,
-        RecordingEventPublisher publisher)
+        RecordingEventPublisher publisher,
+        InMemoryOrderLineRefStore? refs = null)
     {
         FixedTimeProvider timeProvider = new FixedTimeProvider(Now);
-        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        refs ??= new InMemoryOrderLineRefStore();
 
         JournalAppender appender = new JournalAppender(
             journal,
@@ -196,7 +262,8 @@ public class FinanceEntriesBatchImporterTests
             refs,
             new InMemoryOrderLineCostStore(),
             new InMemoryPnlLineStore(),
-            timeProvider);
+            timeProvider,
+            NullLogger<PnlLineProjector>.Instance);
 
         return new FinanceEntriesBatchImporter(
             appender,

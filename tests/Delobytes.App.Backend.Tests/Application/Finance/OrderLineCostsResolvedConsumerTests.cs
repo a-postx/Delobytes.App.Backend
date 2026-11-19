@@ -88,6 +88,93 @@ public class OrderLineCostsResolvedConsumerTests
         lines.Lines.Should().ContainKey(orderLineId);
     }
 
+    [Fact]
+    public async Task Consume_OneResultFailsRecompute_StillProcessesTheRestOfTheBatch()
+    {
+        // Arrange: line A's journal already carries a corrupted entry (a payout typed as a
+        // component), so recomputing it throws. Before the isolation fix this would abort the
+        // consumer's foreach, and line B's result - right after A in the same message - would
+        // never even reach the cost store.
+        Guid channelId = Guid.NewGuid();
+        Guid lineA = Guid.NewGuid();
+        Guid lineB = Guid.NewGuid();
+
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(new PnlEntry
+        {
+            Id = Guid.NewGuid(),
+            Source = PnlSource.WbReport,
+            ReportInstanceKey = "corrupt:1",
+            ExternalEntryId = "rrd-corrupt",
+            ChannelId = channelId,
+            ExternalLineId = "srid-a",
+            ExternalProductId = "sku-1",
+            Kind = PnlEntryKind.Component,
+            Type = PnlEntryType.Payout,
+            Amount = 50m,
+            Direction = PnlEntryDirection.Income,
+            Currency = "RUB",
+            DocumentDate = new DateOnly(2026, 8, 1),
+            PeriodFrom = new DateOnly(2026, 7, 27),
+            PeriodTo = new DateOnly(2026, 8, 2),
+        });
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        refs.Refs[lineA] = Ref(lineA, channelId, "srid-a");
+        refs.Refs[lineB] = Ref(lineB, channelId, "srid-b");
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        FixedTimeProvider timeProvider = new FixedTimeProvider(Now);
+
+        PnlLineProjector projector = new PnlLineProjector(
+            journal, refs, costs, lines, timeProvider, NullLogger<PnlLineProjector>.Instance);
+
+        OrderLineCostsResolvedConsumer consumer = new OrderLineCostsResolvedConsumer(
+            costs, projector, timeProvider, NullLogger<OrderLineCostsResolvedConsumer>.Instance);
+
+        Mock<ConsumeContext<OrderLineCostsResolvedEvent>> context = new Mock<ConsumeContext<OrderLineCostsResolvedEvent>>();
+
+        context.SetupGet(c => c.Message).Returns(new OrderLineCostsResolvedEvent
+        {
+            Results = new List<OrderLineCostResult>
+            {
+                Result(lineA, ContractCostStatus.Resolved, 50m, Now),
+                Result(lineB, ContractCostStatus.Resolved, 70m, Now),
+            },
+        });
+
+        context.SetupGet(c => c.CancellationToken).Returns(CancellationToken.None);
+
+        // Act
+        await consumer.Consume(context.Object);
+
+        // Assert: both costs are stored regardless of the recompute outcome.
+        costs.Costs.Should().ContainKey(lineA);
+        costs.Costs.Should().ContainKey(lineB);
+
+        // Line A's recompute failed, so it has no PnlLine yet; line B's must still be there.
+        lines.Lines.Should().NotContainKey(lineA);
+        lines.Lines.Should().ContainKey(lineB);
+    }
+
+    private static OrderLineRef Ref(Guid orderLineId, Guid channelId, string externalLineId)
+    {
+        return new OrderLineRef
+        {
+            OrderLineId = orderLineId,
+            OrderId = Guid.NewGuid(),
+            ChannelId = channelId,
+            ExternalOrderId = "order-1",
+            ExternalLineId = externalLineId,
+            ExternalProductId = "sku-1",
+            Quantity = 1,
+            OrderDate = Now,
+            Currency = "RUB",
+            UpdatedAt = Now,
+        };
+    }
+
     private static OrderLineCostsResolvedConsumer CreateConsumer(
         InMemoryOrderLineCostStore costs,
         InMemoryPnlLineStore lines,
@@ -118,7 +205,8 @@ public class OrderLineCostsResolvedConsumerTests
             refs,
             costs,
             lines,
-            timeProvider);
+            timeProvider,
+            NullLogger<PnlLineProjector>.Instance);
 
         return new OrderLineCostsResolvedConsumer(
             costs,

@@ -43,6 +43,12 @@ public record FinanceEntriesBatchImportCompletedEvent
     public int Failed { get; init; }
 
     /// <summary>
+    /// Gets the number of order lines whose P&amp;L totals could not be recomputed after the batch
+    /// was appended. The entries behind them are safely stored; only the projection is stale.
+    /// </summary>
+    public int RecomputeFailed { get; init; }
+
+    /// <summary>
     /// Gets the number of appended entries whose attribution key matched no order line yet.
     /// </summary>
     public int Unattributed { get; init; }

@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Finance.Application.Models;
 using Delobytes.App.Backend.Finance.Domain.Calculation;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Finance.Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Finance.Application.Projection;
 
@@ -20,6 +21,7 @@ public class PnlLineProjector
     private readonly IOrderLineCostStore _orderLineCosts;
     private readonly IPnlLineStore _lines;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<PnlLineProjector> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PnlLineProjector"/> class.
@@ -29,37 +31,42 @@ public class PnlLineProjector
     /// <param name="orderLineCosts">Production cost port.</param>
     /// <param name="lines">P&amp;L line persistence port.</param>
     /// <param name="timeProvider">Clock source.</param>
+    /// <param name="logger">Logger instance.</param>
     public PnlLineProjector(
         IPnlJournalStore journal,
         IOrderLineRefStore orderLineRefs,
         IOrderLineCostStore orderLineCosts,
         IPnlLineStore lines,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<PnlLineProjector> logger)
     {
         _journal = journal;
         _orderLineRefs = orderLineRefs;
         _orderLineCosts = orderLineCosts;
         _lines = lines;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     /// <summary>
-    /// Recomputes the lines of <paramref name="orderLineIds"/>.
+    /// Recomputes the lines of <paramref name="orderLineIds"/>. A line whose calculation fails is
+    /// skipped rather than thrown; see <see cref="RecomputeCoreAsync"/>.
     /// </summary>
     /// <param name="orderLineIds">Order lines to recompute.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task RecomputeAsync(
+    /// <returns>The counters of the pass.</returns>
+    public async Task<PnlRecomputeResult> RecomputeAsync(
         IReadOnlyCollection<Guid> orderLineIds,
         CancellationToken cancellationToken)
     {
         if (orderLineIds.Count == 0)
         {
-            return;
+            return new PnlRecomputeResult(0, 0, Array.Empty<Guid>());
         }
 
         IReadOnlyList<OrderLineRef> refs = await _orderLineRefs.LoadAsync(orderLineIds, cancellationToken);
 
-        await RecomputeCoreAsync(refs, cancellationToken);
+        return await RecomputeCoreAsync(refs, cancellationToken);
     }
 
     /// <summary>
@@ -67,27 +74,34 @@ public class PnlLineProjector
     /// </summary>
     /// <param name="keys">Attribution keys affected by a journal append.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task RecomputeForKeysAsync(
+    /// <returns>The counters of the pass.</returns>
+    public async Task<PnlRecomputeResult> RecomputeForKeysAsync(
         IReadOnlyCollection<OrderLineAttributionKey> keys,
         CancellationToken cancellationToken)
     {
         if (keys.Count == 0)
         {
-            return;
+            return new PnlRecomputeResult(0, 0, Array.Empty<Guid>());
         }
 
         IReadOnlyList<OrderLineRef> refs = await _orderLineRefs.LoadByAttributionAsync(keys, cancellationToken);
 
-        await RecomputeCoreAsync(refs, cancellationToken);
+        return await RecomputeCoreAsync(refs, cancellationToken);
     }
 
-    private async Task RecomputeCoreAsync(
+    /// <summary>
+    /// Recomputes every line of <paramref name="refs"/>. Each line is calculated and applied inside
+    /// its own try/catch, so a bad journal entry on one order line cannot abort the rest of the
+    /// batch; the single <see cref="IPnlLineStore.SaveChangesAsync"/> call at the end only ever sees
+    /// lines whose calculation finished without throwing.
+    /// </summary>
+    private async Task<PnlRecomputeResult> RecomputeCoreAsync(
         IReadOnlyList<OrderLineRef> refs,
         CancellationToken cancellationToken)
     {
         if (refs.Count == 0)
         {
-            return;
+            return new PnlRecomputeResult(0, 0, Array.Empty<Guid>());
         }
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -119,34 +133,59 @@ public class PnlLineProjector
         IReadOnlyList<PnlLine> existingLines = await _lines.LoadAsync(lineIds, cancellationToken);
         Dictionary<Guid, PnlLine> linesByOrderLine = existingLines.ToDictionary(l => l.OrderLineId);
 
+        int succeeded = 0;
+        List<Guid> failedOrderLineIds = new();
+
         foreach (OrderLineRef orderLineRef in refs)
         {
-            PnlLineTotals totals = PnlLineAggregator.Calculate(
-                entriesByLine.TryGetValue(orderLineRef.OrderLineId, out List<PnlEntry>? lineEntries)
-                    ? lineEntries
-                    : Array.Empty<PnlEntry>());
-
-            if (!linesByOrderLine.TryGetValue(orderLineRef.OrderLineId, out PnlLine? line))
+            try
             {
-                line = new PnlLine
+                PnlLineTotals totals = PnlLineAggregator.Calculate(
+                    entriesByLine.TryGetValue(orderLineRef.OrderLineId, out List<PnlEntry>? lineEntries)
+                        ? lineEntries
+                        : Array.Empty<PnlEntry>());
+
+                bool isNewLine = !linesByOrderLine.TryGetValue(orderLineRef.OrderLineId, out PnlLine? line);
+
+                line ??= new PnlLine
                 {
                     Id = Guid.NewGuid(),
                     OrderLineId = orderLineRef.OrderLineId,
                     CreatedAt = now,
                 };
 
-                _lines.Add(line);
+                ApplyTotals(line, totals, orderLineRef, now);
+
+                ApplyCost(
+                    line,
+                    totals,
+                    costsByLine.TryGetValue(orderLineRef.OrderLineId, out OrderLineCost? cost) ? cost : null);
+
+                // The line is staged only once every calculation on it succeeded: staging it earlier
+                // would let a later throw save a half-applied line with default totals.
+                if (isNewLine)
+                {
+                    _lines.Add(line);
+                }
+
+                succeeded++;
             }
+            catch (Exception ex)
+            {
+                failedOrderLineIds.Add(orderLineRef.OrderLineId);
 
-            ApplyTotals(line, totals, orderLineRef, now);
-
-            ApplyCost(
-                line,
-                totals,
-                costsByLine.TryGetValue(orderLineRef.OrderLineId, out OrderLineCost? cost) ? cost : null);
+                // Catches broadly on purpose: one bad order line must not abort the rest of the
+                // batch. The line's stored result, if any, is left exactly as it was before this pass.
+                _logger.LogError(
+                    ex,
+                    "Failed to recompute P&L line. OrderLineId={OrderLineId}",
+                    orderLineRef.OrderLineId);
+            }
         }
 
         await _lines.SaveChangesAsync(cancellationToken);
+
+        return new PnlRecomputeResult(succeeded, failedOrderLineIds.Count, failedOrderLineIds);
     }
 
     private static void ApplyTotals(
