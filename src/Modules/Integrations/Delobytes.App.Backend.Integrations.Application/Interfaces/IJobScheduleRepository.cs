@@ -27,6 +27,15 @@ public interface IJobScheduleRepository
     public Task<List<JobType>> GetScheduledJobTypesAsync(Guid connectionId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Disables every enabled schedule of <paramref name="connectionId"/>, so a deactivated
+    /// connection stops waking the scheduler once per cron occurrence. Persists the change.
+    /// </summary>
+    /// <param name="connectionId">Connection whose schedules should be disabled.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of schedules that were enabled and are now disabled.</returns>
+    public Task<int> DisableForConnectionAsync(Guid connectionId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Adds the given schedules for a connection, skipping the (ConnectionId, JobType) pairs that
     /// already have one, and persists them in a single save.
     /// </summary>

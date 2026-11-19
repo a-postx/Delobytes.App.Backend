@@ -489,6 +489,118 @@ public class JobScheduleRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task DisableForConnectionAsync_DisablesOnlyTheEnabledSchedulesOfThatConnection()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        Guid targetConnectionId;
+        Guid otherConnectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            Connection target = await SeedConnectionAsync(ctx, template);
+            Connection other = SeedConnectionWithoutTemplate(ctx, template);
+
+            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.WbOrdersImport));
+            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, jobType: JobType.WbFinanceReportImport));
+            ctx.JobSchedules.Add(BuildSchedule(target.Id, nextRunAt, isEnabled: false, jobType: JobType.ProductsImport));
+            ctx.JobSchedules.Add(BuildSchedule(other.Id, nextRunAt, jobType: JobType.OzonOrdersImportFbo));
+            await ctx.SaveChangesAsync();
+
+            targetConnectionId = target.Id;
+            otherConnectionId = other.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            int disabledCount = await repository.DisableForConnectionAsync(targetConnectionId, CancellationToken.None);
+
+            disabledCount.Should().Be(2, "the already disabled schedule is not counted");
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            List<JobSchedule> targetSchedules = await ctx.JobSchedules
+                .Where(s => s.ConnectionId == targetConnectionId)
+                .ToListAsync();
+
+            targetSchedules.Should().OnlyContain(s => !s.IsEnabled);
+
+            JobSchedule foreign = await ctx.JobSchedules.SingleAsync(s => s.ConnectionId == otherConnectionId);
+            foreign.IsEnabled.Should().BeTrue("another connection's schedule must stay enabled");
+        }
+    }
+
+    [Fact]
+    public async Task DisableForConnectionAsync_WhenConnectionHasNoSchedules_ReturnsZero()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+
+        Guid connectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            Connection connection = await SeedConnectionAsync(ctx, template);
+            connectionId = connection.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            int disabledCount = await repository.DisableForConnectionAsync(connectionId, CancellationToken.None);
+
+            disabledCount.Should().Be(0);
+        }
+    }
+
+    [Fact]
+    public async Task DisableForConnectionAsync_DoesNotTouchSchedulesOfAnotherTenant()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantAId = Guid.NewGuid();
+        Guid tenantBId = Guid.NewGuid();
+        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
+        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        SystemChannelTemplate template = BuildTemplate();
+        DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        Guid foreignConnectionId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
+        {
+            await SeedConnectionAsync(ctx, template);
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantBMock.Object))
+        {
+            Connection foreign = SeedConnectionWithoutTemplate(ctx, template);
+            ctx.JobSchedules.Add(BuildSchedule(foreign.Id, nextRunAt));
+            await ctx.SaveChangesAsync();
+
+            foreignConnectionId = foreign.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
+        {
+            JobScheduleRepository repository = new JobScheduleRepository(ctx);
+
+            int disabledCount = await repository.DisableForConnectionAsync(foreignConnectionId, CancellationToken.None);
+
+            disabledCount.Should().Be(0, "the query runs under the tenant filter, unlike GetDueSchedulesAsync");
+        }
+    }
+
     /// <summary>
     /// Seeds a connection for a second tenant without re-adding the template (already
     /// persisted under another tenant's context).

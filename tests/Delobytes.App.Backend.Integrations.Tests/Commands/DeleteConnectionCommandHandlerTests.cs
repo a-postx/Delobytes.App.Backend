@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -13,6 +14,7 @@ namespace Delobytes.App.Backend.Integrations.Tests.Commands;
 public class DeleteConnectionCommandHandlerTests
 {
     private readonly Mock<IConnectionRepository> _connectionRepo = new ();
+    private readonly Mock<IJobScheduleRepository> _scheduleRepo = new ();
     private readonly Mock<IEventPublisher> _eventPublisher = new ();
 
     private static Connection BuildConnection(Guid? id = null)
@@ -30,7 +32,10 @@ public class DeleteConnectionCommandHandlerTests
 
     private DeleteConnectionCommandHandler CreateHandler()
     {
-        return new DeleteConnectionCommandHandler(_connectionRepo.Object);
+        return new DeleteConnectionCommandHandler(
+            _connectionRepo.Object,
+            _scheduleRepo.Object,
+            NullLogger<DeleteConnectionCommandHandler>.Instance);
     }
 
     [Fact]
@@ -48,6 +53,10 @@ public class DeleteConnectionCommandHandlerTests
 
         await act.Should().ThrowAsync<KeyNotFoundException>()
             .WithMessage($"*{id}*");
+
+        _scheduleRepo.Verify(
+            r => r.DisableForConnectionAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -70,5 +79,31 @@ public class DeleteConnectionCommandHandlerTests
 
 
         connection.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Handle_ValidConnection_DisablesItsSchedules()
+    {
+        Connection connection = BuildConnection();
+
+        _connectionRepo
+            .Setup(r => r.FindByIdWithTemplateAsync(connection.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        _connectionRepo
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        _scheduleRepo
+            .Setup(r => r.DisableForConnectionAsync(connection.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
+
+        DeleteConnectionCommandHandler handler = CreateHandler();
+
+        await handler.Handle(new DeleteConnectionCommand { Id = connection.Id }, CancellationToken.None);
+
+        _scheduleRepo.Verify(
+            r => r.DisableForConnectionAsync(connection.Id, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

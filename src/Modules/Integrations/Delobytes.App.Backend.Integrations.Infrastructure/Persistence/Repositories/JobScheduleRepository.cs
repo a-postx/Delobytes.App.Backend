@@ -49,6 +49,28 @@ public class JobScheduleRepository : IJobScheduleRepository
     }
 
     /// <inheritdoc/>
+    public async Task<int> DisableForConnectionAsync(Guid connectionId, CancellationToken cancellationToken)
+    {
+        List<JobSchedule> schedules = await _context.JobSchedules
+            .Where(s => s.ConnectionId == connectionId && s.IsEnabled)
+            .ToListAsync(cancellationToken);
+
+        if (schedules.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (JobSchedule schedule in schedules)
+        {
+            schedule.IsEnabled = false;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return schedules.Count;
+    }
+
+    /// <inheritdoc/>
     public async Task<int> AddMissingAsync(
         Guid connectionId,
         IReadOnlyList<JobSchedule> schedules,
