@@ -88,10 +88,6 @@ public sealed class OzonChannelModule : ChannelModule
         services.AddKeyedTransient<IChannelApiClient>(
             ChannelCatalog.OzonCode,
             (sp, _) => sp.GetRequiredService<OzonApiClient>());
-
-        services.AddKeyedScoped<IFinanceEntriesSource>(
-            ChannelCatalog.OzonCode,
-            (sp, _) => sp.GetRequiredService<OzonApiClient>());
     }
 
     public override void RegisterApiKeyValidator(IServiceCollection services)

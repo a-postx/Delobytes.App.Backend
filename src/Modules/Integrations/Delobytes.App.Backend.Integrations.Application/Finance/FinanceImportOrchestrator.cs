@@ -8,7 +8,6 @@ using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -26,7 +25,7 @@ public class FinanceImportOrchestrator
     private readonly IJobRunRepository _jobRuns;
     private readonly IJobCheckpointRepository _checkpoints;
     private readonly ISyncCheckpointRepository _watermarks;
-    private readonly IServiceProvider _services;
+    private readonly IChannelApiClientFactory _clientFactory;
     private readonly IEventPublisher _eventPublisher;
     private readonly ITenantTimeService _tenantTimeService;
     private readonly ITenantContext _tenantContext;
@@ -41,7 +40,7 @@ public class FinanceImportOrchestrator
         IJobRunRepository jobRuns,
         IJobCheckpointRepository checkpoints,
         ISyncCheckpointRepository watermarks,
-        IServiceProvider services,
+        IChannelApiClientFactory clientFactory,
         IEventPublisher eventPublisher,
         ITenantTimeService tenantTimeService,
         ITenantContext tenantContext,
@@ -52,7 +51,7 @@ public class FinanceImportOrchestrator
         _jobRuns = jobRuns;
         _checkpoints = checkpoints;
         _watermarks = watermarks;
-        _services = services;
+        _clientFactory = clientFactory;
         _eventPublisher = eventPublisher;
         _tenantTimeService = tenantTimeService;
         _tenantContext = tenantContext;
@@ -76,15 +75,40 @@ public class FinanceImportOrchestrator
             return;
         }
 
-        string? channelCode = run.Connection.SystemChannelTemplate?.Code;
+        SystemChannelTemplate? template = run.Connection.SystemChannelTemplate;
 
-        IFinanceEntriesSource? source = string.IsNullOrEmpty(channelCode)
-            ? null
-            : _services.GetKeyedService<IFinanceEntriesSource>(channelCode);
-
-        if (source == null)
+        if (template == null)
         {
-            await FailAsync(run, $"No finance source is registered for channel '{channelCode}'.", cancellationToken);
+            await FailAsync(
+                run,
+                "The job run's connection has no system channel template.",
+                cancellationToken);
+            return;
+        }
+
+        string channelCode = template.Code;
+
+        // The factory is the one place that binds a client to its template; a finance run must not
+        // reach the client any other way, or it would get an unbound instance that fails on the
+        // first API call.
+        IChannelApiClient apiClient;
+
+        try
+        {
+            apiClient = _clientFactory.Create(template);
+        }
+        catch (NotSupportedException)
+        {
+            await FailAsync(run, $"Channel '{channelCode}' is not supported.", cancellationToken);
+            return;
+        }
+
+        if (apiClient is not IFinanceEntriesSource source)
+        {
+            await FailAsync(
+                run,
+                $"Channel '{channelCode}' does not support finance import.",
+                cancellationToken);
             return;
         }
 
@@ -113,7 +137,7 @@ public class FinanceImportOrchestrator
                 : today.AddDays(-Math.Max(0, _options.InitialBackfillDays));
 
             (DateOnly From, DateOnly To)? planned = FinanceImportWindowPlanner.Plan(
-                channelCode!,
+                channelCode,
                 watermarkDate,
                 today,
                 _options.InitialBackfillDays,

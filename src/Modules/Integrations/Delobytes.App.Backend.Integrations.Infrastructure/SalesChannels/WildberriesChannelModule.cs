@@ -126,10 +126,6 @@ public sealed class WildberriesChannelModule : ChannelModule
         services.AddKeyedTransient<IChannelApiClient>(
             ChannelCatalog.WildberriesCode,
             (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
-
-        services.AddKeyedScoped<IFinanceEntriesSource>(
-            ChannelCatalog.WildberriesCode,
-            (sp, _) => sp.GetRequiredService<WildberriesApiClient>());
     }
 
     public override void RegisterApiKeyValidator(IServiceCollection services)
