@@ -32,30 +32,70 @@ public class OrderLinesChangedConsumerTests
     private static readonly Guid ProductId = Guid.NewGuid();
 
     [Fact]
-    public async Task Consume_LineWithChannelProductId_ResolvesDirectly()
+    public async Task Consume_LineWithChannelProductId_CalculatesForTheLinkedProduct()
     {
         RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
+        Guid channelProductId = Guid.NewGuid();
+        Guid productId = Guid.NewGuid();
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            new Dictionary<(Guid, string), Guid>(),
-            line(channelProductId: Guid.NewGuid(), quantity: 1));
+            Links(channelLinks: new[] { (channelProductId, productId) }),
+            line(channelProductId: channelProductId, quantity: 1));
 
         published!.Results.Should().ContainSingle();
         published!.Results[0].Status.Should().Be(OrderLineCostStatus.Resolved);
-        published!.Results[0].ProductId.Should().Be(ProductId == Guid.Empty ? Guid.Empty : calculator.LastProductId);
+        published!.Results[0].ProductId.Should().Be(productId);
+        calculator.LastProductId.Should().Be(productId);
+        calculator.LastProductId.Should().NotBe(channelProductId);
         calculator.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Consume_LineWithChannelProductId_ResolvesTheProductInOneLookup()
+    {
+        RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
+        Guid channelProductId = Guid.NewGuid();
+        Guid productId = Guid.NewGuid();
+        FakeChannelProductRepository repository = Links(channelLinks: new[] { (channelProductId, productId) });
+
+        await ConsumeAsync(
+            calculator,
+            repository,
+            line(channelProductId: channelProductId, quantity: 1),
+            line(channelProductId: channelProductId, quantity: 1));
+
+        repository.BatchLookups.Should().Be(1);
+        repository.NaturalKeyLookups.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Consume_ChannelProductUnknownToTheCatalogue_FallsBackToTheNaturalKey()
+    {
+        RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
+        FakeChannelProductRepository repository = Links(
+            naturalKeyLinks: new[] { (ChannelId, "sku-1", ProductId) });
+
+        OrderLineCostsResolvedEvent? published = await ConsumeAsync(
+            calculator,
+            repository,
+            line(channelProductId: Guid.NewGuid(), quantity: 1));
+
+        published!.Results[0].Status.Should().Be(OrderLineCostStatus.Resolved);
+        published!.Results[0].ProductId.Should().Be(ProductId);
+        repository.NaturalKeyLookups.Should().Be(1);
     }
 
     [Fact]
     public async Task Consume_LineWithoutChannelProductId_FallsBackToTheNaturalKey()
     {
         RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
-        Dictionary<(Guid, string), Guid> links = new() { [(ChannelId, "sku-1")] = ProductId };
+        FakeChannelProductRepository repository = Links(
+            naturalKeyLinks: new[] { (ChannelId, "sku-1", ProductId) });
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            links,
+            repository,
             line(channelProductId: null, quantity: 1));
 
         published!.Results[0].Status.Should().Be(OrderLineCostStatus.Resolved);
@@ -69,7 +109,7 @@ public class OrderLinesChangedConsumerTests
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            new Dictionary<(Guid, string), Guid>(),
+            Links(),
             line(channelProductId: null, quantity: 1));
 
         published!.Results[0].Status.Should().Be(OrderLineCostStatus.ProductNotLinked);
@@ -83,11 +123,12 @@ public class OrderLinesChangedConsumerTests
     {
         // The repository is not filtered on IsActive: an archived card owns historical lines.
         RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
-        Dictionary<(Guid, string), Guid> links = new() { [(ChannelId, "sku-1")] = ProductId };
+        FakeChannelProductRepository repository = Links(
+            naturalKeyLinks: new[] { (ChannelId, "sku-1", ProductId) });
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            links,
+            repository,
             line(channelProductId: null, quantity: 1));
 
         published!.Results[0].Status.Should().Be(OrderLineCostStatus.Resolved);
@@ -98,14 +139,15 @@ public class OrderLinesChangedConsumerTests
     {
         // 22:30 UTC is the next calendar day in Moscow.
         RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
+        Guid channelProductId = Guid.NewGuid();
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            new Dictionary<(Guid, string), Guid>(),
+            Links(channelLinks: new[] { (channelProductId, ProductId) }),
             new[]
             {
                 line(
-                    channelProductId: Guid.NewGuid(),
+                    channelProductId: channelProductId,
                     quantity: 1,
                     orderDate: new DateTimeOffset(2026, 8, 1, 22, 30, 0, TimeSpan.Zero)),
             },
@@ -120,16 +162,18 @@ public class OrderLinesChangedConsumerTests
     {
         RecordingCostCalculator calculator = new RecordingCostCalculator(unitTotal: 10m);
         Guid channelProductId = Guid.NewGuid();
+        Guid productId = Guid.NewGuid();
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            new Dictionary<(Guid, string), Guid>(),
+            Links(channelLinks: new[] { (channelProductId, productId) }),
             line(channelProductId: channelProductId, quantity: 1),
             line(channelProductId: channelProductId, quantity: 3));
 
         calculator.Calls.Should().Be(1);
         published!.Results.Should().HaveCount(2);
         published!.Results[1].TotalCost.Should().Be(30m);
+        published!.Results.Should().OnlyContain(result => result.ProductId == productId);
     }
 
     [Fact]
@@ -139,10 +183,12 @@ public class OrderLinesChangedConsumerTests
             unitTotal: 10m,
             warnings: new[] { new CostWarning(CostWarningType.MissingBom, "no bom", null) });
 
+        Guid channelProductId = Guid.NewGuid();
+
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            new Dictionary<(Guid, string), Guid>(),
-            line(channelProductId: Guid.NewGuid(), quantity: 1));
+            Links(channelLinks: new[] { (channelProductId, ProductId) }),
+            line(channelProductId: channelProductId, quantity: 1));
 
         published!.Results[0].IsComplete.Should().BeFalse();
         published!.Results[0].WarningTypes.Should().Contain(nameof(CostWarningType.MissingBom));
@@ -158,7 +204,7 @@ public class OrderLinesChangedConsumerTests
 
         OrderLineCostsResolvedEvent? published = await ConsumeAsync(
             calculator,
-            new Dictionary<(Guid, string), Guid>(),
+            Links(),
             unchanged);
 
         published.Should().BeNull();
@@ -167,7 +213,7 @@ public class OrderLinesChangedConsumerTests
 
     private static async Task<OrderLineCostsResolvedEvent?> ConsumeAsync(
         RecordingCostCalculator calculator,
-        Dictionary<(Guid, string), Guid> links,
+        FakeChannelProductRepository links,
         params ChangedOrderLine[] lines)
     {
         return await ConsumeAsync(calculator, links, lines, TimeZoneInfo.Utc);
@@ -175,7 +221,7 @@ public class OrderLinesChangedConsumerTests
 
     private static async Task<OrderLineCostsResolvedEvent?> ConsumeAsync(
         RecordingCostCalculator calculator,
-        Dictionary<(Guid, string), Guid> links,
+        FakeChannelProductRepository links,
         ChangedOrderLine[] lines,
         TimeZoneInfo timeZone)
     {
@@ -190,7 +236,7 @@ public class OrderLinesChangedConsumerTests
         RecordingPublisher publisher = new RecordingPublisher();
 
         OrderLinesChangedConsumer consumer = new OrderLinesChangedConsumer(
-            new FakeChannelProductRepository(links),
+            links,
             calculator,
             timeService.Object,
             publisher,
@@ -271,14 +317,32 @@ public class OrderLinesChangedConsumerTests
         }
     }
 
+    private static FakeChannelProductRepository Links(
+        (Guid ChannelProductId, Guid ProductId)[]? channelLinks = null,
+        (Guid ChannelId, string ExternalProductId, Guid ProductId)[]? naturalKeyLinks = null)
+    {
+        return new FakeChannelProductRepository(channelLinks, naturalKeyLinks);
+    }
+
     private sealed class FakeChannelProductRepository : IChannelProductRepository
     {
-        private readonly Dictionary<(Guid, string), Guid> _links;
+        private readonly Dictionary<Guid, Guid> _byChannelProductId;
+        private readonly Dictionary<(Guid, string), Guid> _byNaturalKey;
 
-        public FakeChannelProductRepository(Dictionary<(Guid, string), Guid> links)
+        public FakeChannelProductRepository(
+            (Guid ChannelProductId, Guid ProductId)[]? channelLinks,
+            (Guid ChannelId, string ExternalProductId, Guid ProductId)[]? naturalKeyLinks)
         {
-            _links = links;
+            _byChannelProductId = (channelLinks ?? Array.Empty<(Guid, Guid)>())
+                .ToDictionary(link => link.ChannelProductId, link => link.ProductId);
+
+            _byNaturalKey = (naturalKeyLinks ?? Array.Empty<(Guid, string, Guid)>())
+                .ToDictionary(link => (link.ChannelId, link.ExternalProductId), link => link.ProductId);
         }
+
+        public int BatchLookups { get; private set; }
+
+        public int NaturalKeyLookups { get; private set; }
 
         public Task<IReadOnlyList<ChannelProduct>> GetAbandonedLinksAsync(
             Guid channelId,
@@ -293,13 +357,29 @@ public class OrderLinesChangedConsumerTests
             return Task.CompletedTask;
         }
 
-        public Task<Guid?> FindChannelProductIdAsync(
+        public Task<Guid?> FindProductIdAsync(
             Guid channelId,
             string externalProductId,
             CancellationToken cancellationToken)
         {
+            NaturalKeyLookups++;
+
             return Task.FromResult(
-                _links.TryGetValue((channelId, externalProductId), out Guid id) ? (Guid?)id : null);
+                _byNaturalKey.TryGetValue((channelId, externalProductId), out Guid id) ? (Guid?)id : null);
+        }
+
+        public Task<IReadOnlyDictionary<Guid, Guid>> GetProductIdsByChannelProductIdsAsync(
+            IReadOnlyCollection<Guid> channelProductIds,
+            CancellationToken cancellationToken)
+        {
+            BatchLookups++;
+
+            IReadOnlyDictionary<Guid, Guid> resolved = channelProductIds
+                .Where(_byChannelProductId.ContainsKey)
+                .Distinct()
+                .ToDictionary(id => id, id => _byChannelProductId[id]);
+
+            return Task.FromResult(resolved);
         }
     }
 

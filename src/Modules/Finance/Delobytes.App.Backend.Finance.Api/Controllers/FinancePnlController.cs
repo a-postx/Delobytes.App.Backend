@@ -35,6 +35,7 @@ public class FinancePnlController : ControllerBase
     public async Task<ActionResult<PnlLinesResponse>> GetLines(
         [FromQuery] Guid? channelId,
         [FromQuery] Guid? productId,
+        [FromQuery] Guid? channelProductId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
         [FromQuery] string? state,
@@ -49,6 +50,7 @@ public class FinancePnlController : ControllerBase
                 {
                     ChannelId = channelId,
                     ProductId = productId,
+                    ChannelProductId = channelProductId,
                     From = from,
                     To = to,
                     State = state,
@@ -69,6 +71,7 @@ public class FinancePnlController : ControllerBase
     public async Task<ActionResult<PnlSummaryResponse>> GetSummary(
         [FromQuery] Guid? channelId,
         [FromQuery] Guid? productId,
+        [FromQuery] Guid? channelProductId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
         [FromQuery] string? granularity,
@@ -96,6 +99,7 @@ public class FinancePnlController : ControllerBase
                 {
                     ChannelId = channelId,
                     ProductId = productId,
+                    ChannelProductId = channelProductId,
                     From = from,
                     To = to,
                 },

@@ -41,7 +41,7 @@ public class PnlReadStoreSqlTests
     }
 
     [Fact]
-    public void BuildLinesQuery_ProductIdFallsBackToChannelProductIdInSql()
+    public void BuildLinesQuery_KeepsProductIdAndChannelProductIdApartInSql()
     {
         using FinanceDbContext context = CreateContext();
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
@@ -52,8 +52,11 @@ public class PnlReadStoreSqlTests
             .Take(10)
             .ToQueryString();
 
+        // The product comes from the resolved cost fact and the channel product is a separate
+        // column: a CASE fallback would mix two identifier domains in one field.
+        sql.Should().Contain("\"ProductId\"");
         sql.Should().Contain("\"ChannelProductId\"");
-        sql.Should().Contain("CASE");
+        sql.Should().NotContain("CASE");
     }
 
     [Fact]
@@ -97,6 +100,7 @@ public class PnlReadStoreSqlTests
         {
             ChannelId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             ProductId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            ChannelProductId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             From = new DateOnly(2026, 3, 1),
             To = new DateOnly(2026, 3, 31),
             State = PnlLineState.Calculated,
@@ -109,9 +113,8 @@ public class PnlReadStoreSqlTests
             .ToQueryString();
 
         sql.Should().Contain("\"ChannelId\" = @");
-        // ProductId is now a CASE expression (falls back to ChannelProductId), not a plain column
-        // comparison, so the filter shows up as the CASE result compared to the parameter.
-        sql.Should().Contain("= @productId");
+        sql.Should().Contain("\"ProductId\" = @");
+        sql.Should().Contain("\"ChannelProductId\" = @");
         sql.Should().Contain("\"SaleDate\" >= @");
         sql.Should().Contain("\"SaleDate\" <= @");
         sql.Should().Contain("\"State\" = @");

@@ -44,7 +44,7 @@ public class ChannelProductRepository : IChannelProductRepository
     }
 
     /// <inheritdoc/>
-    public Task<Guid?> FindChannelProductIdAsync(
+    public Task<Guid?> FindProductIdAsync(
         Guid channelId,
         string externalProductId,
         CancellationToken cancellationToken)
@@ -53,7 +53,28 @@ public class ChannelProductRepository : IChannelProductRepository
         return _context.ChannelProducts
             .AsNoTracking()
             .Where(cp => cp.ChannelId == channelId && cp.ExternalProductId == externalProductId)
-            .Select(cp => (Guid?)cp.Id)
+            .Select(cp => (Guid?)cp.ProductId)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<Guid, Guid>> GetProductIdsByChannelProductIdsAsync(
+        IReadOnlyCollection<Guid> channelProductIds,
+        CancellationToken cancellationToken)
+    {
+        if (channelProductIds.Count == 0)
+        {
+            return new Dictionary<Guid, Guid>();
+        }
+
+        List<Guid> ids = channelProductIds.Distinct().ToList();
+
+        List<KeyValuePair<Guid, Guid>> pairs = await _context.ChannelProducts
+            .AsNoTracking()
+            .Where(cp => ids.Contains(cp.Id))
+            .Select(cp => new KeyValuePair<Guid, Guid>(cp.Id, cp.ProductId))
+            .ToListAsync(cancellationToken);
+
+        return pairs.ToDictionary(pair => pair.Key, pair => pair.Value);
     }
 }

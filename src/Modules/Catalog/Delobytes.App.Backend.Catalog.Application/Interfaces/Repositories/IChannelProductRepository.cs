@@ -24,16 +24,28 @@ public interface IChannelProductRepository
     public Task SaveChangesAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Resolves the channel product of a marketplace item by its natural key
+    /// Resolves the catalogue product of a marketplace item by the natural key
     /// <c>(ChannelId, ExternalProductId)</c>. Not filtered by <c>IsActive</c>: an archived card still
     /// owns historical order lines, and refusing to resolve it would lose their cost.
     /// </summary>
     /// <param name="channelId">Channel identifier.</param>
     /// <param name="externalProductId">Channel-side product identity.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The channel product identifier, or null when the item is unknown.</returns>
-    public Task<Guid?> FindChannelProductIdAsync(
+    /// <returns>The catalogue product identifier, or null when the item is unknown.</returns>
+    public Task<Guid?> FindProductIdAsync(
         Guid channelId,
         string externalProductId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves the catalogue products of the given channel products in one round trip. The cost
+    /// calculation needs the product, not the link: a link identifier fed to it silently yields an
+    /// empty bill of materials and a zero cost.
+    /// </summary>
+    /// <param name="channelProductIds">Channel product identifiers to resolve.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Product identifier per channel product identifier; unknown links are absent.</returns>
+    public Task<IReadOnlyDictionary<Guid, Guid>> GetProductIdsByChannelProductIdsAsync(
+        IReadOnlyCollection<Guid> channelProductIds,
         CancellationToken cancellationToken);
 }

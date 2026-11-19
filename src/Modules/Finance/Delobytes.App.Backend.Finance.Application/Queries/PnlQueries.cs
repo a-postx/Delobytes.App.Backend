@@ -21,6 +21,9 @@ public sealed class PnlQueryFilter
 
     public Guid? ProductId { get; set; }
 
+    /// <summary>Gets or sets the channel product filter, independent of the catalogue product.</summary>
+    public Guid? ChannelProductId { get; set; }
+
     public DateOnly? From { get; set; }
 
     public DateOnly? To { get; set; }
@@ -36,6 +39,9 @@ public sealed class PnlLineView
     public Guid? ChannelId { get; set; }
 
     public Guid? ProductId { get; set; }
+
+    /// <summary>Gets or sets the channel product Sales linked the line to, when known.</summary>
+    public Guid? ChannelProductId { get; set; }
 
     public bool HasProductLink { get; set; }
 
@@ -129,6 +135,7 @@ internal static class PnlViewFactory
                 OrderLineId = row.OrderLineId,
                 ChannelId = row.ChannelId,
                 ProductId = row.ProductId,
+                ChannelProductId = row.ChannelProductId,
                 HasProductLink = row.ProductId.HasValue,
                 SaleDate = row.SaleDate,
                 Currency = row.Currency,
@@ -199,6 +206,7 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
         {
             ChannelId = request.Filter.ChannelId,
             ProductId = request.Filter.ProductId,
+            ChannelProductId = request.Filter.ChannelProductId,
             From = request.Filter.From,
             To = request.Filter.To,
             State = Enum.TryParse(request.Filter.State, ignoreCase: true, out Domain.Enums.PnlLineState state)
@@ -303,6 +311,7 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         {
             ChannelId = request.Filter.ChannelId,
             ProductId = request.Filter.ProductId,
+            ChannelProductId = request.Filter.ChannelProductId,
             From = request.Filter.From,
             To = request.Filter.To,
         };

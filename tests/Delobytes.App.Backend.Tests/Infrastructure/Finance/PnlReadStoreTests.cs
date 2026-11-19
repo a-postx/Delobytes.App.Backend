@@ -102,7 +102,7 @@ public class PnlReadStoreTests
     }
 
     [Fact]
-    public async Task GetLinesAsync_FallsBackToChannelProductId_WhenCostIsNotResolved()
+    public async Task GetLinesAsync_UnresolvedCost_LeavesProductIdNullAndKeepsChannelProductId()
     {
         string database = NewDatabaseName();
         Guid orderLineId = Guid.Parse("00000005-0000-0000-0000-000000000005");
@@ -122,7 +122,72 @@ public class PnlReadStoreTests
 
         PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
 
-        page.Rows.Single(r => r.OrderLineId == orderLineId).ProductId.Should().Be(channelProductId);
+        PnlLineRow row = page.Rows.Single(r => r.OrderLineId == orderLineId);
+
+        // The channel product is not a product: substituting it would hide the line from the
+        // diagnostics and put it into a group no catalogue product can be joined to.
+        row.ProductId.Should().BeNull();
+        row.ChannelProductId.Should().Be(channelProductId);
+        row.CostStatus.Should().Be(OrderLineCostStatus.ProductNotLinked);
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_WithoutCostFact_LeavesProductIdNullAndKeepsChannelProductId()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("00000008-0000-0000-0000-000000000008");
+        Guid channelProductId = Guid.Parse("abababab-abab-abab-abab-abababababab");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId, channelProductId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        PnlLineRow row = page.Rows.Single(r => r.OrderLineId == orderLineId);
+
+        row.ProductId.Should().BeNull();
+        row.ChannelProductId.Should().Be(channelProductId);
+        row.CostStatus.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_FiltersByChannelProductIdIndependentlyOfTheProduct()
+    {
+        string database = NewDatabaseName();
+        Guid firstLine = Guid.Parse("00000009-0000-0000-0000-000000000009");
+        Guid secondLine = Guid.Parse("0000000a-0000-0000-0000-00000000000a");
+        Guid channelProductId = Guid.Parse("cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), firstLine, "RUB", Day1));
+            seed.PnlLines.Add(Line(Guid.NewGuid(), secondLine, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(firstLine, ChannelId, channelProductId));
+            seed.OrderLineRefs.Add(Reference(secondLine, ChannelId, Guid.NewGuid()));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync(
+            "RUB",
+            new PnlLineFilter { ChannelProductId = channelProductId },
+            100,
+            null,
+            CancellationToken.None);
+
+        page.Rows.Should().ContainSingle();
+        page.Rows[0].OrderLineId.Should().Be(firstLine);
     }
 
     [Fact]

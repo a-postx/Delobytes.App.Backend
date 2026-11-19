@@ -101,6 +101,27 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetLines_ChannelProductWithoutResolvedProduct_StaysUnlinked()
+    {
+        Guid channelProductId = Guid.NewGuid();
+
+        PnlLineRow row = Row(saleDate: new DateOnly(2026, 8, 1), revenue: 100m, netRevenue: 90m, cost: null);
+        row.ChannelProductId = channelProductId;
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].ChannelProductId.Should().Be(channelProductId);
+        response.Lines[0].ProductId.Should().BeNull();
+        response.Lines[0].HasProductLink.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task GetSummary_GroupsByProductAndMonth()
     {
         Guid productId = Guid.NewGuid();

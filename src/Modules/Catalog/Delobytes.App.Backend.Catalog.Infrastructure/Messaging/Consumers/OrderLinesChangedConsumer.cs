@@ -75,15 +75,29 @@ public class OrderLinesChangedConsumer : IConsumer<OrderLinesChangedEvent>
         List<OrderLineCostResult> results = new List<OrderLineCostResult>(lines.Count);
         Dictionary<(Guid ProductId, DateOnly AsOfDate), CostBreakdown> calculations = new();
 
+        List<Guid> channelProductIds = lines
+            .Where(line => line.ChannelProductId.HasValue)
+            .Select(line => line.ChannelProductId!.Value)
+            .Distinct()
+            .ToList();
+
+        IReadOnlyDictionary<Guid, Guid> productIdsByChannelProduct = await _channelProducts
+            .GetProductIdsByChannelProductIdsAsync(channelProductIds, context.CancellationToken);
+
         foreach (ChangedOrderLine line in lines)
         {
             DateOnly asOf = TenantTimeZones.DateAt(line.OrderDate, timeZone);
 
-            Guid? productId = line.ChannelProductId;
+            Guid? productId = null;
 
-            if (!productId.HasValue)
+            if (line.ChannelProductId.HasValue
+                && productIdsByChannelProduct.TryGetValue(line.ChannelProductId.Value, out Guid linkedProductId))
             {
-                productId = await _channelProducts.FindChannelProductIdAsync(
+                productId = linkedProductId;
+            }
+            else
+            {
+                productId = await _channelProducts.FindProductIdAsync(
                     line.ChannelId,
                     line.ExternalProductId,
                     context.CancellationToken);

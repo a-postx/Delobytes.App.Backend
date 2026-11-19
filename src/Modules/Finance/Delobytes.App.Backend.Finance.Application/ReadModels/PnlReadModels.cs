@@ -13,6 +13,12 @@ public sealed class PnlLineFilter
     /// <summary>Gets or sets the optional product filter.</summary>
     public Guid? ProductId { get; set; }
 
+    /// <summary>
+    /// Gets or sets the optional channel product filter. It matches the link Sales captured, so a
+    /// sale whose catalogue product is not resolved yet can still be read.
+    /// </summary>
+    public Guid? ChannelProductId { get; set; }
+
     /// <summary>Gets or sets the optional first sale date, inclusive.</summary>
     public DateOnly? From { get; set; }
 
@@ -35,7 +41,14 @@ public sealed class PnlLineRow
 
     public Guid? ChannelId { get; set; }
 
+    /// <summary>
+    /// Gets or sets the catalogue product of the line, or null while no cost fact exists or the
+    /// channel product is not linked to a product.
+    /// </summary>
     public Guid? ProductId { get; set; }
+
+    /// <summary>Gets or sets the channel product Sales linked the line to, when known.</summary>
+    public Guid? ChannelProductId { get; set; }
 
     public string Currency { get; set; } = default!;
 
@@ -94,7 +107,11 @@ public sealed class PnlDiagnosticsResult
 
     public int LinesWithOpenControlDifference { get; set; }
 
-    /// <summary>Lines in the period whose product is neither resolved by Catalog nor known from Sales.</summary>
+    /// <summary>
+    /// Lines in the period whose catalogue product is unknown: either Catalog has not resolved the
+    /// cost yet, or the channel product is not linked to a product. Such a line is still visible in
+    /// the line list and in the unlinked summary group.
+    /// </summary>
     public int LinesWithoutProductLink { get; set; }
 
     /// <summary>Sum of <c>RevenueAmount</c> over <see cref="LinesWithoutProductLink"/>.</summary>

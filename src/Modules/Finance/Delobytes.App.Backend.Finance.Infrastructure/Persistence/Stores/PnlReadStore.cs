@@ -112,8 +112,9 @@ public class PnlReadStore : IPnlReadStore
             .ToListAsync(cancellationToken);
 
         // Not an attribution gap: these lines are already closed with money, they just carry no
-        // product link yet. Surfacing the count and the revenue keeps that money visible instead of
-        // letting it disappear from every per-product view.
+        // catalogue product yet — either Catalog has not resolved the cost or the channel product is
+        // not linked. Surfacing the count and the revenue keeps that money visible instead of
+        // letting it silently sit outside every per-product view.
         List<decimal?> unlinkedRevenue = await BuildFilteredQuery(new PnlLineFilter { From = from, To = to })
             .Where(row => row.ProductId == null)
             .Select(row => row.RevenueAmount)
@@ -239,9 +240,12 @@ public class PnlReadStore : IPnlReadStore
                    Id = line.Id,
                    OrderLineId = line.OrderLineId,
                    ChannelId = reference.ChannelId,
-                   // A cost Catalog has not resolved yet must not hide the sale from the per-product
-                   // view: fall back to the channel-reported link Sales already captured.
-                   ProductId = cost != null && cost.ProductId != null ? cost.ProductId : reference.ChannelProductId,
+                   // The product is the one Catalog resolved the cost for. The channel product is a
+                   // different identity and must not stand in for it: a substitution would put the
+                   // sale into a group no catalogue product can be joined to and would hide it from
+                   // the diagnostics that count unlinked lines.
+                   ProductId = cost == null ? null : cost.ProductId,
+                   ChannelProductId = reference.ChannelProductId,
                    Currency = line.Currency,
                    SaleDate = line.SaleDate,
                    State = line.State,
@@ -272,6 +276,12 @@ public class PnlReadStore : IPnlReadStore
         {
             Guid productId = filter.ProductId.Value;
             query = query.Where(row => row.ProductId == productId);
+        }
+
+        if (filter.ChannelProductId.HasValue)
+        {
+            Guid channelProductId = filter.ChannelProductId.Value;
+            query = query.Where(row => row.ChannelProductId == channelProductId);
         }
 
         if (filter.From.HasValue)
