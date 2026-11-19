@@ -271,7 +271,7 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                     b.HasIndex("TenantId", "ChannelId", "ExternalOrderId", "ExternalProductId")
                         .HasFilter("\"SupersededByEntryId\" IS NULL");
 
-                    b.HasIndex("TenantId", "Source", "ReportInstanceKey", "ExternalEntryId", "ExternalProductId", "Kind", "Type")
+                    b.HasIndex("TenantId", "ChannelId", "Source", "ReportInstanceKey", "ExternalEntryId", "ExternalProductId", "Kind", "Type")
                         .IsUnique();
 
                     b.ToTable("PnlEntries", "finance", t =>

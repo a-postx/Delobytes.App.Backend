@@ -18,7 +18,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("integrations")
-                .HasAnnotation("ProductVersion", "8.0.2")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -90,6 +90,11 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.Migrations
                     b.HasIndex("SystemChannelTemplateId");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ChannelId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Connections_TenantId_ChannelId_Active")
+                        .HasFilter("\"IsActive\"");
 
                     b.ToTable("Connections", "integrations");
                 });

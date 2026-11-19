@@ -122,6 +122,7 @@ internal sealed class InMemoryPnlJournalStore : IPnlJournalStore
     private static JournalIdentityKey IdentityKeyOf(PnlEntry entry)
     {
         return new JournalIdentityKey(
+            entry.ChannelId,
             entry.Source,
             entry.ReportInstanceKey,
             entry.ExternalEntryId,

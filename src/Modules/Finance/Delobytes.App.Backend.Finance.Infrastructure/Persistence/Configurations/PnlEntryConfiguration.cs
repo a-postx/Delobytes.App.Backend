@@ -101,8 +101,12 @@ public class PnlEntryConfiguration : IEntityTypeConfiguration<PnlEntry>
         // The idempotency key. One report row can carry several typed amounts, so the type is part
         // of the identity; a re-issued report is a different instance and therefore a different key,
         // which is what leaves room for a correction to be appended and the old row superseded.
+        // The channel is part of the key because the channel-side identities are unique per seller
+        // account: two shops of one marketplace in the same tenant re-use the same report and accrual
+        // numbers, and without the channel the second shop's rows would be dropped as duplicates.
         builder.HasIndex(
                 "TenantId",
+                nameof(PnlEntry.ChannelId),
                 nameof(PnlEntry.Source),
                 nameof(PnlEntry.ReportInstanceKey),
                 nameof(PnlEntry.ExternalEntryId),

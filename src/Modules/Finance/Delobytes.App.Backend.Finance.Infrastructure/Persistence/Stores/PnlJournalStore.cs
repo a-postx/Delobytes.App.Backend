@@ -34,18 +34,13 @@ public class PnlJournalStore : IPnlJournalStore
             return Array.Empty<PnlEntry>();
         }
 
-        List<string> reportInstanceKeys = keys.Select(k => k.ReportInstanceKey).Distinct().ToList();
-        List<string> externalEntryIds = keys.Select(k => k.ExternalEntryId).Distinct().ToList();
-
-        List<PnlEntry> candidates = await _context.PnlEntries
-            .AsNoTracking()
-            .Where(e => reportInstanceKeys.Contains(e.ReportInstanceKey) && externalEntryIds.Contains(e.ExternalEntryId))
-            .ToListAsync(cancellationToken);
+        List<PnlEntry> candidates = await BuildIdentityCandidatesQuery(keys).ToListAsync(cancellationToken);
 
         HashSet<JournalIdentityKey> lookup = keys.ToHashSet();
 
         return candidates
             .Where(e => lookup.Contains(new JournalIdentityKey(
+                e.ChannelId,
                 e.Source,
                 e.ReportInstanceKey,
                 e.ExternalEntryId,
@@ -53,6 +48,27 @@ public class PnlJournalStore : IPnlJournalStore
                 e.Kind,
                 e.Type)))
             .ToList();
+    }
+
+    /// <summary>
+    /// Builds the candidate lookup of the idempotency check. Internal so a test can assert the
+    /// channel is part of the SQL filter: the channel-side identities are unique per seller
+    /// account, so a lookup that ignores the channel reads the other shops' rows.
+    /// </summary>
+    /// <param name="keys">Idempotency keys to look up.</param>
+    /// <returns>The candidate query.</returns>
+    internal IQueryable<PnlEntry> BuildIdentityCandidatesQuery(IReadOnlyCollection<JournalIdentityKey> keys)
+    {
+        List<Guid> channelIds = keys.Select(k => k.ChannelId).Distinct().ToList();
+        List<string> reportInstanceKeys = keys.Select(k => k.ReportInstanceKey).Distinct().ToList();
+        List<string> externalEntryIds = keys.Select(k => k.ExternalEntryId).Distinct().ToList();
+
+        return _context.PnlEntries
+            .AsNoTracking()
+            .Where(e =>
+                channelIds.Contains(e.ChannelId)
+                && reportInstanceKeys.Contains(e.ReportInstanceKey)
+                && externalEntryIds.Contains(e.ExternalEntryId));
     }
 
     /// <inheritdoc/>

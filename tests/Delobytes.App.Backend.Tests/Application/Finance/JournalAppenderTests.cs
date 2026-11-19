@@ -22,6 +22,7 @@ namespace Delobytes.App.Backend.Tests.Application.Finance;
 public class JournalAppenderTests
 {
     private static readonly Guid ChannelId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid OtherChannelId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private static readonly DateTimeOffset Now = new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -42,6 +43,28 @@ public class JournalAppenderTests
         result.Appended.Should().Be(0);
         result.Duplicates.Should().Be(1);
         journal.Entries.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task AppendAsync_SameRowIdentityOnAnotherChannel_IsAppendedNotDeduplicated()
+    {
+        // Arrange: two shops of one marketplace number their reports and rows independently, so the
+        // same report instance and row identity on another channel is a different fact.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(Entry("799692300:2026-08-03", "rrd-1"));
+
+        JournalAppender appender = CreateAppender(journal, new InMemoryOrderLineRefStore());
+
+        PnlEntry otherShop = Entry("799692300:2026-08-03", "rrd-1");
+        otherShop.ChannelId = OtherChannelId;
+
+        // Act
+        JournalAppendResult result = await appender.AppendAsync(new[] { otherShop }, CancellationToken.None);
+
+        // Assert
+        result.Appended.Should().Be(1);
+        result.Duplicates.Should().Be(0);
+        journal.Entries.Should().HaveCount(2);
     }
 
     [Fact]

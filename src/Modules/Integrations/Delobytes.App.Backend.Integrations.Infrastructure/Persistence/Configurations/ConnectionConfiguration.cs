@@ -57,6 +57,14 @@ public class ConnectionConfiguration : IEntityTypeConfiguration<Connection>
         builder.HasIndex(c => c.IsActive);
         builder.HasIndex(c => c.LastSyncAt);
 
+        // At most one active connection per channel. Enforced in the database because the handler's
+        // HasActiveConnectionForChannelAsync check is a race: two concurrent creates both see no
+        // active row and both insert, which would make one channel report two credential instances.
+        builder.HasIndex("TenantId", nameof(Connection.ChannelId))
+            .IsUnique()
+            .HasFilter("\"IsActive\"")
+            .HasDatabaseName("IX_Connections_TenantId_ChannelId_Active");
+
         builder.HasOne(c => c.SystemChannelTemplate)
             .WithMany(s => s.Connections)
             .HasForeignKey(c => c.SystemChannelTemplateId)
