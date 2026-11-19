@@ -83,6 +83,24 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetLines_SetsHasProductLinkFromRowProductId()
+    {
+        PnlLineRow linked = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid());
+        PnlLineRow unlinked = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId: null);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { linked, unlinked } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].HasProductLink.Should().BeTrue();
+        response.Lines[1].HasProductLink.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task GetSummary_GroupsByProductAndMonth()
     {
         Guid productId = Guid.NewGuid();
@@ -109,6 +127,32 @@ public class PnlQueryHandlerTests
         response.Rows[0].Lines.Should().Be(2);
         response.Rows[0].RevenueAmount.Should().Be(200m);
         response.Rows[1].PeriodStart.Should().Be(new DateOnly(2026, 9, 1));
+    }
+
+    [Fact]
+    public async Task GetSummary_MarksRowsWithoutProductLinkAsUnlinked()
+    {
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId),
+            Row(new DateOnly(2026, 8, 1), 50m, 45m, 5m, productId: null),
+        };
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlSummaryResponse response = await handler.Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Day },
+            CancellationToken.None);
+
+        response.Rows.Should().HaveCount(2);
+        response.Rows.Single(r => r.ProductId == productId).IsUnlinkedProduct.Should().BeFalse();
+        response.Rows.Single(r => r.ProductId == null).IsUnlinkedProduct.Should().BeTrue();
     }
 
     private static PnlLineRow Row(DateOnly? saleDate, decimal? revenue, decimal? netRevenue, decimal? cost, Guid? productId = null)

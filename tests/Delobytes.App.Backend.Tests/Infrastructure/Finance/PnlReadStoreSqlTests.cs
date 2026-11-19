@@ -41,6 +41,22 @@ public class PnlReadStoreSqlTests
     }
 
     [Fact]
+    public void BuildLinesQuery_ProductIdFallsBackToChannelProductIdInSql()
+    {
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        string sql = store
+            .BuildLinesQuery("RUB", new PnlLineFilter(), null)
+            .OrderBy(row => row.Id)
+            .Take(10)
+            .ToQueryString();
+
+        sql.Should().Contain("\"ChannelProductId\"");
+        sql.Should().Contain("CASE");
+    }
+
+    [Fact]
     public void BuildLinesQuery_WithCursor_ComparesUuidWithoutTextCast()
     {
         using FinanceDbContext context = CreateContext();
@@ -93,7 +109,9 @@ public class PnlReadStoreSqlTests
             .ToQueryString();
 
         sql.Should().Contain("\"ChannelId\" = @");
-        sql.Should().Contain("\"ProductId\" = @");
+        // ProductId is now a CASE expression (falls back to ChannelProductId), not a plain column
+        // comparison, so the filter shows up as the CASE result compared to the parameter.
+        sql.Should().Contain("= @productId");
         sql.Should().Contain("\"SaleDate\" >= @");
         sql.Should().Contain("\"SaleDate\" <= @");
         sql.Should().Contain("\"State\" = @");

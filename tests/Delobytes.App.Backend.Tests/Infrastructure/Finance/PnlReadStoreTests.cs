@@ -102,6 +102,77 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetLinesAsync_FallsBackToChannelProductId_WhenCostIsNotResolved()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("00000005-0000-0000-0000-000000000005");
+        Guid channelProductId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId, channelProductId));
+            seed.OrderLineCosts.Add(UnresolvedCost(orderLineId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        page.Rows.Single(r => r.OrderLineId == orderLineId).ProductId.Should().Be(channelProductId);
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_PrefersResolvedCostProductId_OverChannelProductId()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("00000006-0000-0000-0000-000000000006");
+        Guid channelProductId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        Guid resolvedProductId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId, channelProductId));
+            seed.OrderLineCosts.Add(Cost(orderLineId, resolvedProductId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        page.Rows.Single(r => r.OrderLineId == orderLineId).ProductId.Should().Be(resolvedProductId);
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_WithoutCostOrChannelProductId_LeavesProductIdNull()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("00000007-0000-0000-0000-000000000007");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        page.Rows.Single(r => r.OrderLineId == orderLineId).ProductId.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetLinesAsync_FiltersByDateRangeAndState()
     {
         string database = NewDatabaseName();
@@ -319,6 +390,61 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetDiagnosticsAsync_CountsAndSumsLinesWithoutProductLink()
+    {
+        string database = NewDatabaseName();
+        Guid linkedOrderLine = Guid.Parse("00000008-0000-0000-0000-000000000008");
+        Guid unlinkedOrderLine = Guid.Parse("00000009-0000-0000-0000-000000000009");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            PnlLine linked = Line(Guid.NewGuid(), linkedOrderLine, "RUB", Day1);
+            PnlLine unlinked = Line(Guid.NewGuid(), unlinkedOrderLine, "RUB", Day1);
+            unlinked.RevenueAmount = 150m;
+
+            seed.PnlLines.AddRange(linked, unlinked);
+            seed.OrderLineRefs.AddRange(
+                Reference(linkedOrderLine, ChannelId),
+                Reference(unlinkedOrderLine, ChannelId));
+            seed.OrderLineCosts.Add(Cost(linkedOrderLine, ProductId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+
+        diagnostics.LinesWithoutProductLink.Should().Be(1);
+        diagnostics.UnlinkedRevenueAmount.Should().Be(150m);
+    }
+
+    [Fact]
+    public async Task GetDiagnosticsAsync_WithoutUnlinkedLines_ReportsZero()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("0000000a-0000-0000-0000-00000000000a");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId));
+            seed.OrderLineCosts.Add(Cost(orderLineId, ProductId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+
+        diagnostics.LinesWithoutProductLink.Should().Be(0);
+        diagnostics.UnlinkedRevenueAmount.Should().Be(0m);
+    }
+
+    [Fact]
     public void ParseCursor_RejectsMalformedToken()
     {
         Action act = () => PnlReadStore.ParseCursor("not-a-guid");
@@ -377,7 +503,7 @@ public class PnlReadStoreTests
         };
     }
 
-    private static OrderLineRef Reference(Guid orderLineId, Guid channelId)
+    private static OrderLineRef Reference(Guid orderLineId, Guid channelId, Guid? channelProductId = null)
     {
         return new OrderLineRef
         {
@@ -387,6 +513,7 @@ public class PnlReadStoreTests
             ExternalOrderId = "order-" + orderLineId,
             ExternalLineId = "line-" + orderLineId,
             ExternalProductId = "product",
+            ChannelProductId = channelProductId,
             Quantity = 1,
             OrderDate = DateTimeOffset.UnixEpoch,
             Currency = "RUB",
@@ -456,6 +583,21 @@ public class PnlReadStoreTests
             ProductId = productId,
             AsOfDate = Day1,
             Quantity = 1,
+            ResolvedAt = DateTimeOffset.UnixEpoch,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+        };
+    }
+
+    private static OrderLineCost UnresolvedCost(Guid orderLineId)
+    {
+        return new OrderLineCost
+        {
+            OrderLineId = orderLineId,
+            Status = OrderLineCostStatus.ProductNotLinked,
+            ProductId = null,
+            AsOfDate = Day1,
+            Quantity = 1,
+            IsComplete = false,
             ResolvedAt = DateTimeOffset.UnixEpoch,
             CreatedAt = DateTimeOffset.UnixEpoch,
         };

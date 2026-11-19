@@ -111,12 +111,22 @@ public class PnlReadStore : IPnlReadStore
             .Select(l => l.ControlDifferenceAmount!.Value)
             .ToListAsync(cancellationToken);
 
+        // Not an attribution gap: these lines are already closed with money, they just carry no
+        // product link yet. Surfacing the count and the revenue keeps that money visible instead of
+        // letting it disappear from every per-product view.
+        List<decimal?> unlinkedRevenue = await BuildFilteredQuery(new PnlLineFilter { From = from, To = to })
+            .Where(row => row.ProductId == null)
+            .Select(row => row.RevenueAmount)
+            .ToListAsync(cancellationToken);
+
         return new PnlDiagnosticsResult
         {
             UnattributedEntries = attribution.UnmatchedEntries.Count,
             AmbiguousAttributions = attribution.AmbiguousAttributions,
             ControlDifference = differences.Sum(),
             LinesWithOpenControlDifference = differences.Count(d => Math.Abs(d) > 0.01m),
+            LinesWithoutProductLink = unlinkedRevenue.Count,
+            UnlinkedRevenueAmount = unlinkedRevenue.Where(r => r.HasValue).Sum(r => r!.Value),
         };
     }
 
@@ -229,7 +239,9 @@ public class PnlReadStore : IPnlReadStore
                    Id = line.Id,
                    OrderLineId = line.OrderLineId,
                    ChannelId = reference.ChannelId,
-                   ProductId = cost == null ? null : cost.ProductId,
+                   // A cost Catalog has not resolved yet must not hide the sale from the per-product
+                   // view: fall back to the channel-reported link Sales already captured.
+                   ProductId = cost != null && cost.ProductId != null ? cost.ProductId : reference.ChannelProductId,
                    Currency = line.Currency,
                    SaleDate = line.SaleDate,
                    State = line.State,

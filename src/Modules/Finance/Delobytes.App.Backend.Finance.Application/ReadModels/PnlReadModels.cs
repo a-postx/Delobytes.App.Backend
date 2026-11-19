@@ -93,4 +93,10 @@ public sealed class PnlDiagnosticsResult
     public decimal ControlDifference { get; set; }
 
     public int LinesWithOpenControlDifference { get; set; }
+
+    /// <summary>Lines in the period whose product is neither resolved by Catalog nor known from Sales.</summary>
+    public int LinesWithoutProductLink { get; set; }
+
+    /// <summary>Sum of <c>RevenueAmount</c> over <see cref="LinesWithoutProductLink"/>.</summary>
+    public decimal UnlinkedRevenueAmount { get; set; }
 }

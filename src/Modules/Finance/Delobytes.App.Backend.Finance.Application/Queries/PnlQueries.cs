@@ -37,6 +37,8 @@ public sealed class PnlLineView
 
     public Guid? ProductId { get; set; }
 
+    public bool HasProductLink { get; set; }
+
     public DateOnly? SaleDate { get; set; }
 
     public string Currency { get; set; } = default!;
@@ -127,6 +129,7 @@ internal static class PnlViewFactory
                 OrderLineId = row.OrderLineId,
                 ChannelId = row.ChannelId,
                 ProductId = row.ProductId,
+                HasProductLink = row.ProductId.HasValue,
                 SaleDate = row.SaleDate,
                 Currency = row.Currency,
                 RevenueAmount = row.RevenueAmount,
@@ -232,6 +235,8 @@ public sealed class PnlSummaryRowView
 {
     public Guid? ProductId { get; set; }
 
+    public bool IsUnlinkedProduct { get; set; }
+
     public DateOnly PeriodStart { get; set; }
 
     public int Lines { get; set; }
@@ -317,6 +322,7 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             .Select(group => new PnlSummaryRowView
             {
                 ProductId = group.Key.ProductId,
+                IsUnlinkedProduct = group.Key.ProductId == null,
                 PeriodStart = group.Key.PeriodStart,
                 Lines = group.Count(),
                 RevenueAmount = Sum(group.Select(v => v.RevenueAmount)),
