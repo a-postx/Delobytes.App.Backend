@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using Delobytes.App.Backend.Finance.Application.Expectation;
 using Delobytes.App.Backend.Finance.Application.Ingestion;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Journal;
@@ -38,10 +39,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPnlJournalStore, PnlJournalStore>();
         services.AddScoped<IOrderLineRefStore, OrderLineRefStore>();
         services.AddScoped<IOrderLineCostStore, OrderLineCostStore>();
+        services.AddScoped<IPnlExpectationStore, PnlExpectationStore>();
         services.AddScoped<IPnlLineStore, PnlLineStore>();
         services.AddScoped<IPnlReadStore, PnlReadStore>();
         services.AddScoped<JournalAppender>();
         services.AddScoped<PnlLineProjector>();
+        services.AddScoped<ExpectationStateUpdater>();
         services.AddScoped<FinanceEntriesBatchImporter>();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 

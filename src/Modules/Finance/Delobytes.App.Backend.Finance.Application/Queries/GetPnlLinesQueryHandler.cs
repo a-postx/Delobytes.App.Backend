@@ -69,6 +69,7 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             State = Enum.TryParse(request.Filter.State, ignoreCase: true, out Domain.Enums.PnlLineState state)
                 ? state
                 : null,
+            Completeness = PnlCompletenessFilter.Parse(request.Filter.Completeness),
         };
 
         PnlLinePage page = await _store.GetLinesAsync(

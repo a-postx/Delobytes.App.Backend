@@ -40,6 +40,12 @@ public class FinanceDbContext : TenantScopedDbContext
     /// </summary>
     public DbSet<OrderLineCost> OrderLineCosts => Set<OrderLineCost>();
 
+    /// <summary>
+    /// Gets the expected documents of the sales whose full set has not arrived yet.
+    /// </summary>
+    public DbSet<PnlLineExpectation> PnlLineExpectations => Set<PnlLineExpectation>();
+
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

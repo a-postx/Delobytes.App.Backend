@@ -15,4 +15,11 @@ public sealed class PnlQueryFilter
     public DateOnly? To { get; set; }
 
     public string? State { get; set; }
+
+    /// <summary>
+    /// Gets or sets the completeness filter: <c>complete</c>, <c>provisional</c>, <c>overdue</c> or
+    /// <c>closedWithException</c>. Omitted means <c>complete</c>, so a report never mixes provisional
+    /// figures into its totals.
+    /// </summary>
+    public string? Completeness { get; set; }
 }

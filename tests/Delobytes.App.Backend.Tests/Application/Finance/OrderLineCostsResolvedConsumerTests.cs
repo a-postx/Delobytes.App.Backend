@@ -128,7 +128,7 @@ public class OrderLineCostsResolvedConsumerTests
         FixedTimeProvider timeProvider = new FixedTimeProvider(Now);
 
         PnlLineProjector projector = new PnlLineProjector(
-            journal, refs, costs, lines, timeProvider, NullLogger<PnlLineProjector>.Instance);
+            journal, refs, costs, new InMemoryPnlExpectationStore(), lines, timeProvider, NullLogger<PnlLineProjector>.Instance);
 
         OrderLineCostsResolvedConsumer consumer = new OrderLineCostsResolvedConsumer(
             costs, projector, timeProvider, NullLogger<OrderLineCostsResolvedConsumer>.Instance);
@@ -204,6 +204,7 @@ public class OrderLineCostsResolvedConsumerTests
             new InMemoryPnlJournalStore(),
             refs,
             costs,
+            new InMemoryPnlExpectationStore(),
             lines,
             timeProvider,
             NullLogger<PnlLineProjector>.Instance);

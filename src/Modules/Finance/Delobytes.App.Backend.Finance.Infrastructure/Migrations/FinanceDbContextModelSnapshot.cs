@@ -97,6 +97,8 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
 
                     b.HasIndex("TenantId");
 
+                    b.HasIndex("TenantId", "ProductId");
+
                     b.ToTable("OrderLineCosts", "finance");
                 });
 
@@ -313,6 +315,13 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("CompletenessState")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Complete");
+
                     b.Property<DateTimeOffset?>("ComputedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -344,11 +353,20 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                     b.Property<int>("EntryCount")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("ExpectedBy")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateOnly?>("FinancialPeriodFrom")
                         .HasColumnType("date");
 
                     b.Property<DateOnly?>("FinancialPeriodTo")
                         .HasColumnType("date");
+
+                    b.PrimitiveCollection<List<string>>("MissingDocumentTypes")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("ARRAY[]::text[]");
 
                     b.Property<decimal?>("NetRevenueAmount")
                         .HasPrecision(18, 2)
@@ -418,6 +436,79 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("PnlLines", "finance");
+                });
+
+            modelBuilder.Entity("Delobytes.App.Backend.Finance.Domain.Entities.PnlLineExpectation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("AmountEstimate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ClosedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ClosureReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTimeOffset>("ExpectedBy")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExpectedType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("OrderLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "OrderLineId", "ExpectedType")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "State", "ExpectedBy");
+
+                    b.ToTable("PnlLineExpectations", "finance");
                 });
 #pragma warning restore 612, 618
         }

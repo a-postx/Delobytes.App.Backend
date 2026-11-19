@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Finance.Domain.Entities;
+using Delobytes.App.Backend.Finance.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -99,6 +100,20 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
             .IsRequired()
             .HasConversion<string>()
             .HasMaxLength(32);
+
+        builder.Property(line => line.CompletenessState)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(PnlLineCompleteness.Complete);
+
+        // Adding a non-null array column to a populated table requires a server-side default;
+        // without it the migration fails on every existing row.
+        builder.Property(line => line.MissingDocumentTypes)
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("ARRAY[]::text[]");
+
+        builder.Property(line => line.ExpectedBy);
 
         builder.Property(line => line.Currency)
             .IsRequired()

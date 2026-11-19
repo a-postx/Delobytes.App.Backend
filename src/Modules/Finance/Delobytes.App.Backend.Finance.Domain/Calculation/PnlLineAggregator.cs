@@ -47,6 +47,7 @@ public static class PnlLineAggregator
         bool hasSale = false;
 
         DateOnly? saleDate = null;
+        DateOnly? reportPeriodTo = null;
 
         int entryCount = 0;
 
@@ -95,6 +96,11 @@ public static class PnlLineAggregator
                         saleDate = entry.DocumentDate;
                     }
 
+                    if (reportPeriodTo == null || entry.PeriodTo > reportPeriodTo.Value)
+                    {
+                        reportPeriodTo = entry.PeriodTo;
+                    }
+
                     break;
                 case PnlEntryType.Commission:
                     commission += signed;
@@ -139,7 +145,8 @@ public static class PnlLineAggregator
             hasControlTotal ? netRevenue - controlTotal : null,
             entryCount,
             hasSale,
-            saleDate);
+            saleDate,
+            reportPeriodTo);
     }
 
     private static decimal Signed(PnlEntry entry)

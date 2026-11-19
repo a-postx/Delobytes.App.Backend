@@ -53,4 +53,19 @@ public sealed class PnlLineView
     public string? CostStatus { get; set; }
 
     public bool ComponentsReconciled { get; set; }
+
+    /// <summary>Gets or sets whether every expected document of the sale has arrived.</summary>
+    public Domain.Enums.PnlLineCompleteness CompletenessState { get; set; }
+
+    /// <summary>Gets or sets the document types still expected, by name.</summary>
+    public List<string> MissingDocuments { get; set; } = new List<string>();
+
+    /// <summary>Gets or sets the earliest deadline among the open expectations, or null.</summary>
+    public DateTimeOffset? ExpectedBy { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the figures are provisional because a document is
+    /// still missing. A provisional line must not be reported as final.
+    /// </summary>
+    public bool IsProvisional { get; set; }
 }

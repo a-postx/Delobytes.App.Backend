@@ -39,6 +39,7 @@ public class FinancePnlController : ControllerBase
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
         [FromQuery] string? state,
+        [FromQuery] string? completeness,
         [FromQuery] int take,
         [FromQuery] string? continuationToken,
         CancellationToken cancellationToken)
@@ -54,6 +55,7 @@ public class FinancePnlController : ControllerBase
                     From = from,
                     To = to,
                     State = state,
+                    Completeness = completeness,
                 },
                 Take = take <= 0 ? 100 : take,
                 ContinuationToken = continuationToken,
@@ -75,6 +77,7 @@ public class FinancePnlController : ControllerBase
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
         [FromQuery] string? granularity,
+        [FromQuery] string? completeness,
         CancellationToken cancellationToken)
     {
         PnlPeriodGranularity parsedGranularity = PnlPeriodGranularity.Day;
@@ -102,6 +105,7 @@ public class FinancePnlController : ControllerBase
                     ChannelProductId = channelProductId,
                     From = from,
                     To = to,
+                    Completeness = completeness,
                 },
                 Granularity = parsedGranularity,
             },

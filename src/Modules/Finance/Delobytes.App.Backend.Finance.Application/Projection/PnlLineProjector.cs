@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Finance.Application.Attribution;
+using Delobytes.App.Backend.Finance.Application.Expectation;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Models;
 using Delobytes.App.Backend.Finance.Domain.Calculation;
@@ -19,6 +20,7 @@ public class PnlLineProjector
     private readonly IPnlJournalStore _journal;
     private readonly IOrderLineRefStore _orderLineRefs;
     private readonly IOrderLineCostStore _orderLineCosts;
+    private readonly IPnlExpectationStore _expectations;
     private readonly IPnlLineStore _lines;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PnlLineProjector> _logger;
@@ -29,6 +31,7 @@ public class PnlLineProjector
     /// <param name="journal">Journal persistence port.</param>
     /// <param name="orderLineRefs">Order line projection port.</param>
     /// <param name="orderLineCosts">Production cost port.</param>
+    /// <param name="expectations">Expected-document open items.</param>
     /// <param name="lines">P&amp;L line persistence port.</param>
     /// <param name="timeProvider">Clock source.</param>
     /// <param name="logger">Logger instance.</param>
@@ -36,6 +39,7 @@ public class PnlLineProjector
         IPnlJournalStore journal,
         IOrderLineRefStore orderLineRefs,
         IOrderLineCostStore orderLineCosts,
+        IPnlExpectationStore expectations,
         IPnlLineStore lines,
         TimeProvider timeProvider,
         ILogger<PnlLineProjector> logger)
@@ -43,6 +47,7 @@ public class PnlLineProjector
         _journal = journal;
         _orderLineRefs = orderLineRefs;
         _orderLineCosts = orderLineCosts;
+        _expectations = expectations;
         _lines = lines;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -133,6 +138,13 @@ public class PnlLineProjector
         IReadOnlyList<PnlLine> existingLines = await _lines.LoadAsync(lineIds, cancellationToken);
         Dictionary<Guid, PnlLine> linesByOrderLine = existingLines.ToDictionary(l => l.OrderLineId);
 
+        IReadOnlyList<PnlLineExpectation> existingExpectations =
+            await _expectations.LoadByOrderLineIdsAsync(lineIds, cancellationToken);
+
+        Dictionary<Guid, List<PnlLineExpectation>> expectationsByLine = existingExpectations
+            .GroupBy(e => e.OrderLineId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         int succeeded = 0;
         List<Guid> failedOrderLineIds = new();
 
@@ -140,10 +152,11 @@ public class PnlLineProjector
         {
             try
             {
-                PnlLineTotals totals = PnlLineAggregator.Calculate(
-                    entriesByLine.TryGetValue(orderLineRef.OrderLineId, out List<PnlEntry>? lineEntries)
-                        ? lineEntries
-                        : Array.Empty<PnlEntry>());
+                List<PnlEntry> lineEntries = entriesByLine.TryGetValue(orderLineRef.OrderLineId, out List<PnlEntry>? bucket)
+                    ? bucket
+                    : new List<PnlEntry>();
+
+                PnlLineTotals totals = PnlLineAggregator.Calculate(lineEntries);
 
                 bool isNewLine = !linesByOrderLine.TryGetValue(orderLineRef.OrderLineId, out PnlLine? line);
 
@@ -161,11 +174,26 @@ public class PnlLineProjector
                     totals,
                     costsByLine.TryGetValue(orderLineRef.OrderLineId, out OrderLineCost? cost) ? cost : null);
 
+                PnlLineExpectation? createdExpectation = ApplyExpectations(
+                    line,
+                    totals,
+                    lineEntries,
+                    expectationsByLine.TryGetValue(orderLineRef.OrderLineId, out List<PnlLineExpectation>? lineExpectations)
+                        ? lineExpectations
+                        : new List<PnlLineExpectation>(),
+                    orderLineRef.Currency,
+                    now);
+
                 // The line is staged only once every calculation on it succeeded: staging it earlier
                 // would let a later throw save a half-applied line with default totals.
                 if (isNewLine)
                 {
                     _lines.Add(line);
+                }
+
+                if (createdExpectation != null)
+                {
+                    _expectations.Add(createdExpectation);
                 }
 
                 succeeded++;
@@ -239,6 +267,69 @@ public class PnlLineProjector
     private static ValueSource SourceOf(decimal? amount)
     {
         return amount.HasValue ? ValueSource.ChannelFinanceReport : ValueSource.Unknown;
+    }
+
+    /// <summary>
+    /// Maintains the expected-document open items of one line and writes the resulting completeness
+    /// onto it. A Wildberries sale always produces a separate delivery row, so a sale without one is
+    /// an open expectation until the document arrives or the window elapses.
+    /// </summary>
+    /// <returns>The expectation created by this pass, or null when none was needed.</returns>
+    private static PnlLineExpectation? ApplyExpectations(
+        PnlLine line,
+        PnlLineTotals totals,
+        IReadOnlyCollection<PnlEntry> entries,
+        List<PnlLineExpectation> existing,
+        string currency,
+        DateTimeOffset now)
+    {
+        bool expectsLogistics = totals.HasSale
+            && entries.Any(entry => entry.Source == PnlSource.WbReport)
+            && !totals.DeliveryFeeAmount.HasValue;
+
+        PnlLineExpectation? expectation = existing
+            .FirstOrDefault(e => e.ExpectedType == PnlEntryType.Logistics);
+
+        PnlLineExpectation? created = null;
+
+        if (expectsLogistics)
+        {
+            if (expectation == null && totals.ReportPeriodTo.HasValue)
+            {
+                created = new PnlLineExpectation
+                {
+                    Id = Guid.NewGuid(),
+                    OrderLineId = line.OrderLineId,
+                    ExpectedType = PnlEntryType.Logistics,
+                    Source = PnlSource.WbReport,
+                    ExpectedBy = ExpectationPolicy.DeadlineOf(totals.ReportPeriodTo.Value),
+                    State = PnlExpectationState.Expected,
+                    Currency = currency,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                };
+            }
+        }
+        else if (expectation != null && ExpectationPolicy.IsOpen(expectation.State))
+        {
+            // The delivery row arrived, or the sale it belonged to is gone: either way the
+            // expectation is resolved by the document rather than by a decision.
+            expectation.State = PnlExpectationState.ClosedByDocument;
+            expectation.ClosedAt = now;
+            expectation.UpdatedAt = now;
+        }
+
+        IEnumerable<PnlLineExpectation> effective = created == null
+            ? existing
+            : existing.Append(created);
+
+        PnlLineCompletenessResult completeness = PnlLineCompletenessResolver.Resolve(effective);
+
+        line.CompletenessState = completeness.State;
+        line.MissingDocumentTypes = completeness.MissingDocumentTypes.ToList();
+        line.ExpectedBy = completeness.ExpectedBy;
+
+        return created;
     }
 
     private static OrderLineAttributionKey AttributionKeyOf(OrderLineRef orderLineRef)

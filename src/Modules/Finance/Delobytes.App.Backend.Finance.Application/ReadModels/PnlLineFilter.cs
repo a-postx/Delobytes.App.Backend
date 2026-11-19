@@ -27,4 +27,11 @@ public sealed class PnlLineFilter
 
     /// <summary>Gets or sets the optional state filter.</summary>
     public PnlLineState? State { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional completeness filter. Reports pass
+    /// <see cref="PnlLineCompleteness.Complete"/> so provisional figures never blend into a KPI;
+    /// the operational queue passes the open states.
+    /// </summary>
+    public PnlLineCompleteness? Completeness { get; set; }
 }

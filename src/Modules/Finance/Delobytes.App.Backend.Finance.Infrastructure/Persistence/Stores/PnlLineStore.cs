@@ -45,6 +45,19 @@ public class PnlLineStore : IPnlLineStore
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<Guid>> LoadOrderLineIdsAsync(
+        DateOnly from,
+        DateOnly to,
+        CancellationToken cancellationToken)
+    {
+        return await _context.PnlLines
+            .AsNoTracking()
+            .Where(l => l.SaleDate != null && l.SaleDate >= from && l.SaleDate <= to)
+            .Select(l => l.OrderLineId)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         return _context.SaveChangesAsync(cancellationToken);

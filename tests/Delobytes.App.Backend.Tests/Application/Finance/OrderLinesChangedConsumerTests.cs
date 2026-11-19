@@ -34,6 +34,7 @@ public class OrderLinesChangedConsumerTests
             journal,
             refs,
             new InMemoryOrderLineCostStore(),
+            new InMemoryPnlExpectationStore(),
             lines,
             new FixedTimeProvider(Now),
             NullLogger<PnlLineProjector>.Instance);

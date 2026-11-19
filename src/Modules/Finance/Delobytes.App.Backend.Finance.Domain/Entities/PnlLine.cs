@@ -180,6 +180,25 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public PnlLineState State { get; set; } = PnlLineState.NotCalculated;
 
     /// <summary>
+    /// Gets or sets whether every document the sale is expected to produce has arrived. A line can
+    /// be <see cref="PnlLineState.Calculated"/> and still be
+    /// <see cref="PnlLineCompleteness.Provisional"/>, because the delivery document of the unit is
+    /// reported separately and may arrive later.
+    /// </summary>
+    public PnlLineCompleteness CompletenessState { get; set; } = PnlLineCompleteness.Complete;
+
+    /// <summary>
+    /// Gets or sets the entry types the line is still waiting for, by name. Empty when nothing is
+    /// outstanding.
+    /// </summary>
+    public List<string> MissingDocumentTypes { get; set; } = new List<string>();
+
+    /// <summary>
+    /// Gets or sets the earliest deadline among the open expectations, or null when none is open.
+    /// </summary>
+    public DateTimeOffset? ExpectedBy { get; set; }
+
+    /// <summary>
     /// Gets or sets the line currency.
     /// </summary>
     public string Currency { get; set; } = default!;

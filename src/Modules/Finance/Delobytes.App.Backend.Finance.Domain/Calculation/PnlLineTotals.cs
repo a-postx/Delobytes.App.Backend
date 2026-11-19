@@ -30,6 +30,11 @@ namespace Delobytes.App.Backend.Finance.Domain.Calculation;
 /// <param name="EntryCount">Number of component entries behind the totals; zero means nothing has arrived yet.</param>
 /// <param name="HasSale">True when at least one current sale entry exists.</param>
 /// <param name="SaleDate">The earliest <c>DocumentDate</c> of the current sale entries, or null.</param>
+/// <param name="ReportPeriodTo">
+/// The last day of the reporting period of the current sale entries, or null. The expected-document
+/// window is anchored to it: a weekly report re-issues days that are already over, so the delivery
+/// document can only be looked for after the period it belongs to has been reported.
+/// </param>
 public sealed record PnlLineTotals(
     decimal? RevenueAmount,
     decimal? CommissionAmount,
@@ -42,4 +47,5 @@ public sealed record PnlLineTotals(
     decimal? ControlDifferenceAmount,
     int EntryCount,
     bool HasSale,
-    DateOnly? SaleDate);
+    DateOnly? SaleDate,
+    DateOnly? ReportPeriodTo);

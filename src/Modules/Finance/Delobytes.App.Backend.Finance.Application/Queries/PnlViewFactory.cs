@@ -79,6 +79,15 @@ internal static class PnlViewFactory
                 ComponentsReconciled =
                     row.ControlDifferenceAmount.HasValue
                     && Math.Abs(row.ControlDifferenceAmount.Value) <= 0.01m,
+                CompletenessState = row.CompletenessState,
+                MissingDocuments = row.MissingDocumentTypes.ToList(),
+                ExpectedBy = row.ExpectedBy,
+
+                // A figure is provisional while its documents are still expected or already late.
+                // Closed with an exception is final: the gap was accepted and recorded.
+                IsProvisional = row.CompletenessState
+                    is Domain.Enums.PnlLineCompleteness.Provisional
+                    or Domain.Enums.PnlLineCompleteness.Overdue,
             });
         }
 

@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
+using Delobytes.App.Backend.Finance.Domain.Enums;
 using MediatR;
 
 namespace Delobytes.App.Backend.Finance.Application.Queries;
@@ -32,6 +33,9 @@ public sealed class PnlSummaryRowView
     public decimal? TaxAdjustedMargin { get; set; }
 
     public decimal? ControlDifferenceAmount { get; set; }
+
+    /// <summary>Gets or sets the worst completeness among the lines of the group.</summary>
+    public PnlLineCompleteness CompletenessState { get; set; }
 }
 
 /// <summary>Response of the summary query.</summary>
@@ -86,6 +90,7 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             ChannelProductId = request.Filter.ChannelProductId,
             From = request.Filter.From,
             To = request.Filter.To,
+            Completeness = PnlCompletenessFilter.Parse(request.Filter.Completeness),
         };
 
         IReadOnlyList<PnlLineRow> rows = await _store.GetForSummaryAsync(settings.Currency, filter, cancellationToken);
@@ -115,6 +120,7 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 ControlDifferenceAmount = Sum(rows
                     .Where(r => group.Any(v => v.OrderLineId == r.OrderLineId))
                     .Select(r => r.ControlDifferenceAmount)),
+                CompletenessState = group.Max(v => v.CompletenessState),
             })
             .OrderBy(r => r.PeriodStart)
             .ThenBy(r => r.ProductId)

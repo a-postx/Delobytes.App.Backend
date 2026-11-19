@@ -62,5 +62,9 @@ public class OrderLineCostConfiguration : IEntityTypeConfiguration<OrderLineCost
             .IsRequired();
 
         builder.Property(c => c.UpdatedAt);
+
+        // The completeness estimate looks up comparable lines of the same catalogue product; without
+        // this index every due expectation would scan the costs of the whole tenant.
+        builder.HasIndex("TenantId", nameof(OrderLineCost.ProductId));
     }
 }

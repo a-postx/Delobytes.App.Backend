@@ -261,6 +261,7 @@ public class FinanceEntriesBatchImporterTests
             journal,
             refs,
             new InMemoryOrderLineCostStore(),
+            new InMemoryPnlExpectationStore(),
             new InMemoryPnlLineStore(),
             timeProvider,
             NullLogger<PnlLineProjector>.Instance);

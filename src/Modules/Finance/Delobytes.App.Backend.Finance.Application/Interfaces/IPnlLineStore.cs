@@ -24,6 +24,19 @@ public interface IPnlLineStore
     public void Add(PnlLine line);
 
     /// <summary>
+    /// Loads the order line identifiers of the lines whose sale date falls in
+    /// [<paramref name="from"/>, <paramref name="to"/>], for a rebuild of a period.
+    /// </summary>
+    /// <param name="from">First sale date, inclusive.</param>
+    /// <param name="to">Last sale date, inclusive.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The order line identifiers.</returns>
+    public Task<IReadOnlyList<Guid>> LoadOrderLineIdsAsync(
+        DateOnly from,
+        DateOnly to,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Persists every pending change.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>

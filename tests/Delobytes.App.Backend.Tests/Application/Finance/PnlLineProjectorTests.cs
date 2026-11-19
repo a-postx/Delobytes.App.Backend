@@ -257,14 +257,117 @@ public class PnlLineProjectorTests
         SingleLine(lines, line.OrderLineId).RevenueAmount.Should().Be(204m);
     }
 
+    [Fact]
+    public async Task RecomputeAsync_WbSaleWithoutLogistics_CreatesAnExpectationAndMarksTheLineProvisional()
+    {
+        // Arrange: a Wildberries sale always has a separate delivery row, and it has not arrived.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlExpectationStore expectations = new InMemoryPnlExpectationStore();
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(
+            journal, refs, new InMemoryOrderLineCostStore(), lines, expectations);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert: the deadline is anchored to the reported period end plus the fixed window.
+        PnlLineExpectation expectation = expectations.Expectations.Should().ContainSingle().Subject;
+        expectation.ExpectedType.Should().Be(PnlEntryType.Logistics);
+        expectation.State.Should().Be(PnlExpectationState.Expected);
+        expectation.ExpectedBy.Should().Be(new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero));
+
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.CompletenessState.Should().Be(PnlLineCompleteness.Provisional);
+        stored.MissingDocumentTypes.Should().ContainSingle().Which.Should().Be(nameof(PnlEntryType.Logistics));
+        stored.ExpectedBy.Should().Be(expectation.ExpectedBy);
+        stored.RevenueAmount.Should().Be(204m);
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_WbSaleWithLogistics_LeavesTheLineComplete()
+    {
+        // Arrange: both rows of the unit arrived in the same batch.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+        journal.Entries.Add(LogisticsEntry(53.84m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlExpectationStore expectations = new InMemoryPnlExpectationStore();
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(
+            journal, refs, new InMemoryOrderLineCostStore(), lines, expectations);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        expectations.Expectations.Should().BeEmpty();
+
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.CompletenessState.Should().Be(PnlLineCompleteness.Complete);
+        stored.MissingDocumentTypes.Should().BeEmpty();
+        stored.ExpectedBy.Should().BeNull();
+        stored.DeliveryFeeAmount.Should().Be(-53.84m);
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_LogisticsArrivesLater_ClosesTheExpectation()
+    {
+        // Arrange
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(204m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlExpectationStore expectations = new InMemoryPnlExpectationStore();
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(
+            journal, refs, new InMemoryOrderLineCostStore(), lines, expectations);
+
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+        expectations.Expectations.Should().ContainSingle()
+            .Which.State.Should().Be(PnlExpectationState.Expected);
+
+        // Act: the delivery row of the same unit arrives in a later report.
+        journal.Entries.Add(LogisticsEntry(53.84m));
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        PnlLineExpectation expectation = expectations.Expectations.Should().ContainSingle().Subject;
+        expectation.State.Should().Be(PnlExpectationState.ClosedByDocument);
+        expectation.ClosedAt.Should().Be(Now);
+
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.CompletenessState.Should().Be(PnlLineCompleteness.Complete);
+        stored.MissingDocumentTypes.Should().BeEmpty();
+    }
+
     private static PnlLineProjector CreateProjector(
         InMemoryPnlJournalStore journal,
         InMemoryOrderLineRefStore refs,
         InMemoryOrderLineCostStore costs,
-        InMemoryPnlLineStore lines)
+        InMemoryPnlLineStore lines,
+        InMemoryPnlExpectationStore? expectations = null)
     {
         return new PnlLineProjector(
-            journal, refs, costs, lines, new FixedTimeProvider(Now), NullLogger<PnlLineProjector>.Instance);
+            journal,
+            refs,
+            costs,
+            expectations ?? new InMemoryPnlExpectationStore(),
+            lines,
+            new FixedTimeProvider(Now),
+            NullLogger<PnlLineProjector>.Instance);
     }
 
     private static PnlLine SingleLine(InMemoryPnlLineStore lines, Guid orderLineId)

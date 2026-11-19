@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Models;
+using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Finance.Domain.Enums;
 
@@ -232,6 +233,19 @@ internal sealed class InMemoryPnlLineStore : IPnlLineStore
         Lines[line.OrderLineId] = line;
     }
 
+    public Task<IReadOnlyList<Guid>> LoadOrderLineIdsAsync(
+        DateOnly from,
+        DateOnly to,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Guid> result = Lines.Values
+            .Where(l => l.SaleDate.HasValue && l.SaleDate.Value >= from && l.SaleDate.Value <= to)
+            .Select(l => l.OrderLineId)
+            .ToList();
+
+        return Task.FromResult(result);
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
@@ -239,6 +253,142 @@ internal sealed class InMemoryPnlLineStore : IPnlLineStore
 }
 
 
+
+internal sealed class InMemoryPnlExpectationStore : IPnlExpectationStore
+{
+    public List<PnlLineExpectation> Expectations { get; } = new List<PnlLineExpectation>();
+
+    /// <summary>Estimates the aging pass may resolve, keyed by order line identifier.</summary>
+    public Dictionary<Guid, decimal> Estimates { get; } = new Dictionary<Guid, decimal>();
+
+    public Task<IReadOnlyList<PnlLineExpectation>> LoadByOrderLineIdsAsync(
+        IReadOnlyCollection<Guid> orderLineIds,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<PnlLineExpectation> result = Expectations
+            .Where(e => orderLineIds.Contains(e.OrderLineId))
+            .ToList();
+
+        return Task.FromResult(result);
+    }
+
+    public Task<IReadOnlyList<PnlLineExpectation>> LoadDueAsync(
+        DateTimeOffset now,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<PnlLineExpectation> result = Expectations
+            .Where(e => e.State == PnlExpectationState.Expected && e.ExpectedBy <= now)
+            .OrderBy(e => e.ExpectedBy)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult(result);
+    }
+
+    public Task<IReadOnlyDictionary<Guid, decimal>> EstimateLogisticsImpactAsync(
+        IReadOnlyCollection<Guid> orderLineIds,
+        int lookbackDays,
+        DateOnly today,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<Guid, decimal> result = orderLineIds
+            .Where(id => Estimates.ContainsKey(id))
+            .ToDictionary(id => id, id => Estimates[id]);
+
+        return Task.FromResult(result);
+    }
+
+    public Task<PnlExpectationPage> GetPageAsync(
+        PnlExpectationFilter filter,
+        int take,
+        string? afterToken,
+        CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException();
+    }
+
+    public Task<PnlExpectationCloseOutcome> CloseWithExceptionAsync(
+        Guid expectationId,
+        string reason,
+        Guid userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        PnlLineExpectation? expectation = Expectations.FirstOrDefault(e => e.Id == expectationId);
+
+        if (expectation == null)
+        {
+            return Task.FromResult(new PnlExpectationCloseOutcome(PnlExpectationCloseStatus.NotFound, null));
+        }
+
+        if (expectation.State != PnlExpectationState.Overdue)
+        {
+            return Task.FromResult(new PnlExpectationCloseOutcome(
+                PnlExpectationCloseStatus.WrongState, expectation.OrderLineId));
+        }
+
+        expectation.State = PnlExpectationState.ClosedWithException;
+        expectation.ClosedAt = now;
+        expectation.ClosedByUserId = userId;
+        expectation.ClosureReason = reason;
+        expectation.UpdatedAt = now;
+
+        return Task.FromResult(new PnlExpectationCloseOutcome(
+            PnlExpectationCloseStatus.Applied, expectation.OrderLineId));
+    }
+
+    public Task<PnlExpectationCloseOutcome> ReopenAsync(
+        Guid expectationId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        PnlLineExpectation? expectation = Expectations.FirstOrDefault(e => e.Id == expectationId);
+
+        if (expectation == null)
+        {
+            return Task.FromResult(new PnlExpectationCloseOutcome(PnlExpectationCloseStatus.NotFound, null));
+        }
+
+        if (expectation.State != PnlExpectationState.ClosedWithException)
+        {
+            return Task.FromResult(new PnlExpectationCloseOutcome(
+                PnlExpectationCloseStatus.WrongState, expectation.OrderLineId));
+        }
+
+        expectation.State = PnlExpectationState.Overdue;
+        expectation.ClosedAt = null;
+        expectation.ClosedByUserId = null;
+        expectation.ClosureReason = null;
+        expectation.UpdatedAt = now;
+
+        return Task.FromResult(new PnlExpectationCloseOutcome(
+            PnlExpectationCloseStatus.Applied, expectation.OrderLineId));
+    }
+
+    public void Add(PnlLineExpectation expectation)
+    {
+        Expectations.Add(expectation);
+    }
+
+    public Task SaveChangesAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<Guid>> LoadTenantIdsWithDueAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Guid> result = Expectations
+            .Where(e => e.State == PnlExpectationState.Expected && e.ExpectedBy <= now)
+            .Select(e => e.OrderLineId)
+            .Distinct()
+            .ToList();
+
+        return Task.FromResult(result);
+    }
+}
 
 internal sealed class StubTenantContext : Delobytes.App.Backend.Contracts.Interfaces.ITenantContext
 {

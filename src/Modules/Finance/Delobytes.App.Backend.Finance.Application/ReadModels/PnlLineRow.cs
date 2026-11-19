@@ -52,4 +52,13 @@ public sealed class PnlLineRow
     public decimal? ProductionCostAmount { get; set; }
 
     public bool? ProductionCostIsComplete { get; set; }
+
+    /// <summary>Gets or sets whether every document the sale is expected to produce has arrived.</summary>
+    public PnlLineCompleteness CompletenessState { get; set; }
+
+    /// <summary>Gets or sets the entry types the line is still waiting for, by name.</summary>
+    public List<string> MissingDocumentTypes { get; set; } = new List<string>();
+
+    /// <summary>Gets or sets the earliest deadline among the open expectations, or null.</summary>
+    public DateTimeOffset? ExpectedBy { get; set; }
 }

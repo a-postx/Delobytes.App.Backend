@@ -120,6 +120,33 @@ public class PnlReadStore : IPnlReadStore
             .Select(row => row.RevenueAmount)
             .ToListAsync(cancellationToken);
 
+        IQueryable<PnlLine> periodLines = _context.PnlLines
+            .AsNoTracking()
+            .Where(l => l.SaleDate >= from && l.SaleDate <= to);
+
+        // Counted one state at a time: three cheap counts are more predictable than a grouped
+        // projection over an enum stored by name.
+        int provisionalLines = await periodLines
+            .CountAsync(l => l.CompletenessState == PnlLineCompleteness.Provisional, cancellationToken);
+
+        int overdueLines = await periodLines
+            .CountAsync(l => l.CompletenessState == PnlLineCompleteness.Overdue, cancellationToken);
+
+        int closedWithExceptionLines = await periodLines
+            .CountAsync(l => l.CompletenessState == PnlLineCompleteness.ClosedWithException, cancellationToken);
+
+        // The estimated gap is a size, not a booked amount: it only covers expectations whose
+        // product has enough comparable history to be estimated at all.
+        List<decimal> estimates = await _context.PnlLineExpectations
+            .AsNoTracking()
+            .Where(e => e.State == PnlExpectationState.Expected || e.State == PnlExpectationState.Overdue)
+            .Where(e => _context.PnlLines.Any(l =>
+                l.OrderLineId == e.OrderLineId && l.SaleDate >= from && l.SaleDate <= to))
+            .Select(e => e.AmountEstimate)
+            .Where(a => a != null)
+            .Select(a => a!.Value)
+            .ToListAsync(cancellationToken);
+
         return new PnlDiagnosticsResult
         {
             UnattributedEntries = attribution.UnmatchedEntries.Count,
@@ -128,6 +155,10 @@ public class PnlReadStore : IPnlReadStore
             LinesWithOpenControlDifference = differences.Count(d => Math.Abs(d) > 0.01m),
             LinesWithoutProductLink = unlinkedRevenue.Count,
             UnlinkedRevenueAmount = unlinkedRevenue.Where(r => r.HasValue).Sum(r => r!.Value),
+            ProvisionalLines = provisionalLines,
+            OverdueLines = overdueLines,
+            ClosedWithExceptionLines = closedWithExceptionLines,
+            EstimatedMissingAmount = estimates.Sum(),
         };
     }
 
@@ -261,6 +292,9 @@ public class PnlReadStore : IPnlReadStore
                    ControlDifferenceAmount = line.ControlDifferenceAmount,
                    ProductionCostAmount = line.ProductionCostAmount,
                    ProductionCostIsComplete = line.ProductionCostIsComplete,
+                   CompletenessState = line.CompletenessState,
+                   MissingDocumentTypes = line.MissingDocumentTypes,
+                   ExpectedBy = line.ExpectedBy,
                };
     }
 
@@ -300,6 +334,12 @@ public class PnlReadStore : IPnlReadStore
         {
             PnlLineState state = filter.State.Value;
             query = query.Where(row => row.State == state);
+        }
+
+        if (filter.Completeness.HasValue)
+        {
+            PnlLineCompleteness completeness = filter.Completeness.Value;
+            query = query.Where(row => row.CompletenessState == completeness);
         }
 
         return query;
