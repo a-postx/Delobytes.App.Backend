@@ -1,4 +1,5 @@
 ﻿using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Attribution;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
@@ -76,14 +77,21 @@ public class PnlReadStore : IPnlReadStore
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<PnlLineRow>> GetForSummaryAsync(
+    public async IAsyncEnumerable<PnlLineRow> StreamForSummaryAsync(
         string currency,
         PnlLineFilter filter,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        // Checked before the first row is pulled: a missing tenant must fail the call, not surface
+        // halfway through the caller's loop.
         EnsureTenant();
 
-        return await BuildLinesQuery(currency, filter, afterId: null).ToListAsync(cancellationToken);
+        await foreach (PnlLineRow row in BuildLinesQuery(currency, filter, afterId: null)
+            .AsAsyncEnumerable()
+            .WithCancellation(cancellationToken))
+        {
+            yield return row;
+        }
     }
 
     /// <inheritdoc/>

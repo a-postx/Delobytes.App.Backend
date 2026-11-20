@@ -620,6 +620,33 @@ public class PnlQueryHandlerTests
         response.Rows.Single().ControlDifferenceAmount.Should().BeNull();
     }
 
+    [Fact]
+    public async Task GetSummary_ReadsTheLinesOnceAndWithoutMaterialisingThem()
+    {
+        // The summary must fold rows as they arrive: one pass over the stream, every row pulled.
+        // A second enumeration would mean the store was asked for the page twice.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m),
+            Row(new DateOnly(2026, 8, 2), 200m, 180m, 20m),
+        };
+
+        FakeStore store = new FakeStore(new PnlLinePage(), rows);
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlSummaryResponse response = await handler.Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        response.Rows.Should().ContainSingle();
+        store.StreamCount.Should().Be(1);
+        store.PulledRows.Should().Be(2);
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
@@ -716,6 +743,12 @@ public class PnlQueryHandlerTests
 
         public PnlLineFilter? LastFilter { get; private set; }
 
+        /// <summary>Gets the number of times the summary stream was opened.</summary>
+        public int StreamCount { get; private set; }
+
+        /// <summary>Gets the number of rows the handler pulled from the stream.</summary>
+        public int PulledRows { get; private set; }
+
         public Task<PnlLinePage> GetLinesAsync(
             string currency,
             PnlLineFilter filter,
@@ -727,13 +760,22 @@ public class PnlQueryHandlerTests
             return Task.FromResult(_page);
         }
 
-        public Task<IReadOnlyList<PnlLineRow>> GetForSummaryAsync(
+        public async IAsyncEnumerable<PnlLineRow> StreamForSummaryAsync(
             string currency,
             PnlLineFilter filter,
             CancellationToken cancellationToken)
         {
             LastFilter = filter;
-            return Task.FromResult(_rows);
+            StreamCount++;
+
+            foreach (PnlLineRow row in _rows)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                PulledRows++;
+                yield return row;
+            }
+
+            await Task.CompletedTask;
         }
 
         public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(

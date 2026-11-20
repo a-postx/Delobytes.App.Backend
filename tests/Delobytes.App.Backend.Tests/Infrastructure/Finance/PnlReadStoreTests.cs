@@ -414,7 +414,7 @@ public class PnlReadStoreTests
     }
 
     [Fact]
-    public async Task GetForSummaryAsync_AppliesChannelAndProductFiltersBeforeMaterialising()
+    public async Task StreamForSummaryAsync_AppliesChannelAndProductFiltersBeforeStreaming()
     {
         string database = NewDatabaseName();
         Guid[] orderLines = await SeedLinesAsync(database);
@@ -422,13 +422,41 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        IReadOnlyList<PnlLineRow> rows = await store.GetForSummaryAsync(
+        List<PnlLineRow> rows = new();
+
+        await foreach (PnlLineRow row in store.StreamForSummaryAsync(
             "RUB",
             new PnlLineFilter { ChannelId = ChannelId, ProductId = ProductId },
-            CancellationToken.None);
+            CancellationToken.None))
+        {
+            rows.Add(row);
+        }
 
         rows.Should().HaveCount(1);
         rows[0].OrderLineId.Should().Be(orderLines[0]);
+    }
+
+    [Fact]
+    public async Task StreamForSummaryAsync_WithoutResolvedTenant_ThrowsBeforeTheFirstRow()
+    {
+        // The tenant must fail the call itself, not the caller's loop: a stream that throws halfway
+        // would let a report run against the wrong scope for as long as it takes to notice.
+        string database = NewDatabaseName();
+        await SeedLinesAsync(database);
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(Guid.Empty));
+
+        Func<Task> act = async () =>
+        {
+            await foreach (PnlLineRow row in store.StreamForSummaryAsync(
+                "RUB", new PnlLineFilter(), CancellationToken.None))
+            {
+                _ = row;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [Fact]
