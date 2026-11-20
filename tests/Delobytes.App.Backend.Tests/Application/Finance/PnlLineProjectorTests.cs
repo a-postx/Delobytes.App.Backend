@@ -387,6 +387,33 @@ public class PnlLineProjectorTests
         stored.ProductionCostAmount.Should().BeNull();
     }
 
+    [Fact]
+    public async Task RecomputeAsync_LogisticsOnlyLine_WritesThePeriodOfItsDocuments()
+    {
+        // Arrange: a non-buyout arrives as a delivery charge without a sale. The line has no sale date
+        // and still has to belong to a period, otherwise no from/to query and no summary can see it.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(LogisticsEntry(53.84m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, new InMemoryOrderLineCostStore(), lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.SaleDate.Should().BeNull();
+        stored.FinancialPeriodFrom.Should().Be(new DateOnly(2026, 8, 1));
+        stored.FinancialPeriodTo.Should().Be(new DateOnly(2026, 8, 1));
+        stored.NetRevenueAmount.Should().Be(-53.84m);
+        stored.ProductionCostAmount.Should().BeNull();
+    }
+
     private static PnlLineProjector CreateProjector(
         InMemoryPnlJournalStore journal,
         InMemoryOrderLineRefStore refs,

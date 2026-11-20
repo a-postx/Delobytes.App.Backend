@@ -49,9 +49,13 @@ internal static class PnlViewFactory
                 row.CommissionAmount, row.AcquiringAmount, row.DeliveryFeeAmount);
 
             // Tax is a separate layer: the margin is computed from the sale and the cost alone, and
-            // only the optional tax-adjusted figure depends on the tenant's profile.
-            decimal? margin = PnlTaxCalculator.Margin(
-                row.NetRevenueAmount, row.ProductionCostAmount, row.ProductionCostIsComplete);
+            // only the optional tax-adjusted figure depends on the tenant's profile. A line without
+            // a sale has no cost of goods, so its result is the net revenue itself.
+            decimal? margin = PnlTaxCalculator.LineMargin(
+                row.NetRevenueAmount,
+                row.ProductionCostAmount,
+                row.ProductionCostIsComplete,
+                row.SaleDate.HasValue);
 
             decimal? taxAdjustedMargin = PnlTaxCalculator.TaxAdjustedMargin(margin, estimatedTax);
 
@@ -63,6 +67,7 @@ internal static class PnlViewFactory
                 ChannelProductId = row.ChannelProductId,
                 HasProductLink = row.ProductId.HasValue,
                 SaleDate = row.SaleDate,
+                PeriodDate = row.PeriodDate,
                 Currency = row.Currency,
                 RevenueAmount = row.RevenueAmount,
                 CompensationAmount = row.CompensationAmount,

@@ -194,6 +194,55 @@ public class PnlLineAggregatorTests
     }
 
     [Fact]
+    public void Calculate_LogisticsOnlyLine_CarriesTheDatesOfItsDocuments()
+    {
+        // Arrange: a non-buyout reports the delivery charge and nothing else. There is no sale date,
+        // but the charge was booked on a day and the line still has to belong to a period.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Logistics, 53.84m, PnlEntryDirection.Expense, documentDate: new DateOnly(2026, 8, 4)),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert
+        totals.SaleDate.Should().BeNull();
+        totals.PeriodFrom.Should().Be(new DateOnly(2026, 8, 4));
+        totals.PeriodTo.Should().Be(new DateOnly(2026, 8, 4));
+    }
+
+    [Fact]
+    public void Calculate_ComponentsOnSeveralDays_SpansTheEarliestAndTheLatestDocument()
+    {
+        // Arrange: the sale and the delivery of the same unit arrive as two documents of one report.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 204m, documentDate: new DateOnly(2026, 8, 1)),
+            Entry(PnlEntryType.Logistics, 53.84m, PnlEntryDirection.Expense, documentDate: new DateOnly(2026, 8, 3)),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert: the sale date stays the sale's own document date, unaffected by the later delivery.
+        totals.SaleDate.Should().Be(new DateOnly(2026, 8, 1));
+        totals.PeriodFrom.Should().Be(new DateOnly(2026, 8, 1));
+        totals.PeriodTo.Should().Be(new DateOnly(2026, 8, 3));
+    }
+
+    [Fact]
+    public void Calculate_NoEntries_HasNoPeriodDates()
+    {
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(Array.Empty<PnlEntry>());
+
+        // Assert
+        totals.PeriodFrom.Should().BeNull();
+        totals.PeriodTo.Should().BeNull();
+    }
+
+    [Fact]
     public void Calculate_SeveralSaleEntries_TakesEarliestDocumentDate()
     {
         // Arrange

@@ -24,11 +24,14 @@ public interface IPnlLineStore
     public void Add(PnlLine line);
 
     /// <summary>
-    /// Loads the order line identifiers of the lines whose sale date falls in
-    /// [<paramref name="from"/>, <paramref name="to"/>], for a rebuild of a period.
+    /// Loads the order line identifiers of the lines whose period date falls in
+    /// [<paramref name="from"/>, <paramref name="to"/>], for a rebuild of a period. The period date
+    /// is the sale date when the line sold and the first day of its financial period otherwise, so
+    /// a line that never sold is rebuilt as well. Lines with neither date are included so a rebuild
+    /// repairs rows written before the period attribution existed.
     /// </summary>
-    /// <param name="from">First sale date, inclusive.</param>
-    /// <param name="to">Last sale date, inclusive.</param>
+    /// <param name="from">First period date, inclusive.</param>
+    /// <param name="to">Last period date, inclusive.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The order line identifiers.</returns>
     public Task<IReadOnlyList<Guid>> LoadOrderLineIdsAsync(

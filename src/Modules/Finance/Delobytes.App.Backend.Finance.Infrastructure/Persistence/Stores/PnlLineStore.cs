@@ -50,9 +50,17 @@ public class PnlLineStore : IPnlLineStore
         DateOnly to,
         CancellationToken cancellationToken)
     {
+        // The period date is the sale date when the line sold and the first day of its financial
+        // period otherwise, so a non-buyout is rebuilt with its period like any other line. Rows
+        // with neither date predate the period attribution and would never be selected again: they
+        // are included once, so the first backfill repairs them, and excluded afterwards because the
+        // recompute writes their dates.
         return await _context.PnlLines
             .AsNoTracking()
-            .Where(l => l.SaleDate != null && l.SaleDate >= from && l.SaleDate <= to)
+            .Where(l =>
+                (l.SaleDate == null && l.FinancialPeriodFrom == null)
+                || ((l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                    && (l.SaleDate ?? l.FinancialPeriodFrom) <= to))
             .Select(l => l.OrderLineId)
             .ToListAsync(cancellationToken);
     }

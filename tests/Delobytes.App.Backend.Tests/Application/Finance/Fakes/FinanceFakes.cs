@@ -240,7 +240,10 @@ internal sealed class InMemoryPnlLineStore : IPnlLineStore
         CancellationToken cancellationToken)
     {
         IReadOnlyList<Guid> result = Lines.Values
-            .Where(l => l.SaleDate.HasValue && l.SaleDate.Value >= from && l.SaleDate.Value <= to)
+            .Where(l =>
+                (l.SaleDate == null && l.FinancialPeriodFrom == null)
+                || ((l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                    && (l.SaleDate ?? l.FinancialPeriodFrom) <= to))
             .Select(l => l.OrderLineId)
             .ToList();
 

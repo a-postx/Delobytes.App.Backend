@@ -25,7 +25,17 @@ public sealed class PnlLineRow
 
     public string Currency { get; set; } = default!;
 
+    /// <summary>
+    /// Gets or sets the date of the earliest sale fact, or null when the line never sold.
+    /// </summary>
     public DateOnly? SaleDate { get; set; }
+
+    /// <summary>
+    /// Gets or sets the date the line is reported under: the sale date when it sold, otherwise the
+    /// first day of its financial period. A non-buyout has no sale date but still carries a delivery
+    /// charge on a known day, so the period filters and the summary must not drop it.
+    /// </summary>
+    public DateOnly? PeriodDate { get; set; }
 
     public PnlLineState State { get; set; }
 

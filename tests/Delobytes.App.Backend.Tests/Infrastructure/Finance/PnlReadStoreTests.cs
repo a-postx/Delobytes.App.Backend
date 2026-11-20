@@ -258,6 +258,45 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetLinesAsync_LineWithoutSale_IsFilteredByItsFinancialPeriod()
+    {
+        // A non-buyout has no sale date: its only date is the period of the documents behind it.
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("00000010-0000-0000-0000-000000000010");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            PnlLine nonBuyout = Line(Guid.NewGuid(), orderLineId, "RUB", saleDate: null);
+            nonBuyout.FinancialPeriodFrom = Day2;
+            nonBuyout.FinancialPeriodTo = Day2;
+            nonBuyout.RevenueAmount = null;
+            nonBuyout.NetRevenueAmount = -53.84m;
+            nonBuyout.DeliveryFeeAmount = -53.84m;
+
+            seed.PnlLines.Add(nonBuyout);
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage inside = await store.GetLinesAsync(
+            "RUB", new PnlLineFilter { From = Day2, To = Day2 }, 100, null, CancellationToken.None);
+
+        PnlLineRow row = inside.Rows.Should().ContainSingle().Subject;
+        row.SaleDate.Should().BeNull();
+        row.PeriodDate.Should().Be(Day2);
+        row.NetRevenueAmount.Should().Be(-53.84m);
+
+        PnlLinePage outside = await store.GetLinesAsync(
+            "RUB", new PnlLineFilter { From = Day3, To = Day3 }, 100, null, CancellationToken.None);
+
+        outside.Rows.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetLinesAsync_ExcludedByCurrency_AppliesTheOtherFilters()
     {
         string database = NewDatabaseName();
@@ -625,7 +664,7 @@ public class PnlReadStoreTests
         Guid id,
         Guid orderLineId,
         string currency,
-        DateOnly saleDate,
+        DateOnly? saleDate,
         PnlLineState state = PnlLineState.Calculated,
         PnlLineCompleteness completeness = PnlLineCompleteness.Complete)
     {

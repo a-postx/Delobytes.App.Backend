@@ -175,8 +175,10 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             cancellationToken);
 
         List<PnlSummaryRowView> summary = views
-            .Where(v => v.SaleDate.HasValue)
-            .GroupBy(v => (v.ProductId, PeriodStart: PeriodOf(v.SaleDate!.Value, request.Granularity)))
+            // Grouped by the period date rather than by the sale date: a non-buyout never sold, but
+            // its delivery charge is money of the period it was booked in and must be reported.
+            .Where(v => v.PeriodDate.HasValue)
+            .GroupBy(v => (v.ProductId, PeriodStart: PeriodOf(v.PeriodDate!.Value, request.Granularity)))
             .Select(group =>
             {
                 // The margin exists only for a line with a known and complete cost, so it is summed

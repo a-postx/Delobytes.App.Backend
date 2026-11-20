@@ -91,6 +91,22 @@ public class PnlTaxCalculatorTests
     }
 
     [Fact]
+    public void LineMargin_WithoutASale_IsTheNetRevenueItself()
+    {
+        // No unit left the seller, so no cost of goods applies: the negative result is known.
+        PnlTaxCalculator.LineMargin(-53.84m, null, null, hasSale: false).Should().Be(-53.84m);
+        PnlTaxCalculator.LineMargin(null, null, null, hasSale: false).Should().BeNull();
+    }
+
+    [Fact]
+    public void LineMargin_WithASale_KeepsRequiringACompleteCost()
+    {
+        PnlTaxCalculator.LineMargin(1000m, 400m, true, hasSale: true).Should().Be(600m);
+        PnlTaxCalculator.LineMargin(1000m, null, null, hasSale: true).Should().BeNull();
+        PnlTaxCalculator.LineMargin(1000m, 400m, false, hasSale: true).Should().BeNull();
+    }
+
+    [Fact]
     public void TaxAdjustedMargin_IsOptionalAndDoesNotGateThePreTaxMargin()
     {
         PnlTaxCalculator.TaxAdjustedMargin(600m, 36m).Should().Be(564m);

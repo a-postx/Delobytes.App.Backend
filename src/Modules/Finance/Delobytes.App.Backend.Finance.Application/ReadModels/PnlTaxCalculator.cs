@@ -103,6 +103,32 @@ public static class PnlTaxCalculator
     }
 
     /// <summary>
+    /// Computes the margin of one line: the sale-based <see cref="Margin"/> when a unit sold, and the
+    /// net revenue itself when it did not. A line that never sold carries no cost of goods by
+    /// construction - no unit left the seller - so its result is known even though no cost fact
+    /// exists. Without this a non-buyout's delivery charge would stay outside every margin figure.
+    /// </summary>
+    /// <param name="netRevenue">Net revenue.</param>
+    /// <param name="productionCost">Production cost.</param>
+    /// <param name="costComplete">
+    /// Whether the cost covers every input. Null when no cost fact exists.
+    /// </param>
+    /// <param name="hasSale">
+    /// Whether the line has a sale fact. False means no cost of goods applies at all.
+    /// </param>
+    /// <returns>The margin, or null when an input the rule needs is missing.</returns>
+    public static decimal? LineMargin(
+        decimal? netRevenue,
+        decimal? productionCost,
+        bool? costComplete,
+        bool hasSale)
+    {
+        return hasSale
+            ? Margin(netRevenue, productionCost, costComplete)
+            : netRevenue;
+    }
+
+    /// <summary>
     /// Subtracts the estimated tax from the pre-tax margin. The tax layer is optional: without a
     /// tenant tax profile the pre-tax margin stays available and only this figure is unknown.
     /// </summary>

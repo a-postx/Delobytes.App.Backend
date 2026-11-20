@@ -434,6 +434,81 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetLines_LineWithoutSale_ReportsItsNetRevenueAsTheResult()
+    {
+        // A non-buyout carries only the delivery charge: no unit left the seller, so no cost of goods
+        // applies and the negative net revenue is the known result of the line.
+        PnlLineRow row = Row(
+            saleDate: null,
+            revenue: null,
+            netRevenue: -53.84m,
+            cost: null,
+            periodDate: new DateOnly(2026, 8, 5));
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].Margin.Should().Be(-53.84m);
+        response.Lines[0].PeriodDate.Should().Be(new DateOnly(2026, 8, 5));
+        response.Lines[0].MarginPercent.Should().BeNull();
+        response.Lines[0].Roi.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetSummary_LineWithoutSale_AddsItsResultToThePeriodOfItsCharge()
+    {
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m, productId),
+            Row(
+                saleDate: null,
+                revenue: null,
+                netRevenue: -53.84m,
+                cost: null,
+                productId: productId,
+                periodDate: new DateOnly(2026, 8, 5)),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.Lines.Should().Be(2);
+        row.RevenueAmount.Should().Be(1000m);
+        row.NetRevenueAmount.Should().Be(646.16m);
+        row.Margin.Should().Be(346.16m);
+        row.LinesWithMargin.Should().Be(2);
+        row.IsMarginComplete.Should().BeTrue();
+        row.RevenueWithMarginAmount.Should().Be(1000m);
+        row.RevenueWithoutCostAmount.Should().Be(0m);
+        row.MarginPercent.Should().BeApproximately(0.34616m, 0.00001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_LineWithoutAnyDate_IsNotGrouped()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(saleDate: null, revenue: null, netRevenue: -53.84m, cost: null),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        response.Rows.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetLines_ClosedWithExceptionLine_IsNotReportedAsProvisional()
     {
         PnlLineRow row = Row(
@@ -469,7 +544,8 @@ public class PnlQueryHandlerTests
         decimal? cost,
         Guid? productId = null,
         bool costComplete = true,
-        PnlLineCompleteness completeness = PnlLineCompleteness.Complete)
+        PnlLineCompleteness completeness = PnlLineCompleteness.Complete,
+        DateOnly? periodDate = null)
     {
         return new PnlLineRow
         {
@@ -478,6 +554,7 @@ public class PnlQueryHandlerTests
             ProductId = productId,
             Currency = "RUB",
             SaleDate = saleDate,
+            PeriodDate = periodDate ?? saleDate,
             State = saleDate.HasValue ? PnlLineState.Calculated : PnlLineState.NotCalculated,
             RevenueAmount = revenue,
             NetRevenueAmount = netRevenue,

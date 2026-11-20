@@ -16,6 +16,12 @@ public sealed class PnlLineView
 
     public DateOnly? SaleDate { get; set; }
 
+    /// <summary>
+    /// Gets or sets the date the line is reported under: the sale date when it sold, otherwise the
+    /// first day of its financial period. Null only when the line has neither.
+    /// </summary>
+    public DateOnly? PeriodDate { get; set; }
+
     public string Currency { get; set; } = default!;
 
     public decimal? RevenueAmount { get; set; }

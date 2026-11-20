@@ -49,6 +49,12 @@ public static class PnlLineAggregator
         DateOnly? saleDate = null;
         DateOnly? reportPeriodTo = null;
 
+        // Every component carries the period it belongs to, not only a sale: a non-buyout reports
+        // its delivery charge without ever reporting a sale, and that charge still has to land in a
+        // period. The span of the document dates is the only date such a line has.
+        DateOnly? periodFrom = null;
+        DateOnly? periodTo = null;
+
         int entryCount = 0;
 
         foreach (PnlEntry entry in entries)
@@ -81,6 +87,16 @@ public static class PnlLineAggregator
             }
 
             entryCount++;
+
+            if (periodFrom == null || entry.DocumentDate < periodFrom.Value)
+            {
+                periodFrom = entry.DocumentDate;
+            }
+
+            if (periodTo == null || entry.DocumentDate > periodTo.Value)
+            {
+                periodTo = entry.DocumentDate;
+            }
 
             decimal signed = Signed(entry);
 
@@ -153,7 +169,9 @@ public static class PnlLineAggregator
             entryCount,
             hasSale,
             saleDate,
-            reportPeriodTo);
+            reportPeriodTo,
+            periodFrom,
+            periodTo);
     }
 
     private static decimal Signed(PnlEntry entry)

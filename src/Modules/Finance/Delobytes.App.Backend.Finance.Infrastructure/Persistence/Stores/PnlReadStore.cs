@@ -105,8 +105,8 @@ public class PnlReadStore : IPnlReadStore
         List<decimal> differences = await _context.PnlLines
             .AsNoTracking()
             .Where(l =>
-                l.SaleDate >= from
-                && l.SaleDate <= to
+                (l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                && (l.SaleDate ?? l.FinancialPeriodFrom) <= to
                 && l.ControlDifferenceAmount != null)
             .Select(l => l.ControlDifferenceAmount!.Value)
             .ToListAsync(cancellationToken);
@@ -122,7 +122,9 @@ public class PnlReadStore : IPnlReadStore
 
         IQueryable<PnlLine> periodLines = _context.PnlLines
             .AsNoTracking()
-            .Where(l => l.SaleDate >= from && l.SaleDate <= to);
+            .Where(l =>
+                (l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                && (l.SaleDate ?? l.FinancialPeriodFrom) <= to);
 
         // Counted one state at a time: three cheap counts are more predictable than a grouped
         // projection over an enum stored by name.
@@ -279,6 +281,11 @@ public class PnlReadStore : IPnlReadStore
                    ChannelProductId = reference.ChannelProductId,
                    Currency = line.Currency,
                    SaleDate = line.SaleDate,
+                   // A line that never sold still has money on it: a non-buyout carries only its
+                   // delivery charge. Its sale date is null, so the period the charge belongs to is
+                   // the one written from its documents. Without this the line would be invisible to
+                   // every from/to filter and to the summary.
+                   PeriodDate = line.SaleDate ?? line.FinancialPeriodFrom,
                    State = line.State,
                    CostStatus = cost == null ? null : cost.Status,
                    RevenueAmount = line.RevenueAmount,
@@ -321,13 +328,13 @@ public class PnlReadStore : IPnlReadStore
         if (filter.From.HasValue)
         {
             DateOnly from = filter.From.Value;
-            query = query.Where(row => row.SaleDate >= from);
+            query = query.Where(row => row.PeriodDate >= from);
         }
 
         if (filter.To.HasValue)
         {
             DateOnly to = filter.To.Value;
-            query = query.Where(row => row.SaleDate <= to);
+            query = query.Where(row => row.PeriodDate <= to);
         }
 
         if (filter.State.HasValue)

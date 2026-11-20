@@ -19,10 +19,14 @@ public sealed class PnlLineFilter
     /// </summary>
     public Guid? ChannelProductId { get; set; }
 
-    /// <summary>Gets or sets the optional first sale date, inclusive.</summary>
+    /// <summary>
+    /// Gets or sets the optional first period date, inclusive. The period date is the sale date when
+    /// the line sold and the first day of its financial period otherwise, so a non-buyout carrying
+    /// only its delivery charge is still selected.
+    /// </summary>
     public DateOnly? From { get; set; }
 
-    /// <summary>Gets or sets the optional last sale date, inclusive.</summary>
+    /// <summary>Gets or sets the optional last period date, inclusive.</summary>
     public DateOnly? To { get; set; }
 
     /// <summary>Gets or sets the optional state filter.</summary>

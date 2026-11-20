@@ -38,6 +38,14 @@ namespace Delobytes.App.Backend.Finance.Domain.Calculation;
 /// window is anchored to it: a weekly report re-issues days that are already over, so the delivery
 /// document can only be looked for after the period it belongs to has been reported.
 /// </param>
+/// <param name="PeriodFrom">
+/// The earliest <c>DocumentDate</c> among the current component entries, or null when none arrived.
+/// A line that never sold - a non-buyout carrying only its logistics charge - has no sale date, so
+/// this is the only date the period filters and the summary can place it by.
+/// </param>
+/// <param name="PeriodTo">
+/// The latest <c>DocumentDate</c> among the current component entries, or null when none arrived.
+/// </param>
 public sealed record PnlLineTotals(
     decimal? RevenueAmount,
     decimal? CommissionAmount,
@@ -51,4 +59,6 @@ public sealed record PnlLineTotals(
     int EntryCount,
     bool HasSale,
     DateOnly? SaleDate,
-    DateOnly? ReportPeriodTo);
+    DateOnly? ReportPeriodTo,
+    DateOnly? PeriodFrom,
+    DateOnly? PeriodTo);

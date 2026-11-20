@@ -249,6 +249,12 @@ public class PnlLineProjector
         line.EntryCount = totals.EntryCount;
         line.State = totals.EntryCount > 0 ? PnlLineState.Calculated : PnlLineState.NotCalculated;
         line.SaleDate = totals.SaleDate;
+
+        // The period of the line is the span of its documents. It is what places a line that never
+        // sold into a period: such a line has no sale date, but its charge was still booked on a day.
+        line.FinancialPeriodFrom = totals.PeriodFrom;
+        line.FinancialPeriodTo = totals.PeriodTo;
+
         line.Currency = orderLineRef.Currency;
         line.ComputedAt = now;
         line.UpdatedAt = now;

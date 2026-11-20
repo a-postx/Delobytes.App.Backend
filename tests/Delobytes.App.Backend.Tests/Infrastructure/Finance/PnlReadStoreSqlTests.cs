@@ -120,8 +120,13 @@ public class PnlReadStoreSqlTests
         sql.Should().Contain("\"ChannelId\" = @");
         sql.Should().Contain("\"ProductId\" = @");
         sql.Should().Contain("\"ChannelProductId\" = @");
-        sql.Should().Contain("\"SaleDate\" >= @");
-        sql.Should().Contain("\"SaleDate\" <= @");
+        // The period date is the sale date when the line sold and the financial period otherwise, so
+        // the predicate is a COALESCE over both columns rather than a comparison on one of them.
+        sql.Should().Contain("COALESCE(");
+        sql.Should().Contain("\"SaleDate\"");
+        sql.Should().Contain("\"FinancialPeriodFrom\"");
+        sql.Should().Contain(">= @");
+        sql.Should().Contain("<= @");
         sql.Should().Contain("\"State\" = @");
         sql.Should().Contain("\"CompletenessState\"");
         sql.Should().Contain("\"Currency\" = @");
@@ -140,7 +145,9 @@ public class PnlReadStoreSqlTests
             .ToQueryString();
 
         sql.Should().Contain("\"Currency\" <> @");
-        sql.Should().Contain("\"SaleDate\" >= @");
+        sql.Should().Contain("COALESCE(");
+        sql.Should().Contain("\"FinancialPeriodFrom\"");
+        sql.Should().Contain(">= @");
         sql.Should().Contain("FROM finance.\"OrderLineRefs\"");
     }
 
