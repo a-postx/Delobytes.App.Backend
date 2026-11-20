@@ -26,15 +26,66 @@ public sealed class PnlSummaryRowView
 
     public decimal? EstimatedTax { get; set; }
 
-    /// <summary>Gets or sets the margin before tax. Null for a group whose costs are unknown or incomplete.</summary>
+    /// <summary>
+    /// Gets or sets the margin before tax: the sum over the lines of the group whose cost is known
+    /// and complete. Null when no line of the group has a known margin. A non-null value is still
+    /// partial while <see cref="IsMarginComplete"/> is false, so compare it with
+    /// <see cref="RevenueWithMarginAmount"/> rather than with <see cref="RevenueAmount"/>.
+    /// </summary>
     public decimal? Margin { get; set; }
 
-    /// <summary>Gets or sets the margin net of the estimated tax; null when no row of the group has a tax profile.</summary>
+    /// <summary>
+    /// Gets or sets the margin net of the estimated tax: the sum over the lines that have both a
+    /// known margin and a tax profile. Null when no line of the group has both.
+    /// </summary>
     public decimal? TaxAdjustedMargin { get; set; }
+
+    /// <summary>
+    /// Gets or sets the margin as a share of <see cref="RevenueWithMarginAmount"/>, that is, over
+    /// the lines the margin itself covers. Null when the margin is unknown or the covered revenue
+    /// is zero.
+    /// </summary>
+    public decimal? MarginPercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the return on the production cost of the covered lines only, never on
+    /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the covered cost is
+    /// zero.
+    /// </summary>
+    public decimal? Roi { get; set; }
+
+    /// <summary>Gets or sets the number of lines of the group whose margin is known.</summary>
+    public int LinesWithMargin { get; set; }
+
+    /// <summary>
+    /// Gets or sets the revenue of the lines whose margin is known, on the same basis as
+    /// <see cref="RevenueAmount"/>: the two coverage parts always add up to the total.
+    /// </summary>
+    public decimal RevenueWithMarginAmount { get; set; }
+
+    /// <summary>Gets or sets the production cost of the lines whose margin is known.</summary>
+    public decimal ProductionCostWithMarginAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the revenue of the lines whose margin is unknown: no cost fact yet, an
+    /// incomplete cost, or no net revenue. This is the part of <see cref="RevenueAmount"/> no
+    /// margin figure can be attributed to.
+    /// </summary>
+    public decimal RevenueWithoutCostAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether every line of the group has a known margin. Only
+    /// then do <see cref="Margin"/>, <see cref="MarginPercent"/> and <see cref="Roi"/> describe the
+    /// whole group.
+    /// </summary>
+    public bool IsMarginComplete { get; set; }
 
     public decimal? ControlDifferenceAmount { get; set; }
 
-    /// <summary>Gets or sets the worst completeness among the lines of the group.</summary>
+    /// <summary>
+    /// Gets or sets the most severe completeness among the lines of the group: overdue beats
+    /// provisional, provisional beats a recorded exception, and an exception beats a complete line.
+    /// </summary>
     public PnlLineCompleteness CompletenessState { get; set; }
 }
 
@@ -105,22 +156,42 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         List<PnlSummaryRowView> summary = views
             .Where(v => v.SaleDate.HasValue)
             .GroupBy(v => (v.ProductId, PeriodStart: PeriodOf(v.SaleDate!.Value, request.Granularity)))
-            .Select(group => new PnlSummaryRowView
+            .Select(group =>
             {
-                ProductId = group.Key.ProductId,
-                IsUnlinkedProduct = group.Key.ProductId == null,
-                PeriodStart = group.Key.PeriodStart,
-                Lines = group.Count(),
-                RevenueAmount = Sum(group.Select(v => v.RevenueAmount)),
-                NetRevenueAmount = Sum(group.Select(v => v.NetRevenueAmount)),
-                ProductionCostAmount = Sum(group.Select(v => v.ProductionCostAmount)),
-                EstimatedTax = Sum(group.Select(v => v.EstimatedTax)),
-                Margin = Sum(group.Select(v => v.Margin)),
-                TaxAdjustedMargin = Sum(group.Select(v => v.TaxAdjustedMargin)),
-                ControlDifferenceAmount = Sum(rows
-                    .Where(r => group.Any(v => v.OrderLineId == r.OrderLineId))
-                    .Select(r => r.ControlDifferenceAmount)),
-                CompletenessState = group.Max(v => v.CompletenessState),
+                // The margin exists only for a line with a known and complete cost, so it is summed
+                // over its own population. Every figure derived from it is summed over the same
+                // population, and the rest of the revenue is reported separately, so no percentage
+                // pairs a numerator and a denominator that describe different lines.
+                List<PnlLineView> covered = group.Where(v => v.Margin.HasValue).ToList();
+
+                decimal? margin = Sum(group.Select(v => v.Margin));
+                decimal revenueWithMargin = Sum(covered.Select(v => v.RevenueAmount)) ?? 0m;
+                decimal productionCostWithMargin = Sum(covered.Select(v => v.ProductionCostAmount)) ?? 0m;
+
+                return new PnlSummaryRowView
+                {
+                    ProductId = group.Key.ProductId,
+                    IsUnlinkedProduct = group.Key.ProductId == null,
+                    PeriodStart = group.Key.PeriodStart,
+                    Lines = group.Count(),
+                    RevenueAmount = Sum(group.Select(v => v.RevenueAmount)),
+                    NetRevenueAmount = Sum(group.Select(v => v.NetRevenueAmount)),
+                    ProductionCostAmount = Sum(group.Select(v => v.ProductionCostAmount)),
+                    EstimatedTax = Sum(group.Select(v => v.EstimatedTax)),
+                    Margin = margin,
+                    TaxAdjustedMargin = Sum(group.Select(v => v.TaxAdjustedMargin)),
+                    MarginPercent = PnlTaxCalculator.MarginPercent(margin, revenueWithMargin),
+                    Roi = PnlTaxCalculator.Roi(margin, productionCostWithMargin),
+                    LinesWithMargin = covered.Count,
+                    RevenueWithMarginAmount = revenueWithMargin,
+                    ProductionCostWithMarginAmount = productionCostWithMargin,
+                    RevenueWithoutCostAmount = Sum(group.Where(v => !v.Margin.HasValue).Select(v => v.RevenueAmount)) ?? 0m,
+                    IsMarginComplete = covered.Count == group.Count(),
+                    ControlDifferenceAmount = Sum(rows
+                        .Where(r => group.Any(v => v.OrderLineId == r.OrderLineId))
+                        .Select(r => r.ControlDifferenceAmount)),
+                    CompletenessState = WorstCompleteness(group.Select(v => v.CompletenessState)),
+                };
             })
             .OrderBy(r => r.PeriodStart)
             .ThenBy(r => r.ProductId)
@@ -140,6 +211,34 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             PnlPeriodGranularity.Week => date.AddDays(-(((int)date.DayOfWeek + 6) % 7)),
             PnlPeriodGranularity.Month => new DateOnly(date.Year, date.Month, 1),
             _ => date,
+        };
+    }
+
+    private static PnlLineCompleteness WorstCompleteness(IEnumerable<PnlLineCompleteness> states)
+    {
+        PnlLineCompleteness worst = PnlLineCompleteness.Complete;
+
+        foreach (PnlLineCompleteness state in states)
+        {
+            if (Severity(state) > Severity(worst))
+            {
+                worst = state;
+            }
+        }
+
+        return worst;
+    }
+
+    // The enum order is not an order of severity: a recorded exception is final, while an overdue
+    // document is still missing, so the numeric value cannot be relied on.
+    private static int Severity(PnlLineCompleteness state)
+    {
+        return state switch
+        {
+            PnlLineCompleteness.Overdue => 3,
+            PnlLineCompleteness.Provisional => 2,
+            PnlLineCompleteness.ClosedWithException => 1,
+            _ => 0,
         };
     }
 

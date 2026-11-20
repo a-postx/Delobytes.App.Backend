@@ -221,13 +221,151 @@ public class PnlQueryHandlerTests
         response.Rows.Single(r => r.ProductId == null).IsUnlinkedProduct.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task GetSummary_MixedCostCompleteness_ReportsTheMarginOfTheCoveredLinesOnly()
+    {
+        // One line with a complete cost, one with a partial cost and one without any cost. The
+        // margin can speak only for the first line, so its percentages must use that line alone
+        // while the coverage fields keep the rest of the revenue visible.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m),
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 250m, costComplete: false),
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, cost: null),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.RevenueAmount.Should().Be(3000m);
+        row.ProductionCostAmount.Should().Be(550m);
+        row.Margin.Should().Be(400m);
+
+        row.Lines.Should().Be(3);
+        row.LinesWithMargin.Should().Be(1);
+        row.RevenueWithMarginAmount.Should().Be(1000m);
+        row.ProductionCostWithMarginAmount.Should().Be(300m);
+        row.RevenueWithoutCostAmount.Should().Be(2000m);
+        row.IsMarginComplete.Should().BeFalse();
+
+        row.RevenueWithMarginAmount.Should().Be(row.RevenueAmount!.Value - row.RevenueWithoutCostAmount);
+
+        row.MarginPercent.Should().BeApproximately(0.4m, 0.0001m);
+        row.Roi.Should().BeApproximately(4m / 3m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_TaxesStayAttributedToTheLinesThatCarryThem()
+    {
+        // The tax layer is an intersection of two populations: a known margin and a tax profile.
+        // The pre-tax margin must not absorb a tax computed on revenue it does not cover.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m),
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 250m, costComplete: false),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.EstimatedTax.Should().Be(120m);
+        row.Margin.Should().Be(400m);
+        row.TaxAdjustedMargin.Should().Be(340m);
+    }
+
+    [Fact]
+    public async Task GetSummary_AllCostsComplete_IsMarginCompleteAndReconciles()
+    {
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId),
+            Row(new DateOnly(2026, 8, 2), 100m, 90m, 10m, productId),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.IsMarginComplete.Should().BeTrue();
+        row.LinesWithMargin.Should().Be(2);
+        row.RevenueWithMarginAmount.Should().Be(200m);
+        row.ProductionCostWithMarginAmount.Should().Be(20m);
+        row.RevenueWithoutCostAmount.Should().Be(0m);
+        row.Margin.Should().Be(160m);
+        row.MarginPercent.Should().BeApproximately(0.8m, 0.0001m);
+        row.Roi.Should().BeApproximately(8m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_NoCostAtAll_ReportsNoDerivedMarginButKeepsTheRevenue()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, cost: null),
+            Row(new DateOnly(2026, 8, 2), 1000m, 700m, cost: null),
+            Row(new DateOnly(2026, 8, 3), 1000m, 700m, cost: null),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.Margin.Should().BeNull();
+        row.MarginPercent.Should().BeNull();
+        row.Roi.Should().BeNull();
+        row.LinesWithMargin.Should().Be(0);
+        row.RevenueWithMarginAmount.Should().Be(0m);
+        row.ProductionCostWithMarginAmount.Should().Be(0m);
+        row.RevenueWithoutCostAmount.Should().Be(3000m);
+        row.IsMarginComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_CompletenessState_ReportsTheMostSevereLine()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, completeness: PnlLineCompleteness.ClosedWithException),
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, completeness: PnlLineCompleteness.Overdue),
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, completeness: PnlLineCompleteness.Provisional),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        response.Rows.Single().CompletenessState.Should().Be(PnlLineCompleteness.Overdue);
+    }
+
+    private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
+    {
+        return new GetPnlSummaryQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+    }
+
     private static PnlLineRow Row(
         DateOnly? saleDate,
         decimal? revenue,
         decimal? netRevenue,
         decimal? cost,
         Guid? productId = null,
-        bool costComplete = true)
+        bool costComplete = true,
+        PnlLineCompleteness completeness = PnlLineCompleteness.Complete)
     {
         return new PnlLineRow
         {
@@ -243,6 +381,7 @@ public class PnlQueryHandlerTests
             ControlDifferenceAmount = 0m,
             ProductionCostIsComplete = cost.HasValue ? costComplete : null,
             CostStatus = OrderLineCostStatus.Resolved,
+            CompletenessState = completeness,
         };
     }
 
