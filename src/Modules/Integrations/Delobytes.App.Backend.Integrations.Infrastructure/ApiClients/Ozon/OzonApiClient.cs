@@ -52,6 +52,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
     /// </summary>
     private static readonly TimeSpan ProductCardsWaitTolerance = TimeSpan.FromSeconds(30);
 
+    // A finance window is walked day by day, so a routine pacing wait between two days is absorbed
+    // in-process; only a longer refusal (a 429 penalty) becomes a deferred page.
+    private static readonly TimeSpan FinanceWaitTolerance = TimeSpan.FromSeconds(30);
+
     // Both posting list endpoints share the same page size envelope.
     private const int PostingListPageSizeMinimum = 1;
     private const int PostingListPageSizeMaximum = 100;
@@ -881,22 +885,34 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
             connection.ApiKey,
             FinanceAccrualsMethod);
 
-        RateLimitAcquireResult acquireResult = await _rateLimiter.TryAcquireAsync(scope, cancellationToken);
+        // The accrual endpoint is per-day: `date` names one day and `last_id` continues that day.
+        // The day therefore has to travel in the cursor, or a multi-day window would import only its
+        // first day while the orchestrator marks the whole window read and moves the watermark past
+        // every day in between.
+        (DateOnly day, string cursor) = ParseCursor(request);
 
-        if (!acquireResult.Acquired)
+        if (day > request.To)
+        {
+            return new FinanceEntriesPage { IsComplete = true };
+        }
+
+        // A routine pacing wait is absorbed here; only a refusal beyond the tolerance becomes a
+        // deferred page, otherwise a six-month backfill would turn into one deferral per day.
+        RateLimitAcquireResult? refusedSlot = await _pacer.WaitForSlotAsync(
+            scope, FinanceWaitTolerance, cancellationToken);
+
+        if (refusedSlot is not null)
         {
             return new FinanceEntriesPage
             {
                 Throttled = true,
-                RetryAt = acquireResult.NextRequestAllowedAt,
+                RetryAt = refusedSlot.NextRequestAllowedAt,
             };
         }
 
-        string cursor = request.Cursor ?? string.Empty;
-
         object body = new
         {
-            date = request.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            date = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             last_id = cursor,
         };
 
@@ -969,25 +985,88 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
 
         OzonFinanceMappingResult mappingResult = OzonFinanceMapper.Map(accruals);
 
-        string? lastId = string.IsNullOrEmpty(page?.LastId) ? null : page.LastId;
+        string? nextLastId = string.IsNullOrEmpty(page?.LastId) ? null : page.LastId;
 
-        if (lastId != null && string.Equals(lastId, cursor, StringComparison.Ordinal))
+        if (nextLastId != null && string.Equals(nextLastId, cursor, StringComparison.Ordinal))
         {
             // Guards against an endless loop if the beta ever repeats a cursor. The page is already
-            // read, so it is returned and the window is treated as finished.
+            // read, so it is returned and the day is treated as finished.
             _logger.LogWarning(
-                "Ozon finance accruals repeated last_id {LastId}; stopping the page loop.", lastId);
+                "Ozon finance accruals repeated last_id {LastId}; stopping the day loop.", nextLastId);
 
-            lastId = null;
+            nextLastId = null;
         }
+
+        if (nextLastId != null && accruals.Count > 0)
+        {
+            return new FinanceEntriesPage
+            {
+                Entries = mappingResult.Entries,
+                NextCursor = FormatCursor(day, nextLastId),
+                Diagnostics = mappingResult.Diagnostics,
+                IsComplete = false,
+            };
+        }
+
+        // The day is exhausted: its pages ended, or it carries no accruals at all. Continue with the
+        // next day of the window, or finish when this one was the last.
+        DateOnly nextDay = day.AddDays(1);
+        bool windowCompleted = nextDay > request.To;
 
         return new FinanceEntriesPage
         {
             Entries = mappingResult.Entries,
-            NextCursor = lastId,
+            NextCursor = windowCompleted ? null : FormatCursor(nextDay, string.Empty),
             Diagnostics = mappingResult.Diagnostics,
-            IsComplete = lastId == null || accruals.Count == 0,
+            IsComplete = windowCompleted,
         };
+    }
+
+    /// <summary>
+    /// Splits the finance cursor into the day it belongs to and the page id within that day. A
+    /// cursor carrying no day — an old in-flight one, or a hand-written page id — is read as a page
+    /// id of the window's first day, which is what the previous cursor format meant.
+    /// </summary>
+    /// <param name="request">Window and cursor of the page being requested.</param>
+    /// <returns>The day to read and the page id within it.</returns>
+    private static (DateOnly Day, string LastId) ParseCursor(FinanceEntriesRequest request)
+    {
+        string cursor = request.Cursor ?? string.Empty;
+
+        if (cursor.Length == 0)
+        {
+            return (request.From, string.Empty);
+        }
+
+        int separator = cursor.IndexOf('|', StringComparison.Ordinal);
+
+        if (separator <= 0)
+        {
+            return (request.From, cursor);
+        }
+
+        string dayPart = cursor[..separator];
+        string lastId = cursor[(separator + 1)..];
+
+        if (!DateOnly.TryParseExact(
+                dayPart,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateOnly day))
+        {
+            return (request.From, cursor);
+        }
+
+        return (day < request.From ? request.From : day, lastId);
+    }
+
+    private static string FormatCursor(DateOnly day, string lastId)
+    {
+        return string.Concat(
+            day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            "|",
+            lastId);
     }
 
     private static OrdersPage CreateThrottledPage(DateTimeOffset retryAt)

@@ -59,8 +59,102 @@ public class OzonApiClientFinanceAccrualsTests
         capturedBody.Should().Contain("\"date\":\"2026-11-16\"");
         capturedBody.Should().Contain("\"last_id\":\"\"");
 
-        page.NextCursor.Should().Be("next-page");
+        // The cursor carries the day it belongs to: the endpoint reads one day per request, so a
+        // bare page id would lose the position inside a multi-day window.
+        page.NextCursor.Should().Be("2026-11-16|next-page");
         page.IsComplete.Should().BeFalse();
+        page.Entries.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_FirstDayExhausted_ContinuesWithTheNextDayOfTheWindow()
+    {
+        List<string> capturedBodies = new();
+
+        string dayJson = """
+        {
+          "accruals": [
+            {
+              "accrual_id": 1, "date": "2026-11-16", "total_amount": { "amount": "-3.34", "currency": "RUB" },
+              "unit_number": "14512295-0639", "accrued_category": "ITEM",
+              "item_fees": { "fees": [ { "sku": 5, "fees": [ { "type_id": 1, "accrued": { "amount": "-3.34", "currency": "RUB" } } ] } ] }
+            }
+          ],
+          "last_id": ""
+        }
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, AccrualsUrl)
+            .With(req =>
+            {
+                capturedBodies.Add(req.Content!.ReadAsStringAsync().Result);
+                return true;
+            })
+            .Respond("application/json", dayJson)
+            .Respond("application/json", dayJson);
+
+        OzonApiClient client = BuildClient(mockHttp);
+
+        FinanceEntriesPage first = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 11, 16), To = new DateOnly(2026, 11, 18) },
+            CancellationToken.None);
+
+        first.IsComplete.Should().BeFalse();
+        first.NextCursor.Should().Be("2026-11-17|");
+
+        FinanceEntriesPage second = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest
+            {
+                From = new DateOnly(2026, 11, 16),
+                To = new DateOnly(2026, 11, 18),
+                Cursor = first.NextCursor,
+            },
+            CancellationToken.None);
+
+        capturedBodies.Should().HaveCount(2);
+        capturedBodies[1].Should().Contain("\"date\":\"2026-11-17\"");
+        capturedBodies[1].Should().Contain("\"last_id\":\"\"");
+        second.NextCursor.Should().Be("2026-11-18|");
+        second.IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_LastDayExhausted_IsTheEndOfTheWindow()
+    {
+        string dayJson = """
+        {
+          "accruals": [
+            {
+              "accrual_id": 1, "date": "2026-11-18", "total_amount": { "amount": "-3.34", "currency": "RUB" },
+              "unit_number": "14512295-0639", "accrued_category": "ITEM",
+              "item_fees": { "fees": [ { "sku": 5, "fees": [ { "type_id": 1, "accrued": { "amount": "-3.34", "currency": "RUB" } } ] } ] }
+            }
+          ],
+          "last_id": ""
+        }
+        """;
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, AccrualsUrl).Respond("application/json", dayJson);
+
+        OzonApiClient client = BuildClient(mockHttp);
+
+        FinanceEntriesPage page = await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest
+            {
+                From = new DateOnly(2026, 11, 18),
+                To = new DateOnly(2026, 11, 18),
+                Cursor = "2026-11-18|",
+            },
+            CancellationToken.None);
+
+        page.IsComplete.Should().BeTrue();
+        page.NextCursor.Should().BeNull();
         page.Entries.Should().HaveCount(2);
     }
 
