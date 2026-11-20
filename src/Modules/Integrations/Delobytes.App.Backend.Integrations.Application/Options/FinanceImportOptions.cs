@@ -8,6 +8,12 @@ public sealed class FinanceImportOptions
     /// <summary>Default initial backfill depth in days.</summary>
     public const int DefaultInitialBackfillDays = 180;
 
+    /// <summary>
+    /// Default Wildberries initial backfill depth in days. Wildberries serves sales reports no
+    /// deeper than 90 days, so asking for more only spends the rate limit on empty periods.
+    /// </summary>
+    public const int DefaultWbInitialBackfillDays = 90;
+
     /// <summary>Default Wildberries overlap in days.</summary>
     public const int DefaultWbOverlapDays = 14;
 
@@ -19,6 +25,9 @@ public sealed class FinanceImportOptions
 
     /// <summary>Gets or sets the initial backfill depth in days.</summary>
     public int InitialBackfillDays { get; set; } = DefaultInitialBackfillDays;
+
+    /// <summary>Gets or sets the Wildberries initial backfill depth in days.</summary>
+    public int WbInitialBackfillDays { get; set; } = DefaultWbInitialBackfillDays;
 
     /// <summary>Gets or sets the Wildberries overlap in days.</summary>
     public int WbOverlapDays { get; set; } = DefaultWbOverlapDays;

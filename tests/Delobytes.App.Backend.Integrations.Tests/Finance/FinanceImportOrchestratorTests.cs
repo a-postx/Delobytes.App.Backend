@@ -182,6 +182,42 @@ public class FinanceImportOrchestratorTests
         harness.Scope.Entered.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ProcessAsync_FirstWildberriesWindow_StopsAtNinetyDays()
+    {
+        Harness harness = new Harness("wildberries", JobType.WbFinanceReportImport);
+
+        harness.Source.RespondWith(_ => Page(0, "none", nextCursor: null, isComplete: true));
+
+        await harness.Orchestrator.ProcessAsync(
+            harness.Run.Id, harness.Connection.Id, CancellationToken.None);
+
+        FinanceImportCheckpointPayload state = await harness.ReadStateAsync();
+
+        state.WindowFrom.Should().Be(
+            new DateOnly(2026, 8, 21),
+            "Wildberries serves no sales report deeper than 90 days, so a longer backfill is wasted requests");
+        state.WindowEnd.Should().Be(new DateOnly(2026, 11, 19));
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FirstOzonWindow_KeepsTheLongerBackfill()
+    {
+        Harness harness = new Harness("ozon", JobType.OzonFinanceAccrualsImport);
+
+        harness.Source.RespondWith(_ => Page(0, "none", nextCursor: null, isComplete: true));
+
+        await harness.Orchestrator.ProcessAsync(
+            harness.Run.Id, harness.Connection.Id, CancellationToken.None);
+
+        FinanceImportCheckpointPayload state = await harness.ReadStateAsync();
+
+        state.WindowFrom.Should().Be(
+            new DateOnly(2026, 5, 23),
+            "Ozon accruals are fetched day by day and the deeper backfill is still served");
+        state.WindowEnd.Should().Be(new DateOnly(2026, 11, 18), "Ozon accruals close on the previous day");
+    }
+
     private static FinanceEntriesPage Page(int count, string prefix, string? nextCursor, bool isComplete)
     {
         List<ChannelFinanceEntrySnapshot> entries = new();

@@ -346,7 +346,7 @@ public partial class JobRunRepositoryTests
             ctx.JobRuns.Add(deferredJob);
 
             JobRun expiredDeferralJob = BuildJobRun(connection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-5));
-            expiredDeferralJob.NotBefore = now.AddMinutes(-1);
+            expiredDeferralJob.NotBefore = now.AddHours(-3);
             ctx.JobRuns.Add(expiredDeferralJob);
 
             await ctx.SaveChangesAsync();
@@ -370,6 +370,65 @@ public partial class JobRunRepositoryTests
             stalePending.Select(j => j.Id).Should().NotContain(
                 deferredJobId,
                 "a run waiting on the rate limiter is not stuck");
+        }
+    }
+
+    [Fact]
+    public async Task GetPendingJobsOlderThanAsync_MeasuresTheWaitingPeriodFromTheDeferral_NotFromCreation()
+    {
+        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        Guid tenantId = Guid.NewGuid();
+        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        SystemChannelTemplate template = BuildTemplate();
+        Connection resumedConnection = BuildConnection(template.Id);
+        Connection abandonedConnection = BuildConnection(template.Id);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset createdBefore = now.AddMinutes(-120);
+
+        Guid resumedJobId;
+        Guid abandonedJobId;
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            ctx.SystemChannelTemplates.Add(template);
+            ctx.Connections.Add(resumedConnection);
+            ctx.Connections.Add(abandonedConnection);
+
+            // Parked by the rate limiter for twelve hours and resumed five minutes ago: the run is
+            // healthy even though its CreatedAt is far beyond the pending timeout.
+            JobRun resumedJob = BuildJobRun(
+                resumedConnection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-12));
+            resumedJob.NotBefore = now.AddMinutes(-5);
+            ctx.JobRuns.Add(resumedJob);
+
+            // Its deferral expired three hours ago and nothing dispatched it since: stale.
+            JobRun abandonedJob = BuildJobRun(
+                abandonedConnection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-12));
+            abandonedJob.NotBefore = now.AddHours(-3);
+            ctx.JobRuns.Add(abandonedJob);
+
+            await ctx.SaveChangesAsync();
+
+            resumedJobId = resumedJob.Id;
+            abandonedJobId = abandonedJob.Id;
+        }
+
+        using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
+        {
+            JobRunRepository repository = new JobRunRepository(ctx);
+
+            List<JobRun> stalePending = await repository.GetPendingJobsOlderThanAsync(
+                createdBefore,
+                now,
+                CancellationToken.None);
+
+            stalePending.Select(j => j.Id).Should().NotContain(
+                resumedJobId,
+                "the waiting period of a deferred run starts when its deferral ends, not when it was created");
+            stalePending.Select(j => j.Id).Should().Contain(
+                abandonedJobId,
+                "an expired deferral stops explaining the Pending row");
         }
     }
 

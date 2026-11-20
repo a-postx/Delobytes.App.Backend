@@ -386,7 +386,10 @@ public class DataSeederSeedJobSchedulesTests
             new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs, JobType.OzonFinanceAccrualsImport });
         schedules.Should().OnlyContain(s => s.IsEnabled);
         schedules.Should().OnlyContain(s => s.ConnectionId == connection.Id);
-        schedules.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
+        schedules.Where(s => s.JobType == JobType.OzonFinanceAccrualsImport)
+            .Should().OnlyContain(s => s.CronExpression == "0 9 * * *");
+        schedules.Where(s => s.JobType != JobType.OzonFinanceAccrualsImport)
+            .Should().OnlyContain(s => s.CronExpression == "0 * * * *");
         schedules.Should().OnlyContain(s => s.TenantId == tenantId);
         schedules.Should().NotContain(s => s.JobType == JobType.WbOrdersImport);
     }

@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -380,17 +381,31 @@ public class FinanceImportOrchestrator
         SyncCheckpoint? watermark = await _syncCheckpoints.GetAsync(
             connection.Id, run.JobType, cancellationToken);
 
+        int initialBackfillDays = ResolveInitialBackfillDays(connection.SystemChannelTemplate.Code);
+
         DateOnly watermarkDate = watermark?.LastChangedAt is DateTimeOffset lastChanged
             ? DateOnly.FromDateTime(lastChanged.UtcDateTime)
-            : today.AddDays(-Math.Max(0, _options.InitialBackfillDays));
+            : today.AddDays(-Math.Max(0, initialBackfillDays));
 
         return FinanceImportWindowPlanner.Plan(
             connection.SystemChannelTemplate.Code,
             watermarkDate,
             today,
-            _options.InitialBackfillDays,
+            initialBackfillDays,
             _options.WbOverlapDays,
             _options.OzonOverlapDays);
+    }
+
+    // Wildberries stops serving sales reports after 90 days, so a deeper initial window would only
+    // spend the channel's two requests per day on periods that always come back empty.
+    private int ResolveInitialBackfillDays(string channelCode)
+    {
+        if (string.Equals(channelCode, ChannelCatalog.WildberriesCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Max(0, _options.WbInitialBackfillDays);
+        }
+
+        return Math.Max(0, _options.InitialBackfillDays);
     }
 
     // Runs the tail of a fully read window: the expected batch count is announced (which finalises

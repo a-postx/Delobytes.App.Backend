@@ -92,11 +92,16 @@ public interface IJobRunRepository
     public Task<List<JobRun>> GetRunningJobsOlderThanAsync(DateTimeOffset threshold, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Returns every Pending job run (across all tenants) created before
-    /// <paramref name="createdBefore"/> and not deferred to a future instant, for the watchdog to
-    /// reconcile runs that were never dispatched. A row whose <c>NotBefore</c> is still ahead of
-    /// <paramref name="now"/> is waiting on purpose and is not returned.
+    /// Returns every Pending job run (across all tenants) that has been waiting since before
+    /// <paramref name="createdBefore"/> and is not deferred to a future instant, for the watchdog to
+    /// reconcile runs that were never dispatched. The waiting period starts at <c>NotBefore</c> when
+    /// the row carries one, so a run deferred by the rate limiter is measured from the end of its
+    /// deferral rather than from its creation. A row whose <c>NotBefore</c> is still ahead of
+    /// <paramref name="now"/> is waiting on purpose and is never returned.
     /// </summary>
+    /// <param name="createdBefore">Threshold the waiting period must fall before.</param>
+    /// <param name="now">Current instant, used to exclude deferrals that are still ahead.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<List<JobRun>> GetPendingJobsOlderThanAsync(
         DateTimeOffset createdBefore,
         DateTimeOffset now,

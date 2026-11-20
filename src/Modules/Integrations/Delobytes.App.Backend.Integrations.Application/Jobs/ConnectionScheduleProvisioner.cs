@@ -107,7 +107,7 @@ public class ConnectionScheduleProvisioner
                 Id = Guid.NewGuid(),
                 ConnectionId = connection.Id,
                 JobType = jobType,
-                CronExpression = _backgroundJobsOptions.DefaultOrdersImportCronExpression,
+                CronExpression = _backgroundJobsOptions.ResolveDefaultCronExpression(jobType),
                 IsEnabled = true,
                 LastRunAt = null,
                 NextRunAt = now,
@@ -128,11 +128,10 @@ public class ConnectionScheduleProvisioner
 
         _logger.LogInformation(
             "ConnectionScheduleProvisioner: created {Count} JobSchedule(s) for connection {ConnectionId} " +
-            "(tenant {TenantId}, cron '{CronExpression}'), first run due immediately.",
+            "(tenant {TenantId}), first run due immediately.",
             createdCount,
             message.ConnectionId,
-            _tenantContext.TenantId,
-            _backgroundJobsOptions.DefaultOrdersImportCronExpression);
+            _tenantContext.TenantId);
     }
 }
 

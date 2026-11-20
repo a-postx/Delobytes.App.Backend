@@ -297,14 +297,27 @@ public static class DataSeeder
 
         int seededCount = 0;
 
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Dictionary<string, DateTimeOffset> nextRunAtByCron = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+
         // Approximate: computed directly against UTC instead of the tenant's time zone.
         // SchedulerHostedService recomputes NextRunAt in the tenant's time zone the first
         // time this schedule actually fires, so the error only affects the very first run.
-        CrontabSchedule parsedSchedule = CrontabSchedule.Parse(options.DefaultOrdersImportCronExpression);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        DateTimeOffset defaultNextRunAt = new DateTimeOffset(
-            DateTime.SpecifyKind(parsedSchedule.GetNextOccurrence(now.UtcDateTime), DateTimeKind.Utc),
-            TimeSpan.Zero);
+        DateTimeOffset GetNextRunAt(string cronExpression)
+        {
+            if (nextRunAtByCron.TryGetValue(cronExpression, out DateTimeOffset cached))
+            {
+                return cached;
+            }
+
+            CrontabSchedule parsedSchedule = CrontabSchedule.Parse(cronExpression);
+            DateTimeOffset nextRunAt = new DateTimeOffset(
+                DateTime.SpecifyKind(parsedSchedule.GetNextOccurrence(now.UtcDateTime), DateTimeKind.Utc),
+                TimeSpan.Zero);
+
+            nextRunAtByCron[cronExpression] = nextRunAt;
+            return nextRunAt;
+        }
 
         foreach (Connection connection in activeConnections)
         {
@@ -319,16 +332,18 @@ public static class DataSeeder
                 }
 
                 Guid tenantId = (Guid)context.Entry(connection).Property("TenantId").CurrentValue!;
+                string cronExpression = options.ResolveDefaultCronExpression(jobType);
+                DateTimeOffset nextRunAt = GetNextRunAt(cronExpression);
 
                 JobSchedule schedule = new JobSchedule
                 {
                     Id = Guid.NewGuid(),
                     ConnectionId = connection.Id,
                     JobType = jobType,
-                    CronExpression = options.DefaultOrdersImportCronExpression,
+                    CronExpression = cronExpression,
                     IsEnabled = true,
                     LastRunAt = null,
-                    NextRunAt = defaultNextRunAt,
+                    NextRunAt = nextRunAt,
                 };
 
                 tenantContext.SetTenantId(tenantId);
@@ -341,11 +356,12 @@ public static class DataSeeder
                     existingSchedules.Add(schedule);
 
                     logger.LogInformation(
-                        "Seeded JobSchedule {JobType} for Connection {ConnectionId} (tenant {TenantId}), NextRunAt={NextRunAt}.",
+                        "Seeded JobSchedule {JobType} for Connection {ConnectionId} (tenant {TenantId}), cron '{CronExpression}', NextRunAt={NextRunAt}.",
                         jobType,
                         connection.Id,
                         tenantId,
-                        defaultNextRunAt);
+                        cronExpression,
+                        nextRunAt);
                 }
                 finally
                 {

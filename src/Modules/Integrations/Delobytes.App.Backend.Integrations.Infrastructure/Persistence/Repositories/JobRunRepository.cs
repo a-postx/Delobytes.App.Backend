@@ -180,11 +180,13 @@ public class JobRunRepository : IJobRunRepository
     {
         // Watchdog must see every tenant's stuck jobs, not just the caller's current tenant.
         // A row deferred to a future NotBefore is waiting on the rate limiter on purpose, so it is
-        // not stuck and must not be failed while its deferral is still ahead.
+        // not stuck and must not be failed while its deferral is still ahead. For a deferred row the
+        // waiting period starts at NotBefore: a run parked for hours legitimately stays Pending long
+        // after CreatedAt, and measuring from CreatedAt would fail it the moment the deferral ends.
         return _context.JobRuns
             .IgnoreQueryFilters()
             .Where(j => j.Status == JobStatus.Pending
-                && j.CreatedAt < createdBefore
+                && (j.NotBefore ?? j.CreatedAt) < createdBefore
                 && (j.NotBefore == null || j.NotBefore <= now))
             .ToListAsync(cancellationToken);
     }

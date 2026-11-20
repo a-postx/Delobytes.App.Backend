@@ -167,7 +167,14 @@ public class ConnectionCreatedEventConsumerTests
             new[] { JobType.OzonOrdersImportFbo, JobType.OzonOrdersImportFbs, JobType.OzonFinanceAccrualsImport },
             "both schemas share one connection and are always scheduled; sequencing is enforced by the scheduler");
         proposed.Should().OnlyContain(s => s.ConnectionId == connection.Id);
-        proposed.Should().OnlyContain(s => s.CronExpression == "0 * * * *");
+        proposed.Where(s => s.JobType == JobType.OzonFinanceAccrualsImport)
+            .Should().OnlyContain(
+                s => s.CronExpression == "0 9 * * *",
+                "the finance accruals change once a day, so an hourly poll would only spend the rate limit");
+        proposed.Where(s => s.JobType != JobType.OzonFinanceAccrualsImport)
+            .Should().OnlyContain(
+                s => s.CronExpression == "0 * * * *",
+                "orders are operational data and stay on the hourly default");
         proposed.Should().OnlyContain(s => s.IsEnabled);
         proposed.Should().OnlyContain(s => s.LastRunAt == null);
         proposed.Should().OnlyContain(
@@ -333,7 +340,12 @@ public class ConnectionCreatedEventConsumerTests
         await CreateConsumer(cronExpression: "15 * * * *")
             .Consume(CreateContext(BuildEvent(connection)));
 
-        proposed.Should().OnlyContain(s => s.CronExpression == "15 * * * *");
+        proposed.Where(s => s.JobType != JobType.OzonFinanceAccrualsImport)
+            .Should().OnlyContain(s => s.CronExpression == "15 * * * *");
+        proposed.Single(s => s.JobType == JobType.OzonFinanceAccrualsImport)
+            .CronExpression.Should().Be(
+                "0 9 * * *",
+                "the configured orders cron must not drag the daily finance schedule back to hourly");
     }
 }
 
