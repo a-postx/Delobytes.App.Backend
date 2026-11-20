@@ -41,10 +41,16 @@ public class FinanceImportOrchestratorTests
 
         harness.Source.Requests[0].Cursor.Should().BeNull();
         harness.Publisher.FinanceBatches.Should().HaveCount(2, "1500 entries are published as 1000 + 500");
-        harness.Run.Status.Should().Be(JobStatus.Running);
+        harness.Run.Status.Should().Be(
+            JobStatus.Pending, "the worker dispatches Pending runs only, so a deferred run must go back to it");
         harness.Run.StartedAt.Should().NotBeNull();
         harness.Run.NotBefore.Should().Be(harness.Clock.GetUtcNow().AddMinutes(1));
         harness.Scope.Entered.Should().Be(1, "the channel calls must be attributable to the run");
+
+        List<JobRun> dueAfterDeferral = await harness.JobRuns.GetPendingJobsAsync(
+            harness.TenantId, 10, harness.Clock.GetUtcNow().AddMinutes(2), CancellationToken.None);
+
+        dueAfterDeferral.Should().Contain(harness.Run, "the deferred run has to be dispatchable when its instant passes");
 
         FinanceImportCheckpointPayload state = await harness.ReadStateAsync();
         state.Cursor.Should().Be("page-2");
@@ -63,6 +69,7 @@ public class FinanceImportOrchestratorTests
         harness.Publisher.FinanceBatches.Should().HaveCount(3);
         harness.Run.ExpectedBatchCount.Should().Be(3);
         harness.Run.NotBefore.Should().BeNull("the deferral is spent once the run is dispatched again");
+        harness.Run.Status.Should().Be(JobStatus.Running);
 
         FinanceImportCheckpointPayload completed = await harness.ReadStateAsync();
         completed.WindowCompleted.Should().BeTrue();

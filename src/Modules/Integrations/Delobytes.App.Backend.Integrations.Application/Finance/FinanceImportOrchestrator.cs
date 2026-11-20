@@ -29,7 +29,10 @@ namespace Delobytes.App.Backend.Integrations.Application.Finance;
 /// </para>
 /// <para>
 /// The run is marked Running before the first request, like the orders and products imports, so the
-/// watchdog's type timeout covers the whole window including the channel's pauses.
+/// watchdog's type timeout covers the whole window including the channel's pauses. A throttle puts
+/// it back to Pending with its deferral instant: the worker dispatches Pending runs only, and a
+/// Running run that nobody re-dispatches would hold the tenant's parallelism slot until the
+/// watchdog killed it.
 /// </para>
 /// </remarks>
 public class FinanceImportOrchestrator
@@ -457,6 +460,13 @@ public class FinanceImportOrchestrator
         DateTimeOffset nextAttemptAt = retryAt ?? _timeProvider.GetUtcNow().AddMinutes(1);
 
         run.NotBefore = nextAttemptAt;
+
+        // Back to Pending, which is the only status the worker dispatches. Left Running, a deferred
+        // run is re-dispatched by nobody — the scheduler refuses to create a second run while this
+        // one is active — so it would sit until the watchdog killed it on the running timeout,
+        // occupying the tenant's parallelism slot and starving every other import meanwhile. The
+        // next dispatch starts it again and clears the deferral.
+        run.Status = JobStatus.Pending;
 
         // CancellationToken.None on purpose: if the consume is cancelled while the API is
         // throttled, the deferral must still be persisted, otherwise the run stays immediately due
