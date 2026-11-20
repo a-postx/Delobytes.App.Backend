@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
+using Delobytes.App.Backend.Finance.Domain.Enums;
 
 namespace Delobytes.App.Backend.Finance.Application.Queries;
 
@@ -85,9 +86,7 @@ internal static class PnlViewFactory
 
                 // A figure is provisional while its documents are still expected or already late.
                 // Closed with an exception is final: the gap was accepted and recorded.
-                IsProvisional = row.CompletenessState
-                    is Domain.Enums.PnlLineCompleteness.Provisional
-                    or Domain.Enums.PnlLineCompleteness.Overdue,
+                IsProvisional = PnlLineCompletenessSemantics.IsProvisional(row.CompletenessState),
             });
         }
 

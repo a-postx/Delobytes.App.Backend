@@ -83,6 +83,27 @@ public sealed class PnlSummaryRowView
     public decimal? ControlDifferenceAmount { get; set; }
 
     /// <summary>
+    /// Gets or sets the revenue of the group's provisional lines: the ones still waiting for a
+    /// document or already past its window. It is the part of <see cref="RevenueAmount"/> whose
+    /// figures are not final yet, so the UI can mark it without querying the states separately.
+    /// Only meaningful when the query includes provisional lines.
+    /// </summary>
+    public decimal ProvisionalRevenueAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the overdue part of <see cref="ProvisionalRevenueAmount"/>: the lines whose
+    /// expected document is past its window and still open. It never exceeds the provisional amount.
+    /// </summary>
+    public decimal OverdueRevenueAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the revenue of the lines closed with a recorded exception. These figures are
+    /// final, but a document is missing behind them, so they stay distinguishable from a complete
+    /// line.
+    /// </summary>
+    public decimal ClosedWithExceptionRevenueAmount { get; set; }
+
+    /// <summary>
     /// Gets or sets the most severe completeness among the lines of the group: overdue beats
     /// provisional, provisional beats a recorded exception, and an exception beats a complete line.
     /// </summary>
@@ -141,7 +162,7 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             ChannelProductId = request.Filter.ChannelProductId,
             From = request.Filter.From,
             To = request.Filter.To,
-            Completeness = PnlCompletenessFilter.Parse(request.Filter.Completeness),
+            CompletenessStates = PnlCompletenessFilter.Parse(request.Filter.Completeness),
         };
 
         IReadOnlyList<PnlLineRow> rows = await _store.GetForSummaryAsync(settings.Currency, filter, cancellationToken);
@@ -168,6 +189,20 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 decimal revenueWithMargin = Sum(covered.Select(v => v.RevenueAmount)) ?? 0m;
                 decimal productionCostWithMargin = Sum(covered.Select(v => v.ProductionCostAmount)) ?? 0m;
 
+                // The provisional part is the same population the line view flags, so the badge and
+                // the filter scopes cannot describe different lines.
+                decimal provisionalRevenue = Sum(group
+                    .Where(v => PnlLineCompletenessSemantics.IsProvisional(v.CompletenessState))
+                    .Select(v => v.RevenueAmount)) ?? 0m;
+
+                decimal overdueRevenue = Sum(group
+                    .Where(v => v.CompletenessState == PnlLineCompleteness.Overdue)
+                    .Select(v => v.RevenueAmount)) ?? 0m;
+
+                decimal closedWithExceptionRevenue = Sum(group
+                    .Where(v => v.CompletenessState == PnlLineCompleteness.ClosedWithException)
+                    .Select(v => v.RevenueAmount)) ?? 0m;
+
                 return new PnlSummaryRowView
                 {
                     ProductId = group.Key.ProductId,
@@ -190,6 +225,9 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                     ControlDifferenceAmount = Sum(rows
                         .Where(r => group.Any(v => v.OrderLineId == r.OrderLineId))
                         .Select(r => r.ControlDifferenceAmount)),
+                    ProvisionalRevenueAmount = provisionalRevenue,
+                    OverdueRevenueAmount = overdueRevenue,
+                    ClosedWithExceptionRevenueAmount = closedWithExceptionRevenue,
                     CompletenessState = WorstCompleteness(group.Select(v => v.CompletenessState)),
                 };
             })

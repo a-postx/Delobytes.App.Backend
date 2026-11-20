@@ -104,6 +104,11 @@ public class PnlReadStoreSqlTests
             From = new DateOnly(2026, 3, 1),
             To = new DateOnly(2026, 3, 31),
             State = PnlLineState.Calculated,
+            CompletenessStates = new[]
+            {
+                PnlLineCompleteness.Complete,
+                PnlLineCompleteness.ClosedWithException,
+            },
         };
 
         string sql = store
@@ -118,6 +123,7 @@ public class PnlReadStoreSqlTests
         sql.Should().Contain("\"SaleDate\" >= @");
         sql.Should().Contain("\"SaleDate\" <= @");
         sql.Should().Contain("\"State\" = @");
+        sql.Should().Contain("\"CompletenessState\"");
         sql.Should().Contain("\"Currency\" = @");
     }
 

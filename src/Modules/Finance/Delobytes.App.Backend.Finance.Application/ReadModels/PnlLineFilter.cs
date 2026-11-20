@@ -29,9 +29,9 @@ public sealed class PnlLineFilter
     public PnlLineState? State { get; set; }
 
     /// <summary>
-    /// Gets or sets the optional completeness filter. Reports pass
-    /// <see cref="PnlLineCompleteness.Complete"/> so provisional figures never blend into a KPI;
-    /// the operational queue passes the open states.
+    /// Gets or sets the completeness states to include. Null means no restriction, which the read
+    /// query requests as <c>all</c>. Reports default to the final states, so provisional figures
+    /// never blend into a KPI while a recorded exception stays visible.
     /// </summary>
-    public PnlLineCompleteness? Completeness { get; set; }
+    public IReadOnlyList<PnlLineCompleteness>? CompletenessStates { get; set; }
 }

@@ -44,6 +44,8 @@ public class FinancePnlController : ControllerBase
         [FromQuery] string? continuationToken,
         CancellationToken cancellationToken)
     {
+        ValidateCompleteness(completeness);
+
         PnlLinesResponse response = await _mediator.Send(
             new GetPnlLinesQuery
             {
@@ -95,6 +97,8 @@ public class FinancePnlController : ControllerBase
             }
         }
 
+        ValidateCompleteness(completeness);
+
         PnlSummaryResponse response = await _mediator.Send(
             new GetPnlSummaryQuery
             {
@@ -130,5 +134,21 @@ public class FinancePnlController : ControllerBase
             cancellationToken);
 
         return Ok(response);
+    }
+
+    private static void ValidateCompleteness(string? completeness)
+    {
+        if (PnlCompletenessFilter.TryParse(completeness, out _))
+        {
+            return;
+        }
+
+        throw new ValidationException(
+            new[]
+            {
+                new ValidationFailure(
+                    nameof(completeness),
+                    $"Полнота должна быть одной из: {string.Join(", ", PnlCompletenessFilter.AcceptedValues)}."),
+            });
     }
 }

@@ -17,9 +17,10 @@ public sealed class PnlQueryFilter
     public string? State { get; set; }
 
     /// <summary>
-    /// Gets or sets the completeness filter: <c>complete</c>, <c>provisional</c>, <c>overdue</c> or
-    /// <c>closedWithException</c>. Omitted means <c>complete</c>, so a report never mixes provisional
-    /// figures into its totals.
+    /// Gets or sets the completeness selection: <c>all</c>, <c>final</c>, <c>provisional</c>, or one
+    /// exact state — <c>complete</c>, <c>overdue</c>, <c>closedWithException</c>. Omitted means
+    /// <c>final</c>: provisional figures never blend into a report, while a recorded exception stays
+    /// visible.
     /// </summary>
     public string? Completeness { get; set; }
 }

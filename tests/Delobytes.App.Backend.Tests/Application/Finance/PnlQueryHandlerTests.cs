@@ -349,6 +349,110 @@ public class PnlQueryHandlerTests
         response.Rows.Single().CompletenessState.Should().Be(PnlLineCompleteness.Overdue);
     }
 
+    [Fact]
+    public async Task GetSummary_SplitsRevenueByCompletenessState()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, completeness: PnlLineCompleteness.Complete),
+            Row(new DateOnly(2026, 8, 1), 200m, 180m, 20m, completeness: PnlLineCompleteness.Provisional),
+            Row(new DateOnly(2026, 8, 1), 300m, 270m, 30m, completeness: PnlLineCompleteness.Overdue),
+            Row(new DateOnly(2026, 8, 1), 400m, 360m, 40m, completeness: PnlLineCompleteness.ClosedWithException),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Filter = new PnlQueryFilter { Completeness = "all" },
+                Granularity = PnlPeriodGranularity.Month,
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.RevenueAmount.Should().Be(1000m);
+        row.ProvisionalRevenueAmount.Should().Be(500m);
+        row.OverdueRevenueAmount.Should().Be(300m);
+        row.ClosedWithExceptionRevenueAmount.Should().Be(400m);
+        row.ProvisionalRevenueAmount.Should().BeGreaterThanOrEqualTo(row.OverdueRevenueAmount);
+        row.CompletenessState.Should().Be(PnlLineCompleteness.Overdue);
+    }
+
+    [Fact]
+    public async Task GetSummary_DefaultCompleteness_SelectsTheFinalStates()
+    {
+        FakeStore store = new FakeStore(new PnlLinePage(), new List<PnlLineRow>());
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        await handler.Handle(new GetPnlSummaryQuery(), CancellationToken.None);
+
+        store.LastFilter.Should().NotBeNull();
+        store.LastFilter!.CompletenessStates.Should().BeEquivalentTo(
+            new[] { PnlLineCompleteness.Complete, PnlLineCompleteness.ClosedWithException });
+    }
+
+    [Fact]
+    public async Task GetSummary_AllCompleteness_LeavesTheStoreUnrestricted()
+    {
+        FakeStore store = new FakeStore(new PnlLinePage(), new List<PnlLineRow>());
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        await handler.Handle(
+            new GetPnlSummaryQuery { Filter = new PnlQueryFilter { Completeness = "all" } },
+            CancellationToken.None);
+
+        store.LastFilter.Should().NotBeNull();
+        store.LastFilter!.CompletenessStates.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLines_DefaultCompleteness_SelectsTheFinalStates()
+    {
+        FakeStore store = new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow>() });
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        store.LastFilter.Should().NotBeNull();
+        store.LastFilter!.CompletenessStates.Should().BeEquivalentTo(
+            new[] { PnlLineCompleteness.Complete, PnlLineCompleteness.ClosedWithException });
+    }
+
+    [Fact]
+    public async Task GetLines_ClosedWithExceptionLine_IsNotReportedAsProvisional()
+    {
+        PnlLineRow row = Row(
+            new DateOnly(2026, 8, 1), 100m, 90m, 10m, completeness: PnlLineCompleteness.ClosedWithException);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildTimeService());
+
+        PnlLinesResponse response = await handler.Handle(
+            new GetPnlLinesQuery { Filter = new PnlQueryFilter { Completeness = "all" } },
+            CancellationToken.None);
+
+        response.Lines[0].CompletenessState.Should().Be(PnlLineCompleteness.ClosedWithException);
+        response.Lines[0].IsProvisional.Should().BeFalse();
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
@@ -446,6 +550,8 @@ public class PnlQueryHandlerTests
             _rows = rows ?? page.Rows;
         }
 
+        public PnlLineFilter? LastFilter { get; private set; }
+
         public Task<PnlLinePage> GetLinesAsync(
             string currency,
             PnlLineFilter filter,
@@ -453,6 +559,7 @@ public class PnlQueryHandlerTests
             string? afterToken,
             CancellationToken cancellationToken)
         {
+            LastFilter = filter;
             return Task.FromResult(_page);
         }
 
@@ -461,6 +568,7 @@ public class PnlQueryHandlerTests
             PnlLineFilter filter,
             CancellationToken cancellationToken)
         {
+            LastFilter = filter;
             return Task.FromResult(_rows);
         }
 

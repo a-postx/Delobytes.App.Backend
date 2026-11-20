@@ -336,10 +336,10 @@ public class PnlReadStore : IPnlReadStore
             query = query.Where(row => row.State == state);
         }
 
-        if (filter.Completeness.HasValue)
+        if (filter.CompletenessStates is { Count: > 0 })
         {
-            PnlLineCompleteness completeness = filter.Completeness.Value;
-            query = query.Where(row => row.CompletenessState == completeness);
+            List<PnlLineCompleteness> states = filter.CompletenessStates.ToList();
+            query = query.Where(row => states.Contains(row.CompletenessState));
         }
 
         return query;

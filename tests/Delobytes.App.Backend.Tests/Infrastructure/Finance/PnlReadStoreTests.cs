@@ -278,6 +278,75 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetLinesAsync_FiltersByCompletenessStates()
+    {
+        string database = NewDatabaseName();
+        Guid completeOrderLine = Guid.Parse("0000000b-0000-0000-0000-00000000000b");
+        Guid provisionalOrderLine = Guid.Parse("0000000c-0000-0000-0000-00000000000c");
+        Guid overdueOrderLine = Guid.Parse("0000000d-0000-0000-0000-00000000000d");
+        Guid exceptionOrderLine = Guid.Parse("0000000e-0000-0000-0000-00000000000e");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.AddRange(
+                Line(Guid.NewGuid(), completeOrderLine, "RUB", Day1),
+                Line(Guid.NewGuid(), provisionalOrderLine, "RUB", Day1, completeness: PnlLineCompleteness.Provisional),
+                Line(Guid.NewGuid(), overdueOrderLine, "RUB", Day1, completeness: PnlLineCompleteness.Overdue),
+                Line(Guid.NewGuid(), exceptionOrderLine, "RUB", Day1, completeness: PnlLineCompleteness.ClosedWithException));
+
+            seed.OrderLineRefs.AddRange(
+                Reference(completeOrderLine, ChannelId),
+                Reference(provisionalOrderLine, ChannelId),
+                Reference(overdueOrderLine, ChannelId),
+                Reference(exceptionOrderLine, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync(
+            "RUB",
+            new PnlLineFilter
+            {
+                CompletenessStates = new[]
+                {
+                    PnlLineCompleteness.Complete,
+                    PnlLineCompleteness.ClosedWithException,
+                },
+            },
+            100,
+            null,
+            CancellationToken.None);
+
+        page.Rows.Select(r => r.OrderLineId).Should().BeEquivalentTo(new[] { completeOrderLine, exceptionOrderLine });
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_WithoutCompletenessStates_ReadsEveryState()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("0000000f-0000-0000-0000-00000000000f");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(
+                Guid.NewGuid(), orderLineId, "RUB", Day1, completeness: PnlLineCompleteness.ClosedWithException));
+            seed.OrderLineRefs.Add(Reference(orderLineId, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        page.Rows.Should().ContainSingle().Which.OrderLineId.Should().Be(orderLineId);
+    }
+
+    [Fact]
     public async Task GetLinesAsync_DoesNotReadOtherTenants()
     {
         string database = NewDatabaseName();
@@ -552,7 +621,13 @@ public class PnlReadStoreTests
         return new[] { firstOrderLine, secondOrderLine, thirdOrderLine };
     }
 
-    private static PnlLine Line(Guid id, Guid orderLineId, string currency, DateOnly saleDate, PnlLineState state = PnlLineState.Calculated)
+    private static PnlLine Line(
+        Guid id,
+        Guid orderLineId,
+        string currency,
+        DateOnly saleDate,
+        PnlLineState state = PnlLineState.Calculated,
+        PnlLineCompleteness completeness = PnlLineCompleteness.Complete)
     {
         return new PnlLine
         {
@@ -564,6 +639,7 @@ public class PnlReadStoreTests
             RevenueAmount = 100m,
             NetRevenueAmount = 90m,
             EntryCount = 1,
+            CompletenessState = completeness,
             CreatedAt = DateTimeOffset.UnixEpoch,
         };
     }
