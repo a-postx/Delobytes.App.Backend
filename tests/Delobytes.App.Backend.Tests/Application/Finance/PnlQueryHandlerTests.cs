@@ -647,6 +647,244 @@ public class PnlQueryHandlerTests
         store.PulledRows.Should().Be(2);
     }
 
+    [Fact]
+    public async Task GetLines_ReportsTheOrderedAndTheSoldQuantityApart()
+    {
+        // A non-buyout was ordered but never sold: it must add to the ordered units only, otherwise
+        // a per-unit margin would be divided by units that never left the seller.
+        PnlLineRow sold = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, quantity: 3);
+        PnlLineRow notBoughtOut = Row(
+            saleDate: null,
+            revenue: null,
+            netRevenue: -53.84m,
+            cost: null,
+            periodDate: new DateOnly(2026, 8, 5),
+            quantity: 2);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { sold, notBoughtOut } }),
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].QuantityOrdered.Should().Be(3);
+        response.Lines[0].QuantitySold.Should().Be(3);
+        response.Lines[1].QuantityOrdered.Should().Be(2);
+        response.Lines[1].QuantitySold.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetSummary_SumsTheOrderedAndTheSoldQuantitySeparately()
+    {
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId, quantity: 3),
+            Row(new DateOnly(2026, 8, 2), 100m, 90m, 10m, productId, quantity: 1),
+            Row(
+                saleDate: null,
+                revenue: null,
+                netRevenue: -53.84m,
+                cost: null,
+                productId: productId,
+                periodDate: new DateOnly(2026, 8, 5),
+                quantity: 2),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.QuantityOrdered.Should().Be(6);
+        row.QuantitySold.Should().Be(4);
+        row.Lines.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task GetSummary_TotalGranularity_FoldsTheWholeRangeIntoOneRow()
+    {
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId, quantity: 2),
+            Row(new DateOnly(2026, 9, 15), 200m, 180m, 20m, productId, quantity: 3),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                Filter = new PnlQueryFilter { From = new DateOnly(2026, 8, 1) },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 8, 1));
+        row.Lines.Should().Be(2);
+        row.RevenueAmount.Should().Be(300m);
+        row.QuantityOrdered.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task GetSummary_TotalWithoutARange_StartsAtTheEarliestPeriodOfTheGroup()
+    {
+        // Without a range the grouping key has no real date behind it. Reporting the sentinel would
+        // leak a 0001-01-01 into the payload and be read as a real period start.
+        Guid productId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 9, 15), 100m, 90m, 10m, productId),
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Total },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 8, 1));
+        row.PeriodStart.Should().NotBe(DateOnly.MinValue);
+    }
+
+    [Fact]
+    public async Task GetSummary_TotalGranularity_KeepsTheProductGroupsApart()
+    {
+        // The whole range is one period, not one group: two products stay two rows per period.
+        Guid firstProduct = Guid.NewGuid();
+        Guid secondProduct = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, firstProduct),
+            Row(new DateOnly(2026, 9, 1), 100m, 90m, 10m, firstProduct),
+            Row(new DateOnly(2026, 9, 2), 100m, 90m, 10m, secondProduct),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                Filter = new PnlQueryFilter { From = new DateOnly(2026, 8, 1) },
+            },
+            CancellationToken.None);
+
+        response.Rows.Should().HaveCount(2);
+        response.Rows.Should().OnlyContain(r => r.PeriodStart == new DateOnly(2026, 8, 1));
+        response.Rows.Single(r => r.ProductId == firstProduct).Lines.Should().Be(2);
+        response.Rows.Single(r => r.ProductId == secondProduct).Lines.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByChannel_ReportsOneRowPerChannel()
+    {
+        Guid firstChannel = Guid.NewGuid();
+        Guid secondChannel = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid(), quantity: 2, channelId: firstChannel),
+            Row(new DateOnly(2026, 8, 2), 100m, 90m, 10m, Guid.NewGuid(), quantity: 3, channelId: firstChannel),
+            Row(new DateOnly(2026, 8, 3), 500m, 450m, 50m, Guid.NewGuid(), quantity: 1, channelId: secondChannel),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.Channel,
+            },
+            CancellationToken.None);
+
+        response.Rows.Should().HaveCount(2);
+
+        PnlSummaryRowView first = response.Rows.Single(r => r.ChannelId == firstChannel);
+        first.Lines.Should().Be(2);
+        first.RevenueAmount.Should().Be(200m);
+        first.Margin.Should().Be(160m);
+        first.QuantityOrdered.Should().Be(5);
+        first.ProductId.Should().BeNull();
+        first.IsUnlinkedProduct.Should().BeFalse();
+
+        PnlSummaryRowView second = response.Rows.Single(r => r.ChannelId == secondChannel);
+        second.Lines.Should().Be(1);
+        second.RevenueAmount.Should().Be(500m);
+        second.ProductId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByChannel_KeepsLinesWithoutAProductLink()
+    {
+        // A channel group is about the money of the channel, not about the catalogue: a line whose
+        // product is not resolved yet still belongs to it and must not disappear.
+        Guid channelId = Guid.NewGuid();
+        Guid linkedProduct = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, linkedProduct, channelId: channelId),
+            Row(new DateOnly(2026, 8, 2), 100m, 90m, 10m, productId: null, channelId: channelId),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.Channel,
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.ChannelId.Should().Be(channelId);
+        row.Lines.Should().Be(2);
+        row.IsUnlinkedProduct.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByProduct_LeavesTheChannelOfTheGroupEmpty()
+    {
+        // The dimension decides the identifier: a product group must not expose one of its channels
+        // as if the group belonged to it.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.Product,
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.ChannelId.Should().BeNull();
+        row.ProductId.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetSummary_EchoesTheGroupingDimension()
+    {
+        PnlSummaryResponse productGrouping = await BuildSummaryHandler(new List<PnlLineRow>())
+            .Handle(new GetPnlSummaryQuery { GroupBy = PnlSummaryGroupBy.Product }, CancellationToken.None);
+
+        PnlSummaryResponse channelGrouping = await BuildSummaryHandler(new List<PnlLineRow>())
+            .Handle(new GetPnlSummaryQuery { GroupBy = PnlSummaryGroupBy.Channel }, CancellationToken.None);
+
+        productGrouping.GroupBy.Should().Be(PnlSummaryGroupBy.Product);
+        channelGrouping.GroupBy.Should().Be(PnlSummaryGroupBy.Channel);
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
@@ -663,17 +901,20 @@ public class PnlQueryHandlerTests
         Guid? productId = null,
         bool costComplete = true,
         PnlLineCompleteness completeness = PnlLineCompleteness.Complete,
-        DateOnly? periodDate = null)
+        DateOnly? periodDate = null,
+        int quantity = 1,
+        Guid? channelId = null)
     {
         return new PnlLineRow
         {
             OrderLineId = Guid.NewGuid(),
-            ChannelId = Guid.NewGuid(),
+            ChannelId = channelId ?? Guid.NewGuid(),
             ProductId = productId,
             Currency = "RUB",
             SaleDate = saleDate,
             PeriodDate = periodDate ?? saleDate,
             State = saleDate.HasValue ? PnlLineState.Calculated : PnlLineState.NotCalculated,
+            Quantity = quantity,
             RevenueAmount = revenue,
             NetRevenueAmount = netRevenue,
             ProductionCostAmount = cost,

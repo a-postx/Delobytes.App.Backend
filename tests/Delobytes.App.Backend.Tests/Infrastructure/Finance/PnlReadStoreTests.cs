@@ -159,6 +159,32 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetLinesAsync_ProjectsTheOrderedQuantityFromTheJoinedReference()
+    {
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("0000000b-0000-0000-0000-00000000000b");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+
+            OrderLineRef reference = Reference(orderLineId, ChannelId);
+            reference.Quantity = 4;
+            seed.OrderLineRefs.Add(reference);
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        page.Rows.Should().ContainSingle();
+        page.Rows[0].Quantity.Should().Be(4);
+    }
+
+    [Fact]
     public async Task GetLinesAsync_FiltersByChannelProductIdIndependentlyOfTheProduct()
     {
         string database = NewDatabaseName();

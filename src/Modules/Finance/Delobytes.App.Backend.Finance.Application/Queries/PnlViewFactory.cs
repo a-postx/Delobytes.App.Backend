@@ -99,6 +99,12 @@ internal static class PnlViewFactory
             TaxAdjustedMargin = taxAdjustedMargin,
             MarginPercent = PnlTaxCalculator.MarginPercent(margin, row.RevenueAmount),
             Roi = PnlTaxCalculator.Roi(margin, row.ProductionCostAmount),
+
+            // The ordered units include a non-buyout, the sold ones do not: a line without a sale
+            // fact carries no sold unit, while its delivery charge still belongs to the period.
+            QuantityOrdered = row.Quantity,
+            QuantitySold = row.SaleDate.HasValue ? row.Quantity : 0,
+
             CostComplete = row.ProductionCostIsComplete == true,
             CostStatus = row.CostStatus?.ToString(),
             ComponentsReconciled =

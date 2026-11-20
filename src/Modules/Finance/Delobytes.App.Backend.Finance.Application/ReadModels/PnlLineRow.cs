@@ -39,6 +39,13 @@ public sealed class PnlLineRow
 
     public PnlLineState State { get; set; }
 
+    /// <summary>
+    /// Gets or sets the quantity of units the line carries, as Sales reported it for the order line.
+    /// It is the ordered quantity: a line that never sold still carries the units it was ordered
+    /// with, so the sold quantity is derived from <see cref="SaleDate"/>, not from this field.
+    /// </summary>
+    public int Quantity { get; set; }
+
     public OrderLineCostStatus? CostStatus { get; set; }
 
     public decimal? RevenueAmount { get; set; }

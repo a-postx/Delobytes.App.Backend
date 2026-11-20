@@ -68,7 +68,8 @@ public class FinancePnlController : ControllerBase
     }
 
     /// <summary>
-    /// Returns the summary by product and period.
+    /// Returns the summary by product or by channel, and by period. A granularity of
+    /// <c>total</c> reports the whole requested range as one period.
     /// </summary>
     [HttpGet("pnl-summary")]
     [ProducesResponseType(typeof(PnlSummaryResponse), StatusCodes.Status200OK)]
@@ -79,6 +80,7 @@ public class FinancePnlController : ControllerBase
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
         [FromQuery] string? granularity,
+        [FromQuery] string? groupBy,
         [FromQuery] string? completeness,
         CancellationToken cancellationToken)
     {
@@ -92,7 +94,26 @@ public class FinancePnlController : ControllerBase
                 throw new ValidationException(
                     new[]
                     {
-                        new ValidationFailure(nameof(granularity), "Гранулярность должна быть одной из: day, week, month."),
+                        new ValidationFailure(
+                            nameof(granularity),
+                            "Гранулярность должна быть одной из: day, week, month, total."),
+                    });
+            }
+        }
+
+        PnlSummaryGroupBy parsedGroupBy = PnlSummaryGroupBy.Product;
+
+        if (groupBy != null)
+        {
+            if (!Enum.TryParse(groupBy, ignoreCase: true, out parsedGroupBy)
+                || !Enum.IsDefined(parsedGroupBy))
+            {
+                throw new ValidationException(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            nameof(groupBy),
+                            "Группировка должна быть одной из: product, channel."),
                     });
             }
         }
@@ -112,6 +133,7 @@ public class FinancePnlController : ControllerBase
                     Completeness = completeness,
                 },
                 Granularity = parsedGranularity,
+                GroupBy = parsedGroupBy,
             },
             cancellationToken);
 

@@ -54,6 +54,18 @@ public sealed class PnlLineView
 
     public decimal? Roi { get; set; }
 
+    /// <summary>
+    /// Gets or sets the quantity of units the line was ordered with. A line that never sold still
+    /// carries the units it was ordered with, so this figure includes the non-buyouts.
+    /// </summary>
+    public int QuantityOrdered { get; set; }
+
+    /// <summary>
+    /// Gets or sets the quantity of units that actually sold: the ordered quantity of a line that
+    /// has a sale fact, and zero for a line that never sold.
+    /// </summary>
+    public int QuantitySold { get; set; }
+
     public bool CostComplete { get; set; }
 
     public string? CostStatus { get; set; }

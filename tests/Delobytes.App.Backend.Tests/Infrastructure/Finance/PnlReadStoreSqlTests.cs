@@ -60,6 +60,26 @@ public class PnlReadStoreSqlTests
     }
 
     [Fact]
+    public void BuildLinesQuery_SelectsTheQuantityFromTheJoinedReference()
+    {
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        string sql = store
+            .BuildLinesQuery("RUB", new PnlLineFilter(), null)
+            .OrderBy(row => row.Id)
+            .Take(10)
+            .ToQueryString();
+
+        // The ordered units come from the reference the query already joins: a second round trip or
+        // a fallback to the cost fact's quantity would be a second source of the same fact.
+        string selected = sql.Split("WHERE")[0];
+
+        selected.Should().Contain("FROM finance.\"OrderLineRefs\"");
+        selected.Should().Contain("\"Quantity\"");
+    }
+
+    [Fact]
     public void BuildLinesQuery_WithCursor_ComparesUuidWithoutTextCast()
     {
         using FinanceDbContext context = CreateContext();

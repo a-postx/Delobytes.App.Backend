@@ -12,6 +12,12 @@ public sealed class PnlSummaryRowView
 {
     public Guid? ProductId { get; set; }
 
+    /// <summary>
+    /// Gets or sets the channel of the group. Populated only when the summary is grouped by channel;
+    /// a product-grouped row leaves it empty and the channel stays a filter.
+    /// </summary>
+    public Guid? ChannelId { get; set; }
+
     public bool IsUnlinkedProduct { get; set; }
 
     public DateOnly PeriodStart { get; set; }
@@ -53,6 +59,18 @@ public sealed class PnlSummaryRowView
     /// zero.
     /// </summary>
     public decimal? Roi { get; set; }
+
+    /// <summary>
+    /// Gets or sets the quantity of units the group was ordered with, including the non-buyouts: a
+    /// line that never sold still carries the units it was ordered with.
+    /// </summary>
+    public int QuantityOrdered { get; set; }
+
+    /// <summary>
+    /// Gets or sets the quantity of units the group actually sold. A non-buyout adds to
+    /// <see cref="QuantityOrdered"/> and to nothing here.
+    /// </summary>
+    public int QuantitySold { get; set; }
 
     /// <summary>Gets or sets the number of lines of the group whose margin is known.</summary>
     public int LinesWithMargin { get; set; }
@@ -116,14 +134,26 @@ public sealed class PnlSummaryResponse
     public List<PnlSummaryRowView> Rows { get; set; } = new();
 
     public string Currency { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the dimension the rows were grouped by. Echoed so a client never has to infer
+    /// from the payload which identifier a row carries.
+    /// </summary>
+    public PnlSummaryGroupBy GroupBy { get; set; }
 }
 
-/// <summary>Summary by product and period.</summary>
+/// <summary>Summary by product or by channel, and by period.</summary>
 public sealed class GetPnlSummaryQuery : IRequest<PnlSummaryResponse>
 {
     public PnlQueryFilter Filter { get; set; } = new();
 
     public PnlPeriodGranularity Granularity { get; set; } = PnlPeriodGranularity.Day;
+
+    /// <summary>
+    /// Gets or sets the grouping dimension. One axis per request: a product-grouped row carries the
+    /// product identifier, a channel-grouped row carries the channel one.
+    /// </summary>
+    public PnlSummaryGroupBy GroupBy { get; set; } = PnlSummaryGroupBy.Product;
 }
 
 /// <summary>Handles <see cref="GetPnlSummaryQuery"/>.</summary>
@@ -170,8 +200,10 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         // Grouped by the period date rather than by the sale date: a non-buyout never sold, but its
         // delivery charge is money of the period it was booked in and must be reported. Rows are
         // folded as they arrive, so the request never holds the whole history: peak memory follows
-        // the number of groups (products x periods), not the number of lines.
-        Dictionary<(Guid? ProductId, DateOnly PeriodStart), SummaryAccumulator> accumulators = new();
+        // the number of groups (products or channels, times periods), not the number of lines.
+        // The key carries the identifier of the requested dimension, so one fold serves both
+        // groupings without a second pass over the lines.
+        Dictionary<(Guid? GroupId, DateOnly PeriodStart), SummaryAccumulator> accumulators = new();
 
         await foreach (PnlLineRow row in _store
             .StreamForSummaryAsync(settings.Currency, filter, cancellationToken)
@@ -185,8 +217,8 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 continue;
             }
 
-            (Guid? ProductId, DateOnly PeriodStart) key = (
-                view.ProductId,
+            (Guid? GroupId, DateOnly PeriodStart) key = (
+                request.GroupBy == PnlSummaryGroupBy.Channel ? view.ChannelId : view.ProductId,
                 PeriodOf(view.PeriodDate.Value, request.Granularity));
 
             if (!accumulators.TryGetValue(key, out SummaryAccumulator? accumulator))
@@ -201,15 +233,37 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         return new PnlSummaryResponse
         {
             Rows = accumulators
-                .Select(pair => pair.Value.Build(pair.Key.ProductId, pair.Key.PeriodStart))
+                .Select(pair => pair.Value.Build(
+                    request.GroupBy,
+                    pair.Key.GroupId,
+                    ResolvePeriodStart(request, pair.Value, pair.Key.PeriodStart)))
                 .OrderBy(row => row.PeriodStart)
-                .ThenBy(row => row.ProductId)
+                .ThenBy(row => row.ProductId ?? row.ChannelId)
                 .ToList(),
             Currency = settings.Currency,
+            GroupBy = request.GroupBy,
         };
     }
 
-    // Folds line views into the totals of one (product, period) group. Every figure is accumulated
+    // A total-period row reports the start of the requested range. Without a range the earliest
+    // period date of the group is the only honest answer: the grouping sentinel is an internal key
+    // and must not leak into the payload as a real date.
+    private static DateOnly ResolvePeriodStart(
+        GetPnlSummaryQuery request,
+        SummaryAccumulator accumulator,
+        DateOnly groupedPeriodStart)
+    {
+        if (request.Granularity != PnlPeriodGranularity.Total)
+        {
+            return groupedPeriodStart;
+        }
+
+        return request.Filter.From
+            ?? accumulator.EarliestPeriodDate
+            ?? groupedPeriodStart;
+    }
+
+    // Folds line views into the totals of one group. Every figure is accumulated
     // where it belongs, so no intermediate list per column is allocated and the coverage parts stay
     // disjoint by construction.
     private sealed class SummaryAccumulator
@@ -229,7 +283,15 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         private decimal _closedWithExceptionRevenue;
         private int _lines;
         private int _linesWithMargin;
+        private int _quantityOrdered;
+        private int _quantitySold;
         private PnlLineCompleteness _worst = PnlLineCompleteness.Complete;
+
+        /// <summary>
+        /// Gets the earliest period date folded into the group. A total-period group is keyed by a
+        /// sentinel, so this is what the reported period start falls back to.
+        /// </summary>
+        public DateOnly? EarliestPeriodDate { get; private set; }
 
         public void Add(PnlLineView view, decimal? controlDifference)
         {
@@ -241,6 +303,17 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             _estimatedTax = Accumulate(_estimatedTax, view.EstimatedTax);
             _taxAdjustedMargin = Accumulate(_taxAdjustedMargin, view.TaxAdjustedMargin);
             _controlDifference = Accumulate(_controlDifference, controlDifference);
+
+            // Both quantities are summed over every line of the group: the ordered units include a
+            // non-buyout, the sold ones do not, and the two must describe the same population of
+            // lines so a per-unit figure can be derived from either without a second scan.
+            _quantityOrdered += view.QuantityOrdered;
+            _quantitySold += view.QuantitySold;
+
+            if (!EarliestPeriodDate.HasValue || view.PeriodDate < EarliestPeriodDate.Value)
+            {
+                EarliestPeriodDate = view.PeriodDate;
+            }
 
             // The margin exists only for a line with a known and complete cost, so it is summed over
             // its own population. Every figure derived from it is summed over the same population,
@@ -281,12 +354,20 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             }
         }
 
-        public PnlSummaryRowView Build(Guid? productId, DateOnly periodStart)
+        public PnlSummaryRowView Build(
+            PnlSummaryGroupBy groupBy,
+            Guid? groupId,
+            DateOnly periodStart)
         {
+            bool byChannel = groupBy == PnlSummaryGroupBy.Channel;
+
             return new PnlSummaryRowView
             {
-                ProductId = productId,
-                IsUnlinkedProduct = productId == null,
+                // The dimension decides which identifier the row carries: a product row must not
+                // expose a channel as if it were a product, and vice versa.
+                ProductId = byChannel ? null : groupId,
+                ChannelId = byChannel ? groupId : null,
+                IsUnlinkedProduct = !byChannel && groupId == null,
                 PeriodStart = periodStart,
                 Lines = _lines,
                 RevenueAmount = _revenue,
@@ -297,6 +378,8 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 TaxAdjustedMargin = _taxAdjustedMargin,
                 MarginPercent = PnlTaxCalculator.MarginPercent(_margin, _revenueWithMargin),
                 Roi = PnlTaxCalculator.Roi(_margin, _productionCostWithMargin),
+                QuantityOrdered = _quantityOrdered,
+                QuantitySold = _quantitySold,
                 LinesWithMargin = _linesWithMargin,
                 RevenueWithMarginAmount = _revenueWithMargin,
                 ProductionCostWithMarginAmount = _productionCostWithMargin,
@@ -315,6 +398,9 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
     {
         return granularity switch
         {
+            // The whole range folds into one group. The start reported for it is resolved from the
+            // request, so this sentinel stays an internal keying detail.
+            PnlPeriodGranularity.Total => DateOnly.MinValue,
             PnlPeriodGranularity.Week => date.AddDays(-(((int)date.DayOfWeek + 6) % 7)),
             PnlPeriodGranularity.Month => new DateOnly(date.Year, date.Month, 1),
             _ => date,

@@ -287,6 +287,9 @@ public class PnlReadStore : IPnlReadStore
                    // the diagnostics that count unlinked lines.
                    ProductId = cost == null ? null : cost.ProductId,
                    ChannelProductId = reference.ChannelProductId,
+                   // The ordered units come from the reference the join already reads: no extra
+                   // round trip and no second source of the same fact.
+                   Quantity = reference.Quantity,
                    Currency = line.Currency,
                    SaleDate = line.SaleDate,
                    // A line that never sold still has money on it: a non-buyout carries only its
