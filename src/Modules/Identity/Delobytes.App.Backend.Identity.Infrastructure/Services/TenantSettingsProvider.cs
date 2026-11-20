@@ -68,6 +68,30 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<TenantTaxProfileSnapshot>> GetTaxProfileHistoryAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
+
+        IReadOnlyList<TenantTaxProfile> profiles =
+            await _taxProfileRepository.GetByTenantAsync(tenantId, cancellationToken);
+
+        // Reporter reads walk this list in date order and resolve a profile by binary search, so the
+        // repository's newest-first order is reversed here rather than at every call site.
+        return profiles
+            .OrderBy(profile => profile.ValidFrom)
+            .Select(profile => new TenantTaxProfileSnapshot
+            {
+                Regime = profile.Regime,
+                RatePercent = profile.RatePercent,
+                Vat = profile.Vat,
+                ValidFrom = profile.ValidFrom,
+            })
+            .ToList();
+    }
+
+    /// <inheritdoc/>
     public async Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken)
     {
         Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");

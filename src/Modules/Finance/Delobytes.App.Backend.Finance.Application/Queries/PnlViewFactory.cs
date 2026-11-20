@@ -1,5 +1,4 @@
 using Delobytes.App.Backend.Contracts.Accounting;
-using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Enums;
 
@@ -15,30 +14,24 @@ internal static class PnlViewFactory
         IReadOnlyList<PnlLineRow> rows,
         Guid tenantId,
         ITenantSettingsProvider settingsProvider,
-        ITenantTimeService timeService,
         CancellationToken cancellationToken)
     {
-        TimeZoneInfo timeZone = await timeService.GetTimeZoneAsync(tenantId, cancellationToken);
-        Dictionary<DateOnly, TenantTaxProfileSnapshot?> profiles = new();
+        // The history is read once per request: a report over years of history asks for one profile
+        // per distinct sale date, and one query per date was the second half of the timeout.
+        IReadOnlyList<TenantTaxProfileSnapshot> profiles =
+            await settingsProvider.GetTaxProfileHistoryAsync(tenantId, cancellationToken);
+
+        TaxProfileTimeline timeline = new(profiles);
 
         List<PnlLineView> views = new(rows.Count);
 
         foreach (PnlLineRow row in rows)
         {
-            TenantTaxProfileSnapshot? profile = null;
-
-            if (row.SaleDate.HasValue)
-            {
-                if (!profiles.TryGetValue(row.SaleDate.Value, out profile))
-                {
-                    profile = await settingsProvider.GetTaxProfileAtAsync(
-                        tenantId,
-                        TenantTimeZones.StartOfDayUtc(row.SaleDate.Value, timeZone),
-                        cancellationToken);
-
-                    profiles.Add(row.SaleDate.Value, profile);
-                }
-            }
+            // The sale date is already the tenant's calendar date, so the profile is resolved on it
+            // directly: converting it to UTC and back would return the same date.
+            TenantTaxProfileSnapshot? profile = row.SaleDate.HasValue
+                ? timeline.Resolve(row.SaleDate.Value)
+                : null;
 
             decimal? estimatedVat = profile == null
                 ? null

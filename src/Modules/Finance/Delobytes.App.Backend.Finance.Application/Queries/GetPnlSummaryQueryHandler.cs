@@ -132,18 +132,15 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
     private readonly IPnlReadStore _store;
     private readonly ITenantContext _tenantContext;
     private readonly ITenantSettingsProvider _settingsProvider;
-    private readonly ITenantTimeService _timeService;
 
     public GetPnlSummaryQueryHandler(
         IPnlReadStore store,
         ITenantContext tenantContext,
-        ITenantSettingsProvider settingsProvider,
-        ITenantTimeService timeService)
+        ITenantSettingsProvider settingsProvider)
     {
         _store = store;
         _tenantContext = tenantContext;
         _settingsProvider = settingsProvider;
-        _timeService = timeService;
     }
 
     /// <inheritdoc/>
@@ -171,76 +168,143 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             rows,
             tenantId,
             _settingsProvider,
-            _timeService,
             cancellationToken);
 
-        List<PnlSummaryRowView> summary = views
-            // Grouped by the period date rather than by the sale date: a non-buyout never sold, but
-            // its delivery charge is money of the period it was booked in and must be reported.
+        // Indexed once instead of rescanning the whole page for every group: the old
+        // `rows.Where(r => group.Any(...))` made the summary quadratic in the number of lines, which
+        // is what actually times the request out on a deep history. One order line yields one P&L
+        // line, so the identifier is a key.
+        Dictionary<Guid, decimal?> controlDifferences = new(rows.Count);
+
+        foreach (PnlLineRow row in rows)
+        {
+            controlDifferences[row.OrderLineId] = row.ControlDifferenceAmount;
+        }
+
+        // Grouped by the period date rather than by the sale date: a non-buyout never sold, but its
+        // delivery charge is money of the period it was booked in and must be reported.
+        IEnumerable<IGrouping<(Guid? ProductId, DateOnly PeriodStart), PnlLineView>> groups = views
             .Where(v => v.PeriodDate.HasValue)
-            .GroupBy(v => (v.ProductId, PeriodStart: PeriodOf(v.PeriodDate!.Value, request.Granularity)))
-            .Select(group =>
-            {
-                // The margin exists only for a line with a known and complete cost, so it is summed
-                // over its own population. Every figure derived from it is summed over the same
-                // population, and the rest of the revenue is reported separately, so no percentage
-                // pairs a numerator and a denominator that describe different lines.
-                List<PnlLineView> covered = group.Where(v => v.Margin.HasValue).ToList();
+            .GroupBy(v => (v.ProductId, PeriodStart: PeriodOf(v.PeriodDate!.Value, request.Granularity)));
 
-                decimal? margin = Sum(group.Select(v => v.Margin));
-                decimal revenueWithMargin = Sum(covered.Select(v => v.RevenueAmount)) ?? 0m;
-                decimal productionCostWithMargin = Sum(covered.Select(v => v.ProductionCostAmount)) ?? 0m;
+        List<PnlSummaryRowView> summary = new();
 
-                // The provisional part is the same population the line view flags, so the badge and
-                // the filter scopes cannot describe different lines.
-                decimal provisionalRevenue = Sum(group
-                    .Where(v => PnlLineCompletenessSemantics.IsProvisional(v.CompletenessState))
-                    .Select(v => v.RevenueAmount)) ?? 0m;
-
-                decimal overdueRevenue = Sum(group
-                    .Where(v => v.CompletenessState == PnlLineCompleteness.Overdue)
-                    .Select(v => v.RevenueAmount)) ?? 0m;
-
-                decimal closedWithExceptionRevenue = Sum(group
-                    .Where(v => v.CompletenessState == PnlLineCompleteness.ClosedWithException)
-                    .Select(v => v.RevenueAmount)) ?? 0m;
-
-                return new PnlSummaryRowView
-                {
-                    ProductId = group.Key.ProductId,
-                    IsUnlinkedProduct = group.Key.ProductId == null,
-                    PeriodStart = group.Key.PeriodStart,
-                    Lines = group.Count(),
-                    RevenueAmount = Sum(group.Select(v => v.RevenueAmount)),
-                    NetRevenueAmount = Sum(group.Select(v => v.NetRevenueAmount)),
-                    ProductionCostAmount = Sum(group.Select(v => v.ProductionCostAmount)),
-                    EstimatedTax = Sum(group.Select(v => v.EstimatedTax)),
-                    Margin = margin,
-                    TaxAdjustedMargin = Sum(group.Select(v => v.TaxAdjustedMargin)),
-                    MarginPercent = PnlTaxCalculator.MarginPercent(margin, revenueWithMargin),
-                    Roi = PnlTaxCalculator.Roi(margin, productionCostWithMargin),
-                    LinesWithMargin = covered.Count,
-                    RevenueWithMarginAmount = revenueWithMargin,
-                    ProductionCostWithMarginAmount = productionCostWithMargin,
-                    RevenueWithoutCostAmount = Sum(group.Where(v => !v.Margin.HasValue).Select(v => v.RevenueAmount)) ?? 0m,
-                    IsMarginComplete = covered.Count == group.Count(),
-                    ControlDifferenceAmount = Sum(rows
-                        .Where(r => group.Any(v => v.OrderLineId == r.OrderLineId))
-                        .Select(r => r.ControlDifferenceAmount)),
-                    ProvisionalRevenueAmount = provisionalRevenue,
-                    OverdueRevenueAmount = overdueRevenue,
-                    ClosedWithExceptionRevenueAmount = closedWithExceptionRevenue,
-                    CompletenessState = WorstCompleteness(group.Select(v => v.CompletenessState)),
-                };
-            })
-            .OrderBy(r => r.PeriodStart)
-            .ThenBy(r => r.ProductId)
-            .ToList();
+        foreach (IGrouping<(Guid? ProductId, DateOnly PeriodStart), PnlLineView> group in groups)
+        {
+            summary.Add(BuildSummaryRow(group, controlDifferences));
+        }
 
         return new PnlSummaryResponse
         {
-            Rows = summary,
+            Rows = summary
+                .OrderBy(r => r.PeriodStart)
+                .ThenBy(r => r.ProductId)
+                .ToList(),
             Currency = settings.Currency,
+        };
+    }
+
+    // One pass over the lines of the group: every figure is accumulated where it belongs, so no
+    // intermediate list per column is allocated and the coverage parts stay disjoint by construction.
+    private static PnlSummaryRowView BuildSummaryRow(
+        IGrouping<(Guid? ProductId, DateOnly PeriodStart), PnlLineView> group,
+        IReadOnlyDictionary<Guid, decimal?> controlDifferences)
+    {
+        decimal? revenue = null;
+        decimal? netRevenue = null;
+        decimal? productionCost = null;
+        decimal? estimatedTax = null;
+        decimal? margin = null;
+        decimal? taxAdjustedMargin = null;
+        decimal? controlDifference = null;
+        decimal revenueWithMargin = 0m;
+        decimal productionCostWithMargin = 0m;
+        decimal revenueWithoutCost = 0m;
+        decimal provisionalRevenue = 0m;
+        decimal overdueRevenue = 0m;
+        decimal closedWithExceptionRevenue = 0m;
+        int lines = 0;
+        int linesWithMargin = 0;
+        PnlLineCompleteness worst = PnlLineCompleteness.Complete;
+
+        foreach (PnlLineView view in group)
+        {
+            lines++;
+
+            revenue = Add(revenue, view.RevenueAmount);
+            netRevenue = Add(netRevenue, view.NetRevenueAmount);
+            productionCost = Add(productionCost, view.ProductionCostAmount);
+            estimatedTax = Add(estimatedTax, view.EstimatedTax);
+            taxAdjustedMargin = Add(taxAdjustedMargin, view.TaxAdjustedMargin);
+
+            if (controlDifferences.TryGetValue(view.OrderLineId, out decimal? difference))
+            {
+                controlDifference = Add(controlDifference, difference);
+            }
+
+            // The margin exists only for a line with a known and complete cost, so it is summed over
+            // its own population. Every figure derived from it is summed over the same population,
+            // and the rest of the revenue is reported separately, so no percentage pairs a numerator
+            // and a denominator that describe different lines.
+            if (view.Margin.HasValue)
+            {
+                linesWithMargin++;
+                margin = Add(margin, view.Margin);
+                revenueWithMargin += view.RevenueAmount ?? 0m;
+                productionCostWithMargin += view.ProductionCostAmount ?? 0m;
+            }
+            else
+            {
+                revenueWithoutCost += view.RevenueAmount ?? 0m;
+            }
+
+            // The provisional part is the same population the line view flags, so the badge and the
+            // filter scopes cannot describe different lines.
+            if (PnlLineCompletenessSemantics.IsProvisional(view.CompletenessState))
+            {
+                provisionalRevenue += view.RevenueAmount ?? 0m;
+            }
+
+            if (view.CompletenessState == PnlLineCompleteness.Overdue)
+            {
+                overdueRevenue += view.RevenueAmount ?? 0m;
+            }
+
+            if (view.CompletenessState == PnlLineCompleteness.ClosedWithException)
+            {
+                closedWithExceptionRevenue += view.RevenueAmount ?? 0m;
+            }
+
+            if (Severity(view.CompletenessState) > Severity(worst))
+            {
+                worst = view.CompletenessState;
+            }
+        }
+
+        return new PnlSummaryRowView
+        {
+            ProductId = group.Key.ProductId,
+            IsUnlinkedProduct = group.Key.ProductId == null,
+            PeriodStart = group.Key.PeriodStart,
+            Lines = lines,
+            RevenueAmount = revenue,
+            NetRevenueAmount = netRevenue,
+            ProductionCostAmount = productionCost,
+            EstimatedTax = estimatedTax,
+            Margin = margin,
+            TaxAdjustedMargin = taxAdjustedMargin,
+            MarginPercent = PnlTaxCalculator.MarginPercent(margin, revenueWithMargin),
+            Roi = PnlTaxCalculator.Roi(margin, productionCostWithMargin),
+            LinesWithMargin = linesWithMargin,
+            RevenueWithMarginAmount = revenueWithMargin,
+            ProductionCostWithMarginAmount = productionCostWithMargin,
+            RevenueWithoutCostAmount = revenueWithoutCost,
+            IsMarginComplete = linesWithMargin == lines,
+            ControlDifferenceAmount = controlDifference,
+            ProvisionalRevenueAmount = provisionalRevenue,
+            OverdueRevenueAmount = overdueRevenue,
+            ClosedWithExceptionRevenueAmount = closedWithExceptionRevenue,
+            CompletenessState = worst,
         };
     }
 
@@ -252,21 +316,6 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             PnlPeriodGranularity.Month => new DateOnly(date.Year, date.Month, 1),
             _ => date,
         };
-    }
-
-    private static PnlLineCompleteness WorstCompleteness(IEnumerable<PnlLineCompleteness> states)
-    {
-        PnlLineCompleteness worst = PnlLineCompleteness.Complete;
-
-        foreach (PnlLineCompleteness state in states)
-        {
-            if (Severity(state) > Severity(worst))
-            {
-                worst = state;
-            }
-        }
-
-        return worst;
     }
 
     // The enum order is not an order of severity: a recorded exception is final, while an overdue
@@ -282,10 +331,15 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         };
     }
 
-    private static decimal? Sum(IEnumerable<decimal?> values)
+    // Sum over the values that are present, keeping the accumulator null while nothing is known:
+    // an empty group of figures is unknown, not zero.
+    private static decimal? Add(decimal? accumulator, decimal? value)
     {
-        List<decimal> present = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        if (!value.HasValue)
+        {
+            return accumulator;
+        }
 
-        return present.Count == 0 ? null : present.Sum();
+        return accumulator.HasValue ? accumulator.Value + value.Value : value.Value;
     }
 }

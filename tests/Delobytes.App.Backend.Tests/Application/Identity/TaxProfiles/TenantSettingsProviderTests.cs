@@ -263,4 +263,92 @@ public class TenantSettingsProviderTests
             r => r.GetAtDateAsync(tenantId, expectedDate, It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    // ── GetTaxProfileHistoryAsync ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTaxProfileHistory_ReturnsEveryProfileOrderedByValidFrom()
+    {
+        // Arrange
+        Guid tenantId = Guid.NewGuid();
+        SetupTenant(BuildTenant(tenantId));
+
+        _taxProfileRepositoryMock
+            .Setup(r => r.GetByTenantAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantTaxProfile>
+            {
+                BuildProfile(tenantId, new DateOnly(2026, 1, 1), 15m),
+                BuildProfile(tenantId, new DateOnly(2025, 1, 1), 6m),
+            });
+
+        // Act
+        IReadOnlyList<TenantTaxProfileSnapshot> history =
+            await _provider.GetTaxProfileHistoryAsync(tenantId, CancellationToken.None);
+
+        // Assert
+        // Reporters resolve a profile by binary search over this list, so the repository's
+        // newest-first order must not leak out of the provider.
+        history.Select(snapshot => snapshot.ValidFrom).Should().ContainInOrder(
+            new DateOnly(2025, 1, 1),
+            new DateOnly(2026, 1, 1));
+
+        history[1].RatePercent.Should().Be(15m);
+        history[1].Vat.Should().Be(VatType.TwentyTwo);
+        history[1].Regime.Should().Be(TaxRegime.UsnIncome);
+    }
+
+    [Fact]
+    public async Task GetTaxProfileHistory_NoProfiles_ReturnsEmptyList()
+    {
+        // Arrange
+        Guid tenantId = Guid.NewGuid();
+        SetupTenant(BuildTenant(tenantId));
+
+        _taxProfileRepositoryMock
+            .Setup(r => r.GetByTenantAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantTaxProfile>());
+
+        // Act
+        IReadOnlyList<TenantTaxProfileSnapshot> history =
+            await _provider.GetTaxProfileHistoryAsync(tenantId, CancellationToken.None);
+
+        // Assert
+        history.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTaxProfileHistory_TenantNotFound_Throws()
+    {
+        // Arrange
+        Guid tenantId = Guid.NewGuid();
+
+        _tenantRepositoryMock
+            .Setup(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Tenant?)null);
+
+        // Act
+        Func<Task> act = () => _provider.GetTaxProfileHistoryAsync(tenantId, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{tenantId}*");
+
+        _taxProfileRepositoryMock.Verify(
+            r => r.GetByTenantAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private static TenantTaxProfile BuildProfile(Guid tenantId, DateOnly validFrom, decimal ratePercent)
+    {
+        return new TenantTaxProfile
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Regime = TaxRegime.UsnIncome,
+            RatePercent = ratePercent,
+            Vat = VatType.TwentyTwo,
+            ValidFrom = validFrom,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+    }
 }

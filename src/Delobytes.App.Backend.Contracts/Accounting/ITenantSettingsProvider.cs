@@ -26,6 +26,20 @@ public interface ITenantSettingsProvider
     public Task<TenantTaxProfileSnapshot?> GetTaxProfileAtAsync(Guid tenantId, DateTimeOffset moment, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Возвращает всю историю налоговых профилей тенанта по возрастанию <c>ValidFrom</c>.
+    /// </summary>
+    /// <param name="tenantId">Идентификатор тенанта.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>
+    /// Профили, упорядоченные по <c>ValidFrom</c> по возрастанию; пустой список, если профилей нет.
+    /// Отчёты за длинный период разрешают профиль на каждую дату из одной загрузки вместо запроса
+    /// на каждую уникальную дату.
+    /// </returns>
+    public Task<IReadOnlyList<TenantTaxProfileSnapshot>> GetTaxProfileHistoryAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Возвращает лимит одновременно выполняемых фоновых задач (JobRun) для тенанта.
     /// Используется планировщиком/воркером фоновых заданий Integrations (Stage 11) и не
     /// относится к налоговому/валютному профилю, но размещён здесь, а не в отдельном

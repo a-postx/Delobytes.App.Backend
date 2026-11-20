@@ -23,7 +23,7 @@ public class PnlQueryHandlerTests
     private static readonly Guid TenantId = Guid.NewGuid();
 
     [Fact]
-    public async Task GetLines_TwoLinesOfOneDate_ResolvesTheProfileOnce()
+    public async Task GetLines_ManyLinesOfOneDate_LoadsTheTaxProfileHistoryOnce()
     {
         // Arrange
         PnlLinePage page = new PnlLinePage
@@ -40,8 +40,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(page),
             BuildTenantContext(),
-            provider.Object,
-            BuildTimeService());
+            provider.Object);
 
         // Act
         PnlLinesResponse response = await handler.Handle(
@@ -53,9 +52,15 @@ public class PnlQueryHandlerTests
         response.Currency.Should().Be("RUB");
         response.ExcludedByCurrency.Should().Be(3);
 
+        // The history is the whole tax timeline, not one lookup per distinct sale date: the number
+        // of round trips must not grow with the length of the report.
+        provider.Verify(
+            p => p.GetTaxProfileHistoryAsync(TenantId, It.IsAny<CancellationToken>()),
+            Times.Once);
+
         provider.Verify(
             p => p.GetTaxProfileAtAsync(TenantId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never);
 
         response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
         response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
@@ -74,8 +79,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            provider.Object,
-            BuildTimeService());
+            provider.Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -94,8 +98,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -115,8 +118,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -136,8 +138,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { linked, unlinked } }),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -156,8 +157,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -181,8 +181,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             new FakeStore(new PnlLinePage(), rows),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlSummaryResponse response = await handler.Handle(
             new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
@@ -209,8 +208,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             new FakeStore(new PnlLinePage(), rows),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlSummaryResponse response = await handler.Handle(
             new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Day },
@@ -386,8 +384,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         await handler.Handle(new GetPnlSummaryQuery(), CancellationToken.None);
 
@@ -404,8 +401,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         await handler.Handle(
             new GetPnlSummaryQuery { Filter = new PnlQueryFilter { Completeness = "all" } },
@@ -423,8 +419,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -448,8 +443,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -517,8 +511,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
 
         PnlLinesResponse response = await handler.Handle(
             new GetPnlLinesQuery { Filter = new PnlQueryFilter { Completeness = "all" } },
@@ -528,13 +521,111 @@ public class PnlQueryHandlerTests
         response.Lines[0].IsProvisional.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task GetLines_TwoDatesAcrossAProfileChange_ApplyTheProfileOfEachDate()
+    {
+        // A single history load must still resolve the right profile per date: the report covers
+        // both sides of the change, so a stale flat rate would misstate one of them.
+        PnlLineRow beforeChange = Row(new DateOnly(2025, 12, 31), revenue: 100m, netRevenue: 90m, cost: 10m);
+        PnlLineRow afterChange = Row(new DateOnly(2026, 1, 1), revenue: 100m, netRevenue: 90m, cost: 10m);
+
+        Mock<ITenantSettingsProvider> provider = new Mock<ITenantSettingsProvider>();
+
+        provider
+            .Setup(p => p.GetAccountingSettingsAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
+
+        provider
+            .Setup(p => p.GetTaxProfileHistoryAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantTaxProfileSnapshot>
+            {
+                new()
+                {
+                    Regime = TaxRegime.UsnIncome,
+                    RatePercent = 15m,
+                    Vat = VatType.None,
+                    ValidFrom = new DateOnly(2026, 1, 1),
+                },
+                new()
+                {
+                    Regime = TaxRegime.UsnIncome,
+                    RatePercent = 6m,
+                    Vat = VatType.None,
+                    ValidFrom = new DateOnly(2025, 1, 1),
+                },
+            });
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { beforeChange, afterChange } }),
+            BuildTenantContext(),
+            provider.Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
+        response.Lines[1].EstimatedTax.Should().BeApproximately(15m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetLines_DateBeforeEveryProfile_ReportsNoTax()
+    {
+        PnlLineRow row = Row(new DateOnly(2024, 12, 31), revenue: 100m, netRevenue: 90m, cost: 10m);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].EstimatedTax.Should().BeNull();
+        response.Lines[0].TaxAdjustedMargin.Should().BeNull();
+        response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_ControlDifference_SumsOnlyTheLinesOfItsGroup()
+    {
+        // The figure is summed per group. Rescanning the whole page for every group was the
+        // quadratic part of the summary; the sums themselves must stay exactly per group.
+        Guid firstProduct = Guid.NewGuid();
+        Guid secondProduct = Guid.NewGuid();
+
+        PnlLineRow first = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, firstProduct);
+        first.ControlDifferenceAmount = 1.5m;
+
+        PnlLineRow second = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, firstProduct);
+        second.ControlDifferenceAmount = -0.5m;
+
+        PnlLineRow third = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, secondProduct);
+        third.ControlDifferenceAmount = 7m;
+
+        PnlSummaryResponse response = await BuildSummaryHandler(new List<PnlLineRow> { first, second, third })
+            .Handle(new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month }, CancellationToken.None);
+
+        response.Rows.Should().HaveCount(2);
+        response.Rows.Single(r => r.ProductId == firstProduct).ControlDifferenceAmount.Should().Be(1m);
+        response.Rows.Single(r => r.ProductId == secondProduct).ControlDifferenceAmount.Should().Be(7m);
+    }
+
+    [Fact]
+    public async Task GetSummary_WithoutControlDifference_KeepsTheFigureUnknown()
+    {
+        PnlLineRow row = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m);
+        row.ControlDifferenceAmount = null;
+
+        PnlSummaryResponse response = await BuildSummaryHandler(new List<PnlLineRow> { row })
+            .Handle(new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month }, CancellationToken.None);
+
+        response.Rows.Single().ControlDifferenceAmount.Should().BeNull();
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
             new FakeStore(new PnlLinePage(), rows),
             BuildTenantContext(),
-            BuildProvider().Object,
-            BuildTimeService());
+            BuildProvider().Object);
     }
 
     private static PnlLineRow Row(
@@ -582,12 +673,16 @@ public class PnlQueryHandlerTests
             .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
 
         provider
-            .Setup(p => p.GetTaxProfileAtAsync(TenantId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TenantTaxProfileSnapshot
+            .Setup(p => p.GetTaxProfileHistoryAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantTaxProfileSnapshot>
             {
-                Regime = TaxRegime.UsnIncome,
-                RatePercent = 6m,
-                Vat = VatType.None,
+                new()
+                {
+                    Regime = TaxRegime.UsnIncome,
+                    RatePercent = 6m,
+                    Vat = VatType.None,
+                    ValidFrom = new DateOnly(2026, 1, 1),
+                },
             });
 
         return provider;
@@ -602,18 +697,10 @@ public class PnlQueryHandlerTests
             .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
 
         provider
-            .Setup(p => p.GetTaxProfileAtAsync(TenantId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((TenantTaxProfileSnapshot?)null);
+            .Setup(p => p.GetTaxProfileHistoryAsync(TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantTaxProfileSnapshot>());
 
         return provider;
-    }
-
-    private static ITenantTimeService BuildTimeService()
-    {
-        Mock<ITenantTimeService> time = new Mock<ITenantTimeService>();
-        time.Setup(t => t.GetTimeZoneAsync(TenantId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(TimeZoneInfo.Utc);
-        return time.Object;
     }
 
     private sealed class FakeStore : IPnlReadStore

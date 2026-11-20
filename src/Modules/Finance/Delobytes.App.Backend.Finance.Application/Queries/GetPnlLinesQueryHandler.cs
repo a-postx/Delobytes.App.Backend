@@ -34,18 +34,15 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
     private readonly IPnlReadStore _store;
     private readonly ITenantContext _tenantContext;
     private readonly ITenantSettingsProvider _settingsProvider;
-    private readonly ITenantTimeService _timeService;
 
     public GetPnlLinesQueryHandler(
         IPnlReadStore store,
         ITenantContext tenantContext,
-        ITenantSettingsProvider settingsProvider,
-        ITenantTimeService timeService)
+        ITenantSettingsProvider settingsProvider)
     {
         _store = store;
         _tenantContext = tenantContext;
         _settingsProvider = settingsProvider;
-        _timeService = timeService;
     }
 
     /// <inheritdoc/>
@@ -83,7 +80,6 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             page.Rows,
             tenantId,
             _settingsProvider,
-            _timeService,
             cancellationToken);
 
         return new PnlLinesResponse
