@@ -94,6 +94,12 @@ public class PnlLineConfiguration : IEntityTypeConfiguration<PnlLine>
 
         builder.Property(line => line.SaleDate);
 
+        // A server-side default is required: the column is added to a populated table and every
+        // existing line has no returned unit until its journal is read again.
+        builder.Property(line => line.ReturnedQuantity)
+            .IsRequired()
+            .HasDefaultValue(0);
+
         builder.Property(line => line.ComputedAt);
 
         builder.Property(line => line.State)

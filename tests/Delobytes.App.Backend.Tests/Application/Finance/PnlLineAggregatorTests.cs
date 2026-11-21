@@ -350,6 +350,33 @@ public class PnlLineAggregatorTests
         totals.HasSale.Should().BeFalse();
     }
 
+    [Fact]
+    public void Calculate_ReversedSale_CountsTheReturnedUnit()
+    {
+        // Arrange: the sale of the sample unit and the return that reverses it вЂ” the same figures
+        // with the directions flipped.
+        List<PnlEntry> entries = new()
+        {
+            Entry(PnlEntryType.Sale, 481m),
+            Entry(PnlEntryType.Compensation, 121m),
+            Entry(PnlEntryType.Commission, 231.77m, PnlEntryDirection.Expense),
+            Entry(PnlEntryType.Acquiring, 19.24m, PnlEntryDirection.Expense),
+            Entry(PnlEntryType.Sale, 481m, PnlEntryDirection.Expense),
+            Entry(PnlEntryType.Compensation, 121m, PnlEntryDirection.Expense),
+            Entry(PnlEntryType.Commission, 231.77m),
+            Entry(PnlEntryType.Acquiring, 19.24m),
+        };
+
+        // Act
+        PnlLineTotals totals = PnlLineAggregator.Calculate(entries);
+
+        // Assert: the money nets to nothing while the sale fact stays вЂ” the unit sold and came back.
+        totals.RevenueAmount.Should().Be(0m);
+        totals.NetRevenueAmount.Should().Be(0m);
+        totals.HasSale.Should().BeTrue();
+        totals.ReturnedQuantity.Should().Be(1);
+    }
+
     private static PnlEntry Entry(
         PnlEntryType type,
         decimal amount,

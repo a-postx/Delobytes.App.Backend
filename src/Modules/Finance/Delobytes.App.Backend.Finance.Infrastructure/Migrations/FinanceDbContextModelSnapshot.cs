@@ -399,6 +399,11 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("ReturnedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<decimal?>("RevenueAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");

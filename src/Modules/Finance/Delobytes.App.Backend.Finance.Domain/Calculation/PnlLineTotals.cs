@@ -46,6 +46,11 @@ namespace Delobytes.App.Backend.Finance.Domain.Calculation;
 /// <param name="PeriodTo">
 /// The latest <c>DocumentDate</c> among the current component entries, or null when none arrived.
 /// </param>
+/// <param name="ReturnedQuantity">
+/// The number of units the journal reverses: the current sale entries booked as an expense. A
+/// returned unit left the seller and came back, so its cost of goods is not consumed and its result
+/// is the money the return left behind.
+/// </param>
 public sealed record PnlLineTotals(
     decimal? RevenueAmount,
     decimal? CommissionAmount,
@@ -61,4 +66,5 @@ public sealed record PnlLineTotals(
     DateOnly? SaleDate,
     DateOnly? ReportPeriodTo,
     DateOnly? PeriodFrom,
-    DateOnly? PeriodTo);
+    DateOnly? PeriodTo,
+    int ReturnedQuantity);

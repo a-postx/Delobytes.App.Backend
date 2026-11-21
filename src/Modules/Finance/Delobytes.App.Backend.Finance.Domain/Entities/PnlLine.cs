@@ -163,6 +163,13 @@ public class PnlLine : ITenantScoped, IRowVersionedEntity
     public DateOnly? SaleDate { get; set; }
 
     /// <summary>
+    /// Gets or sets the number of units of the line the journal reverses. A returned unit left the
+    /// seller and came back, so it carries no cost of goods and its result is the money the return
+    /// left behind. The sold quantity is what is left of the ordered units.
+    /// </summary>
+    public int ReturnedQuantity { get; set; }
+
+    /// <summary>
     /// Gets or sets the number of component entries behind the totals. Zero means the journal holds
     /// nothing for this line yet.
     /// </summary>

@@ -168,6 +168,63 @@ public class PnlLineProjectorTests
     }
 
     [Fact]
+    public async Task RecomputeAsync_ReturnedUnit_KeepsNoCostOfGoods()
+    {
+        // Arrange: the unit sold and came back, so its sale and its return net to nothing.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(350.99m));
+        journal.Entries.Add(ReturnEntry(350.99m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid());
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+        costs.Costs[line.OrderLineId] = ResolvedCost(line.OrderLineId, 100m);
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, costs, lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert: the goods are back with the seller, so nothing was consumed.
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.NetRevenueAmount.Should().Be(0m);
+        stored.ReturnedQuantity.Should().Be(1);
+        stored.ProductionCostAmount.Should().BeNull();
+        stored.ProductionCostIsComplete.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecomputeAsync_PartiallyReturnedLine_ChargesOnlyTheUnitsThatStayedSold()
+    {
+        // Arrange: three units ordered, one of them returned.
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        journal.Entries.Add(SaleEntry(900m));
+        journal.Entries.Add(ReturnEntry(300m));
+
+        InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
+        OrderLineRef line = Ref(Guid.NewGuid(), quantity: 3);
+        refs.Refs[line.OrderLineId] = line;
+
+        InMemoryOrderLineCostStore costs = new InMemoryOrderLineCostStore();
+        costs.Costs[line.OrderLineId] = ResolvedCost(line.OrderLineId, 100m, quantity: 3);
+
+        InMemoryPnlLineStore lines = new InMemoryPnlLineStore();
+        PnlLineProjector projector = CreateProjector(journal, refs, costs, lines);
+
+        // Act
+        await projector.RecomputeAsync(new[] { line.OrderLineId }, CancellationToken.None);
+
+        // Assert: two units stayed sold at 100 each, the returned one carries no cost.
+        PnlLine stored = SingleLine(lines, line.OrderLineId);
+        stored.NetRevenueAmount.Should().Be(600m);
+        stored.ReturnedQuantity.Should().Be(1);
+        stored.ProductionCostAmount.Should().Be(200m);
+    }
+
+    [Fact]
     public async Task RecomputeAsync_SecondPassWithEntries_MovesTheLineToCalculated()
     {
         // Arrange: the first recompute runs before any money arrives.
@@ -438,7 +495,7 @@ public class PnlLineProjectorTests
         return lines.Lines[orderLineId];
     }
 
-    private static OrderLineRef Ref(Guid orderLineId, string externalLineId = "srid-1")
+    private static OrderLineRef Ref(Guid orderLineId, string externalLineId = "srid-1", int quantity = 1)
     {
         return new OrderLineRef
         {
@@ -448,7 +505,7 @@ public class PnlLineProjectorTests
             ExternalOrderId = "order-1",
             ExternalLineId = externalLineId,
             ExternalProductId = "174371959",
-            Quantity = 1,
+            Quantity = quantity,
             OrderDate = Now,
             Currency = "RUB",
             UpdatedAt = Now,
@@ -488,7 +545,16 @@ public class PnlLineProjectorTests
         return entry;
     }
 
-    private static OrderLineCost ResolvedCost(Guid orderLineId, decimal totalCost)
+    private static PnlEntry ReturnEntry(decimal amount)
+    {
+        PnlEntry entry = SaleEntry(amount);
+        entry.ExternalEntryId = "rrd-3";
+        entry.Direction = PnlEntryDirection.Expense;
+
+        return entry;
+    }
+
+    private static OrderLineCost ResolvedCost(Guid orderLineId, decimal unitCost, int quantity = 1)
     {
         return new OrderLineCost
         {
@@ -496,9 +562,9 @@ public class PnlLineProjectorTests
             Status = OrderLineCostStatus.Resolved,
             ProductId = Guid.NewGuid(),
             AsOfDate = new DateOnly(2026, 8, 1),
-            Quantity = 1,
-            UnitTotalCost = totalCost,
-            TotalCost = totalCost,
+            Quantity = quantity,
+            UnitTotalCost = unitCost,
+            TotalCost = unitCost * quantity,
             IsComplete = true,
             ResolvedAt = Now,
             CreatedAt = Now,

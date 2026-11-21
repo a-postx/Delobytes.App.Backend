@@ -158,6 +158,10 @@ public class PnlLineProjector
 
                 PnlLineTotals totals = PnlLineAggregator.Calculate(lineEntries);
 
+                // A returned unit left the seller and came back, so it consumes no cost of goods
+                // and counts as a sold unit only until its journal reverses it.
+                int soldUnits = Math.Max(0, orderLineRef.Quantity - totals.ReturnedQuantity);
+
                 bool isNewLine = !linesByOrderLine.TryGetValue(orderLineRef.OrderLineId, out PnlLine? line);
 
                 line ??= new PnlLine
@@ -167,12 +171,12 @@ public class PnlLineProjector
                     CreatedAt = now,
                 };
 
-                ApplyTotals(line, totals, orderLineRef, now);
+                ApplyTotals(line, totals, soldUnits, orderLineRef, now);
 
                 ApplyCost(
                     line,
-                    totals,
-                    costsByLine.TryGetValue(orderLineRef.OrderLineId, out OrderLineCost? cost) ? cost : null);
+                    costsByLine.TryGetValue(orderLineRef.OrderLineId, out OrderLineCost? cost) ? cost : null,
+                    totals.HasSale ? soldUnits : 0);
 
                 PnlLineExpectation? createdExpectation = ApplyExpectations(
                     line,
@@ -219,6 +223,7 @@ public class PnlLineProjector
     private static void ApplyTotals(
         PnlLine line,
         PnlLineTotals totals,
+        int soldUnits,
         OrderLineRef orderLineRef,
         DateTimeOffset now)
     {
@@ -250,6 +255,11 @@ public class PnlLineProjector
         line.State = totals.EntryCount > 0 ? PnlLineState.Calculated : PnlLineState.NotCalculated;
         line.SaleDate = totals.SaleDate;
 
+        // The ordered units live on the Sales reference; the returned ones are a fact of the
+        // journal. The read model subtracts them, so a stored zero keeps its old meaning: no unit
+        // of the line has come back yet.
+        line.ReturnedQuantity = totals.ReturnedQuantity;
+
         // The period of the line is the span of its documents. It is what places a line that never
         // sold into a period: such a line has no sale date, but its charge was still booked on a day.
         line.FinancialPeriodFrom = totals.PeriodFrom;
@@ -260,14 +270,35 @@ public class PnlLineProjector
         line.UpdatedAt = now;
     }
 
-    private static void ApplyCost(PnlLine line, PnlLineTotals totals, OrderLineCost? cost)
+    private static void ApplyCost(PnlLine line, OrderLineCost? cost, int chargedUnits)
     {
-        // Cost of goods applies only to a line that actually sold: a cancellation or a non-buyout
-        // keeps its negative result without COGS, because no unit left the seller.
-        bool applies = totals.HasSale && cost != null && cost.Status == OrderLineCostStatus.Resolved;
+        // Cost of goods is charged only for the units that stayed sold: a cancellation, a non-buyout
+        // or a unit the buyer returned keeps its negative result without COGS, because the goods are
+        // back with the seller and nothing was consumed.
+        bool applies = chargedUnits > 0 && cost != null && cost.Status == OrderLineCostStatus.Resolved;
 
-        line.ProductionCostAmount = applies ? cost!.TotalCost : null;
+        line.ProductionCostAmount = applies ? CostOfSoldUnits(cost!, chargedUnits) : null;
         line.ProductionCostIsComplete = applies ? cost!.IsComplete : null;
+    }
+
+    /// <summary>
+    /// Charges the cost of the units that stayed sold: the unit cost times those units. A cost fact
+    /// that reports only the line total is prorated by its own quantity.
+    /// </summary>
+    /// <returns>The cost, or null when the fact carries no amount to charge.</returns>
+    private static decimal? CostOfSoldUnits(OrderLineCost cost, int soldUnits)
+    {
+        if (cost.UnitTotalCost.HasValue)
+        {
+            return cost.UnitTotalCost.Value * soldUnits;
+        }
+
+        if (cost.TotalCost.HasValue && cost.Quantity > 0)
+        {
+            return cost.TotalCost.Value * soldUnits / cost.Quantity;
+        }
+
+        return null;
     }
 
     private static ValueSource SourceOf(decimal? amount)

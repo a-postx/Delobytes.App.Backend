@@ -46,6 +46,12 @@ public sealed class PnlLineRow
     /// </summary>
     public int Quantity { get; set; }
 
+    /// <summary>
+    /// Gets or sets the number of units of the line the journal reverses. The sold quantity is what
+    /// the returned units leave of <see cref="Quantity"/>.
+    /// </summary>
+    public int ReturnedQuantity { get; set; }
+
     public OrderLineCostStatus? CostStatus { get; set; }
 
     public decimal? RevenueAmount { get; set; }

@@ -67,6 +67,12 @@ internal static class PnlViewFactory
         decimal? fee = PnlTaxCalculator.MarketplaceFee(
             row.CommissionAmount, row.AcquiringAmount, row.DeliveryFeeAmount);
 
+        // A returned unit left the seller and came back: it is no longer a sold unit, so it carries
+        // no cost of goods and the line's result is the net revenue the return left behind.
+        int soldUnits = row.SaleDate.HasValue
+            ? Math.Max(0, row.Quantity - row.ReturnedQuantity)
+            : 0;
+
         // Tax is a separate layer: the margin is computed from the sale and the cost alone, and
         // only the optional tax-adjusted figure depends on the tenant's profile. A line without a
         // sale has no cost of goods, so its result is the net revenue itself.
@@ -74,7 +80,7 @@ internal static class PnlViewFactory
             row.NetRevenueAmount,
             row.ProductionCostAmount,
             row.ProductionCostIsComplete,
-            row.SaleDate.HasValue);
+            soldUnits > 0);
 
         decimal? taxAdjustedMargin = PnlTaxCalculator.TaxAdjustedMargin(margin, estimatedTax);
 
@@ -100,10 +106,11 @@ internal static class PnlViewFactory
             MarginPercent = PnlTaxCalculator.MarginPercent(margin, row.RevenueAmount),
             Roi = PnlTaxCalculator.Roi(margin, row.ProductionCostAmount),
 
-            // The ordered units include a non-buyout, the sold ones do not: a line without a sale
-            // fact carries no sold unit, while its delivery charge still belongs to the period.
+            // The ordered units include a non-buyout and a returned unit, the sold ones do not: a
+            // line without a sale fact carries no sold unit, while its delivery charge still belongs
+            // to the period.
             QuantityOrdered = row.Quantity,
-            QuantitySold = row.SaleDate.HasValue ? row.Quantity : 0,
+            QuantitySold = soldUnits,
 
             CostComplete = row.ProductionCostIsComplete == true,
             CostStatus = row.CostStatus?.ToString(),

@@ -56,6 +56,7 @@ public static class PnlLineAggregator
         DateOnly? periodTo = null;
 
         int entryCount = 0;
+        int returnedQuantity = 0;
 
         foreach (PnlEntry entry in entries)
         {
@@ -112,6 +113,13 @@ public static class PnlLineAggregator
                     if (entry.Direction == PnlEntryDirection.Income)
                     {
                         hasSale = true;
+                    }
+                    else
+                    {
+                        // shortcut: one reversed sale row is one returned unit, which is how the
+                        // Wildberries report is shaped; a channel reporting a multi-unit return in
+                        // one row needs the quantity carried on the entry itself.
+                        returnedQuantity++;
                     }
 
                     if (saleDate == null || entry.DocumentDate < saleDate.Value)
@@ -171,7 +179,8 @@ public static class PnlLineAggregator
             saleDate,
             reportPeriodTo,
             periodFrom,
-            periodTo);
+            periodTo,
+            returnedQuantity);
     }
 
     private static decimal Signed(PnlEntry entry)

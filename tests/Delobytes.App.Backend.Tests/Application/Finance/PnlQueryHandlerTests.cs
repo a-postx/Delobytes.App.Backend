@@ -675,6 +675,31 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetLines_ReturnedUnit_IsOrderedButNoLongerSold()
+    {
+        // The unit sold and came back: the money of the return is what is left, and no cost of goods
+        // was consumed, so the line must not be divided by a cost it does not carry.
+        PnlLineRow returned = Row(
+            new DateOnly(2026, 8, 1),
+            revenue: 0m,
+            netRevenue: 0m,
+            cost: null,
+            quantity: 1,
+            returnedQuantity: 1);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { returned } }),
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].QuantityOrdered.Should().Be(1);
+        response.Lines[0].QuantitySold.Should().Be(0);
+        response.Lines[0].Margin.Should().Be(0m);
+    }
+
+    [Fact]
     public async Task GetSummary_SumsTheOrderedAndTheSoldQuantitySeparately()
     {
         Guid productId = Guid.NewGuid();
@@ -993,7 +1018,8 @@ public class PnlQueryHandlerTests
         PnlLineCompleteness completeness = PnlLineCompleteness.Complete,
         DateOnly? periodDate = null,
         int quantity = 1,
-        Guid? channelId = null)
+        Guid? channelId = null,
+        int returnedQuantity = 0)
     {
         return new PnlLineRow
         {
@@ -1005,6 +1031,7 @@ public class PnlQueryHandlerTests
             PeriodDate = periodDate ?? saleDate,
             State = saleDate.HasValue ? PnlLineState.Calculated : PnlLineState.NotCalculated,
             Quantity = quantity,
+            ReturnedQuantity = returnedQuantity,
             RevenueAmount = revenue,
             NetRevenueAmount = netRevenue,
             ProductionCostAmount = cost,

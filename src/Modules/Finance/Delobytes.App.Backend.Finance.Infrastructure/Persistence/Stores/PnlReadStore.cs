@@ -290,6 +290,7 @@ public class PnlReadStore : IPnlReadStore
                    // The ordered units come from the reference the join already reads: no extra
                    // round trip and no second source of the same fact.
                    Quantity = reference.Quantity,
+                   ReturnedQuantity = line.ReturnedQuantity,
                    Currency = line.Currency,
                    SaleDate = line.SaleDate,
                    // A line that never sold still has money on it: a non-buyout carries only its
