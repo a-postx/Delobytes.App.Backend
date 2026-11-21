@@ -2098,6 +2098,7 @@ public class PnlQueryHandlerTests
 
         public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
             string currency,
+            Guid? channelId,
             DateOnly from,
             DateOnly to,
             CancellationToken cancellationToken)

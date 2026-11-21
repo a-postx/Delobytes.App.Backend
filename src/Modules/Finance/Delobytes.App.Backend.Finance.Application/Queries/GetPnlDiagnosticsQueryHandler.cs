@@ -2,6 +2,8 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
+using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 
 namespace Delobytes.App.Backend.Finance.Application.Queries;
@@ -9,6 +11,12 @@ namespace Delobytes.App.Backend.Finance.Application.Queries;
 /// <summary>Period diagnostics.</summary>
 public sealed class GetPnlDiagnosticsQuery : IRequest<PnlDiagnosticsResult>
 {
+    /// <summary>
+    /// Gets or sets the optional channel filter. Without it the diagnostics cover the whole tenant,
+    /// which is not the population a per-channel summary describes.
+    /// </summary>
+    public Guid? ChannelId { get; set; }
+
     public DateOnly From { get; set; }
 
     public DateOnly To { get; set; }
@@ -36,9 +44,15 @@ public sealed class GetPnlDiagnosticsQueryHandler : IRequestHandler<GetPnlDiagno
         GetPnlDiagnosticsQuery request,
         CancellationToken cancellationToken)
     {
+        // Reported as a field error instead of an argument error: an impossible period is a client
+        // mistake and must answer 400, while an unhandled ArgumentException became a 500.
         if (request.From > request.To)
         {
-            throw new ArgumentException("The period start must not be after its end.", nameof(request));
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure("from", "Начало периода не может быть позже его конца."),
+                });
         }
 
         Guid tenantId = _tenantContext.TenantId
@@ -51,6 +65,7 @@ public sealed class GetPnlDiagnosticsQueryHandler : IRequestHandler<GetPnlDiagno
 
         return await _store.GetDiagnosticsAsync(
             settings.Currency,
+            request.ChannelId,
             request.From,
             request.To,
             cancellationToken);

@@ -120,6 +120,7 @@ public class PnlReadStore : IPnlReadStore
     /// <inheritdoc/>
     public async Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
         string currency,
+        Guid? channelId,
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken)
@@ -127,27 +128,31 @@ public class PnlReadStore : IPnlReadStore
         // Every figure below is read in the reporting currency only: the diagnostics are compared
         // with a single-currency summary, so counting or summing another currency here would make
         // the two disagree. The other currencies are reported as exclusions at the end.
-        List<PnlEntry> entries = await _context.PnlEntries
+        IQueryable<PnlEntry> entryQuery = _context.PnlEntries
             .AsNoTracking()
             .Where(e =>
                 e.SupersededByEntryId == null
                 && e.Currency == currency
                 && e.DocumentDate >= from
-                && e.DocumentDate <= to)
-            .ToListAsync(cancellationToken);
+                && e.DocumentDate <= to);
+
+        if (channelId.HasValue)
+        {
+            Guid channel = channelId.Value;
+            entryQuery = entryQuery.Where(e => e.ChannelId == channel);
+        }
+
+        List<PnlEntry> entries = await entryQuery.ToListAsync(cancellationToken);
 
         List<AttributionCandidate> candidates = await BuildAttributionCandidatesQuery(entries)
             .ToListAsync(cancellationToken);
 
         PnlEntryAttributionResult attribution = PnlEntryAttribution.Attribute(entries, candidates);
 
-        List<decimal> differences = await _context.PnlLines
-            .AsNoTracking()
-            .Where(l =>
-                l.Currency == currency
-                && (l.SaleDate ?? l.FinancialPeriodFrom) >= from
-                && (l.SaleDate ?? l.FinancialPeriodFrom) <= to
-                && l.ControlDifferenceAmount != null)
+        IQueryable<PnlLine> periodLines = BuildPeriodLines(currency, channelId, from, to);
+
+        List<decimal> differences = await periodLines
+            .Where(l => l.ControlDifferenceAmount != null)
             .Select(l => l.ControlDifferenceAmount!.Value)
             .ToListAsync(cancellationToken);
 
@@ -155,17 +160,11 @@ public class PnlReadStore : IPnlReadStore
         // catalogue product yet — either Catalog has not resolved the cost or the channel product is
         // not linked. Surfacing the count and the revenue keeps that money visible instead of
         // letting it silently sit outside every per-product view.
-        List<decimal?> unlinkedRevenue = await BuildFilteredQuery(new PnlLineFilter { From = from, To = to })
+        List<decimal?> unlinkedRevenue = await BuildFilteredQuery(
+                new PnlLineFilter { ChannelId = channelId, From = from, To = to })
             .Where(row => row.Currency == currency && row.ProductId == null)
             .Select(row => row.RevenueAmount)
             .ToListAsync(cancellationToken);
-
-        IQueryable<PnlLine> periodLines = _context.PnlLines
-            .AsNoTracking()
-            .Where(l =>
-                l.Currency == currency
-                && (l.SaleDate ?? l.FinancialPeriodFrom) >= from
-                && (l.SaleDate ?? l.FinancialPeriodFrom) <= to);
 
         // Counted one state at a time: three cheap counts are more predictable than a grouped
         // projection over an enum stored by name.
@@ -180,22 +179,22 @@ public class PnlReadStore : IPnlReadStore
 
         // The estimated gap is a size, not a booked amount: it only covers expectations whose
         // product has enough comparable history to be estimated at all.
+        IQueryable<PnlLine> soldLines = periodLines.Where(l => l.SaleDate != null);
+
         List<decimal> estimates = await _context.PnlLineExpectations
             .AsNoTracking()
             .Where(e => e.State == PnlExpectationState.Expected || e.State == PnlExpectationState.Overdue)
-            .Where(e => _context.PnlLines.Any(l =>
-                l.Currency == currency
-                && l.OrderLineId == e.OrderLineId
-                && l.SaleDate >= from
-                && l.SaleDate <= to))
+            .Where(e => soldLines.Any(l => l.OrderLineId == e.OrderLineId))
             .Select(e => e.AmountEstimate)
             .Where(a => a != null)
             .Select(a => a!.Value)
             .ToListAsync(cancellationToken);
 
+        PnlLineFilter periodFilter = new PnlLineFilter { ChannelId = channelId, From = from, To = to };
+
         IReadOnlyList<PnlCurrencyExclusion> excludedCurrencies = await GetCurrencyExclusionsAsync(
             currency,
-            new PnlLineFilter { From = from, To = to },
+            periodFilter,
             cancellationToken);
 
         return new PnlDiagnosticsResult
@@ -286,6 +285,35 @@ public class PnlReadStore : IPnlReadStore
         }
 
         return query;
+    }
+
+    /// <summary>
+    /// Builds the lines of one reporting currency and period, optionally narrowed to a channel. The
+    /// channel lives on the order line reference, so the narrowing is an EXISTS instead of a join:
+    /// the counts keep their shape and a line without a reference is not dropped when no channel is
+    /// selected.
+    /// </summary>
+    private IQueryable<PnlLine> BuildPeriodLines(
+        string currency,
+        Guid? channelId,
+        DateOnly from,
+        DateOnly to)
+    {
+        IQueryable<PnlLine> lines = _context.PnlLines
+            .AsNoTracking()
+            .Where(l =>
+                l.Currency == currency
+                && (l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                && (l.SaleDate ?? l.FinancialPeriodFrom) <= to);
+
+        if (channelId.HasValue)
+        {
+            Guid channel = channelId.Value;
+            lines = lines.Where(l =>
+                _context.OrderLineRefs.Any(r => r.OrderLineId == l.OrderLineId && r.ChannelId == channel));
+        }
+
+        return lines;
     }
 
     /// <summary>Builds the joined and filtered rows without the currency restriction.</summary>

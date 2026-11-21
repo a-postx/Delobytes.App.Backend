@@ -583,7 +583,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day1, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(1);
         diagnostics.AmbiguousAttributions.Should().Be(0);
@@ -609,7 +609,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day1, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(0);
     }
@@ -631,7 +631,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day1, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(0);
     }
@@ -650,7 +650,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day3, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day3, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(0);
         diagnostics.ControlDifference.Should().Be(0m);
@@ -676,7 +676,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day3, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day3, CancellationToken.None);
 
         diagnostics.ControlDifference.Should().Be(3.5m);
         diagnostics.LinesWithOpenControlDifference.Should().Be(1);
@@ -707,7 +707,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day1, CancellationToken.None);
 
         diagnostics.LinesWithoutProductLink.Should().Be(1);
         diagnostics.UnlinkedRevenueAmount.Should().Be(150m);
@@ -731,7 +731,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", null, Day1, Day1, CancellationToken.None);
 
         diagnostics.LinesWithoutProductLink.Should().Be(0);
         diagnostics.UnlinkedRevenueAmount.Should().Be(0m);
@@ -767,7 +767,7 @@ public class PnlReadStoreTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
         PnlDiagnosticsResult diagnostics =
-            await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+            await store.GetDiagnosticsAsync("RUB", null, Day1, Day1, CancellationToken.None);
 
         // The diagnostics sit next to a single-currency summary: a figure that summed both currencies
         // would describe a population the summary never shows.
@@ -782,6 +782,47 @@ public class PnlReadStoreTests
         PnlCurrencyExclusion usdExclusion = diagnostics.ExcludedCurrencies.Should().ContainSingle().Subject;
         usdExclusion.Currency.Should().Be("USD");
         usdExclusion.RevenueAmount.Should().Be(100m);
+    }
+
+    [Fact]
+    public async Task GetDiagnosticsAsync_NarrowsEveryFigureToTheRequestedChannel()
+    {
+        string database = NewDatabaseName();
+        Guid ownOrderLine = Guid.Parse("0000000f-0000-0000-0000-000000000048");
+        Guid foreignOrderLine = Guid.Parse("0000000f-0000-0000-0000-000000000049");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            PnlLine own = Line(Guid.NewGuid(), ownOrderLine, "RUB", Day1);
+            own.ControlDifferenceAmount = 1m;
+
+            PnlLine foreign = Line(Guid.NewGuid(), foreignOrderLine, "RUB", Day1);
+            foreign.ControlDifferenceAmount = 10m;
+
+            seed.PnlLines.AddRange(own, foreign);
+            seed.OrderLineRefs.AddRange(
+                Reference(ownOrderLine, ChannelId),
+                Reference(foreignOrderLine, OtherChannelId));
+            seed.PnlEntries.AddRange(
+                Entry(ChannelId, "srid-own", null, "sku-1", Day1),
+                Entry(OtherChannelId, "srid-foreign", null, "sku-1", Day1));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlDiagnosticsResult diagnostics =
+            await store.GetDiagnosticsAsync("RUB", ChannelId, Day1, Day1, CancellationToken.None);
+
+        // Both lines carry no product link and both entries are unattributed, so an unscoped read
+        // would double every figure below — the diagnostics of a channel must not report the
+        // cabinet totals.
+        diagnostics.ControlDifference.Should().Be(1m);
+        diagnostics.UnattributedEntries.Should().Be(1);
+        diagnostics.LinesWithoutProductLink.Should().Be(1);
+        diagnostics.UnlinkedRevenueAmount.Should().Be(100m);
     }
 
     [Fact]

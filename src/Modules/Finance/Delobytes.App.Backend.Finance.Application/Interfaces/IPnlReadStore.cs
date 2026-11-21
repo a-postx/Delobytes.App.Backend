@@ -44,7 +44,8 @@ public interface IPnlReadStore
 
     /// <summary>
     /// Reads the diagnostics of one reporting currency: the journal entries of that currency, the
-    /// lines and the expectations of the period.
+    /// lines and the expectations of the period. A channel filter narrows every figure to that
+    /// channel, so the diagnostics describe the same population as a per-channel summary.
     /// </summary>
     /// <remarks>
     /// The diagnostics sit next to a single-currency summary, so they describe the same population.
@@ -53,6 +54,7 @@ public interface IPnlReadStore
     /// </remarks>
     public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
         string currency,
+        Guid? channelId,
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken);

@@ -4,6 +4,8 @@ using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Models;
 using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
+using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 
 namespace Delobytes.App.Backend.Finance.Application.Commands;
@@ -159,9 +161,15 @@ public sealed class BackfillPnlCompletenessCommandHandler
         BackfillPnlCompletenessCommand request,
         CancellationToken cancellationToken)
     {
+        // A field error, not an argument error: an impossible period is a client mistake and must
+        // answer 400 instead of the 500 an unhandled ArgumentException produced.
         if (request.From > request.To)
         {
-            throw new ArgumentException("The period start must not be after its end.", nameof(request));
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure("from", "Начало периода не может быть позже его конца."),
+                });
         }
 
         IReadOnlyList<Guid> orderLineIds = await _lines.LoadOrderLineIdsAsync(

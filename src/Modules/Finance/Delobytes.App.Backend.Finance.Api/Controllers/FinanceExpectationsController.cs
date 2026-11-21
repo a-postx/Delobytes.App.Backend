@@ -132,12 +132,14 @@ public class FinanceExpectationsController : ControllerBase
     [HttpPost("backfill")]
     [ProducesResponseType(typeof(PnlRecomputeResult), StatusCodes.Status200OK)]
     public async Task<ActionResult<PnlRecomputeResult>> Backfill(
-        [FromQuery] DateOnly from,
-        [FromQuery] DateOnly to,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
         CancellationToken cancellationToken)
     {
+        (DateOnly periodFrom, DateOnly periodTo) = PnlPeriodQuery.Require(from, to);
+
         PnlRecomputeResult result = await _mediator.Send(
-            new BackfillPnlCompletenessCommand { From = from, To = to },
+            new BackfillPnlCompletenessCommand { From = periodFrom, To = periodTo },
             cancellationToken);
 
         return Ok(result);

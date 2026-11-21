@@ -243,12 +243,15 @@ public class FinancePnlController : ControllerBase
     [HttpGet("diagnostics")]
     [ProducesResponseType(typeof(PnlDiagnosticsResult), StatusCodes.Status200OK)]
     public async Task<ActionResult<PnlDiagnosticsResult>> GetDiagnostics(
-        [FromQuery] DateOnly from,
-        [FromQuery] DateOnly to,
+        [FromQuery] Guid? channelId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
         CancellationToken cancellationToken)
     {
+        (DateOnly periodFrom, DateOnly periodTo) = PnlPeriodQuery.Require(from, to);
+
         PnlDiagnosticsResult response = await _mediator.Send(
-            new GetPnlDiagnosticsQuery { From = from, To = to },
+            new GetPnlDiagnosticsQuery { ChannelId = channelId, From = periodFrom, To = periodTo },
             cancellationToken);
 
         return Ok(response);
