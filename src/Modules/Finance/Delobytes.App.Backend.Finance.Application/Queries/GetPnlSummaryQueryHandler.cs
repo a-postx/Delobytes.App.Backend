@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Contracts.Lookup;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
@@ -13,6 +14,12 @@ namespace Delobytes.App.Backend.Finance.Application.Queries;
 public sealed class PnlSummaryRowView
 {
     public Guid? ProductId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the current SKU of the linked catalogue product. Null when the row is not
+    /// grouped by product, is unlinked, or the product no longer resolves.
+    /// </summary>
+    public string? Sku { get; set; }
 
     /// <summary>
     /// Gets or sets the channel of the group. Populated only when the summary is grouped by channel;
@@ -298,15 +305,18 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
     private readonly IPnlReadStore _store;
     private readonly ITenantContext _tenantContext;
     private readonly ITenantSettingsProvider _settingsProvider;
+    private readonly IProductSkuLookup _skuLookup;
 
     public GetPnlSummaryQueryHandler(
         IPnlReadStore store,
         ITenantContext tenantContext,
-        ITenantSettingsProvider settingsProvider)
+        ITenantSettingsProvider settingsProvider,
+        IProductSkuLookup skuLookup)
     {
         _store = store;
         _tenantContext = tenantContext;
         _settingsProvider = settingsProvider;
+        _skuLookup = skuLookup;
     }
 
     /// <inheritdoc/>
@@ -400,29 +410,67 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             filter,
             cancellationToken);
 
+        List<PnlSummaryRowView> rows = accumulators
+            .Select(pair =>
+            {
+                DateOnly periodStart = ResolvePeriodStart(request, pair.Value, pair.Key.PeriodStart);
+                DateOnly periodEnd = ResolvePeriodEnd(request, pair.Value, periodStart);
+
+                return pair.Value.Build(
+                    request.GroupBy,
+                    pair.Key.GroupId,
+                    periodStart,
+                    periodEnd,
+                    IsPartial(request, periodStart, periodEnd));
+            })
+            .OrderBy(row => row.PeriodStart)
+            .ThenBy(row => row.ProductId ?? row.ChannelId)
+            .ToList();
+
+        await EnrichSkusAsync(rows, request.GroupBy, cancellationToken);
+
         return new PnlSummaryResponse
         {
-            Rows = accumulators
-                .Select(pair =>
-                {
-                    DateOnly periodStart = ResolvePeriodStart(request, pair.Value, pair.Key.PeriodStart);
-                    DateOnly periodEnd = ResolvePeriodEnd(request, pair.Value, periodStart);
-
-                    return pair.Value.Build(
-                        request.GroupBy,
-                        pair.Key.GroupId,
-                        periodStart,
-                        periodEnd,
-                        IsPartial(request, periodStart, periodEnd));
-                })
-                .OrderBy(row => row.PeriodStart)
-                .ThenBy(row => row.ProductId ?? row.ChannelId)
-                .ToList(),
+            Rows = rows,
             Currency = settings.Currency,
             GroupBy = request.GroupBy,
             ExcludedByCurrency = excludedCurrencies.Sum(exclusion => exclusion.Lines),
             ExcludedCurrencies = excludedCurrencies.ToList(),
         };
+    }
+
+    // Read after the final row list is built, so a later top-N limit never pays for the SKU of a
+    // product it drops. A channel or dimensionless summary has no product axis to label.
+    private async Task EnrichSkusAsync(
+        List<PnlSummaryRowView> rows,
+        PnlSummaryGroupBy groupBy,
+        CancellationToken cancellationToken)
+    {
+        if (groupBy != PnlSummaryGroupBy.Product)
+        {
+            return;
+        }
+
+        Guid[] productIds = rows
+            .Where(row => row.ProductId.HasValue)
+            .Select(row => row.ProductId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (productIds.Length == 0)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<Guid, string> skus = await _skuLookup.GetSkusAsync(productIds, cancellationToken);
+
+        foreach (PnlSummaryRowView row in rows)
+        {
+            if (row.ProductId.HasValue && skus.TryGetValue(row.ProductId.Value, out string sku))
+            {
+                row.Sku = sku;
+            }
+        }
     }
 
     // A total-period row reports the start of the requested range. Without a range the earliest

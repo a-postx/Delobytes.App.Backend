@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Catalog.Contracts.Lookup;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
@@ -41,7 +42,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(page),
             BuildTenantContext(),
-            provider.Object);
+            provider.Object, BuildLookup().Object);
 
         // Act
         PnlLinesResponse response = await handler.Handle(
@@ -80,7 +81,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            provider.Object);
+            provider.Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -100,7 +101,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -121,7 +122,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -146,7 +147,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { linked, unlinked } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -165,7 +166,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -189,7 +190,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             new FakeStore(new PnlLinePage(), rows),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlSummaryResponse response = await handler.Handle(
             new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
@@ -216,7 +217,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             new FakeStore(new PnlLinePage(), rows),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlSummaryResponse response = await handler.Handle(
             new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Day },
@@ -504,7 +505,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         await handler.Handle(new GetPnlSummaryQuery(), CancellationToken.None);
 
@@ -521,7 +522,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         await handler.Handle(
             new GetPnlSummaryQuery { Filter = new PnlQueryFilter { Completeness = "all" } },
@@ -539,7 +540,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -563,7 +564,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -588,7 +589,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProviderWithoutTaxProfile().Object);
+            BuildProviderWithoutTaxProfile().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -609,7 +610,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -639,7 +640,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -665,7 +666,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -775,7 +776,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(
             new GetPnlLinesQuery { Filter = new PnlQueryFilter { Completeness = "all" } },
@@ -822,7 +823,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { beforeChange, afterChange } }),
             BuildTenantContext(),
-            provider.Object);
+            provider.Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -838,7 +839,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -900,7 +901,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlSummaryResponse response = await handler.Handle(
             new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
@@ -928,7 +929,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { sold, notBoughtOut } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -954,7 +955,7 @@ public class PnlQueryHandlerTests
         GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
             new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { returned } }),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
@@ -1548,7 +1549,7 @@ public class PnlQueryHandlerTests
         GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
             store,
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
 
         // Act
         PnlSummaryResponse response = await handler.Handle(
@@ -1567,12 +1568,137 @@ public class PnlQueryHandlerTests
         store.LastCurrencyFilter!.From.Should().Be(new DateOnly(2026, 8, 1));
     }
 
+    [Fact]
+    public async Task GetSummary_ProductRowsCarryTheSkuOfTheLinkedProduct()
+    {
+        // Arrange: two periods of the same product, so the lookup must be asked for one identifier.
+        Guid productId = Guid.NewGuid();
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId),
+            Row(new DateOnly(2026, 9, 1), 200m, 180m, 20m, productId),
+        };
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [productId] = "SKU-42" });
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlSummaryResponse response = await handler.Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().HaveCount(2).And.OnlyContain(row => row.Sku == "SKU-42");
+        lookup.Verify(
+            l => l.GetSkusAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(productId)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByChannel_DoesNotResolveSkus()
+    {
+        // Arrange: a channel summary has no product axis, so the catalogue must not be queried.
+        Guid productId = Guid.NewGuid();
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId),
+        };
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlSummaryResponse response = await handler.Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                GroupBy = PnlSummaryGroupBy.Channel,
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().ContainSingle().Which.Sku.Should().BeNull();
+        lookup.Verify(
+            l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetLines_EnrichesLinkedLinesOnly()
+    {
+        // Arrange
+        Guid productId = Guid.NewGuid();
+        PnlLineRow linked = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId);
+        PnlLineRow unlinked = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId: null);
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [productId] = "SKU-7" });
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { linked, unlinked } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        // Assert
+        response.Lines.Should().HaveCount(2);
+        response.Lines.Should().ContainSingle(line => line.Sku == "SKU-7");
+        lookup.Verify(
+            l => l.GetSkusAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(productId)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetLines_NoProductLinks_SkipsTheLookup()
+    {
+        // Arrange: a page of fully unlinked lines has nothing to label.
+        PnlLineRow first = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId: null);
+        PnlLineRow second = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId: null);
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { first, second } }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        // Assert
+        response.Lines.Should().HaveCount(2).And.OnlyContain(line => line.Sku == null);
+        lookup.Verify(
+            l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
             new FakeStore(new PnlLinePage(), rows),
             BuildTenantContext(),
-            BuildProvider().Object);
+            BuildProvider().Object, BuildLookup().Object);
     }
 
     private static PnlLineRow Row(
@@ -1627,6 +1753,19 @@ public class PnlQueryHandlerTests
             CostStatus = OrderLineCostStatus.Resolved,
             CompletenessState = completeness,
         };
+    }
+
+    private static Mock<IProductSkuLookup> BuildLookup()
+    {
+        Mock<IProductSkuLookup> lookup = new();
+
+        // An unconfigured Task<IReadOnlyDictionary<...>> mock returns null, which the handlers
+        // would dereference. Tests that do not care about labels get an empty, successful result.
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
+
+        return lookup;
     }
 
     private static ITenantContext BuildTenantContext()

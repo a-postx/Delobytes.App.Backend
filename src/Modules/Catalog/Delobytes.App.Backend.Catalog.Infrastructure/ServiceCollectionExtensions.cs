@@ -6,7 +6,9 @@ using Delobytes.App.Backend.Catalog.Application.Products;
 using Delobytes.App.Backend.Catalog.Application.Services;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Catalog.Contracts.Lookup;
 using Delobytes.App.Backend.Catalog.Infrastructure.BackgroundServices;
+using Delobytes.App.Backend.Catalog.Infrastructure.Lookup;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
@@ -65,6 +67,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IChannelProductRepository, ChannelProductRepository>();
         services.AddScoped<IProductCostSnapshotRepository, ProductCostSnapshotRepository>();
+
+        // The read contract other modules resolve SKUs through. Scoped: it reads the scoped
+        // CatalogDbContext, whose tenant filter is what keeps the result inside one tenant.
+        services.AddScoped<IProductSkuLookup, ProductSkuLookup>();
 
         // Scoped: the transaction belongs to the DbContext of this scope.
         services.AddScoped<ICatalogTransactionFactory, CatalogTransactionFactory>();

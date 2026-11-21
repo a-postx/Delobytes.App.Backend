@@ -9,6 +9,13 @@ public sealed class PnlLineView
 
     public Guid? ProductId { get; set; }
 
+    /// <summary>
+    /// Gets or sets the current SKU of the linked catalogue product. Null when the line has no
+    /// product link or the product no longer resolves: the identifier stays the source of truth,
+    /// the label is display data only.
+    /// </summary>
+    public string? Sku { get; set; }
+
     /// <summary>Gets or sets the channel product Sales linked the line to, when known.</summary>
     public Guid? ChannelProductId { get; set; }
 

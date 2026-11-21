@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Catalog.Contracts.Lookup;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
@@ -34,15 +35,18 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
     private readonly IPnlReadStore _store;
     private readonly ITenantContext _tenantContext;
     private readonly ITenantSettingsProvider _settingsProvider;
+    private readonly IProductSkuLookup _skuLookup;
 
     public GetPnlLinesQueryHandler(
         IPnlReadStore store,
         ITenantContext tenantContext,
-        ITenantSettingsProvider settingsProvider)
+        ITenantSettingsProvider settingsProvider,
+        IProductSkuLookup skuLookup)
     {
         _store = store;
         _tenantContext = tenantContext;
         _settingsProvider = settingsProvider;
+        _skuLookup = skuLookup;
     }
 
     /// <inheritdoc/>
@@ -82,6 +86,8 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             _settingsProvider,
             cancellationToken);
 
+        await EnrichSkusAsync(views, cancellationToken);
+
         return new PnlLinesResponse
         {
             Lines = views,
@@ -89,5 +95,31 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             Currency = settings.Currency,
             ExcludedByCurrency = page.ExcludedByCurrency,
         };
+    }
+
+    // One lookup per page: identifiers are deduplicated, so two lines of the same product cost one
+    // entry. A page with no product link skips the call entirely.
+    private async Task EnrichSkusAsync(List<PnlLineView> views, CancellationToken cancellationToken)
+    {
+        Guid[] productIds = views
+            .Where(view => view.ProductId.HasValue)
+            .Select(view => view.ProductId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (productIds.Length == 0)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<Guid, string> skus = await _skuLookup.GetSkusAsync(productIds, cancellationToken);
+
+        foreach (PnlLineView view in views)
+        {
+            if (view.ProductId.HasValue && skus.TryGetValue(view.ProductId.Value, out string sku))
+            {
+                view.Sku = sku;
+            }
+        }
     }
 }
