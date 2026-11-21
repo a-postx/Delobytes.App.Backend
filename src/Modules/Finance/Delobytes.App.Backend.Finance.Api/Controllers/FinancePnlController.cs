@@ -68,8 +68,9 @@ public class FinancePnlController : ControllerBase
     }
 
     /// <summary>
-    /// Returns the summary by product or by channel, and by period. A granularity of
-    /// <c>total</c> reports the whole requested range as one period.
+    /// Returns the summary by product, by channel or with no dimension, and by period. A granularity
+    /// of <c>total</c> reports the whole requested range as one period; with a <c>groupBy</c> of
+    /// <c>none</c> the whole range collapses into a single row.
     /// </summary>
     [HttpGet("pnl-summary")]
     [ProducesResponseType(typeof(PnlSummaryResponse), StatusCodes.Status200OK)]
@@ -113,7 +114,7 @@ public class FinancePnlController : ControllerBase
                     {
                         new ValidationFailure(
                             nameof(groupBy),
-                            "Группировка должна быть одной из: product, channel."),
+                            "Группировка должна быть одной из: product, channel, none."),
                     });
             }
         }

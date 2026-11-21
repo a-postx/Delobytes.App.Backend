@@ -873,6 +873,92 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetSummary_GroupedByNone_FoldsEveryProductIntoOneRowPerPeriod()
+    {
+        // The whole business is the dimension here: the per-product percentages cannot be averaged,
+        // so the trend must come from one aggregate row per period and not from client arithmetic.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()),
+            Row(new DateOnly(2026, 8, 2), 200m, 180m, 20m, Guid.NewGuid()),
+            Row(new DateOnly(2026, 9, 1), 50m, 45m, cost: null, productId: Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.None,
+            },
+            CancellationToken.None);
+
+        response.GroupBy.Should().Be(PnlSummaryGroupBy.None);
+        response.Rows.Should().HaveCount(2);
+
+        PnlSummaryRowView august = response.Rows.Single(r => r.PeriodStart == new DateOnly(2026, 8, 1));
+        august.Lines.Should().Be(2);
+        august.RevenueAmount.Should().Be(300m);
+        august.Margin.Should().Be(240m);
+        august.MarginPercent.Should().Be(0.8m);
+        august.IsMarginComplete.Should().BeTrue();
+
+        PnlSummaryRowView september = response.Rows.Single(r => r.PeriodStart == new DateOnly(2026, 9, 1));
+        september.Margin.Should().BeNull();
+        september.RevenueWithoutCostAmount.Should().Be(50m);
+        september.IsMarginComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByNone_CarriesNeitherIdentifierAndIsNoUnlinkedProduct()
+    {
+        // An empty product identifier in a dimensionless row would read as an unresolved product and
+        // make the UI render a catalogue bucket that does not exist.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, productId: null),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.None,
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.ProductId.Should().BeNull();
+        row.ChannelId.Should().BeNull();
+        row.IsUnlinkedProduct.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByNoneWithTotalGranularity_ReportsOneRowForTheWholeRange()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()),
+            Row(new DateOnly(2026, 9, 15), 200m, 180m, 20m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                GroupBy = PnlSummaryGroupBy.None,
+                Filter = new PnlQueryFilter { From = new DateOnly(2026, 8, 1) },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 8, 1));
+        row.Lines.Should().Be(2);
+        row.RevenueAmount.Should().Be(300m);
+    }
+
+    [Fact]
     public async Task GetSummary_EchoesTheGroupingDimension()
     {
         PnlSummaryResponse productGrouping = await BuildSummaryHandler(new List<PnlLineRow>())
@@ -881,8 +967,12 @@ public class PnlQueryHandlerTests
         PnlSummaryResponse channelGrouping = await BuildSummaryHandler(new List<PnlLineRow>())
             .Handle(new GetPnlSummaryQuery { GroupBy = PnlSummaryGroupBy.Channel }, CancellationToken.None);
 
+        PnlSummaryResponse dimensionlessGrouping = await BuildSummaryHandler(new List<PnlLineRow>())
+            .Handle(new GetPnlSummaryQuery { GroupBy = PnlSummaryGroupBy.None }, CancellationToken.None);
+
         productGrouping.GroupBy.Should().Be(PnlSummaryGroupBy.Product);
         channelGrouping.GroupBy.Should().Be(PnlSummaryGroupBy.Channel);
+        dimensionlessGrouping.GroupBy.Should().Be(PnlSummaryGroupBy.None);
     }
 
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)

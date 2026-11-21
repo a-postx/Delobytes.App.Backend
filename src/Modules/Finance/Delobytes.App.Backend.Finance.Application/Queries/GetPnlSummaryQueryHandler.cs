@@ -142,7 +142,7 @@ public sealed class PnlSummaryResponse
     public PnlSummaryGroupBy GroupBy { get; set; }
 }
 
-/// <summary>Summary by product or by channel, and by period.</summary>
+/// <summary>Summary by product, by channel, or across the whole range, and by period.</summary>
 public sealed class GetPnlSummaryQuery : IRequest<PnlSummaryResponse>
 {
     public PnlQueryFilter Filter { get; set; } = new();
@@ -151,7 +151,8 @@ public sealed class GetPnlSummaryQuery : IRequest<PnlSummaryResponse>
 
     /// <summary>
     /// Gets or sets the grouping dimension. One axis per request: a product-grouped row carries the
-    /// product identifier, a channel-grouped row carries the channel one.
+    /// product identifier, a channel-grouped row carries the channel one, and a dimensionless row
+    /// carries neither.
     /// </summary>
     public PnlSummaryGroupBy GroupBy { get; set; } = PnlSummaryGroupBy.Product;
 }
@@ -217,8 +218,16 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 continue;
             }
 
+            // The key carries the identifier of the requested dimension, so one fold serves all
+            // three groupings without a second pass over the lines. A dimensionless group has no
+            // identifier at all: the period alone keys it.
             (Guid? GroupId, DateOnly PeriodStart) key = (
-                request.GroupBy == PnlSummaryGroupBy.Channel ? view.ChannelId : view.ProductId,
+                request.GroupBy switch
+                {
+                    PnlSummaryGroupBy.Channel => view.ChannelId,
+                    PnlSummaryGroupBy.None => null,
+                    _ => view.ProductId,
+                },
                 PeriodOf(view.PeriodDate.Value, request.Granularity));
 
             if (!accumulators.TryGetValue(key, out SummaryAccumulator? accumulator))
@@ -360,14 +369,16 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             DateOnly periodStart)
         {
             bool byChannel = groupBy == PnlSummaryGroupBy.Channel;
+            bool dimensionless = groupBy == PnlSummaryGroupBy.None;
 
             return new PnlSummaryRowView
             {
                 // The dimension decides which identifier the row carries: a product row must not
-                // expose a channel as if it were a product, and vice versa.
-                ProductId = byChannel ? null : groupId,
+                // expose a channel as if it were a product, and vice versa. A dimensionless row
+                // carries neither, and an empty identifier there is not an unresolved product.
+                ProductId = !byChannel && !dimensionless ? groupId : null,
                 ChannelId = byChannel ? groupId : null,
-                IsUnlinkedProduct = !byChannel && groupId == null,
+                IsUnlinkedProduct = !byChannel && !dimensionless && groupId == null,
                 PeriodStart = periodStart,
                 Lines = _lines,
                 RevenueAmount = _revenue,

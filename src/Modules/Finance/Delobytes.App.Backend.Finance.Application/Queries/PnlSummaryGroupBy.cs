@@ -15,4 +15,12 @@ public enum PnlSummaryGroupBy
     /// client answers "which channel earns": the filter would only answer "what is inside a channel".
     /// </summary>
     Channel = 1,
+
+    /// <summary>
+    /// No dimension: all lines of a period fold into one row. This is the only way to get a trend
+    /// over the whole business, because the per-group percentages cannot be averaged, and a
+    /// <see cref="Product"/> grouping with a total granularity still yields one row per product.
+    /// The row carries neither a product nor a channel identifier.
+    /// </summary>
+    None = 2,
 }
