@@ -1826,6 +1826,62 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetLines_PassesTheSortAndTheParsedCursorToTheStore()
+    {
+        // Arrange
+        FakeStore store = new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow>() });
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = false };
+        Guid cursorId = Guid.NewGuid();
+        string token = $"margin|asc|1234.50|{cursorId}";
+
+        // Act
+        await handler.Handle(
+            new GetPnlLinesQuery { Sort = sort, ContinuationToken = token },
+            CancellationToken.None);
+
+        // Assert
+        store.LastSort.Should().NotBeNull();
+        store.LastSort!.Key.Should().Be(PnlLineSortKey.Margin);
+        store.LastSort.Descending.Should().BeFalse();
+
+        store.LastCursor.Should().NotBeNull();
+        store.LastCursor!.Id.Should().Be(cursorId);
+        store.LastCursor.MarginValue.Should().Be(1234.50m);
+    }
+
+    [Fact]
+    public async Task GetLines_TokenOfAnotherSort_IsRejected()
+    {
+        // A token carries the ordering that produced it: continuing another order with it would
+        // silently skip or repeat rows, so the request is refused instead.
+        FakeStore store = new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow>() });
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        GetPnlLinesQuery query = new GetPnlLinesQuery
+        {
+            Sort = new PnlLineSort { Key = PnlLineSortKey.Date, Descending = true },
+            ContinuationToken = $"margin|desc|10.00|{Guid.NewGuid()}",
+        };
+
+        Func<Task> act = () => handler.Handle(query, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ValidationException>();
+        store.LastSort.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetSummary_OverTheResponseBudget_IsRejectedBeforeTheWholeFold()
     {
         // Arrange: one product group per row, far above the response budget. The handler must stop
@@ -2046,6 +2102,12 @@ public class PnlQueryHandlerTests
 
         public PnlLineFilter? LastFilter { get; private set; }
 
+        /// <summary>Gets the ordering the handler asked for.</summary>
+        public PnlLineSort? LastSort { get; private set; }
+
+        /// <summary>Gets the cursor the handler parsed out of the continuation token.</summary>
+        public PnlLineCursor? LastCursor { get; private set; }
+
         public PnlLineFilter? LastCurrencyFilter { get; private set; }
 
         /// <summary>Gets or sets the exclusions the summary handler reads next to the totals.</summary>
@@ -2061,11 +2123,15 @@ public class PnlQueryHandlerTests
         public Task<PnlLinePage> GetLinesAsync(
             string currency,
             PnlLineFilter filter,
+            PnlLineSort sort,
             int take,
-            string? afterToken,
+            PnlLineCursor? after,
             CancellationToken cancellationToken)
         {
             LastFilter = filter;
+            LastSort = sort;
+            LastCursor = after;
+
             return Task.FromResult(_page);
         }
 

@@ -8,12 +8,19 @@ namespace Delobytes.App.Backend.Finance.Application.Interfaces;
 /// </summary>
 public interface IPnlReadStore
 {
-    /// <summary>Reads one keyset page of P&amp;L lines.</summary>
+    /// <summary>Reads one keyset page of P&amp;L lines in the requested order.</summary>
+    /// <param name="currency">Reporting currency the page is read in.</param>
+    /// <param name="filter">Filters of the page.</param>
+    /// <param name="sort">Ordering of the page.</param>
+    /// <param name="take">Maximum number of rows.</param>
+    /// <param name="after">Cursor of the previous page, or null for the first page.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PnlLinePage> GetLinesAsync(
         string currency,
         PnlLineFilter filter,
+        PnlLineSort sort,
         int take,
-        string? afterToken,
+        PnlLineCursor? after,
         CancellationToken cancellationToken);
 
     /// <summary>

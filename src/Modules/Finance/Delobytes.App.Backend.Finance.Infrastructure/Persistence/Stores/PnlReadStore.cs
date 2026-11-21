@@ -41,8 +41,9 @@ public class PnlReadStore : IPnlReadStore
     public async Task<PnlLinePage> GetLinesAsync(
         string currency,
         PnlLineFilter filter,
+        PnlLineSort sort,
         int take,
-        string? afterToken,
+        PnlLineCursor? after,
         CancellationToken cancellationToken)
     {
         EnsureTenant();
@@ -52,11 +53,8 @@ public class PnlReadStore : IPnlReadStore
             throw new ArgumentOutOfRangeException(nameof(take), take, "A page must contain at least one row.");
         }
 
-        Guid? afterId = ParseCursor(afterToken);
-
         // One row past the page tells us whether another page exists without a second round trip.
-        List<PnlLineRow> rows = await BuildLinesQuery(currency, filter, afterId)
-            .OrderBy(row => row.Id)
+        List<PnlLineRow> rows = await BuildPageQuery(currency, filter, sort, after)
             .Take(take + 1)
             .ToListAsync(cancellationToken);
 
@@ -70,7 +68,7 @@ public class PnlReadStore : IPnlReadStore
         return new PnlLinePage
         {
             Rows = rows,
-            NextToken = hasMore ? rows[rows.Count - 1].Id.ToString() : null,
+            NextToken = hasMore ? PnlLineCursor.ForRow(rows[rows.Count - 1], sort).ToString() : null,
             ExcludedByCurrency = await BuildFilteredQuery(filter)
                 .CountAsync(row => row.Currency != currency, cancellationToken),
         };
@@ -86,7 +84,7 @@ public class PnlReadStore : IPnlReadStore
         // halfway through the caller's loop.
         EnsureTenant();
 
-        await foreach (PnlLineRow row in BuildLinesQuery(currency, filter, afterId: null)
+        await foreach (PnlLineRow row in BuildLinesQuery(currency, filter)
             .AsAsyncEnumerable()
             .WithCancellation(cancellationToken))
         {
@@ -270,21 +268,119 @@ public class PnlReadStore : IPnlReadStore
     }
 
     /// <summary>
-    /// Builds the P&amp;L rows of one currency, optionally past a keyset cursor. Internal so tests
-    /// can assert the SQL EF Core produces for the joins, the filters and the cursor.
+    /// Builds the P&amp;L rows of one currency. Internal so tests can assert the SQL EF Core
+    /// produces for the joins and the filters.
     /// </summary>
-    internal IQueryable<PnlLineRow> BuildLinesQuery(string currency, PnlLineFilter filter, Guid? afterId)
+    internal IQueryable<PnlLineRow> BuildLinesQuery(string currency, PnlLineFilter filter)
     {
-        IQueryable<PnlLineRow> query = BuildFilteredQuery(filter)
-            .Where(row => row.Currency == currency);
+        return BuildFilteredQuery(filter).Where(row => row.Currency == currency);
+    }
 
-        if (afterId.HasValue)
+    /// <summary>
+    /// Builds one ordered and cursored page of P&amp;L rows. Internal so tests can assert that the
+    /// ordering and the keyset predicate run in SQL.
+    /// </summary>
+    internal IQueryable<PnlLineRow> BuildPageQuery(
+        string currency,
+        PnlLineFilter filter,
+        PnlLineSort sort,
+        PnlLineCursor? after)
+    {
+        return ApplySort(ApplyCursor(BuildLinesQuery(currency, filter), sort, after), sort);
+    }
+
+    /// <summary>
+    /// Orders the page by the requested key and then by the identifier, which keeps the order total
+    /// and therefore the keyset stable when the key value repeats.
+    /// </summary>
+    /// <remarks>
+    /// Rows with an unknown key form one block at the end of the page in both directions. PostgreSQL
+    /// would put them first when descending and last when ascending, and a page that opens with
+    /// unknown margins hides the figures the reader asked for; the explicit block also makes the
+    /// order the same whatever the provider does.
+    /// </remarks>
+    private static IOrderedQueryable<PnlLineRow> ApplySort(IQueryable<PnlLineRow> query, PnlLineSort sort)
+    {
+        return sort.Key switch
         {
-            Guid cursor = afterId.Value;
-            query = query.Where(row => row.Id.CompareTo(cursor) > 0);
+            PnlLineSortKey.Margin => sort.Descending
+                ? query.OrderBy(row => row.MarginAmount == null)
+                    .ThenByDescending(row => row.MarginAmount)
+                    .ThenBy(row => row.Id)
+                : query.OrderBy(row => row.MarginAmount == null)
+                    .ThenBy(row => row.MarginAmount)
+                    .ThenBy(row => row.Id),
+            _ => sort.Descending
+                ? query.OrderBy(row => row.PeriodDate == null)
+                    .ThenByDescending(row => row.PeriodDate)
+                    .ThenBy(row => row.Id)
+                : query.OrderBy(row => row.PeriodDate == null)
+                    .ThenBy(row => row.PeriodDate)
+                    .ThenBy(row => row.Id),
+        };
+    }
+
+    /// <summary>
+    /// Narrows the query to the rows that follow the cursor in the requested order.
+    /// </summary>
+    /// <remarks>
+    /// The key is read at the position of the row the token points at, not in memory: the predicate
+    /// has to reach the database, otherwise a page would be cut from the whole tenant. A null key
+    /// value is a real position — an unknown margin — and its block comes last in both directions,
+    /// so a cursor inside a known value still lets the unknown rows through.
+    /// </remarks>
+    private static IQueryable<PnlLineRow> ApplyCursor(
+        IQueryable<PnlLineRow> query,
+        PnlLineSort sort,
+        PnlLineCursor? after)
+    {
+        if (after == null)
+        {
+            return query;
         }
 
-        return query;
+        Guid id = after.Id;
+
+        if (sort.Key == PnlLineSortKey.Margin)
+        {
+            decimal? value = after.MarginValue;
+
+            if (value == null)
+            {
+                return query.Where(row => row.MarginAmount == null && row.Id.CompareTo(id) > 0);
+            }
+
+            decimal margin = value.Value;
+
+            return sort.Descending
+                ? query.Where(row =>
+                    row.MarginAmount == null
+                    || row.MarginAmount < margin
+                    || (row.MarginAmount == margin && row.Id.CompareTo(id) > 0))
+                : query.Where(row =>
+                    row.MarginAmount == null
+                    || row.MarginAmount > margin
+                    || (row.MarginAmount == margin && row.Id.CompareTo(id) > 0));
+        }
+
+        DateOnly? date = after.DateValue;
+
+        if (date == null)
+        {
+            return query.Where(row => row.PeriodDate == null && row.Id.CompareTo(id) > 0);
+        }
+
+        DateOnly periodDate = date.Value;
+
+        return sort.Descending
+            ? query.Where(row =>
+                row.PeriodDate == null
+                || row.PeriodDate < periodDate
+                || (row.PeriodDate == periodDate && row.Id.CompareTo(id) > 0))
+            : query.Where(row =>
+                row.PeriodDate == null
+                || row.PeriodDate > periodDate
+                || (row.PeriodDate == periodDate && row.Id.CompareTo(id) > 0));
     }
 
     /// <summary>
@@ -320,24 +416,6 @@ public class PnlReadStore : IPnlReadStore
     internal IQueryable<PnlLineRow> BuildFilteredQuery(PnlLineFilter filter)
     {
         return ApplyFilters(BuildProjection(), filter);
-    }
-
-    /// <summary>Parses the continuation token; a malformed token is a caller error, not page one.</summary>
-    internal static Guid? ParseCursor(string? afterToken)
-    {
-        if (string.IsNullOrWhiteSpace(afterToken))
-        {
-            return null;
-        }
-
-        if (!Guid.TryParse(afterToken, out Guid cursor))
-        {
-            throw new ArgumentException(
-                "The continuation token must be a P&L line identifier produced by the previous page.",
-                nameof(afterToken));
-        }
-
-        return cursor;
     }
 
     private IQueryable<PnlLineRow> BuildProjection()
@@ -383,6 +461,19 @@ public class PnlReadStore : IPnlReadStore
                    ControlDifferenceAmount = line.ControlDifferenceAmount,
                    ProductionCostAmount = line.ProductionCostAmount,
                    ProductionCostIsComplete = line.ProductionCostIsComplete,
+                   // The ordering key of the margin sort, written as the same rule
+                   // PnlTaxCalculator.LineMargin applies in memory: a line that never sold has no
+                   // cost of goods, so its result is the net revenue, while a sold line needs a
+                   // complete cost fact and is unknown without it. A margin built on a partial cost
+                   // would be an overstated figure, not a conservative one.
+                   MarginAmount =
+                       line.SaleDate == null || reference.Quantity - line.ReturnedQuantity <= 0
+                           ? line.NetRevenueAmount
+                           : line.ProductionCostIsComplete == true
+                               && line.NetRevenueAmount != null
+                               && line.ProductionCostAmount != null
+                                   ? line.NetRevenueAmount - line.ProductionCostAmount
+                                   : null,
                    // The cost fact describes the ordered units, while the line stores only the cost
                    // of the units that stayed sold. The investment base has to come from the fact
                    // itself, so it is projected here instead of being rebuilt from the line.

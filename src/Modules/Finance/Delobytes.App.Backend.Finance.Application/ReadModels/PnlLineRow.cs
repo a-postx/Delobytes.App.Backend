@@ -77,6 +77,13 @@ public sealed class PnlLineRow
     public bool? ProductionCostIsComplete { get; set; }
 
     /// <summary>
+    /// Gets or sets the margin before tax as the database computes it, so a page can be ordered by
+    /// it. It repeats <see cref="PnlTaxCalculator.LineMargin"/>, which runs only after
+    /// materialisation; the two are pinned to each other by the read store tests.
+    /// </summary>
+    public decimal? MarginAmount { get; set; }
+
+    /// <summary>
     /// Gets or sets the resolved cost of one unit, or null when the cost fact carries only a line
     /// total. It describes the ordered units: the cost of the whole line lets the caller value the
     /// units that never sold as well.

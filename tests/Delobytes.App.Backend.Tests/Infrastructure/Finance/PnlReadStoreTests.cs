@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Finance.Domain.Enums;
 using Delobytes.App.Backend.Finance.Infrastructure.Persistence;
 using Delobytes.App.Backend.Finance.Infrastructure.Persistence.Stores;
 using FluentAssertions;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
@@ -37,13 +38,15 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage first = await store.GetLinesAsync("RUB", new PnlLineFilter(), 2, null, CancellationToken.None);
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Date, Descending = false };
+
+        PnlLinePage first = await store.GetLinesAsync("RUB", new PnlLineFilter(), sort, 2, null, CancellationToken.None);
 
         first.Rows.Should().HaveCount(2);
         first.NextToken.Should().NotBeNull();
 
         PnlLinePage second = await store.GetLinesAsync(
-            "RUB", new PnlLineFilter(), 2, first.NextToken, CancellationToken.None);
+            "RUB", new PnlLineFilter(), sort, 2, PnlLineCursor.Parse(first.NextToken, sort), CancellationToken.None);
 
         second.Rows.Should().HaveCount(1);
         second.NextToken.Should().BeNull();
@@ -51,6 +54,166 @@ public class PnlReadStoreTests
         first.Rows.Select(r => r.OrderLineId)
             .Concat(second.Rows.Select(r => r.OrderLineId))
             .Should().Equal(orderLines);
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_DefaultOrder_PutsTheNewestPeriodFirst()
+    {
+        string database = NewDatabaseName();
+        await SeedLinesAsync(database);
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync(
+            "RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
+
+        // A line list is a history: an unsorted page over random identifiers was unreadable.
+        page.Rows.Select(row => row.PeriodDate).Should().BeInDescendingOrder();
+        page.Rows.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_OrderedByMargin_KeepsUnknownMarginsLast()
+    {
+        string database = NewDatabaseName();
+        Guid knownLine = Guid.Parse("00000031-0000-0000-0000-000000000031");
+        Guid noCostLine = Guid.Parse("00000032-0000-0000-0000-000000000032");
+        Guid incompleteCostLine = Guid.Parse("00000033-0000-0000-0000-000000000033");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            // The identifiers are fixed: the tiebreak inside the unknown block is the line
+            // identifier, so a random one would make the expected order random too.
+            seed.PnlLines.AddRange(
+                Line(Guid.Parse("00000071-0000-0000-0000-000000000071"), knownLine, "RUB", Day1, netRevenue: 90m, productionCost: 40m, productionCostIsComplete: true),
+                Line(Guid.Parse("00000072-0000-0000-0000-000000000072"), noCostLine, "RUB", Day2),
+                Line(Guid.Parse("00000073-0000-0000-0000-000000000073"), incompleteCostLine, "RUB", Day3, netRevenue: 90m, productionCost: 10m, productionCostIsComplete: false));
+            seed.OrderLineRefs.AddRange(
+                Reference(knownLine, ChannelId),
+                Reference(noCostLine, ChannelId),
+                Reference(incompleteCostLine, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = true };
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), sort, 100, null, CancellationToken.None);
+
+        // The known margin leads the page and the two unknown ones follow, whatever the provider
+        // thinks of nulls: an opened report must not be a list of "margin unknown".
+        page.Rows.Select(row => row.OrderLineId).Should().Equal(knownLine, noCostLine, incompleteCostLine);
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_MarginCursor_PagesWithoutRepeatingOrSkipping()
+    {
+        string database = NewDatabaseName();
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            Guid[] orderLines =
+            {
+                Guid.Parse("00000041-0000-0000-0000-000000000041"),
+                Guid.Parse("00000042-0000-0000-0000-000000000042"),
+                Guid.Parse("00000043-0000-0000-0000-000000000043"),
+                Guid.Parse("00000044-0000-0000-0000-000000000044"),
+            };
+
+            decimal[] margins = { 50m, 10m, 10m, 0m };
+
+            for (int index = 0; index < orderLines.Length; index++)
+            {
+                seed.PnlLines.Add(Line(
+                    Guid.NewGuid(),
+                    orderLines[index],
+                    "RUB",
+                    Day1,
+                    netRevenue: 90m,
+                    productionCost: 90m - margins[index],
+                    productionCostIsComplete: true));
+
+                seed.OrderLineRefs.Add(Reference(orderLines[index], ChannelId));
+            }
+
+            // A line without a cost fact is the unknown block at the end of the page.
+            Guid unknownLine = Guid.Parse("00000045-0000-0000-0000-000000000045");
+            seed.PnlLines.Add(Line(Guid.NewGuid(), unknownLine, "RUB", Day1));
+            seed.OrderLineRefs.Add(Reference(unknownLine, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = true };
+
+        List<Guid> visited = new();
+        string? token = null;
+
+        do
+        {
+            PnlLinePage page = await store.GetLinesAsync(
+                "RUB", new PnlLineFilter(), sort, 2, PnlLineCursor.Parse(token, sort), CancellationToken.None);
+
+            visited.AddRange(page.Rows.Select(row => row.OrderLineId));
+            token = page.NextToken;
+        }
+        while (token != null);
+
+        // One pass over the whole page: a repeated margin and an unknown one must not make a row
+        // appear twice or disappear between pages.
+        visited.Should().HaveCount(5);
+        visited.Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task GetLinesAsync_MarginAmount_MatchesTheCalculator()
+    {
+        string database = NewDatabaseName();
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            Guid soldWithCompleteCost = Guid.Parse("00000051-0000-0000-0000-000000000051");
+            Guid soldWithIncompleteCost = Guid.Parse("00000052-0000-0000-0000-000000000052");
+            Guid neverSold = Guid.Parse("00000053-0000-0000-0000-000000000053");
+
+            seed.PnlLines.AddRange(
+                Line(Guid.NewGuid(), soldWithCompleteCost, "RUB", Day1, netRevenue: 120m, productionCost: 45m, productionCostIsComplete: true),
+                Line(Guid.NewGuid(), soldWithIncompleteCost, "RUB", Day1, netRevenue: 120m, productionCost: 45m, productionCostIsComplete: false),
+                Line(Guid.NewGuid(), neverSold, "RUB", null, netRevenue: -53.84m));
+            seed.OrderLineRefs.AddRange(
+                Reference(soldWithCompleteCost, ChannelId),
+                Reference(soldWithIncompleteCost, ChannelId),
+                Reference(neverSold, ChannelId));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync(
+            "RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
+
+        // The ordering key repeats the margin rule in SQL; it must not drift from the one the view
+        // reports, otherwise a page is sorted by a figure it does not show.
+        foreach (PnlLineRow row in page.Rows)
+        {
+            int soldUnits = row.SaleDate.HasValue ? Math.Max(0, row.Quantity - row.ReturnedQuantity) : 0;
+
+            row.MarginAmount.Should().Be(
+                PnlTaxCalculator.LineMargin(
+                    row.NetRevenueAmount,
+                    row.ProductionCostAmount,
+                    row.ProductionCostIsComplete,
+                    soldUnits > 0));
+        }
     }
 
     [Fact]
@@ -62,7 +225,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 3, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 3, null, CancellationToken.None);
 
         page.Rows.Should().HaveCount(3);
         page.NextToken.Should().BeNull();
@@ -78,7 +241,7 @@ public class PnlReadStoreTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
         PnlLinePage page = await store.GetLinesAsync(
-            "RUB", new PnlLineFilter { ChannelId = ChannelId }, 100, null, CancellationToken.None);
+            "RUB", new PnlLineFilter { ChannelId = ChannelId }, PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Should().HaveCount(2);
         page.Rows.Should().OnlyContain(r => r.ChannelId == ChannelId);
@@ -94,7 +257,7 @@ public class PnlReadStoreTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
         PnlLinePage page = await store.GetLinesAsync(
-            "RUB", new PnlLineFilter { ProductId = ProductId }, 100, null, CancellationToken.None);
+            "RUB", new PnlLineFilter { ProductId = ProductId }, PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Should().HaveCount(1);
         page.Rows[0].ProductId.Should().Be(ProductId);
@@ -120,7 +283,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         PnlLineRow row = page.Rows.Single(r => r.OrderLineId == orderLineId);
 
@@ -149,7 +312,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         PnlLineRow row = page.Rows.Single(r => r.OrderLineId == orderLineId);
 
@@ -178,7 +341,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Should().ContainSingle();
         page.Rows[0].Quantity.Should().Be(4);
@@ -213,7 +376,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         PnlLineRow row = page.Rows.Should().ContainSingle().Subject;
 
@@ -247,6 +410,7 @@ public class PnlReadStoreTests
         PnlLinePage page = await store.GetLinesAsync(
             "RUB",
             new PnlLineFilter { ChannelProductId = channelProductId },
+            PnlLineSort.Default,
             100,
             null,
             CancellationToken.None);
@@ -275,7 +439,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Single(r => r.OrderLineId == orderLineId).ProductId.Should().Be(resolvedProductId);
     }
@@ -297,7 +461,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Single(r => r.OrderLineId == orderLineId).ProductId.Should().BeNull();
     }
@@ -314,6 +478,7 @@ public class PnlReadStoreTests
         PnlLinePage page = await store.GetLinesAsync(
             "RUB",
             new PnlLineFilter { From = Day2, To = Day3, State = PnlLineState.NotCalculated },
+            PnlLineSort.Default,
             100,
             null,
             CancellationToken.None);
@@ -348,7 +513,7 @@ public class PnlReadStoreTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
         PnlLinePage inside = await store.GetLinesAsync(
-            "RUB", new PnlLineFilter { From = Day2, To = Day2 }, 100, null, CancellationToken.None);
+            "RUB", new PnlLineFilter { From = Day2, To = Day2 }, PnlLineSort.Default, 100, null, CancellationToken.None);
 
         PnlLineRow row = inside.Rows.Should().ContainSingle().Subject;
         row.SaleDate.Should().BeNull();
@@ -356,7 +521,7 @@ public class PnlReadStoreTests
         row.NetRevenueAmount.Should().Be(-53.84m);
 
         PnlLinePage outside = await store.GetLinesAsync(
-            "RUB", new PnlLineFilter { From = Day3, To = Day3 }, 100, null, CancellationToken.None);
+            "RUB", new PnlLineFilter { From = Day3, To = Day3 }, PnlLineSort.Default, 100, null, CancellationToken.None);
 
         outside.Rows.Should().BeEmpty();
     }
@@ -373,6 +538,7 @@ public class PnlReadStoreTests
         PnlLinePage page = await store.GetLinesAsync(
             "RUB",
             new PnlLineFilter { From = Day3, To = Day3 },
+            PnlLineSort.Default,
             100,
             null,
             CancellationToken.None);
@@ -447,6 +613,7 @@ public class PnlReadStoreTests
                     PnlLineCompleteness.ClosedWithException,
                 },
             },
+            PnlLineSort.Default,
             100,
             null,
             CancellationToken.None);
@@ -472,7 +639,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Should().ContainSingle().Which.OrderLineId.Should().Be(orderLineId);
     }
@@ -486,7 +653,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, OtherTenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(OtherTenantId));
 
-        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 100, null, CancellationToken.None);
 
         page.Rows.Should().BeEmpty();
         page.ExcludedByCurrency.Should().Be(0);
@@ -500,7 +667,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(Guid.Empty));
 
-        Func<Task> act = () => store.GetLinesAsync("RUB", new PnlLineFilter(), 10, null, CancellationToken.None);
+        Func<Task> act = () => store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 10, null, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -559,7 +726,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        Func<Task> act = () => store.GetLinesAsync("RUB", new PnlLineFilter(), 0, null, CancellationToken.None);
+        Func<Task> act = () => store.GetLinesAsync("RUB", new PnlLineFilter(), PnlLineSort.Default, 0, null, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
@@ -828,16 +995,44 @@ public class PnlReadStoreTests
     [Fact]
     public void ParseCursor_RejectsMalformedToken()
     {
-        Action act = () => PnlReadStore.ParseCursor("not-a-guid");
+        Action act = () => PnlLineCursor.Parse("not-a-guid", PnlLineSort.Default);
 
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<ValidationException>();
+    }
+
+    [Fact]
+    public void ParseCursor_RejectsATokenOfAnotherSort()
+    {
+        // The token names the ordering it was built for: continuing another one would skip or
+        // repeat rows.
+        PnlLineSort dateSort = PnlLineSort.Default;
+
+        Action act = () => PnlLineCursor.Parse(
+            $"margin|desc|10.00|{Guid.Parse("33333333-3333-3333-3333-333333333333")}",
+            dateSort);
+
+        act.Should().Throw<ValidationException>();
     }
 
     [Fact]
     public void ParseCursor_TreatsBlankTokenAsFirstPage()
     {
-        PnlReadStore.ParseCursor(null).Should().BeNull();
-        PnlReadStore.ParseCursor("  ").Should().BeNull();
+        PnlLineCursor.Parse(null, PnlLineSort.Default).Should().BeNull();
+        PnlLineCursor.Parse("  ", PnlLineSort.Default).Should().BeNull();
+    }
+
+    [Fact]
+    public void Cursor_RoundTripsTheMarginAndTheIdentifier()
+    {
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = true };
+        Guid id = Guid.Parse("44444444-4444-4444-4444-444444444444");
+
+        PnlLineCursor cursor = PnlLineCursor.Parse($"margin|desc|1234.50|{id}", sort)!;
+
+        cursor.Key.Should().Be(PnlLineSortKey.Margin);
+        cursor.Descending.Should().BeTrue();
+        cursor.MarginValue.Should().Be(1234.50m);
+        cursor.Id.Should().Be(id);
     }
 
     [Fact]
@@ -877,6 +1072,7 @@ public class PnlReadStoreTests
         PnlLinePage page = await store.GetLinesAsync(
             "RUB",
             new PnlLineFilter { ProductIds = new[] { firstProduct, thirdProduct } },
+            PnlLineSort.Default,
             100,
             null,
             CancellationToken.None);
@@ -919,7 +1115,10 @@ public class PnlReadStoreTests
         string currency,
         DateOnly? saleDate,
         PnlLineState state = PnlLineState.Calculated,
-        PnlLineCompleteness completeness = PnlLineCompleteness.Complete)
+        PnlLineCompleteness completeness = PnlLineCompleteness.Complete,
+        decimal netRevenue = 90m,
+        decimal? productionCost = null,
+        bool? productionCostIsComplete = null)
     {
         return new PnlLine
         {
@@ -929,7 +1128,9 @@ public class PnlReadStoreTests
             SaleDate = saleDate,
             State = state,
             RevenueAmount = 100m,
-            NetRevenueAmount = 90m,
+            NetRevenueAmount = netRevenue,
+            ProductionCostAmount = productionCost,
+            ProductionCostIsComplete = productionCostIsComplete,
             EntryCount = 1,
             CompletenessState = completeness,
             CreatedAt = DateTimeOffset.UnixEpoch,

@@ -25,6 +25,8 @@ public sealed class GetPnlLinesQuery : IRequest<PnlLinesResponse>
 {
     public PnlQueryFilter Filter { get; set; } = new();
 
+    public PnlLineSort Sort { get; set; } = PnlLineSort.Default;
+
     public int Take { get; set; } = 100;
 
     public string? ContinuationToken { get; set; }
@@ -78,8 +80,9 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
         PnlLinePage page = await _store.GetLinesAsync(
             settings.Currency,
             filter,
+            request.Sort,
             take,
-            request.ContinuationToken,
+            PnlLineCursor.Parse(request.ContinuationToken, request.Sort),
             cancellationToken);
 
         List<PnlLineView> views = await PnlViewFactory.BuildAsync(

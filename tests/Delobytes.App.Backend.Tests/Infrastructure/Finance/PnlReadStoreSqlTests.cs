@@ -28,7 +28,7 @@ public class PnlReadStoreSqlTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
 
         string sql = store
-            .BuildLinesQuery("RUB", new PnlLineFilter(), null)
+            .BuildLinesQuery("RUB", new PnlLineFilter())
             .OrderBy(row => row.Id)
             .Take(10)
             .ToQueryString();
@@ -47,16 +47,22 @@ public class PnlReadStoreSqlTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
 
         string sql = store
-            .BuildLinesQuery("RUB", new PnlLineFilter(), null)
+            .BuildLinesQuery("RUB", new PnlLineFilter())
             .OrderBy(row => row.Id)
             .Take(10)
             .ToQueryString();
 
         // The product comes from the resolved cost fact and the channel product is a separate
-        // column: a CASE fallback would mix two identifier domains in one field.
+        // column: a CASE fallback would mix two identifier domains in one field. The projection
+        // carries exactly one conditional — the margin ordering key — and it is built from the
+        // revenue and the cost, never from an identifier.
         sql.Should().Contain("\"ProductId\"");
         sql.Should().Contain("\"ChannelProductId\"");
-        sql.Should().NotContain("CASE");
+
+        string[] conditionals = sql.Split("CASE").Skip(1).ToArray();
+
+        conditionals.Should().ContainSingle();
+        conditionals[0].Should().Contain("\"NetRevenueAmount\"");
     }
 
     [Fact]
@@ -66,7 +72,7 @@ public class PnlReadStoreSqlTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
 
         string sql = store
-            .BuildLinesQuery("RUB", new PnlLineFilter(), null)
+            .BuildLinesQuery("RUB", new PnlLineFilter())
             .OrderBy(row => row.Id)
             .Take(10)
             .ToQueryString();
@@ -80,19 +86,104 @@ public class PnlReadStoreSqlTests
     }
 
     [Fact]
-    public void BuildLinesQuery_WithCursor_ComparesUuidWithoutTextCast()
+    public void BuildPageQuery_WithDateCursor_ComparesUuidWithoutTextCast()
     {
         using FinanceDbContext context = CreateContext();
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
 
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Date, Descending = true };
+        PnlLineCursor cursor = PnlLineCursor.Parse($"date|desc|2026-03-01|{Cursor}", sort)!;
+
         string sql = store
-            .BuildLinesQuery("RUB", new PnlLineFilter(), Cursor)
-            .OrderBy(row => row.Id)
+            .BuildPageQuery("RUB", new PnlLineFilter(), sort, cursor)
             .Take(10)
             .ToQueryString();
 
         sql.Should().Contain("\"Id\" > @");
         sql.Should().NotContain("::text");
+    }
+
+    [Fact]
+    public void BuildPageQuery_OrdersTheDateKeyThenTheIdentifierInSql()
+    {
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        string sql = store
+            .BuildPageQuery("RUB", new PnlLineFilter(), PnlLineSort.Default, null)
+            .Take(10)
+            .ToQueryString();
+
+        // The period date is a COALESCE over the two date columns, and the identifier is the
+        // tiebreak that keeps the keyset total when two lines share a date.
+        int ordering = sql.IndexOf("ORDER BY", StringComparison.Ordinal);
+
+        ordering.Should().BeGreaterThan(0);
+
+        string orderBy = sql.Substring(ordering);
+
+        orderBy.Should().Contain("COALESCE(");
+        orderBy.Should().Contain("DESC");
+        orderBy.Should().Contain("\"Id\"");
+    }
+
+    [Fact]
+    public void BuildPageQuery_OrdersTheMarginKeyInSql()
+    {
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = true };
+
+        string sql = store
+            .BuildPageQuery("RUB", new PnlLineFilter(), sort, null)
+            .Take(10)
+            .ToQueryString();
+
+        string orderBy = sql.Substring(sql.IndexOf("ORDER BY", StringComparison.Ordinal));
+
+        orderBy.Should().Contain("CASE");
+        orderBy.Should().Contain("\"NetRevenueAmount\"");
+        orderBy.Should().Contain("\"ProductionCostAmount\"");
+        orderBy.Should().Contain("\"Id\"");
+    }
+
+    [Fact]
+    public void BuildPageQuery_WithMarginCursor_AppliesTheKeysetInSql()
+    {
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = true };
+        PnlLineCursor cursor = PnlLineCursor.Parse($"margin|desc|1234.50|{Cursor}", sort)!;
+
+        string sql = store
+            .BuildPageQuery("RUB", new PnlLineFilter(), sort, cursor)
+            .Take(10)
+            .ToQueryString();
+
+        // The unknown margin is its own block of the order, so the predicate must select it as well
+        // as the values below the cursor.
+        sql.Should().Contain("IS NULL");
+        sql.Should().Contain("@margin");
+    }
+
+    [Fact]
+    public void BuildPageQuery_WithUnknownMarginCursor_StaysInsideTheUnknownBlockInSql()
+    {
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        PnlLineSort sort = new PnlLineSort { Key = PnlLineSortKey.Margin, Descending = true };
+        PnlLineCursor cursor = PnlLineCursor.Parse($"margin|desc||{Cursor}", sort)!;
+
+        string sql = store
+            .BuildPageQuery("RUB", new PnlLineFilter(), sort, cursor)
+            .Take(10)
+            .ToQueryString();
+
+        sql.Should().Contain("IS NULL");
+        sql.Should().Contain("\"Id\" > @");
     }
 
     [Fact]
@@ -102,7 +193,7 @@ public class PnlReadStoreSqlTests
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
 
         string sql = store
-            .BuildLinesQuery("RUB", new PnlLineFilter(), null)
+            .BuildLinesQuery("RUB", new PnlLineFilter())
             .OrderBy(row => row.Id)
             .Take(10)
             .ToQueryString();
@@ -132,7 +223,7 @@ public class PnlReadStoreSqlTests
         };
 
         string sql = store
-            .BuildLinesQuery("RUB", filter, null)
+            .BuildLinesQuery("RUB", filter)
             .OrderBy(row => row.Id)
             .Take(10)
             .ToQueryString();
@@ -225,8 +316,7 @@ public class PnlReadStoreSqlTests
         string sql = store
             .BuildLinesQuery(
                 "RUB",
-                new PnlLineFilter { ProductIds = new[] { Guid.NewGuid(), Guid.NewGuid() } },
-                null)
+                new PnlLineFilter { ProductIds = new[] { Guid.NewGuid(), Guid.NewGuid() } })
             .ToQueryString();
 
         sql.Should().Contain("= ANY");

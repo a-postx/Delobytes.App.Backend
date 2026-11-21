@@ -29,7 +29,9 @@ public class FinancePnlController : ControllerBase
     }
 
     /// <summary>
-    /// Returns P&amp;L lines with filters and keyset paging.
+    /// Returns P&amp;L lines with filters, sorting and keyset paging. The page is ordered by the
+    /// requested key, newest period first by default; a continuation token only continues the
+    /// ordering that produced it.
     /// </summary>
     [HttpGet("pnl-lines")]
     [ProducesResponseType(typeof(PnlLinesResponse), StatusCodes.Status200OK)]
@@ -42,11 +44,43 @@ public class FinancePnlController : ControllerBase
         [FromQuery] DateOnly? to,
         [FromQuery] string? state,
         [FromQuery] string? completeness,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDir,
         [FromQuery] int take,
         [FromQuery] string? continuationToken,
         CancellationToken cancellationToken)
     {
         ValidateCompleteness(completeness);
+
+        PnlLineSortKey parsedSortBy = PnlLineSortKey.Date;
+
+        if (sortBy != null
+            && (!Enum.TryParse(sortBy, ignoreCase: true, out parsedSortBy)
+                || !Enum.IsDefined(parsedSortBy)))
+        {
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure(nameof(sortBy), "Сортировка должна быть одной из: date, margin."),
+                });
+        }
+
+        bool descending = true;
+
+        if (sortDir != null)
+        {
+            if (!string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ValidationException(
+                    new[]
+                    {
+                        new ValidationFailure(nameof(sortDir), "Направление сортировки должно быть asc или desc."),
+                    });
+            }
+
+            descending = !string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+        }
 
         PnlLinesResponse response = await _mediator.Send(
             new GetPnlLinesQuery
@@ -62,6 +96,7 @@ public class FinancePnlController : ControllerBase
                     State = state,
                     Completeness = completeness,
                 },
+                Sort = new PnlLineSort { Key = parsedSortBy, Descending = descending },
                 Take = take <= 0 ? 100 : take,
                 ContinuationToken = continuationToken,
             },
