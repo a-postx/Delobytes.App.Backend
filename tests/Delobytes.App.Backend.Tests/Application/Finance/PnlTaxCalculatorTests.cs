@@ -115,14 +115,14 @@ public class PnlTaxCalculatorTests
     }
 
     [Fact]
-    public void MarginPercent_AndRoi_GuardTheirDenominators()
+    public void MarginPercent_AndRoiPercent_GuardTheirDenominators()
     {
-        PnlTaxCalculator.MarginPercent(50m, 1000m).Should().Be(0.05m);
+        PnlTaxCalculator.MarginPercent(50m, 1000m).Should().Be(5m);
         PnlTaxCalculator.MarginPercent(50m, null).Should().BeNull();
         PnlTaxCalculator.MarginPercent(50m, 0m).Should().BeNull();
 
-        PnlTaxCalculator.Roi(50m, 200m).Should().Be(0.25m);
-        PnlTaxCalculator.Roi(50m, null).Should().BeNull();
-        PnlTaxCalculator.Roi(50m, 0m).Should().BeNull();
+        PnlTaxCalculator.RoiPercent(50m, 200m).Should().Be(25m);
+        PnlTaxCalculator.RoiPercent(50m, null).Should().BeNull();
+        PnlTaxCalculator.RoiPercent(50m, 0m).Should().BeNull();
     }
 }

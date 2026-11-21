@@ -66,18 +66,19 @@ public sealed class PnlSummaryRowView
     public decimal? TaxAdjustedMargin { get; set; }
 
     /// <summary>
-    /// Gets or sets the margin as a share of <see cref="RevenueWithMarginAmount"/>, that is, over
-    /// the lines the margin itself covers. Null when the margin is unknown or the covered revenue
-    /// is zero.
+    /// Gets or sets the margin as a percentage of <see cref="RevenueWithMarginAmount"/>, that is,
+    /// over the lines the margin itself covers: 40 means 40%. Null when the margin is unknown or the
+    /// covered revenue is zero.
     /// </summary>
     public decimal? MarginPercent { get; set; }
 
     /// <summary>
-    /// Gets or sets the return on the production cost of the covered lines only, never on
+    /// Gets or sets the return on the production cost of the covered lines only, as a percentage:
+    /// 25 means 25% of <see cref="ProductionCostWithMarginAmount"/>, never of
     /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the covered cost is
     /// zero.
     /// </summary>
-    public decimal? Roi { get; set; }
+    public decimal? RoiPercent { get; set; }
 
     /// <summary>
     /// Gets or sets the quantity of units the group was ordered with, including the non-buyouts: a
@@ -112,7 +113,7 @@ public sealed class PnlSummaryRowView
 
     /// <summary>
     /// Gets or sets a value indicating whether every line of the group has a known margin. Only
-    /// then do <see cref="Margin"/>, <see cref="MarginPercent"/> and <see cref="Roi"/> describe the
+    /// then do <see cref="Margin"/>, <see cref="MarginPercent"/> and <see cref="RoiPercent"/> describe the
     /// whole group.
     /// </summary>
     public bool IsMarginComplete { get; set; }
@@ -604,7 +605,7 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 Margin = _margin,
                 TaxAdjustedMargin = _taxAdjustedMargin,
                 MarginPercent = PnlTaxCalculator.MarginPercent(_margin, _revenueWithMargin),
-                Roi = PnlTaxCalculator.Roi(_margin, _productionCostWithMargin),
+                RoiPercent = PnlTaxCalculator.RoiPercent(_margin, _productionCostWithMargin),
                 QuantityOrdered = _quantityOrdered,
                 QuantitySold = _quantitySold,
                 LinesWithMargin = _linesWithMargin,

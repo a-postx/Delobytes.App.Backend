@@ -146,11 +146,11 @@ public static class PnlTaxCalculator
     }
 
     /// <summary>
-    /// Computes the margin as a share of revenue.
+    /// Computes the margin as a percentage of revenue: 5 means 5%, not a share of 0.05.
     /// </summary>
     /// <param name="margin">Margin.</param>
     /// <param name="revenue">Revenue.</param>
-    /// <returns>The share, or null when an input is missing or the denominator is zero.</returns>
+    /// <returns>The percentage, or null when an input is missing or the denominator is zero.</returns>
     public static decimal? MarginPercent(decimal? margin, decimal? revenue)
     {
         if (!margin.HasValue || !revenue.HasValue || revenue.Value == 0m)
@@ -158,22 +158,22 @@ public static class PnlTaxCalculator
             return null;
         }
 
-        return margin.Value / revenue.Value;
+        return margin.Value / revenue.Value * 100m;
     }
 
     /// <summary>
-    /// Computes the return on the production cost.
+    /// Computes the return on the production cost as a percentage: 25 means 25% of the cost.
     /// </summary>
     /// <param name="margin">Margin.</param>
     /// <param name="productionCost">Production cost.</param>
-    /// <returns>The ratio, or null when an input is missing or the denominator is zero.</returns>
-    public static decimal? Roi(decimal? margin, decimal? productionCost)
+    /// <returns>The percentage, or null when an input is missing or the denominator is zero.</returns>
+    public static decimal? RoiPercent(decimal? margin, decimal? productionCost)
     {
         if (!margin.HasValue || !productionCost.HasValue || productionCost.Value == 0m)
         {
             return null;
         }
 
-        return margin.Value / productionCost.Value;
+        return margin.Value / productionCost.Value * 100m;
     }
 }

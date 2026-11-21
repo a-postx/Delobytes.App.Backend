@@ -66,7 +66,7 @@ public class PnlQueryHandlerTests
         response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
         response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
         response.Lines[0].TaxAdjustedMargin.Should().BeApproximately(74m, 0.0001m);
-        response.Lines[0].Roi.Should().BeApproximately(8m, 0.0001m);
+        response.Lines[0].RoiPercent.Should().BeApproximately(800m, 0.0001m);
         response.Lines[0].ComponentsReconciled.Should().BeTrue();
     }
 
@@ -87,8 +87,8 @@ public class PnlQueryHandlerTests
         response.Lines[0].EstimatedTax.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
         response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
-        response.Lines[0].MarginPercent.Should().BeApproximately(0.8m, 0.0001m);
-        response.Lines[0].Roi.Should().BeApproximately(8m, 0.0001m);
+        response.Lines[0].MarginPercent.Should().BeApproximately(80m, 0.0001m);
+        response.Lines[0].RoiPercent.Should().BeApproximately(800m, 0.0001m);
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public class PnlQueryHandlerTests
         response.Lines[0].Margin.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
         response.Lines[0].MarginPercent.Should().BeNull();
-        response.Lines[0].Roi.Should().BeNull();
+        response.Lines[0].RoiPercent.Should().BeNull();
         response.Lines[0].CostComplete.Should().BeFalse();
         response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
     }
@@ -127,7 +127,7 @@ public class PnlQueryHandlerTests
         response.Lines[0].Margin.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
         response.Lines[0].MarginPercent.Should().BeNull();
-        response.Lines[0].Roi.Should().BeNull();
+        response.Lines[0].RoiPercent.Should().BeNull();
     }
 
     [Fact]
@@ -252,8 +252,8 @@ public class PnlQueryHandlerTests
 
         row.RevenueWithMarginAmount.Should().Be(row.RevenueAmount!.Value - row.RevenueWithoutCostAmount);
 
-        row.MarginPercent.Should().BeApproximately(0.4m, 0.0001m);
-        row.Roi.Should().BeApproximately(4m / 3m, 0.0001m);
+        row.MarginPercent.Should().BeApproximately(40m, 0.0001m);
+        row.RoiPercent.Should().BeApproximately(400m / 3m, 0.0001m);
     }
 
     [Fact]
@@ -301,8 +301,8 @@ public class PnlQueryHandlerTests
         row.ProductionCostWithMarginAmount.Should().Be(20m);
         row.RevenueWithoutCostAmount.Should().Be(0m);
         row.Margin.Should().Be(160m);
-        row.MarginPercent.Should().BeApproximately(0.8m, 0.0001m);
-        row.Roi.Should().BeApproximately(8m, 0.0001m);
+        row.MarginPercent.Should().BeApproximately(80m, 0.0001m);
+        row.RoiPercent.Should().BeApproximately(800m, 0.0001m);
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public class PnlQueryHandlerTests
 
         row.Margin.Should().BeNull();
         row.MarginPercent.Should().BeNull();
-        row.Roi.Should().BeNull();
+        row.RoiPercent.Should().BeNull();
         row.LinesWithMargin.Should().Be(0);
         row.RevenueWithMarginAmount.Should().Be(0m);
         row.ProductionCostWithMarginAmount.Should().Be(0m);
@@ -451,7 +451,7 @@ public class PnlQueryHandlerTests
         response.Lines[0].Margin.Should().Be(-53.84m);
         response.Lines[0].PeriodDate.Should().Be(new DateOnly(2026, 8, 5));
         response.Lines[0].MarginPercent.Should().BeNull();
-        response.Lines[0].Roi.Should().BeNull();
+        response.Lines[0].RoiPercent.Should().BeNull();
     }
 
     [Fact]
@@ -485,7 +485,7 @@ public class PnlQueryHandlerTests
         row.IsMarginComplete.Should().BeTrue();
         row.RevenueWithMarginAmount.Should().Be(1000m);
         row.RevenueWithoutCostAmount.Should().Be(0m);
-        row.MarginPercent.Should().BeApproximately(0.34616m, 0.00001m);
+        row.MarginPercent.Should().BeApproximately(34.616m, 0.00001m);
     }
 
     [Fact]
@@ -925,7 +925,7 @@ public class PnlQueryHandlerTests
         august.Lines.Should().Be(2);
         august.RevenueAmount.Should().Be(300m);
         august.Margin.Should().Be(240m);
-        august.MarginPercent.Should().Be(0.8m);
+        august.MarginPercent.Should().Be(80m);
         august.IsMarginComplete.Should().BeTrue();
 
         PnlSummaryRowView september = response.Rows.Single(r => r.PeriodStart == new DateOnly(2026, 9, 1));
@@ -1125,7 +1125,7 @@ public class PnlQueryHandlerTests
         september.ProductionCostAmount.Should().Be(0m);
         september.Margin.Should().BeNull();
         september.MarginPercent.Should().BeNull();
-        september.Roi.Should().BeNull();
+        september.RoiPercent.Should().BeNull();
         september.IsMarginComplete.Should().BeFalse();
     }
 

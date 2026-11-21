@@ -50,9 +50,17 @@ public sealed class PnlLineView
     /// </summary>
     public decimal? TaxAdjustedMargin { get; set; }
 
+    /// <summary>
+    /// Gets or sets the margin as a percentage of <see cref="RevenueAmount"/>: 5 means 5%. Null when
+    /// the margin is unknown or the revenue is zero.
+    /// </summary>
     public decimal? MarginPercent { get; set; }
 
-    public decimal? Roi { get; set; }
+    /// <summary>
+    /// Gets or sets the return on the production cost as a percentage: 25 means 25% of
+    /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the cost is zero.
+    /// </summary>
+    public decimal? RoiPercent { get; set; }
 
     /// <summary>
     /// Gets or sets the quantity of units the line was ordered with. A line that never sold still

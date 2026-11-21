@@ -104,7 +104,7 @@ internal static class PnlViewFactory
             Margin = margin,
             TaxAdjustedMargin = taxAdjustedMargin,
             MarginPercent = PnlTaxCalculator.MarginPercent(margin, row.RevenueAmount),
-            Roi = PnlTaxCalculator.Roi(margin, row.ProductionCostAmount),
+            RoiPercent = PnlTaxCalculator.RoiPercent(margin, row.ProductionCostAmount),
 
             // The ordered units include a non-buyout and a returned unit, the sold ones do not: a
             // line without a sale fact carries no sold unit, while its delivery charge still belongs
