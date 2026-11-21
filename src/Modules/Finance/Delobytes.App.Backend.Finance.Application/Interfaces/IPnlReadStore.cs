@@ -30,8 +30,29 @@ public interface IPnlReadStore
         PnlLineFilter filter,
         CancellationToken cancellationToken);
 
-    /// <summary>Reads the period diagnostics.</summary>
+    /// <summary>
+    /// Reads the lines the report currency keeps out, grouped by their own currency.
+    /// </summary>
+    /// <remarks>
+    /// The summary folds one currency at a time, so this is what makes the exclusion visible instead
+    /// of silent. The amounts stay in the currency of the line: they are reported, not added up.
+    /// </remarks>
+    public Task<IReadOnlyList<PnlCurrencyExclusion>> GetCurrencyExclusionsAsync(
+        string currency,
+        PnlLineFilter filter,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the diagnostics of one reporting currency: the journal entries of that currency, the
+    /// lines and the expectations of the period.
+    /// </summary>
+    /// <remarks>
+    /// The diagnostics sit next to a single-currency summary, so they describe the same population.
+    /// The lines of other currencies are reported as exclusions rather than counted into figures
+    /// that a reader compares with the summary.
+    /// </remarks>
     public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
+        string currency,
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken);

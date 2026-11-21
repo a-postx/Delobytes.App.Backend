@@ -197,6 +197,19 @@ public sealed class PnlSummaryResponse
     /// from the payload which identifier a row carries.
     /// </summary>
     public PnlSummaryGroupBy GroupBy { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of lines the report currency kept out. The rows describe one currency
+    /// only, so a non-zero value means the period holds money no row of this response shows.
+    /// </summary>
+    public int ExcludedByCurrency { get; set; }
+
+    /// <summary>
+    /// Gets or sets the excluded lines grouped by their currency, in their own currency: amounts of
+    /// different currencies are never converted or added up here. Empty means the report is complete
+    /// for the requested filters.
+    /// </summary>
+    public List<PnlCurrencyExclusion> ExcludedCurrencies { get; set; } = new();
 }
 
 /// <summary>Summary by product, by channel, or across the whole range, and by period.</summary>
@@ -320,6 +333,13 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         // zero, and a synthetic row cannot name the groups that never appeared.
         FillEmptyPeriods(accumulators, request);
 
+        // The fold reads one currency only. The money of the other currencies is reported next to the
+        // totals rather than dropped: a report that silently loses revenue cannot be reconciled.
+        IReadOnlyList<PnlCurrencyExclusion> excludedCurrencies = await _store.GetCurrencyExclusionsAsync(
+            settings.Currency,
+            filter,
+            cancellationToken);
+
         return new PnlSummaryResponse
         {
             Rows = accumulators
@@ -340,6 +360,8 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 .ToList(),
             Currency = settings.Currency,
             GroupBy = request.GroupBy,
+            ExcludedByCurrency = excludedCurrencies.Sum(exclusion => exclusion.Lines),
+            ExcludedCurrencies = excludedCurrencies.ToList(),
         };
     }
 

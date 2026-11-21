@@ -1,3 +1,5 @@
+using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using MediatR;
@@ -16,20 +18,41 @@ public sealed class GetPnlDiagnosticsQuery : IRequest<PnlDiagnosticsResult>
 public sealed class GetPnlDiagnosticsQueryHandler : IRequestHandler<GetPnlDiagnosticsQuery, PnlDiagnosticsResult>
 {
     private readonly IPnlReadStore _store;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantSettingsProvider _settingsProvider;
 
-    public GetPnlDiagnosticsQueryHandler(IPnlReadStore store)
+    public GetPnlDiagnosticsQueryHandler(
+        IPnlReadStore store,
+        ITenantContext tenantContext,
+        ITenantSettingsProvider settingsProvider)
     {
         _store = store;
+        _tenantContext = tenantContext;
+        _settingsProvider = settingsProvider;
     }
 
     /// <inheritdoc/>
-    public Task<PnlDiagnosticsResult> Handle(GetPnlDiagnosticsQuery request, CancellationToken cancellationToken)
+    public async Task<PnlDiagnosticsResult> Handle(
+        GetPnlDiagnosticsQuery request,
+        CancellationToken cancellationToken)
     {
         if (request.From > request.To)
         {
             throw new ArgumentException("The period start must not be after its end.", nameof(request));
         }
 
-        return _store.GetDiagnosticsAsync(request.From, request.To, cancellationToken);
+        Guid tenantId = _tenantContext.TenantId
+            ?? throw new UnauthorizedAccessException("Пользователь не аутентифицирован.");
+
+        // The reporting currency is the tenant's accounting currency, the same one the summary
+        // reports: the two results are compared with each other.
+        TenantAccountingSettings settings =
+            await _settingsProvider.GetAccountingSettingsAsync(tenantId, cancellationToken);
+
+        return await _store.GetDiagnosticsAsync(
+            settings.Currency,
+            request.From,
+            request.To,
+            cancellationToken);
     }
 }

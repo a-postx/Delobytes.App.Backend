@@ -5,6 +5,9 @@ namespace Delobytes.App.Backend.Finance.Application.ReadModels;
 /// </summary>
 public sealed class PnlDiagnosticsResult
 {
+    /// <summary>Gets or sets the currency every figure of this result is expressed in.</summary>
+    public string Currency { get; set; } = default!;
+
     public int UnattributedEntries { get; set; }
 
     public int AmbiguousAttributions { get; set; }
@@ -37,4 +40,17 @@ public sealed class PnlDiagnosticsResult
     /// estimated; it is an indication of the size of the gap, not a booked amount.
     /// </summary>
     public decimal EstimatedMissingAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of lines of the period the reporting currency kept out. Every figure
+    /// above describes <see cref="Currency"/> only, so a non-zero value means the period holds money
+    /// this result does not describe.
+    /// </summary>
+    public int ExcludedByCurrency { get; set; }
+
+    /// <summary>
+    /// Gets or sets the excluded lines grouped by their currency, in their own currency: amounts of
+    /// different currencies are never converted or added up here.
+    /// </summary>
+    public List<PnlCurrencyExclusion> ExcludedCurrencies { get; set; } = new();
 }

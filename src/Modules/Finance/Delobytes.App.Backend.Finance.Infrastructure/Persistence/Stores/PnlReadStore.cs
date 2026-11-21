@@ -95,14 +95,45 @@ public class PnlReadStore : IPnlReadStore
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<PnlCurrencyExclusion>> GetCurrencyExclusionsAsync(
+        string currency,
+        PnlLineFilter filter,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenant();
+
+        // One aggregate statement over the same filters the report used: the money the reader cannot
+        // see is the money of the very lines a single-currency total left out.
+        return await BuildFilteredQuery(filter)
+            .Where(row => row.Currency != currency)
+            .GroupBy(row => row.Currency)
+            .Select(group => new PnlCurrencyExclusion
+            {
+                Currency = group.Key,
+                Lines = group.Count(),
+                RevenueAmount = group.Sum(row => row.RevenueAmount ?? 0m),
+            })
+            .OrderBy(exclusion => exclusion.Currency)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
+        string currency,
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken)
     {
+        // Every figure below is read in the reporting currency only: the diagnostics are compared
+        // with a single-currency summary, so counting or summing another currency here would make
+        // the two disagree. The other currencies are reported as exclusions at the end.
         List<PnlEntry> entries = await _context.PnlEntries
             .AsNoTracking()
-            .Where(e => e.SupersededByEntryId == null && e.DocumentDate >= from && e.DocumentDate <= to)
+            .Where(e =>
+                e.SupersededByEntryId == null
+                && e.Currency == currency
+                && e.DocumentDate >= from
+                && e.DocumentDate <= to)
             .ToListAsync(cancellationToken);
 
         List<AttributionCandidate> candidates = await BuildAttributionCandidatesQuery(entries)
@@ -113,7 +144,8 @@ public class PnlReadStore : IPnlReadStore
         List<decimal> differences = await _context.PnlLines
             .AsNoTracking()
             .Where(l =>
-                (l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                l.Currency == currency
+                && (l.SaleDate ?? l.FinancialPeriodFrom) >= from
                 && (l.SaleDate ?? l.FinancialPeriodFrom) <= to
                 && l.ControlDifferenceAmount != null)
             .Select(l => l.ControlDifferenceAmount!.Value)
@@ -124,14 +156,15 @@ public class PnlReadStore : IPnlReadStore
         // not linked. Surfacing the count and the revenue keeps that money visible instead of
         // letting it silently sit outside every per-product view.
         List<decimal?> unlinkedRevenue = await BuildFilteredQuery(new PnlLineFilter { From = from, To = to })
-            .Where(row => row.ProductId == null)
+            .Where(row => row.Currency == currency && row.ProductId == null)
             .Select(row => row.RevenueAmount)
             .ToListAsync(cancellationToken);
 
         IQueryable<PnlLine> periodLines = _context.PnlLines
             .AsNoTracking()
             .Where(l =>
-                (l.SaleDate ?? l.FinancialPeriodFrom) >= from
+                l.Currency == currency
+                && (l.SaleDate ?? l.FinancialPeriodFrom) >= from
                 && (l.SaleDate ?? l.FinancialPeriodFrom) <= to);
 
         // Counted one state at a time: three cheap counts are more predictable than a grouped
@@ -151,14 +184,23 @@ public class PnlReadStore : IPnlReadStore
             .AsNoTracking()
             .Where(e => e.State == PnlExpectationState.Expected || e.State == PnlExpectationState.Overdue)
             .Where(e => _context.PnlLines.Any(l =>
-                l.OrderLineId == e.OrderLineId && l.SaleDate >= from && l.SaleDate <= to))
+                l.Currency == currency
+                && l.OrderLineId == e.OrderLineId
+                && l.SaleDate >= from
+                && l.SaleDate <= to))
             .Select(e => e.AmountEstimate)
             .Where(a => a != null)
             .Select(a => a!.Value)
             .ToListAsync(cancellationToken);
 
+        IReadOnlyList<PnlCurrencyExclusion> excludedCurrencies = await GetCurrencyExclusionsAsync(
+            currency,
+            new PnlLineFilter { From = from, To = to },
+            cancellationToken);
+
         return new PnlDiagnosticsResult
         {
+            Currency = currency,
             UnattributedEntries = attribution.UnmatchedEntries.Count,
             AmbiguousAttributions = attribution.AmbiguousAttributions,
             ControlDifference = differences.Sum(),
@@ -169,6 +211,8 @@ public class PnlReadStore : IPnlReadStore
             OverdueLines = overdueLines,
             ClosedWithExceptionLines = closedWithExceptionLines,
             EstimatedMissingAmount = estimates.Sum(),
+            ExcludedByCurrency = excludedCurrencies.Sum(exclusion => exclusion.Lines),
+            ExcludedCurrencies = excludedCurrencies.ToList(),
         };
     }
 

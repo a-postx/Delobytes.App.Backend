@@ -382,6 +382,33 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetCurrencyExclusionsAsync_ReportsOnlyTheForeignCurrencyOfTheFilteredRange()
+    {
+        string database = NewDatabaseName();
+        await SeedLinesAsync(database);
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        IReadOnlyList<PnlCurrencyExclusion> inside = await store.GetCurrencyExclusionsAsync(
+            "RUB",
+            new PnlLineFilter { From = Day3, To = Day3 },
+            CancellationToken.None);
+
+        PnlCurrencyExclusion usd = inside.Should().ContainSingle().Subject;
+        usd.Currency.Should().Be("USD");
+        usd.Lines.Should().Be(1);
+        usd.RevenueAmount.Should().Be(100m);
+
+        IReadOnlyList<PnlCurrencyExclusion> outside = await store.GetCurrencyExclusionsAsync(
+            "RUB",
+            new PnlLineFilter { From = Day1, To = Day1 },
+            CancellationToken.None);
+
+        outside.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetLinesAsync_FiltersByCompletenessStates()
     {
         string database = NewDatabaseName();
@@ -556,7 +583,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(1);
         diagnostics.AmbiguousAttributions.Should().Be(0);
@@ -582,7 +609,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(0);
     }
@@ -604,7 +631,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(0);
     }
@@ -623,7 +650,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day3, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day3, CancellationToken.None);
 
         diagnostics.UnattributedEntries.Should().Be(0);
         diagnostics.ControlDifference.Should().Be(0m);
@@ -649,7 +676,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day3, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day3, CancellationToken.None);
 
         diagnostics.ControlDifference.Should().Be(3.5m);
         diagnostics.LinesWithOpenControlDifference.Should().Be(1);
@@ -680,7 +707,7 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
 
         diagnostics.LinesWithoutProductLink.Should().Be(1);
         diagnostics.UnlinkedRevenueAmount.Should().Be(150m);
@@ -704,10 +731,57 @@ public class PnlReadStoreTests
         using FinanceDbContext context = CreateContext(database, TenantId);
         PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
 
-        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync(Day1, Day1, CancellationToken.None);
+        PnlDiagnosticsResult diagnostics = await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
 
         diagnostics.LinesWithoutProductLink.Should().Be(0);
         diagnostics.UnlinkedRevenueAmount.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task GetDiagnosticsAsync_ReportsTheReportingCurrencyAndDisclosesTheRest()
+    {
+        string database = NewDatabaseName();
+        Guid rubOrderLine = Guid.Parse("0000000f-0000-0000-0000-000000000046");
+        Guid usdOrderLine = Guid.Parse("0000000f-0000-0000-0000-000000000047");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            PnlLine rub = Line(Guid.NewGuid(), rubOrderLine, "RUB", Day1);
+            rub.ControlDifferenceAmount = 1m;
+
+            PnlLine usd = Line(Guid.NewGuid(), usdOrderLine, "USD", Day1);
+            usd.ControlDifferenceAmount = 10m;
+
+            PnlEntry rubEntry = Entry(ChannelId, "srid-rub", null, "sku-1", Day1);
+            PnlEntry usdEntry = Entry(ChannelId, "srid-usd", null, "sku-1", Day1);
+            usdEntry.Currency = "USD";
+
+            seed.PnlLines.AddRange(rub, usd);
+            seed.OrderLineRefs.AddRange(Reference(rubOrderLine, ChannelId), Reference(usdOrderLine, ChannelId));
+            seed.PnlEntries.AddRange(rubEntry, usdEntry);
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlDiagnosticsResult diagnostics =
+            await store.GetDiagnosticsAsync("RUB", Day1, Day1, CancellationToken.None);
+
+        // The diagnostics sit next to a single-currency summary: a figure that summed both currencies
+        // would describe a population the summary never shows.
+        diagnostics.Currency.Should().Be("RUB");
+        diagnostics.ControlDifference.Should().Be(1m);
+        diagnostics.UnattributedEntries.Should().Be(1);
+        diagnostics.LinesWithoutProductLink.Should().Be(1);
+        diagnostics.UnlinkedRevenueAmount.Should().Be(100m);
+
+        // The money left out is still disclosed, in its own currency.
+        diagnostics.ExcludedByCurrency.Should().Be(1);
+        PnlCurrencyExclusion usdExclusion = diagnostics.ExcludedCurrencies.Should().ContainSingle().Subject;
+        usdExclusion.Currency.Should().Be("USD");
+        usdExclusion.RevenueAmount.Should().Be(100m);
     }
 
     [Fact]

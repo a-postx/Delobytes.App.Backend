@@ -1376,6 +1376,43 @@ public class PnlQueryHandlerTests
         dimensionlessGrouping.GroupBy.Should().Be(PnlSummaryGroupBy.None);
     }
 
+    [Fact]
+    public async Task GetSummary_ReportsTheLinesTheCurrencyFilterKeptOut()
+    {
+        // Arrange
+        PnlLineRow row = Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m);
+
+        FakeStore store = new FakeStore(new PnlLinePage(), new List<PnlLineRow> { row })
+        {
+            CurrencyExclusions = new List<PnlCurrencyExclusion>
+            {
+                new() { Currency = "EUR", Lines = 1, RevenueAmount = 40m },
+                new() { Currency = "USD", Lines = 2, RevenueAmount = 250m },
+            },
+        };
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        // Act
+        PnlSummaryResponse response = await handler.Handle(
+            new GetPnlSummaryQuery { Filter = new PnlQueryFilter { From = new DateOnly(2026, 8, 1) } },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().ContainSingle();
+        response.Currency.Should().Be("RUB");
+
+        // The rows stay single-currency, so the reader has to be told what the totals left out and
+        // what filters produced that population.
+        response.ExcludedByCurrency.Should().Be(3);
+        response.ExcludedCurrencies.Should().HaveCount(2);
+        response.ExcludedCurrencies.Should().Contain(e => e.Currency == "USD" && e.RevenueAmount == 250m);
+        store.LastCurrencyFilter!.From.Should().Be(new DateOnly(2026, 8, 1));
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
@@ -1497,6 +1534,12 @@ public class PnlQueryHandlerTests
 
         public PnlLineFilter? LastFilter { get; private set; }
 
+        public PnlLineFilter? LastCurrencyFilter { get; private set; }
+
+        /// <summary>Gets or sets the exclusions the summary handler reads next to the totals.</summary>
+        public IReadOnlyList<PnlCurrencyExclusion> CurrencyExclusions { get; set; } =
+            Array.Empty<PnlCurrencyExclusion>();
+
         /// <summary>Gets the number of times the summary stream was opened.</summary>
         public int StreamCount { get; private set; }
 
@@ -1512,6 +1555,15 @@ public class PnlQueryHandlerTests
         {
             LastFilter = filter;
             return Task.FromResult(_page);
+        }
+
+        public Task<IReadOnlyList<PnlCurrencyExclusion>> GetCurrencyExclusionsAsync(
+            string currency,
+            PnlLineFilter filter,
+            CancellationToken cancellationToken)
+        {
+            LastCurrencyFilter = filter;
+            return Task.FromResult(CurrencyExclusions);
         }
 
         public async IAsyncEnumerable<PnlLineRow> StreamForSummaryAsync(
@@ -1533,6 +1585,7 @@ public class PnlQueryHandlerTests
         }
 
         public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
+            string currency,
             DateOnly from,
             DateOnly to,
             CancellationToken cancellationToken)
