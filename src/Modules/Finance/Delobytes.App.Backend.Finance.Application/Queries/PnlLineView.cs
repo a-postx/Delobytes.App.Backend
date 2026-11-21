@@ -7,6 +7,21 @@ public sealed class PnlLineView : IPnlSkuLabelTarget
 {
     public Guid OrderLineId { get; set; }
 
+    /// <summary>Gets or sets the marketplace order identity, as Sales reported it.</summary>
+    public string ExternalOrderId { get; set; } = default!;
+
+    /// <summary>Gets or sets the marketplace unit identity, or null when the channel reports none.</summary>
+    public string? ExternalLineId { get; set; }
+
+    /// <summary>Gets or sets the marketplace product identity.</summary>
+    public string ExternalProductId { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the order placement date in the tenant's calendar. Null when the view is built
+    /// for aggregate folding (the summary), which never consumes it.
+    /// </summary>
+    public DateOnly? OrderDate { get; set; }
+
     public Guid? ChannelId { get; set; }
 
     public Guid? ProductId { get; set; }

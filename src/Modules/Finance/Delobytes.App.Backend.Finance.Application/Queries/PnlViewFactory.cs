@@ -33,7 +33,8 @@ internal static class PnlViewFactory
         IReadOnlyList<PnlLineRow> rows,
         Guid tenantId,
         ITenantSettingsProvider settingsProvider,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeZoneInfo? timeZone = null)
     {
         TaxProfileTimeline timeline = await LoadTimelineAsync(tenantId, settingsProvider, cancellationToken);
 
@@ -41,7 +42,7 @@ internal static class PnlViewFactory
 
         foreach (PnlLineRow row in rows)
         {
-            views.Add(BuildRow(row, timeline));
+            views.Add(BuildRow(row, timeline, timeZone));
         }
 
         return views;
@@ -51,7 +52,7 @@ internal static class PnlViewFactory
     /// Builds the view of one row. Pure apart from the timeline lookup, so a streaming caller can
     /// fold rows one by one instead of materialising the whole page.
     /// </summary>
-    public static PnlLineView BuildRow(PnlLineRow row, TaxProfileTimeline timeline)
+    public static PnlLineView BuildRow(PnlLineRow row, TaxProfileTimeline timeline, TimeZoneInfo? timeZone = null)
     {
         // The sale date is already the tenant's calendar date, so the profile is resolved on it
         // directly: converting it to UTC and back would return the same date.
@@ -102,6 +103,14 @@ internal static class PnlViewFactory
         return new PnlLineView
         {
             OrderLineId = row.OrderLineId,
+            ExternalOrderId = row.ExternalOrderId,
+            ExternalLineId = row.ExternalLineId,
+            ExternalProductId = row.ExternalProductId,
+            // The order placement date is a calendar reading of the tenant: the same instant is
+            // reported on a different date across the date line. Only a caller that resolves the
+            // zone asks for it, so the summary's aggregate fold is not forced to convert (or to
+            // report a fabricated default date).
+            OrderDate = timeZone == null ? null : TenantTimeZones.DateAt(row.OrderDate, timeZone),
             ChannelId = row.ChannelId,
             ProductId = row.ProductId,
             ChannelProductId = row.ChannelProductId,

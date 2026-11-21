@@ -12,6 +12,18 @@ public sealed class PnlLineRow
 
     public Guid OrderLineId { get; set; }
 
+    /// <summary>Gets or sets the marketplace order identity, as Sales reported it.</summary>
+    public string ExternalOrderId { get; set; } = default!;
+
+    /// <summary>Gets or sets the marketplace unit identity, or null when the channel reports none.</summary>
+    public string? ExternalLineId { get; set; }
+
+    /// <summary>Gets or sets the marketplace product identity.</summary>
+    public string ExternalProductId { get; set; } = default!;
+
+    /// <summary>Gets or sets the order placement instant as reported by the channel.</summary>
+    public DateTimeOffset OrderDate { get; set; }
+
     public Guid? ChannelId { get; set; }
 
     /// <summary>

@@ -63,6 +63,8 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
 
         int take = Math.Clamp(request.Take, 1, 500);
 
+        TimeZoneInfo timeZone = TenantTimeZones.Resolve(settings.TimeZoneId);
+
         PnlLineFilter filter = new()
         {
             ChannelId = request.Filter.ChannelId,
@@ -89,7 +91,8 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             page.Rows,
             tenantId,
             _settingsProvider,
-            cancellationToken);
+            cancellationToken,
+            timeZone);
 
         await PnlSkuLabeler.ApplyAsync(_skuLookup, views, cancellationToken);
 

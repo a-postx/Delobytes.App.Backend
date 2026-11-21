@@ -156,6 +156,101 @@ public class PnlQueryHandlerTests
         response.Lines[1].HasProductLink.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("order-9", "line-7", "sku-42")]
+    [InlineData("order-1", null, "barcode-11")]
+    public async Task GetLines_ExposesTheMarketplaceIdentifiersFromTheReference(
+        string externalOrderId,
+        string? externalLineId,
+        string externalProductId)
+    {
+        PnlLineRow row = Row(
+            new DateOnly(2026, 8, 1),
+            100m,
+            90m,
+            10m,
+            externalOrderId: externalOrderId,
+            externalLineId: externalLineId,
+            externalProductId: externalProductId);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object, BuildLookup().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].ExternalOrderId.Should().Be(externalOrderId);
+        response.Lines[0].ExternalLineId.Should().Be(externalLineId);
+        response.Lines[0].ExternalProductId.Should().Be(externalProductId);
+    }
+
+    [Fact]
+    public async Task GetLines_OrderDateAtNoonUtc_StaysOnTheSameCalendarDate()
+    {
+        // The same instant, read in a UTC tenant's calendar, keeps its date; the conversion must not
+        // shift a noontime UTC instant across the date line.
+        PnlLineRow row = Row(
+            new DateOnly(2026, 8, 1),
+            100m,
+            90m,
+            10m,
+            orderDate: new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero));
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider("UTC").Object, BuildLookup().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].OrderDate.Should().Be(new DateOnly(2026, 8, 1));
+    }
+
+    [Fact]
+    public async Task GetLines_OrderDateInVladivostok_IsConvertedFromUtcToTheTenantCalendar()
+    {
+        // 2026-08-31 21:00 UTC is already 2026-09-01 in Asia/Vladivostok (UTC+10). The tenant-facing
+        // date must be the local reading of the instant, not the UTC one.
+        PnlLineRow row = Row(
+            new DateOnly(2026, 8, 31),
+            100m,
+            90m,
+            10m,
+            orderDate: new DateTimeOffset(2026, 8, 31, 21, 0, 0, TimeSpan.Zero));
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider("Asia/Vladivostok").Object, BuildLookup().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].OrderDate.Should().Be(new DateOnly(2026, 9, 1));
+    }
+
+    [Fact]
+    public async Task GetLines_OrderDateWestOfTheMeridian_IsReadBackIntoThePreviousDay()
+    {
+        // 2026-08-01 01:00 UTC is still 2026-07-31 in America/Los_Angeles (UTC-7 in August). A zone
+        // behind UTC must shift the date backwards, not forwards.
+        PnlLineRow row = Row(
+            new DateOnly(2026, 8, 1),
+            100m,
+            90m,
+            10m,
+            orderDate: new DateTimeOffset(2026, 8, 1, 1, 0, 0, TimeSpan.Zero));
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider("America/Los_Angeles").Object, BuildLookup().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].OrderDate.Should().Be(new DateOnly(2026, 7, 31));
+    }
+
     [Fact]
     public async Task GetLines_ChannelProductWithoutResolvedProduct_StaysUnlinked()
     {
@@ -2121,7 +2216,11 @@ public class PnlQueryHandlerTests
         decimal? acquiring = null,
         decimal? deliveryFee = null,
         decimal? refund = null,
-        decimal? compensation = null)
+        decimal? compensation = null,
+        string? externalOrderId = null,
+        string? externalLineId = null,
+        string? externalProductId = null,
+        DateTimeOffset? orderDate = null)
     {
         // The line stores only the cost of the units that stayed sold, so the unit cost is derived
         // from that population unless the caller spells the cost fact out. A caller that passes a
@@ -2139,6 +2238,10 @@ public class PnlQueryHandlerTests
         return new PnlLineRow
         {
             OrderLineId = Guid.NewGuid(),
+            ExternalOrderId = externalOrderId ?? "order-" + Guid.NewGuid(),
+            ExternalLineId = externalLineId,
+            ExternalProductId = externalProductId ?? "sku-" + Guid.NewGuid(),
+            OrderDate = orderDate ?? new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero),
             ChannelId = channelId ?? Guid.NewGuid(),
             ProductId = productId,
             Currency = "RUB",
@@ -2188,11 +2291,16 @@ public class PnlQueryHandlerTests
 
     private static Mock<ITenantSettingsProvider> BuildProvider()
     {
+        return BuildProvider("UTC");
+    }
+
+    private static Mock<ITenantSettingsProvider> BuildProvider(string timeZoneId)
+    {
         Mock<ITenantSettingsProvider> provider = new Mock<ITenantSettingsProvider>();
 
         provider
             .Setup(p => p.GetAccountingSettingsAsync(TenantId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = "UTC" });
+            .ReturnsAsync(new TenantAccountingSettings { Currency = "RUB", TimeZoneId = timeZoneId });
 
         provider
             .Setup(p => p.GetTaxProfileHistoryAsync(TenantId, It.IsAny<CancellationToken>()))
