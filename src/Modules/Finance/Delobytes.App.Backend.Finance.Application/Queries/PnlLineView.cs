@@ -58,6 +58,14 @@ public sealed class PnlLineView
     public decimal? ContributionMarginPercent { get; set; }
 
     /// <summary>
+    /// Gets or sets the contribution margin net of the estimated tax, as a percentage of the same
+    /// <see cref="NetRevenueAmount"/>. The numerator and the denominator are both this line, so no
+    /// coverage rule applies. Null when <see cref="TaxAdjustedMargin"/> is unknown or the net
+    /// revenue is not positive.
+    /// </summary>
+    public decimal? TaxAdjustedContributionMarginPercent { get; set; }
+
+    /// <summary>
     /// Gets or sets the return on the production cost of the sold units: 25 means 25% of
     /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the cost is not
     /// positive.
@@ -77,6 +85,14 @@ public sealed class PnlLineView
     /// not positive.
     /// </summary>
     public decimal? RoiPercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the return on <see cref="InvestedCostAmount"/> computed from
+    /// <see cref="TaxAdjustedMargin"/>. The numerator and the denominator are both this line, so no
+    /// coverage rule applies. Null when the tax-adjusted margin or the investment is unknown or the
+    /// investment is not positive.
+    /// </summary>
+    public decimal? TaxAdjustedRoiPercent { get; set; }
 
     /// <summary>
     /// Gets or sets the quantity of units the line was ordered with. A line that never sold still

@@ -66,6 +66,23 @@ public sealed class PnlSummaryRowView
     public decimal? TaxAdjustedMargin { get; set; }
 
     /// <summary>
+    /// Gets or sets the contribution margin net of the estimated tax, as a percentage of
+    /// <see cref="NetRevenueWithTaxAdjustedMarginAmount"/>: 40 means 40%. The two describe the same
+    /// lines, so they are never mixed. Null while the tax layer does not cover the whole group: a
+    /// share of a partially taxed group would pair a numerator and a denominator that belong to
+    /// different lines, which is not a conservative estimate but a wrong figure.
+    /// </summary>
+    public decimal? TaxAdjustedContributionMarginPercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the return on <see cref="InvestedCostWithTaxAdjustedMarginAmount"/> computed from
+    /// <see cref="TaxAdjustedMargin"/>: 25 means 25% of the money tied up in the taxed lines whose
+    /// investment is known. Null while that population is not the whole group, for the same reason
+    /// as <see cref="TaxAdjustedContributionMarginPercent"/>.
+    /// </summary>
+    public decimal? TaxAdjustedRoiPercent { get; set; }
+
+    /// <summary>
     /// Gets or sets the contribution margin as a percentage of <see cref="NetRevenueWithMarginAmount"/>:
     /// 40 means 40%. The margin is earned after the channel fees, so the gross sale is not its base.
     /// Null when the margin is unknown or the covered net revenue is not positive.
@@ -102,6 +119,49 @@ public sealed class PnlSummaryRowView
 
     /// <summary>Gets or sets the number of lines of the group whose margin is known.</summary>
     public int LinesWithMargin { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of lines of the group whose tax-adjusted margin is known: a known
+    /// margin and a resolved tax profile. It is the population of <see cref="TaxAdjustedMargin"/>,
+    /// so a percentage built on it never mixes lines.
+    /// </summary>
+    public int LinesWithTaxAdjustedMargin { get; set; }
+
+    /// <summary>
+    /// Gets or sets the revenue of the lines whose tax-adjusted margin is known, on the same basis as
+    /// <see cref="RevenueAmount"/>: the tax base the tax layer actually covers. It never exceeds
+    /// <see cref="RevenueWithMarginAmount"/>.
+    /// </summary>
+    public decimal RevenueWithTaxAdjustedMarginAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the net revenue of the lines whose tax-adjusted margin is known: the base of
+    /// <see cref="TaxAdjustedContributionMarginPercent"/>.
+    /// </summary>
+    public decimal NetRevenueWithTaxAdjustedMarginAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the production cost of the ordered units of the lines whose tax-adjusted margin
+    /// and investment are both known: the base of <see cref="TaxAdjustedRoiPercent"/>.
+    /// </summary>
+    public decimal InvestedCostWithTaxAdjustedMarginAmount { get; set; }
+
+    /// <summary>Gets or sets the number of lines the tax-adjusted invested cost is known for.</summary>
+    public int LinesWithTaxAdjustedInvestedCost { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether every line of the group has a known tax-adjusted
+    /// margin. Only then does <see cref="TaxAdjustedContributionMarginPercent"/> describe the whole
+    /// group, so the query reports the percentage only in that case.
+    /// </summary>
+    public bool IsTaxAdjustedMarginComplete { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether every line of the group has a known tax-adjusted
+    /// margin and a known investment. Only then does <see cref="TaxAdjustedRoiPercent"/> describe the
+    /// whole group.
+    /// </summary>
+    public bool IsTaxAdjustedRoiComplete { get; set; }
 
     /// <summary>
     /// Gets or sets the revenue of the lines whose margin is known, on the same basis as
@@ -536,14 +596,19 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         private decimal _revenueWithoutCost;
         private decimal _netRevenueWithMargin;
         private decimal _netRevenueWithoutCost;
+        private decimal _taxAdjustedRevenue;
+        private decimal _taxAdjustedNetRevenue;
         private decimal? _marginWithInvestedCost;
         private decimal _investedCost;
+        private decimal _taxAdjustedInvestedCost;
         private int _linesWithInvestedCost;
         private decimal _provisionalRevenue;
         private decimal _overdueRevenue;
         private decimal _closedWithExceptionRevenue;
         private int _lines;
         private int _linesWithMargin;
+        private int _linesWithTaxAdjustedMargin;
+        private int _linesWithTaxAdjustedInvestedCost;
         private int _quantityOrdered;
         private int _quantitySold;
         private PnlLineCompleteness _worst = PnlLineCompleteness.Complete;
@@ -632,6 +697,22 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 _linesWithInvestedCost++;
             }
 
+            // The tax layer has its own population, narrower than the margin one: a line needs both a
+            // known margin and a resolved profile. Every tax-adjusted figure is accumulated here, so
+            // its percentage pairs the same lines as its own denominator.
+            if (view.TaxAdjustedMargin.HasValue)
+            {
+                _linesWithTaxAdjustedMargin++;
+                _taxAdjustedRevenue += view.RevenueAmount ?? 0m;
+                _taxAdjustedNetRevenue += view.NetRevenueAmount ?? 0m;
+
+                if (view.InvestedCostAmount.HasValue)
+                {
+                    _taxAdjustedInvestedCost += view.InvestedCostAmount.Value;
+                    _linesWithTaxAdjustedInvestedCost++;
+                }
+            }
+
             // The provisional part is the same population the line view flags, so the badge and the
             // filter scopes cannot describe different lines.
             if (PnlLineCompletenessSemantics.IsProvisional(view.CompletenessState))
@@ -665,6 +746,11 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             bool byChannel = groupBy == PnlSummaryGroupBy.Channel;
             bool dimensionless = groupBy == PnlSummaryGroupBy.None;
 
+            // A percentage is reported only when its own population is the whole group: otherwise the
+            // figure would be correct for some lines and silently read as if it described all of them.
+            bool taxMarginComplete = _lines > 0 && _linesWithTaxAdjustedMargin == _lines;
+            bool taxRoiComplete = _lines > 0 && _linesWithTaxAdjustedInvestedCost == _lines;
+
             return new PnlSummaryRowView
             {
                 // The dimension decides which identifier the row carries: a product row must not
@@ -685,25 +771,38 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 TaxAdjustedMargin = _taxAdjustedMargin,
                 ContributionMarginPercent =
                     PnlTaxCalculator.ContributionMarginPercent(_margin, _netRevenueWithMargin),
+                TaxAdjustedContributionMarginPercent = taxMarginComplete
+                    ? PnlTaxCalculator.ContributionMarginPercent(_taxAdjustedMargin, _taxAdjustedNetRevenue)
+                    : null,
                 ReturnOnSoldCostPercent =
                     PnlTaxCalculator.ReturnOnSoldCostPercent(_margin, _productionCostWithMargin),
                 RoiPercent = PnlTaxCalculator.RoiPercent(_marginWithInvestedCost, _investedCost),
+                TaxAdjustedRoiPercent = taxRoiComplete
+                    ? PnlTaxCalculator.RoiPercent(_taxAdjustedMargin, _taxAdjustedInvestedCost)
+                    : null,
                 QuantityOrdered = _quantityOrdered,
                 QuantitySold = _quantitySold,
                 LinesWithMargin = _linesWithMargin,
+                LinesWithTaxAdjustedMargin = _linesWithTaxAdjustedMargin,
                 RevenueWithMarginAmount = _revenueWithMargin,
                 ProductionCostWithMarginAmount = _productionCostWithMargin,
                 RevenueWithoutCostAmount = _revenueWithoutCost,
                 NetRevenueWithMarginAmount = _netRevenueWithMargin,
                 NetRevenueWithoutCostAmount = _netRevenueWithoutCost,
+                RevenueWithTaxAdjustedMarginAmount = _taxAdjustedRevenue,
+                NetRevenueWithTaxAdjustedMarginAmount = _taxAdjustedNetRevenue,
                 InvestedCostAmount = _investedCost,
                 LinesWithInvestedCost = _linesWithInvestedCost,
+                InvestedCostWithTaxAdjustedMarginAmount = _taxAdjustedInvestedCost,
+                LinesWithTaxAdjustedInvestedCost = _linesWithTaxAdjustedInvestedCost,
                 // A group with no lines at all has no margin to be complete about, so an empty
                 // period must not report itself as fully covered.
                 IsMarginComplete = _lines > 0 && _linesWithMargin == _lines,
+                IsTaxAdjustedMarginComplete = taxMarginComplete,
                 // A line without any cost leaves the investment unknown, so a group is ROI-complete
                 // only when its cost fact is known for every line.
                 IsRoiComplete = _lines > 0 && _linesWithInvestedCost == _lines,
+                IsTaxAdjustedRoiComplete = taxRoiComplete,
                 ControlDifferenceAmount = _controlDifference,
                 ProvisionalRevenueAmount = _provisionalRevenue,
                 OverdueRevenueAmount = _overdueRevenue,

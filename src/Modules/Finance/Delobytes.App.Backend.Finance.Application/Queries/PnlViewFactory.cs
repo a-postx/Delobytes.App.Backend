@@ -63,7 +63,12 @@ internal static class PnlViewFactory
             ? null
             : PnlTaxCalculator.EstimatedVat(row.RevenueAmount, profile.Vat);
 
-        decimal? estimatedTax = PnlTaxCalculator.EstimatedTax(row.RevenueAmount, profile);
+        // A line that never sold carries no sale revenue at all, so its tax base is a known zero and
+        // the tax is zero whatever the rate. Reporting null here would make any group holding a
+        // non-buyout permanently tax-incomplete, because a profile resolves only on a sale date.
+        decimal? estimatedTax = row.SaleDate.HasValue
+            ? PnlTaxCalculator.EstimatedTax(row.RevenueAmount, profile)
+            : 0m;
         decimal? fee = PnlTaxCalculator.MarketplaceFee(
             row.CommissionAmount, row.AcquiringAmount, row.DeliveryFeeAmount);
 
@@ -117,6 +122,12 @@ internal static class PnlViewFactory
             ReturnOnSoldCostPercent = PnlTaxCalculator.ReturnOnSoldCostPercent(margin, row.ProductionCostAmount),
             InvestedCostAmount = investedCost,
             RoiPercent = PnlTaxCalculator.RoiPercent(margin, investedCost),
+
+            // The tax-adjusted percentages of a single line need no coverage rule: the numerator and
+            // the denominator describe the same line, so they are either both known or both unknown.
+            TaxAdjustedContributionMarginPercent =
+                PnlTaxCalculator.ContributionMarginPercent(taxAdjustedMargin, row.NetRevenueAmount),
+            TaxAdjustedRoiPercent = PnlTaxCalculator.RoiPercent(taxAdjustedMargin, investedCost),
 
             // The ordered units include a non-buyout and a returned unit, the sold ones do not: a
             // line without a sale fact carries no sold unit, while its delivery charge still belongs

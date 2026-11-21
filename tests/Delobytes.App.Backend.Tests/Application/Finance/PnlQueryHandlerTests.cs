@@ -114,7 +114,7 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
-    public async Task GetLines_LineWithoutSale_HasNoTaxOrMargin()
+    public async Task GetLines_LineWithoutSale_ReportsAZeroTaxAndNoMargin()
     {
         PnlLineRow row = Row(saleDate: null, revenue: null, netRevenue: null, cost: null);
 
@@ -125,12 +125,16 @@ public class PnlQueryHandlerTests
 
         PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
 
-        response.Lines[0].EstimatedTax.Should().BeNull();
+        // No sale means a zero tax base, so the tax is a known zero even without a profile; the margin
+        // stays unknown because the line reported no money at all.
+        response.Lines[0].EstimatedTax.Should().Be(0m);
         response.Lines[0].Margin.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
         response.Lines[0].ContributionMarginPercent.Should().BeNull();
         response.Lines[0].ReturnOnSoldCostPercent.Should().BeNull();
         response.Lines[0].RoiPercent.Should().BeNull();
+        response.Lines[0].TaxAdjustedContributionMarginPercent.Should().BeNull();
+        response.Lines[0].TaxAdjustedRoiPercent.Should().BeNull();
     }
 
     [Fact]
@@ -288,6 +292,98 @@ public class PnlQueryHandlerTests
         row.EstimatedTax.Should().Be(120m);
         row.Margin.Should().Be(400m);
         row.TaxAdjustedMargin.Should().Be(340m);
+    }
+
+    [Fact]
+    public async Task GetSummary_TaxAdjustedPercentages_StayUnknownUntilTheWholeGroupIsTaxed()
+    {
+        // The range reaches back before the first profile, so one of the two lines carries no tax.
+        // The tax layer covers half of the group: its share must stay unknown rather than be divided
+        // by a base that also holds the untaxed line.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2025, 12, 31), 1000m, 700m, 300m),
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Total },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.Margin.Should().Be(800m);
+        row.TaxAdjustedMargin.Should().Be(340m);
+        row.LinesWithTaxAdjustedMargin.Should().Be(1);
+        row.RevenueWithTaxAdjustedMarginAmount.Should().Be(1000m);
+        row.NetRevenueWithTaxAdjustedMarginAmount.Should().Be(700m);
+        row.IsTaxAdjustedMarginComplete.Should().BeFalse();
+        row.IsTaxAdjustedRoiComplete.Should().BeFalse();
+        row.TaxAdjustedContributionMarginPercent.Should().BeNull();
+        row.TaxAdjustedRoiPercent.Should().BeNull();
+
+        // The covered tax base stays inside the margin-covered revenue: the coverage parts are disjoint.
+        row.RevenueWithTaxAdjustedMarginAmount.Should().BeLessThan(row.RevenueWithMarginAmount);
+    }
+
+    [Fact]
+    public async Task GetSummary_TaxAdjustedPercentages_UseTheCoveredPopulationAlone()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m),
+            Row(new DateOnly(2026, 8, 2), 500m, 350m, 150m),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Total },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.Margin.Should().Be(600m);
+        row.TaxAdjustedMargin.Should().Be(510m);
+        row.IsTaxAdjustedMarginComplete.Should().BeTrue();
+        row.IsTaxAdjustedRoiComplete.Should().BeTrue();
+        row.LinesWithTaxAdjustedMargin.Should().Be(2);
+        row.RevenueWithTaxAdjustedMarginAmount.Should().Be(1500m);
+        row.NetRevenueWithTaxAdjustedMarginAmount.Should().Be(1050m);
+        row.InvestedCostWithTaxAdjustedMarginAmount.Should().Be(450m);
+        row.TaxAdjustedContributionMarginPercent.Should().BeApproximately(510m / 1050m * 100m, 0.0001m);
+        row.TaxAdjustedRoiPercent.Should().BeApproximately(510m / 450m * 100m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_TaxAdjustedRoi_StaysUnknownWhenSomeLinesHaveNoInvestment()
+    {
+        // A non-buyout carries no cost fact: it has a taxed margin but no investment to divide by.
+        // The contribution share still describes the whole group; the return does not.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m),
+            Row(
+                saleDate: null,
+                revenue: null,
+                netRevenue: -100m,
+                cost: null,
+                periodDate: new DateOnly(2026, 8, 5)),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Total },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.TaxAdjustedMargin.Should().Be(240m);
+        row.LinesWithTaxAdjustedMargin.Should().Be(2);
+        row.IsTaxAdjustedMarginComplete.Should().BeTrue();
+        row.TaxAdjustedContributionMarginPercent.Should().BeApproximately(240m / 600m * 100m, 0.0001m);
+
+        row.LinesWithTaxAdjustedInvestedCost.Should().Be(1);
+        row.InvestedCostWithTaxAdjustedMarginAmount.Should().Be(300m);
+        row.IsTaxAdjustedRoiComplete.Should().BeFalse();
+        row.TaxAdjustedRoiPercent.Should().BeNull();
     }
 
     [Fact]
@@ -478,6 +574,55 @@ public class PnlQueryHandlerTests
     }
 
     [Fact]
+    public async Task GetLines_LineWithoutSale_HasAZeroTaxInsteadOfAnUnknownOne()
+    {
+        // No sale means no sale revenue, so the tax base is a known zero and the tax is zero for every
+        // rate. Reporting null here would leave every group holding a non-buyout tax-incomplete.
+        PnlLineRow row = Row(
+            saleDate: null,
+            revenue: null,
+            netRevenue: -53.84m,
+            cost: null,
+            periodDate: new DateOnly(2026, 8, 5));
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProviderWithoutTaxProfile().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].EstimatedTax.Should().Be(0m);
+        response.Lines[0].Margin.Should().Be(-53.84m);
+        response.Lines[0].TaxAdjustedMargin.Should().Be(-53.84m);
+
+        // The tax-adjusted figures still need a positive base, which a delivery charge never gives.
+        response.Lines[0].TaxAdjustedContributionMarginPercent.Should().BeNull();
+        response.Lines[0].TaxAdjustedRoiPercent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLines_TaxAdjustedPercentages_CoverTheSameLineAsTheirBase()
+    {
+        PnlLineRow row = Row(new DateOnly(2026, 8, 1), revenue: 1000m, netRevenue: 700m, cost: 300m);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].EstimatedTax.Should().BeApproximately(60m, 0.0001m);
+        response.Lines[0].TaxAdjustedMargin.Should().BeApproximately(340m, 0.0001m);
+        response.Lines[0].ContributionMarginPercent.Should().BeApproximately(400m / 700m * 100m, 0.0001m);
+        response.Lines[0].TaxAdjustedContributionMarginPercent
+            .Should().BeApproximately(340m / 700m * 100m, 0.0001m);
+        response.Lines[0].RoiPercent.Should().BeApproximately(400m / 300m * 100m, 0.0001m);
+        response.Lines[0].TaxAdjustedRoiPercent.Should().BeApproximately(340m / 300m * 100m, 0.0001m);
+    }
+
+    [Fact]
     public async Task GetLines_LineTotalCost_IsProratedToTheOrderedQuantity()
     {
         // The cost fact was resolved for four units, the order carries three, and the fact has no
@@ -560,6 +705,15 @@ public class PnlQueryHandlerTests
         row.IsRoiComplete.Should().BeTrue();
         row.RoiPercent.Should().BeApproximately(50m, 0.0001m);
         row.ContributionMarginPercent.Should().BeApproximately(50m, 0.0001m);
+
+        // The non-buyout pays no tax on a sale it never made, so it does not block the tax layer:
+        // 340 - 100 on a net revenue of 600 and an investment of 600.
+        row.TaxAdjustedMargin.Should().Be(240m);
+        row.LinesWithTaxAdjustedMargin.Should().Be(2);
+        row.IsTaxAdjustedMarginComplete.Should().BeTrue();
+        row.TaxAdjustedContributionMarginPercent.Should().BeApproximately(40m, 0.0001m);
+        row.IsTaxAdjustedRoiComplete.Should().BeTrue();
+        row.TaxAdjustedRoiPercent.Should().BeApproximately(40m, 0.0001m);
     }
 
     [Fact]
