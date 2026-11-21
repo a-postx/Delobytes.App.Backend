@@ -146,34 +146,95 @@ public static class PnlTaxCalculator
     }
 
     /// <summary>
-    /// Computes the margin as a percentage of revenue: 5 means 5%, not a share of 0.05.
+    /// Computes the contribution margin as a percentage of the net revenue: 5 means 5%, not a share
+    /// of 0.05. The margin is earned after the channel fees, so the base is the money those fees left
+    /// behind rather than the gross sale.
     /// </summary>
     /// <param name="margin">Margin.</param>
-    /// <param name="revenue">Revenue.</param>
-    /// <returns>The percentage, or null when an input is missing or the denominator is zero.</returns>
-    public static decimal? MarginPercent(decimal? margin, decimal? revenue)
+    /// <param name="netRevenue">Net revenue.</param>
+    /// <returns>
+    /// The percentage, or null when an input is missing or the net revenue is not positive. A
+    /// non-positive base would turn a loss into a positive share, so it reports unknown instead.
+    /// </returns>
+    public static decimal? ContributionMarginPercent(decimal? margin, decimal? netRevenue)
     {
-        if (!margin.HasValue || !revenue.HasValue || revenue.Value == 0m)
+        if (!margin.HasValue || !netRevenue.HasValue || netRevenue.Value <= 0m)
         {
             return null;
         }
 
-        return margin.Value / revenue.Value * 100m;
+        return margin.Value / netRevenue.Value * 100m;
     }
 
     /// <summary>
-    /// Computes the return on the production cost as a percentage: 25 means 25% of the cost.
+    /// Computes the return on the production cost of the sold units: 25 means 25% of that cost.
     /// </summary>
     /// <param name="margin">Margin.</param>
-    /// <param name="productionCost">Production cost.</param>
-    /// <returns>The percentage, or null when an input is missing or the denominator is zero.</returns>
-    public static decimal? RoiPercent(decimal? margin, decimal? productionCost)
+    /// <param name="productionCost">Production cost of the sold units.</param>
+    /// <returns>The percentage, or null when an input is missing or the denominator is not positive.</returns>
+    public static decimal? ReturnOnSoldCostPercent(decimal? margin, decimal? productionCost)
     {
-        if (!margin.HasValue || !productionCost.HasValue || productionCost.Value == 0m)
+        if (!margin.HasValue || !productionCost.HasValue || productionCost.Value <= 0m)
         {
             return null;
         }
 
         return margin.Value / productionCost.Value * 100m;
+    }
+
+    /// <summary>
+    /// Computes the return on the cost of goods invested in the ordered units: 25 means 25% of that
+    /// investment. The margin is earned on the units that stayed sold, while the investment covers
+    /// every ordered unit, so a non-buyout or a return lowers the percentage instead of vanishing
+    /// from the base.
+    /// </summary>
+    /// <param name="margin">Margin.</param>
+    /// <param name="investedCost">Production cost of the ordered units.</param>
+    /// <returns>The percentage, or null when an input is missing or the denominator is not positive.</returns>
+    public static decimal? RoiPercent(decimal? margin, decimal? investedCost)
+    {
+        if (!margin.HasValue || !investedCost.HasValue || investedCost.Value <= 0m)
+        {
+            return null;
+        }
+
+        return margin.Value / investedCost.Value * 100m;
+    }
+
+    /// <summary>
+    /// Computes the production cost of the ordered units: the investment a line ties up.
+    /// </summary>
+    /// <remarks>
+    /// A cost fact that carries only the unit price is multiplied by the ordered quantity. A fact
+    /// that carries only the line total is prorated by its own quantity, because the ordered quantity
+    /// of the reference can differ from the quantity the cost was resolved for.
+    /// </remarks>
+    /// <param name="unitTotalCost">Total cost of one unit, or null when the fact has only a line total.</param>
+    /// <param name="totalCost">Total cost of the line the fact was resolved for, or null.</param>
+    /// <param name="costQuantity">Quantity the line total was resolved for, or null.</param>
+    /// <param name="orderedQuantity">Ordered quantity of the line.</param>
+    /// <returns>The invested cost, or null when no amount or no quantity can produce it.</returns>
+    public static decimal? InvestedCostOfOrderedUnits(
+        decimal? unitTotalCost,
+        decimal? totalCost,
+        int? costQuantity,
+        int orderedQuantity)
+    {
+        if (orderedQuantity <= 0)
+        {
+            return null;
+        }
+
+        if (unitTotalCost.HasValue)
+        {
+            return unitTotalCost.Value * orderedQuantity;
+        }
+
+        if (totalCost.HasValue && costQuantity is > 0)
+        {
+            return totalCost.Value * orderedQuantity / costQuantity.Value;
+        }
+
+        return null;
     }
 }

@@ -76,6 +76,31 @@ public sealed class PnlLineRow
 
     public bool? ProductionCostIsComplete { get; set; }
 
+    /// <summary>
+    /// Gets or sets the resolved cost of one unit, or null when the cost fact carries only a line
+    /// total. It describes the ordered units: the cost of the whole line lets the caller value the
+    /// units that never sold as well.
+    /// </summary>
+    public decimal? UnitTotalCost { get; set; }
+
+    /// <summary>
+    /// Gets or sets the resolved total cost of the line the fact was calculated for, or null.
+    /// </summary>
+    public decimal? TotalCost { get; set; }
+
+    /// <summary>
+    /// Gets or sets the quantity the total cost was resolved for, or null. It can differ from the
+    /// ordered quantity, in which case the total has to be prorated.
+    /// </summary>
+    public int? CostQuantity { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the cost fact covers every input of the line, or null when no cost fact
+    /// exists. Unlike <see cref="ProductionCostIsComplete"/>, it is set for a line that never sold:
+    /// its units are still an investment even though no cost of goods is charged.
+    /// </summary>
+    public bool? CostIsComplete { get; set; }
+
     /// <summary>Gets or sets whether every document the sale is expected to produce has arrived.</summary>
     public PnlLineCompleteness CompletenessState { get; set; }
 

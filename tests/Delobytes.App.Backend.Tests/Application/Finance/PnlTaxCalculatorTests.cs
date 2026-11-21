@@ -115,14 +115,59 @@ public class PnlTaxCalculatorTests
     }
 
     [Fact]
-    public void MarginPercent_AndRoiPercent_GuardTheirDenominators()
+    public void ContributionMarginPercent_UsesTheNetRevenueAsItsBase()
     {
-        PnlTaxCalculator.MarginPercent(50m, 1000m).Should().Be(5m);
-        PnlTaxCalculator.MarginPercent(50m, null).Should().BeNull();
-        PnlTaxCalculator.MarginPercent(50m, 0m).Should().BeNull();
+        PnlTaxCalculator.ContributionMarginPercent(50m, 1000m).Should().Be(5m);
+        PnlTaxCalculator.ContributionMarginPercent(50m, null).Should().BeNull();
+        PnlTaxCalculator.ContributionMarginPercent(50m, 0m).Should().BeNull();
+    }
 
+    [Fact]
+    public void ContributionMarginPercent_WithANonPositiveBase_IsUnknownNotALossRatio()
+    {
+        // A negative base would flip the sign of the share: 50 / -100 must not read as -50%.
+        PnlTaxCalculator.ContributionMarginPercent(50m, -100m).Should().BeNull();
+        PnlTaxCalculator.ContributionMarginPercent(-50m, -100m).Should().BeNull();
+    }
+
+    [Fact]
+    public void ReturnOnSoldCostPercent_GuardsItsDenominator()
+    {
+        PnlTaxCalculator.ReturnOnSoldCostPercent(50m, 200m).Should().Be(25m);
+        PnlTaxCalculator.ReturnOnSoldCostPercent(50m, null).Should().BeNull();
+        PnlTaxCalculator.ReturnOnSoldCostPercent(50m, 0m).Should().BeNull();
+        PnlTaxCalculator.ReturnOnSoldCostPercent(50m, -200m).Should().BeNull();
+    }
+
+    [Fact]
+    public void RoiPercent_DividesTheMarginByTheInvestedCost()
+    {
         PnlTaxCalculator.RoiPercent(50m, 200m).Should().Be(25m);
         PnlTaxCalculator.RoiPercent(50m, null).Should().BeNull();
         PnlTaxCalculator.RoiPercent(50m, 0m).Should().BeNull();
+        PnlTaxCalculator.RoiPercent(null, 200m).Should().BeNull();
+    }
+
+    [Fact]
+    public void InvestedCostOfOrderedUnits_PrefersTheUnitCost()
+    {
+        PnlTaxCalculator.InvestedCostOfOrderedUnits(25m, 200m, 8, 3).Should().Be(75m);
+    }
+
+    [Fact]
+    public void InvestedCostOfOrderedUnits_ProratesALineTotalByItsOwnQuantity()
+    {
+        // The cost fact was resolved for four units at 50 each, while the order carries three: the
+        // investment is 150, not the whole line total and not 50 times the ordered quantity.
+        PnlTaxCalculator.InvestedCostOfOrderedUnits(null, 200m, 4, 3).Should().Be(150m);
+    }
+
+    [Fact]
+    public void InvestedCostOfOrderedUnits_IsNullWithoutAnAmountOrAQuantity()
+    {
+        PnlTaxCalculator.InvestedCostOfOrderedUnits(null, null, 4, 3).Should().BeNull();
+        PnlTaxCalculator.InvestedCostOfOrderedUnits(null, 200m, null, 3).Should().BeNull();
+        PnlTaxCalculator.InvestedCostOfOrderedUnits(null, 200m, 0, 3).Should().BeNull();
+        PnlTaxCalculator.InvestedCostOfOrderedUnits(25m, null, null, 0).Should().BeNull();
     }
 }

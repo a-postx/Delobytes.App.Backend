@@ -185,6 +185,45 @@ public class PnlReadStoreTests
     }
 
     [Fact]
+    public async Task GetLinesAsync_ProjectsTheCostFactOfTheOrderedUnits()
+    {
+        // The line stores the cost of the sold units only, so the investment base has to come from
+        // the cost fact itself: its unit price, line total and resolved quantity are read as stored.
+        string database = NewDatabaseName();
+        Guid orderLineId = Guid.Parse("0000000c-0000-0000-0000-00000000000c");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.Add(Line(Guid.NewGuid(), orderLineId, "RUB", Day1));
+
+            OrderLineRef reference = Reference(orderLineId, ChannelId);
+            reference.Quantity = 3;
+            seed.OrderLineRefs.Add(reference);
+
+            OrderLineCost cost = Cost(orderLineId, Guid.NewGuid());
+            cost.Quantity = 4;
+            cost.UnitTotalCost = 25m;
+            cost.TotalCost = 100m;
+            cost.IsComplete = true;
+            seed.OrderLineCosts.Add(cost);
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        PnlLinePage page = await store.GetLinesAsync("RUB", new PnlLineFilter(), 100, null, CancellationToken.None);
+
+        PnlLineRow row = page.Rows.Should().ContainSingle().Subject;
+
+        row.UnitTotalCost.Should().Be(25m);
+        row.TotalCost.Should().Be(100m);
+        row.CostQuantity.Should().Be(4);
+        row.CostIsComplete.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetLinesAsync_FiltersByChannelProductIdIndependentlyOfTheProduct()
     {
         string database = NewDatabaseName();

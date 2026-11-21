@@ -84,6 +84,16 @@ internal static class PnlViewFactory
 
         decimal? taxAdjustedMargin = PnlTaxCalculator.TaxAdjustedMargin(margin, estimatedTax);
 
+        // The investment is the cost of the ordered units, not of the sold ones: a unit that came
+        // back is still money tied up, even though its cost of goods is not charged.
+        decimal? investedCost = row.CostIsComplete == true
+            ? PnlTaxCalculator.InvestedCostOfOrderedUnits(
+                row.UnitTotalCost,
+                row.TotalCost,
+                row.CostQuantity,
+                row.Quantity)
+            : null;
+
         return new PnlLineView
         {
             OrderLineId = row.OrderLineId,
@@ -103,8 +113,10 @@ internal static class PnlViewFactory
             MarketplaceFee = fee,
             Margin = margin,
             TaxAdjustedMargin = taxAdjustedMargin,
-            MarginPercent = PnlTaxCalculator.MarginPercent(margin, row.RevenueAmount),
-            RoiPercent = PnlTaxCalculator.RoiPercent(margin, row.ProductionCostAmount),
+            ContributionMarginPercent = PnlTaxCalculator.ContributionMarginPercent(margin, row.NetRevenueAmount),
+            ReturnOnSoldCostPercent = PnlTaxCalculator.ReturnOnSoldCostPercent(margin, row.ProductionCostAmount),
+            InvestedCostAmount = investedCost,
+            RoiPercent = PnlTaxCalculator.RoiPercent(margin, investedCost),
 
             // The ordered units include a non-buyout and a returned unit, the sold ones do not: a
             // line without a sale fact carries no sold unit, while its delivery charge still belongs

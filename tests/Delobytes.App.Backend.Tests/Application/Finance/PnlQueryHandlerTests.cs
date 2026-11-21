@@ -87,7 +87,8 @@ public class PnlQueryHandlerTests
         response.Lines[0].EstimatedTax.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
         response.Lines[0].Margin.Should().BeApproximately(80m, 0.0001m);
-        response.Lines[0].MarginPercent.Should().BeApproximately(80m, 0.0001m);
+        response.Lines[0].ContributionMarginPercent.Should().BeApproximately(80m / 90m * 100m, 0.0001m);
+        response.Lines[0].ReturnOnSoldCostPercent.Should().BeApproximately(800m, 0.0001m);
         response.Lines[0].RoiPercent.Should().BeApproximately(800m, 0.0001m);
     }
 
@@ -105,7 +106,8 @@ public class PnlQueryHandlerTests
 
         response.Lines[0].Margin.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
-        response.Lines[0].MarginPercent.Should().BeNull();
+        response.Lines[0].ContributionMarginPercent.Should().BeNull();
+        response.Lines[0].ReturnOnSoldCostPercent.Should().BeNull();
         response.Lines[0].RoiPercent.Should().BeNull();
         response.Lines[0].CostComplete.Should().BeFalse();
         response.Lines[0].EstimatedTax.Should().BeApproximately(6m, 0.0001m);
@@ -126,7 +128,8 @@ public class PnlQueryHandlerTests
         response.Lines[0].EstimatedTax.Should().BeNull();
         response.Lines[0].Margin.Should().BeNull();
         response.Lines[0].TaxAdjustedMargin.Should().BeNull();
-        response.Lines[0].MarginPercent.Should().BeNull();
+        response.Lines[0].ContributionMarginPercent.Should().BeNull();
+        response.Lines[0].ReturnOnSoldCostPercent.Should().BeNull();
         response.Lines[0].RoiPercent.Should().BeNull();
     }
 
@@ -247,12 +250,21 @@ public class PnlQueryHandlerTests
         row.LinesWithMargin.Should().Be(1);
         row.RevenueWithMarginAmount.Should().Be(1000m);
         row.ProductionCostWithMarginAmount.Should().Be(300m);
+        row.NetRevenueWithMarginAmount.Should().Be(700m);
+        row.NetRevenueWithoutCostAmount.Should().Be(1400m);
         row.RevenueWithoutCostAmount.Should().Be(2000m);
         row.IsMarginComplete.Should().BeFalse();
 
         row.RevenueWithMarginAmount.Should().Be(row.RevenueAmount!.Value - row.RevenueWithoutCostAmount);
+        row.NetRevenueWithMarginAmount.Should().Be(
+            row.NetRevenueAmount!.Value - row.NetRevenueWithoutCostAmount);
 
-        row.MarginPercent.Should().BeApproximately(40m, 0.0001m);
+        // The contribution margin is a share of the net revenue the margin covers: 400 / 700.
+        row.ContributionMarginPercent.Should().BeApproximately(400m / 700m * 100m, 0.0001m);
+        row.ReturnOnSoldCostPercent.Should().BeApproximately(400m / 3m, 0.0001m);
+        row.InvestedCostAmount.Should().Be(300m);
+        row.LinesWithInvestedCost.Should().Be(1);
+        row.IsRoiComplete.Should().BeFalse();
         row.RoiPercent.Should().BeApproximately(400m / 3m, 0.0001m);
     }
 
@@ -299,9 +311,15 @@ public class PnlQueryHandlerTests
         row.LinesWithMargin.Should().Be(2);
         row.RevenueWithMarginAmount.Should().Be(200m);
         row.ProductionCostWithMarginAmount.Should().Be(20m);
+        row.NetRevenueWithMarginAmount.Should().Be(180m);
+        row.NetRevenueWithoutCostAmount.Should().Be(0m);
         row.RevenueWithoutCostAmount.Should().Be(0m);
         row.Margin.Should().Be(160m);
-        row.MarginPercent.Should().BeApproximately(80m, 0.0001m);
+        row.ContributionMarginPercent.Should().BeApproximately(160m / 180m * 100m, 0.0001m);
+        row.ReturnOnSoldCostPercent.Should().BeApproximately(800m, 0.0001m);
+        row.InvestedCostAmount.Should().Be(20m);
+        row.LinesWithInvestedCost.Should().Be(2);
+        row.IsRoiComplete.Should().BeTrue();
         row.RoiPercent.Should().BeApproximately(800m, 0.0001m);
     }
 
@@ -322,12 +340,17 @@ public class PnlQueryHandlerTests
         PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
 
         row.Margin.Should().BeNull();
-        row.MarginPercent.Should().BeNull();
+        row.ContributionMarginPercent.Should().BeNull();
         row.RoiPercent.Should().BeNull();
         row.LinesWithMargin.Should().Be(0);
         row.RevenueWithMarginAmount.Should().Be(0m);
         row.ProductionCostWithMarginAmount.Should().Be(0m);
+        row.NetRevenueWithMarginAmount.Should().Be(0m);
+        row.NetRevenueWithoutCostAmount.Should().Be(2100m);
         row.RevenueWithoutCostAmount.Should().Be(3000m);
+        row.InvestedCostAmount.Should().Be(0m);
+        row.LinesWithInvestedCost.Should().Be(0);
+        row.IsRoiComplete.Should().BeFalse();
         row.IsMarginComplete.Should().BeFalse();
     }
 
@@ -450,12 +473,97 @@ public class PnlQueryHandlerTests
 
         response.Lines[0].Margin.Should().Be(-53.84m);
         response.Lines[0].PeriodDate.Should().Be(new DateOnly(2026, 8, 5));
-        response.Lines[0].MarginPercent.Should().BeNull();
+        response.Lines[0].ContributionMarginPercent.Should().BeNull();
         response.Lines[0].RoiPercent.Should().BeNull();
     }
 
     [Fact]
-    public async Task GetSummary_LineWithoutSale_AddsItsResultToThePeriodOfItsCharge()
+    public async Task GetLines_LineTotalCost_IsProratedToTheOrderedQuantity()
+    {
+        // The cost fact was resolved for four units, the order carries three, and the fact has no
+        // unit price. The investment must be 200 * 3 / 4, not the whole line total.
+        PnlLineRow row = Row(
+            saleDate: new DateOnly(2026, 8, 1),
+            revenue: 300m,
+            netRevenue: 210m,
+            cost: 150m,
+            quantity: 3,
+            costTotal: 200m,
+            costQuantity: 4);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].InvestedCostAmount.Should().Be(150m);
+        response.Lines[0].Margin.Should().Be(60m);
+        response.Lines[0].RoiPercent.Should().BeApproximately(40m, 0.0001m);
+        response.Lines[0].ReturnOnSoldCostPercent.Should().BeApproximately(40m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetLines_LineWithoutSale_WithAKnownCost_CarriesAnInvestmentAndNoReturn()
+    {
+        // The unit came back, so no cost of goods is charged, but the money tied up in it is still
+        // known: the line shows an investment with a zero return rather than no investment at all.
+        PnlLineRow row = Row(
+            saleDate: null,
+            revenue: null,
+            netRevenue: -100m,
+            cost: null,
+            periodDate: new DateOnly(2026, 8, 5),
+            unitCost: 300m);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { row } }),
+            BuildTenantContext(),
+            BuildProvider().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        response.Lines[0].InvestedCostAmount.Should().Be(300m);
+        response.Lines[0].Margin.Should().Be(-100m);
+        response.Lines[0].RoiPercent.Should().BeApproximately(-100m / 300m * 100m, 0.0001m);
+        response.Lines[0].ReturnOnSoldCostPercent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetSummary_NonBuyoutKeepsItsInvestmentInTheRoiBase()
+    {
+        // The returned unit earns nothing and its cost is not charged, but the money is still tied
+        // up: dropping it from the denominator would overstate the return on the whole group.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m, unitCost: 300m),
+            Row(
+                saleDate: null,
+                revenue: null,
+                netRevenue: -100m,
+                cost: null,
+                periodDate: new DateOnly(2026, 8, 5),
+                unitCost: 300m),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.Margin.Should().Be(300m);
+        row.NetRevenueWithMarginAmount.Should().Be(600m);
+        row.InvestedCostAmount.Should().Be(600m);
+        row.LinesWithInvestedCost.Should().Be(2);
+        row.IsRoiComplete.Should().BeTrue();
+        row.RoiPercent.Should().BeApproximately(50m, 0.0001m);
+        row.ContributionMarginPercent.Should().BeApproximately(50m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_LineWithoutASale_AddsItsResultToThePeriodOfItsCharge()
     {
         Guid productId = Guid.NewGuid();
 
@@ -485,7 +593,8 @@ public class PnlQueryHandlerTests
         row.IsMarginComplete.Should().BeTrue();
         row.RevenueWithMarginAmount.Should().Be(1000m);
         row.RevenueWithoutCostAmount.Should().Be(0m);
-        row.MarginPercent.Should().BeApproximately(34.616m, 0.00001m);
+        row.NetRevenueWithMarginAmount.Should().Be(646.16m);
+        row.ContributionMarginPercent.Should().BeApproximately(346.16m / 646.16m * 100m, 0.00001m);
     }
 
     [Fact]
@@ -925,7 +1034,7 @@ public class PnlQueryHandlerTests
         august.Lines.Should().Be(2);
         august.RevenueAmount.Should().Be(300m);
         august.Margin.Should().Be(240m);
-        august.MarginPercent.Should().Be(80m);
+        august.ContributionMarginPercent.Should().BeApproximately(240m / 270m * 100m, 0.0001m);
         august.IsMarginComplete.Should().BeTrue();
 
         PnlSummaryRowView september = response.Rows.Single(r => r.PeriodStart == new DateOnly(2026, 9, 1));
@@ -1124,9 +1233,10 @@ public class PnlQueryHandlerTests
         september.NetRevenueAmount.Should().Be(0m);
         september.ProductionCostAmount.Should().Be(0m);
         september.Margin.Should().BeNull();
-        september.MarginPercent.Should().BeNull();
+        september.ContributionMarginPercent.Should().BeNull();
         september.RoiPercent.Should().BeNull();
         september.IsMarginComplete.Should().BeFalse();
+        september.IsRoiComplete.Should().BeFalse();
     }
 
     [Fact]
@@ -1285,8 +1395,24 @@ public class PnlQueryHandlerTests
         DateOnly? periodDate = null,
         int quantity = 1,
         Guid? channelId = null,
-        int returnedQuantity = 0)
+        int returnedQuantity = 0,
+        decimal? unitCost = null,
+        decimal? costTotal = null,
+        int? costQuantity = null)
     {
+        // The line stores only the cost of the units that stayed sold, so the unit cost is derived
+        // from that population unless the caller spells the cost fact out. A caller that passes a
+        // line total without a unit cost is testing the proration rule, so the derivation is skipped.
+        int soldUnits = Math.Max(0, quantity - returnedQuantity);
+        bool hasCostFact = cost.HasValue || unitCost.HasValue || (costTotal.HasValue && costQuantity.HasValue);
+
+        decimal? resolvedUnitCost = unitCost;
+
+        if (!resolvedUnitCost.HasValue && !costTotal.HasValue && cost.HasValue && soldUnits > 0)
+        {
+            resolvedUnitCost = cost.Value / soldUnits;
+        }
+
         return new PnlLineRow
         {
             OrderLineId = Guid.NewGuid(),
@@ -1303,6 +1429,10 @@ public class PnlQueryHandlerTests
             ProductionCostAmount = cost,
             ControlDifferenceAmount = 0m,
             ProductionCostIsComplete = cost.HasValue ? costComplete : null,
+            UnitTotalCost = resolvedUnitCost,
+            TotalCost = costTotal ?? cost,
+            CostQuantity = costQuantity ?? (cost.HasValue ? quantity : null),
+            CostIsComplete = hasCostFact ? costComplete : null,
             CostStatus = OrderLineCostStatus.Resolved,
             CompletenessState = completeness,
         };

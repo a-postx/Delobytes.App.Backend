@@ -51,14 +51,30 @@ public sealed class PnlLineView
     public decimal? TaxAdjustedMargin { get; set; }
 
     /// <summary>
-    /// Gets or sets the margin as a percentage of <see cref="RevenueAmount"/>: 5 means 5%. Null when
-    /// the margin is unknown or the revenue is zero.
+    /// Gets or sets the contribution margin as a percentage of <see cref="NetRevenueAmount"/>: 5
+    /// means 5%. The margin is earned after the channel fees, so the gross sale is not its base.
+    /// Null when the margin is unknown or the net revenue is not positive.
     /// </summary>
-    public decimal? MarginPercent { get; set; }
+    public decimal? ContributionMarginPercent { get; set; }
 
     /// <summary>
-    /// Gets or sets the return on the production cost as a percentage: 25 means 25% of
-    /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the cost is zero.
+    /// Gets or sets the return on the production cost of the sold units: 25 means 25% of
+    /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the cost is not
+    /// positive.
+    /// </summary>
+    public decimal? ReturnOnSoldCostPercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the production cost of the ordered units: the investment the line ties up. It
+    /// covers the units that never sold, so it is known even when no cost of goods is charged.
+    /// Null when no complete cost fact exists.
+    /// </summary>
+    public decimal? InvestedCostAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the return on <see cref="InvestedCostAmount"/>: 25 means 25% of the money tied up
+    /// in the ordered units. Null when the margin or the investment is unknown or the investment is
+    /// not positive.
     /// </summary>
     public decimal? RoiPercent { get; set; }
 

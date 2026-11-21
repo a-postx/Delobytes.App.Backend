@@ -311,6 +311,13 @@ public class PnlReadStore : IPnlReadStore
                    ControlDifferenceAmount = line.ControlDifferenceAmount,
                    ProductionCostAmount = line.ProductionCostAmount,
                    ProductionCostIsComplete = line.ProductionCostIsComplete,
+                   // The cost fact describes the ordered units, while the line stores only the cost
+                   // of the units that stayed sold. The investment base has to come from the fact
+                   // itself, so it is projected here instead of being rebuilt from the line.
+                   UnitTotalCost = cost == null ? null : cost.UnitTotalCost,
+                   TotalCost = cost == null ? null : cost.TotalCost,
+                   CostQuantity = cost == null ? null : cost.Quantity,
+                   CostIsComplete = cost == null ? null : cost.IsComplete,
                    CompletenessState = line.CompletenessState,
                    MissingDocumentTypes = line.MissingDocumentTypes,
                    ExpectedBy = line.ExpectedBy,

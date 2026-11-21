@@ -66,17 +66,25 @@ public sealed class PnlSummaryRowView
     public decimal? TaxAdjustedMargin { get; set; }
 
     /// <summary>
-    /// Gets or sets the margin as a percentage of <see cref="RevenueWithMarginAmount"/>, that is,
-    /// over the lines the margin itself covers: 40 means 40%. Null when the margin is unknown or the
-    /// covered revenue is zero.
+    /// Gets or sets the contribution margin as a percentage of <see cref="NetRevenueWithMarginAmount"/>:
+    /// 40 means 40%. The margin is earned after the channel fees, so the gross sale is not its base.
+    /// Null when the margin is unknown or the covered net revenue is not positive.
     /// </summary>
-    public decimal? MarginPercent { get; set; }
+    public decimal? ContributionMarginPercent { get; set; }
 
     /// <summary>
-    /// Gets or sets the return on the production cost of the covered lines only, as a percentage:
+    /// Gets or sets the return on the production cost of the covered sold units, as a percentage:
     /// 25 means 25% of <see cref="ProductionCostWithMarginAmount"/>, never of
     /// <see cref="ProductionCostAmount"/>. Null when the margin is unknown or the covered cost is
-    /// zero.
+    /// not positive.
+    /// </summary>
+    public decimal? ReturnOnSoldCostPercent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the return on <see cref="InvestedCostAmount"/>: 25 means 25% of the money tied up
+    /// in the ordered units. The numerator is the margin of the same lines, so a non-buyout lowers
+    /// the percentage instead of dropping out of the base. Null when the margin is unknown or the
+    /// covered investment is not positive.
     /// </summary>
     public decimal? RoiPercent { get; set; }
 
@@ -105,6 +113,35 @@ public sealed class PnlSummaryRowView
     public decimal ProductionCostWithMarginAmount { get; set; }
 
     /// <summary>
+    /// Gets or sets the net revenue of the lines whose margin is known: the base of
+    /// <see cref="ContributionMarginPercent"/>. On the same basis as <see cref="NetRevenueAmount"/>,
+    /// so the two coverage parts always add up to the total.
+    /// </summary>
+    public decimal NetRevenueWithMarginAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the net revenue of the lines whose margin is unknown: the part of
+    /// <see cref="NetRevenueAmount"/> no margin figure can be attributed to.
+    /// </summary>
+    public decimal NetRevenueWithoutCostAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the production cost of the ordered units of the lines whose margin and cost are
+    /// both known: the base of <see cref="RoiPercent"/>. It covers the units that never sold, so it
+    /// can exceed <see cref="ProductionCostWithMarginAmount"/>.
+    /// </summary>
+    public decimal InvestedCostAmount { get; set; }
+
+    /// <summary>Gets or sets the number of lines the invested cost is known for.</summary>
+    public int LinesWithInvestedCost { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether every line of the group has a known invested cost.
+    /// Only then does <see cref="RoiPercent"/> describe the whole group.
+    /// </summary>
+    public bool IsRoiComplete { get; set; }
+
+    /// <summary>
     /// Gets or sets the revenue of the lines whose margin is unknown: no cost fact yet, an
     /// incomplete cost, or no net revenue. This is the part of <see cref="RevenueAmount"/> no
     /// margin figure can be attributed to.
@@ -113,8 +150,8 @@ public sealed class PnlSummaryRowView
 
     /// <summary>
     /// Gets or sets a value indicating whether every line of the group has a known margin. Only
-    /// then do <see cref="Margin"/>, <see cref="MarginPercent"/> and <see cref="RoiPercent"/> describe the
-    /// whole group.
+    /// then do <see cref="Margin"/>, <see cref="ContributionMarginPercent"/> and
+    /// <see cref="ReturnOnSoldCostPercent"/> describe the whole group.
     /// </summary>
     public bool IsMarginComplete { get; set; }
 
@@ -475,6 +512,11 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         private decimal _revenueWithMargin;
         private decimal _productionCostWithMargin;
         private decimal _revenueWithoutCost;
+        private decimal _netRevenueWithMargin;
+        private decimal _netRevenueWithoutCost;
+        private decimal? _marginWithInvestedCost;
+        private decimal _investedCost;
+        private int _linesWithInvestedCost;
         private decimal _provisionalRevenue;
         private decimal _overdueRevenue;
         private decimal _closedWithExceptionRevenue;
@@ -507,6 +549,9 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 _productionCost = 0m,
                 _estimatedTax = 0m,
                 _controlDifference = 0m,
+                _netRevenueWithMargin = 0m,
+                _netRevenueWithoutCost = 0m,
+                _investedCost = 0m,
             };
         }
 
@@ -547,10 +592,22 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 _margin = Accumulate(_margin, view.Margin);
                 _revenueWithMargin += view.RevenueAmount ?? 0m;
                 _productionCostWithMargin += view.ProductionCostAmount ?? 0m;
+                _netRevenueWithMargin += view.NetRevenueAmount ?? 0m;
             }
             else
             {
                 _revenueWithoutCost += view.RevenueAmount ?? 0m;
+                _netRevenueWithoutCost += view.NetRevenueAmount ?? 0m;
+            }
+
+            // The ROI population is an intersection: a margin to show a return on and a known cost of
+            // the ordered units to divide it by. Its numerator is kept apart from the full margin, so
+            // the percentage never pairs a numerator and a denominator that describe different lines.
+            if (view.Margin.HasValue && view.InvestedCostAmount.HasValue)
+            {
+                _marginWithInvestedCost = Accumulate(_marginWithInvestedCost, view.Margin);
+                _investedCost += view.InvestedCostAmount.Value;
+                _linesWithInvestedCost++;
             }
 
             // The provisional part is the same population the line view flags, so the badge and the
@@ -604,17 +661,27 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 EstimatedTax = _estimatedTax,
                 Margin = _margin,
                 TaxAdjustedMargin = _taxAdjustedMargin,
-                MarginPercent = PnlTaxCalculator.MarginPercent(_margin, _revenueWithMargin),
-                RoiPercent = PnlTaxCalculator.RoiPercent(_margin, _productionCostWithMargin),
+                ContributionMarginPercent =
+                    PnlTaxCalculator.ContributionMarginPercent(_margin, _netRevenueWithMargin),
+                ReturnOnSoldCostPercent =
+                    PnlTaxCalculator.ReturnOnSoldCostPercent(_margin, _productionCostWithMargin),
+                RoiPercent = PnlTaxCalculator.RoiPercent(_marginWithInvestedCost, _investedCost),
                 QuantityOrdered = _quantityOrdered,
                 QuantitySold = _quantitySold,
                 LinesWithMargin = _linesWithMargin,
                 RevenueWithMarginAmount = _revenueWithMargin,
                 ProductionCostWithMarginAmount = _productionCostWithMargin,
                 RevenueWithoutCostAmount = _revenueWithoutCost,
+                NetRevenueWithMarginAmount = _netRevenueWithMargin,
+                NetRevenueWithoutCostAmount = _netRevenueWithoutCost,
+                InvestedCostAmount = _investedCost,
+                LinesWithInvestedCost = _linesWithInvestedCost,
                 // A group with no lines at all has no margin to be complete about, so an empty
                 // period must not report itself as fully covered.
                 IsMarginComplete = _lines > 0 && _linesWithMargin == _lines,
+                // A line without any cost leaves the investment unknown, so a group is ROI-complete
+                // only when its cost fact is known for every line.
+                IsRoiComplete = _lines > 0 && _linesWithInvestedCost == _lines,
                 ControlDifferenceAmount = _controlDifference,
                 ProvisionalRevenueAmount = _provisionalRevenue,
                 OverdueRevenueAmount = _overdueRevenue,
