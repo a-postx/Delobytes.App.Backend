@@ -9,6 +9,7 @@ using Delobytes.App.Backend.Finance.Application.Queries;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Enums;
 using FluentAssertions;
+using FluentValidation;
 using Moq;
 using Xunit;
 
@@ -981,6 +982,271 @@ public class PnlQueryHandlerTests
         row.PeriodStart.Should().Be(new DateOnly(2026, 8, 1));
         row.Lines.Should().Be(2);
         row.RevenueAmount.Should().Be(300m);
+    }
+
+    [Fact]
+    public async Task GetSummary_WeekGranularity_ReportsMondayThroughSundayAndMarksThePeriodCutByFrom()
+    {
+        // The filter starts on Wednesday, so the week holds only part of its days while the label
+        // still names the whole week: the row must say so instead of looking like a full one.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 11, 5), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Week,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 11, 4),
+                    To = new DateOnly(2026, 11, 8),
+                },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 11, 2));
+        row.PeriodEnd.Should().Be(new DateOnly(2026, 11, 8));
+        row.IsPartial.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetSummary_WeekGranularity_MarksThePeriodCutByTo()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 11, 4), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Week,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 11, 2),
+                    To = new DateOnly(2026, 11, 5),
+                },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 11, 2));
+        row.PeriodEnd.Should().Be(new DateOnly(2026, 11, 8));
+        row.IsPartial.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetSummary_WeekGranularity_WholeWeekIsNotPartial()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 11, 4), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Week,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 11, 2),
+                    To = new DateOnly(2026, 11, 8),
+                },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.IsPartial.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_DayGranularity_IsNeverPartial()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 11, 5), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Day,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 11, 3),
+                    To = new DateOnly(2026, 11, 9),
+                },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 11, 5));
+        row.PeriodEnd.Should().Be(new DateOnly(2026, 11, 5));
+        row.IsPartial.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByNone_FillsTheMissingPeriodWithZeros()
+    {
+        // A trend chart must not compress a month that had no activity: the period is present with
+        // zero money, while the margin stays unknown because no line carries a cost.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()),
+            Row(new DateOnly(2026, 10, 1), 200m, 180m, 20m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.None,
+            },
+            CancellationToken.None);
+
+        response.Rows.Select(r => r.PeriodStart).Should().ContainInOrder(
+            new DateOnly(2026, 8, 1),
+            new DateOnly(2026, 9, 1),
+            new DateOnly(2026, 10, 1));
+
+        PnlSummaryRowView september = response.Rows.Single(r => r.PeriodStart == new DateOnly(2026, 9, 1));
+
+        september.PeriodEnd.Should().Be(new DateOnly(2026, 9, 30));
+        september.Lines.Should().Be(0);
+        september.RevenueAmount.Should().Be(0m);
+        september.NetRevenueAmount.Should().Be(0m);
+        september.ProductionCostAmount.Should().Be(0m);
+        september.Margin.Should().BeNull();
+        september.MarginPercent.Should().BeNull();
+        september.Roi.Should().BeNull();
+        september.IsMarginComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByProduct_DoesNotFillMissingPeriods()
+    {
+        // A grouped summary stays sparse: a synthetic row cannot name the products that had no
+        // activity, so filling the grid would mean inventing groups.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()),
+            Row(new DateOnly(2026, 10, 1), 200m, 180m, 20m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Month,
+                GroupBy = PnlSummaryGroupBy.Product,
+            },
+            CancellationToken.None);
+
+        response.Rows.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetSummary_TotalGranularity_ReportsTheRequestedRangeAsItsPeriod()
+    {
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 10), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                GroupBy = PnlSummaryGroupBy.None,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 9, 30),
+                },
+            },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.PeriodStart.Should().Be(new DateOnly(2026, 8, 1));
+        row.PeriodEnd.Should().Be(new DateOnly(2026, 9, 30));
+        row.IsPartial.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetSummary_OpenRangeSpanningMoreThanThePeriodLimit_IsRejected()
+    {
+        // One edge comes from the data, so the validator cannot see the span; the handler measures it
+        // after the fold instead of materialising eight hundred daily rows.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2020, 1, 1), 100m, 90m, 10m, Guid.NewGuid()),
+            Row(new DateOnly(2022, 1, 1), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        Func<Task> act = () => BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Day,
+                GroupBy = PnlSummaryGroupBy.None,
+            },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<ValidationException>();
+    }
+
+    [Fact]
+    public async Task GetSummary_GroupedByProductOpenRangeSpanningMoreThanThePeriodLimit_IsRejected()
+    {
+        // The period axis is bounded for every grouping, not only for the one whose gaps are filled.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2020, 1, 1), 100m, 90m, 10m, Guid.NewGuid()),
+            Row(new DateOnly(2022, 1, 1), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        Func<Task> act = () => BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Day,
+                GroupBy = PnlSummaryGroupBy.Product,
+            },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<ValidationException>();
+    }
+
+    [Fact]
+    public async Task GetSummary_DayPeriodAtTheMaximumDate_DoesNotOverflow()
+    {
+        // The fill loop steps to the next period after the last bucket: at the end of DateOnly that
+        // step must not run at all.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(9999, 12, 30), 100m, 90m, 10m, Guid.NewGuid()),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Day,
+                GroupBy = PnlSummaryGroupBy.None,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(9999, 12, 29),
+                    To = new DateOnly(9999, 12, 31),
+                },
+            },
+            CancellationToken.None);
+
+        response.Rows.Should().HaveCount(3);
+        response.Rows[^1].PeriodStart.Should().Be(new DateOnly(9999, 12, 31));
     }
 
     [Fact]

@@ -3,6 +3,8 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Enums;
+using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 
 namespace Delobytes.App.Backend.Finance.Application.Queries;
@@ -20,7 +22,24 @@ public sealed class PnlSummaryRowView
 
     public bool IsUnlinkedProduct { get; set; }
 
+    /// <summary>
+    /// Gets or sets the first day of the period, unclipped: a week starts on its Monday and a month
+    /// on its 1st even when the filter starts later, so the label always describes a whole period.
+    /// </summary>
     public DateOnly PeriodStart { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last day of the period, inclusive, on the same unclipped basis as
+    /// <see cref="PeriodStart"/>. A total-period row reports the last day of the requested range.
+    /// </summary>
+    public DateOnly PeriodEnd { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the period is cut by the requested range: the row
+    /// then holds only the days inside the filter while its label describes the whole period. A
+    /// day period is never partial; a total-period row is the range itself and is never partial.
+    /// </summary>
+    public bool IsPartial { get; set; }
 
     public int Lines { get; set; }
 
@@ -160,6 +179,11 @@ public sealed class GetPnlSummaryQuery : IRequest<PnlSummaryResponse>
 /// <summary>Handles <see cref="GetPnlSummaryQuery"/>.</summary>
 public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQuery, PnlSummaryResponse>
 {
+    // The period axis is bounded by PnlPeriodBuckets.MaxPeriods, but the other axis is the number of
+    // groups, which no date range bounds. The ceiling is set far above a real report: it turns an
+    // out-of-memory response into a rejected request.
+    private const int MaxSummaryRows = 200_000;
+
     private readonly IPnlReadStore _store;
     private readonly ITenantContext _tenantContext;
     private readonly ITenantSettingsProvider _settingsProvider;
@@ -228,10 +252,20 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                     PnlSummaryGroupBy.None => null,
                     _ => view.ProductId,
                 },
-                PeriodOf(view.PeriodDate.Value, request.Granularity));
+                PnlPeriodBuckets.StartOf(view.PeriodDate.Value, request.Granularity));
 
             if (!accumulators.TryGetValue(key, out SummaryAccumulator? accumulator))
             {
+                if (accumulators.Count >= MaxSummaryRows)
+                {
+                    throw new ValidationException(new[]
+                    {
+                        new ValidationFailure(
+                            nameof(GetPnlSummaryQuery.Filter),
+                            $"Сводка получилась слишком большой: сузьте диапазон, гранулярность или фильтры. Строк больше {MaxSummaryRows}."),
+                    });
+                }
+
                 accumulator = new SummaryAccumulator();
                 accumulators.Add(key, accumulator);
             }
@@ -239,13 +273,30 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             accumulator.Add(view, row.ControlDifferenceAmount);
         }
 
+        // The validator measures a closed range before the query runs. An open range takes one of its
+        // edges from the data, so the same ceiling is enforced here, after the fold.
+        EnsurePeriodLimit(accumulators, request);
+
+        // A dimensionless trend is one series the client plots as-is, so its periods must be
+        // contiguous. A grouped summary stays sparse: a product without lines in a period is not a
+        // zero, and a synthetic row cannot name the groups that never appeared.
+        FillEmptyPeriods(accumulators, request);
+
         return new PnlSummaryResponse
         {
             Rows = accumulators
-                .Select(pair => pair.Value.Build(
-                    request.GroupBy,
-                    pair.Key.GroupId,
-                    ResolvePeriodStart(request, pair.Value, pair.Key.PeriodStart)))
+                .Select(pair =>
+                {
+                    DateOnly periodStart = ResolvePeriodStart(request, pair.Value, pair.Key.PeriodStart);
+                    DateOnly periodEnd = ResolvePeriodEnd(request, pair.Value, periodStart);
+
+                    return pair.Value.Build(
+                        request.GroupBy,
+                        pair.Key.GroupId,
+                        periodStart,
+                        periodEnd,
+                        IsPartial(request, periodStart, periodEnd));
+                })
                 .OrderBy(row => row.PeriodStart)
                 .ThenBy(row => row.ProductId ?? row.ChannelId)
                 .ToList(),
@@ -270,6 +321,142 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         return request.Filter.From
             ?? accumulator.EarliestPeriodDate
             ?? groupedPeriodStart;
+    }
+
+    // A total-period row covers the requested range, so its end is the end of the filter and falls
+    // back to the latest period date folded into the group when the range is open.
+    private static DateOnly ResolvePeriodEnd(
+        GetPnlSummaryQuery request,
+        SummaryAccumulator accumulator,
+        DateOnly periodStart)
+    {
+        if (request.Granularity == PnlPeriodGranularity.Total)
+        {
+            return request.Filter.To
+                ?? accumulator.LatestPeriodDate
+                ?? periodStart;
+        }
+
+        return PnlPeriodBuckets.EndOf(periodStart, request.Granularity);
+    }
+
+    // A period is partial only when a filter bound cuts it: the days outside the range are missing
+    // while the label still describes the whole period. A day period is atomic, and a total-period
+    // row is the range itself.
+    private static bool IsPartial(GetPnlSummaryQuery request, DateOnly periodStart, DateOnly periodEnd)
+    {
+        if (request.Granularity == PnlPeriodGranularity.Total)
+        {
+            return false;
+        }
+
+        return (request.Filter.From.HasValue && periodStart < request.Filter.From.Value)
+            || (request.Filter.To.HasValue && periodEnd > request.Filter.To.Value);
+    }
+
+    // Adds a zero row for every period of the dimensionless series that has no lines, so a chart
+    // drawn from the payload has no silent holes. Total is skipped because its single group is keyed
+    // by a sentinel that must not surface as a real date.
+    private static void FillEmptyPeriods(
+        Dictionary<(Guid? GroupId, DateOnly PeriodStart), SummaryAccumulator> accumulators,
+        GetPnlSummaryQuery request)
+    {
+        if (request.GroupBy != PnlSummaryGroupBy.None
+            || request.Granularity == PnlPeriodGranularity.Total)
+        {
+            return;
+        }
+
+        if (!TryResolveGrid(request, accumulators, out DateOnly firstBucket, out DateOnly lastBucket))
+        {
+            return;
+        }
+
+        (Guid? GroupId, DateOnly PeriodStart) key = (null, firstBucket);
+
+        while (key.PeriodStart <= lastBucket)
+        {
+            accumulators.TryAdd(key, SummaryAccumulator.EmptyPeriod());
+
+            // The cap is checked against the resolved grid, not here: an edge may come from the last
+            // line, and the next period after the last one may overflow DateOnly.
+            if (key.PeriodStart == lastBucket)
+            {
+                break;
+            }
+
+            key = (null, PnlPeriodBuckets.Next(key.PeriodStart, request.Granularity));
+        }
+    }
+
+    // A closed range is measured by the validator before the query runs. With an open bound one edge
+    // is only known after the fold, so the same ceiling is applied here; the handler is also the
+    // backstop for a caller that sends the request without the pipeline.
+    private static void EnsurePeriodLimit(
+        Dictionary<(Guid? GroupId, DateOnly PeriodStart), SummaryAccumulator> accumulators,
+        GetPnlSummaryQuery request)
+    {
+        if (request.Granularity == PnlPeriodGranularity.Total)
+        {
+            return;
+        }
+
+        if (!TryResolveGrid(request, accumulators, out DateOnly firstBucket, out DateOnly lastBucket))
+        {
+            return;
+        }
+
+        if (PnlPeriodBuckets.Count(firstBucket, lastBucket, request.Granularity) <= PnlPeriodBuckets.MaxPeriods)
+        {
+            return;
+        }
+
+        throw new ValidationException(new[]
+        {
+            new ValidationFailure(
+                nameof(GetPnlSummaryQuery.Filter),
+                $"Диапазон не может превышать {PnlPeriodBuckets.MaxPeriods} периодов выбранной гранулярности."),
+        });
+    }
+
+    // The grid is the requested range when a bound is given and the observed span otherwise: history
+    // has no known edges to extend to.
+    private static bool TryResolveGrid(
+        GetPnlSummaryQuery request,
+        Dictionary<(Guid? GroupId, DateOnly PeriodStart), SummaryAccumulator> accumulators,
+        out DateOnly firstBucket,
+        out DateOnly lastBucket)
+    {
+        if (request.Filter.From.HasValue)
+        {
+            firstBucket = PnlPeriodBuckets.StartOf(request.Filter.From.Value, request.Granularity);
+        }
+        else if (accumulators.Count > 0)
+        {
+            firstBucket = accumulators.Keys.Min(key => key.PeriodStart);
+        }
+        else
+        {
+            firstBucket = default;
+            lastBucket = default;
+            return false;
+        }
+
+        if (request.Filter.To.HasValue)
+        {
+            lastBucket = PnlPeriodBuckets.StartOf(request.Filter.To.Value, request.Granularity);
+        }
+        else if (accumulators.Count > 0)
+        {
+            lastBucket = accumulators.Keys.Max(key => key.PeriodStart);
+        }
+        else
+        {
+            lastBucket = default;
+            return false;
+        }
+
+        return true;
     }
 
     // Folds line views into the totals of one group. Every figure is accumulated
@@ -302,6 +489,26 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         /// </summary>
         public DateOnly? EarliestPeriodDate { get; private set; }
 
+        /// <summary>
+        /// Gets the latest period date folded into the group. A total-period group reports it as the
+        /// period end when the filter has no upper bound.
+        /// </summary>
+        public DateOnly? LatestPeriodDate { get; private set; }
+
+        // A period without lines: the money it would have carried is zero, not unknown, so the
+        // fields accumulate from zero. The margin stays null, as no line has a cost to derive it.
+        public static SummaryAccumulator EmptyPeriod()
+        {
+            return new SummaryAccumulator
+            {
+                _revenue = 0m,
+                _netRevenue = 0m,
+                _productionCost = 0m,
+                _estimatedTax = 0m,
+                _controlDifference = 0m,
+            };
+        }
+
         public void Add(PnlLineView view, decimal? controlDifference)
         {
             _lines++;
@@ -322,6 +529,11 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
             if (!EarliestPeriodDate.HasValue || view.PeriodDate < EarliestPeriodDate.Value)
             {
                 EarliestPeriodDate = view.PeriodDate;
+            }
+
+            if (!LatestPeriodDate.HasValue || view.PeriodDate > LatestPeriodDate.Value)
+            {
+                LatestPeriodDate = view.PeriodDate;
             }
 
             // The margin exists only for a line with a known and complete cost, so it is summed over
@@ -366,7 +578,9 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
         public PnlSummaryRowView Build(
             PnlSummaryGroupBy groupBy,
             Guid? groupId,
-            DateOnly periodStart)
+            DateOnly periodStart,
+            DateOnly periodEnd,
+            bool isPartial)
         {
             bool byChannel = groupBy == PnlSummaryGroupBy.Channel;
             bool dimensionless = groupBy == PnlSummaryGroupBy.None;
@@ -380,6 +594,8 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 ChannelId = byChannel ? groupId : null,
                 IsUnlinkedProduct = !byChannel && !dimensionless && groupId == null,
                 PeriodStart = periodStart,
+                PeriodEnd = periodEnd,
+                IsPartial = isPartial,
                 Lines = _lines,
                 RevenueAmount = _revenue,
                 NetRevenueAmount = _netRevenue,
@@ -395,7 +611,9 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 RevenueWithMarginAmount = _revenueWithMargin,
                 ProductionCostWithMarginAmount = _productionCostWithMargin,
                 RevenueWithoutCostAmount = _revenueWithoutCost,
-                IsMarginComplete = _linesWithMargin == _lines,
+                // A group with no lines at all has no margin to be complete about, so an empty
+                // period must not report itself as fully covered.
+                IsMarginComplete = _lines > 0 && _linesWithMargin == _lines,
                 ControlDifferenceAmount = _controlDifference,
                 ProvisionalRevenueAmount = _provisionalRevenue,
                 OverdueRevenueAmount = _overdueRevenue,
@@ -403,19 +621,6 @@ public sealed class GetPnlSummaryQueryHandler : IRequestHandler<GetPnlSummaryQue
                 CompletenessState = _worst,
             };
         }
-    }
-
-    private static DateOnly PeriodOf(DateOnly date, PnlPeriodGranularity granularity)
-    {
-        return granularity switch
-        {
-            // The whole range folds into one group. The start reported for it is resolved from the
-            // request, so this sentinel stays an internal keying detail.
-            PnlPeriodGranularity.Total => DateOnly.MinValue,
-            PnlPeriodGranularity.Week => date.AddDays(-(((int)date.DayOfWeek + 6) % 7)),
-            PnlPeriodGranularity.Month => new DateOnly(date.Year, date.Month, 1),
-            _ => date,
-        };
     }
 
     // The enum order is not an order of severity: a recorded exception is final, while an overdue

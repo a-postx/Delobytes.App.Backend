@@ -1,4 +1,5 @@
 ﻿using Delobytes.App.Backend.Finance.Application.Queries;
+using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -21,7 +22,12 @@ public static class ServiceCollectionExtensions
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
     public static IServiceCollection AddFinanceApi(this IServiceCollection services)
     {
+        // Without this the request validators of the module never run: the MediatR behaviour resolves
+        // them from the container and finds none.
+        services.AddValidatorsFromAssembly(typeof(GetPnlLinesQuery).Assembly);
+
         services.Configure<SwaggerGenOptions>(options =>
+
         {
             string xmlPath = Path.ChangeExtension(typeof(ServiceCollectionExtensions).Assembly.Location, ".xml");
 
