@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Finance.Application.Queries;
+using Delobytes.App.Backend.Finance.Application.Ranking;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using FluentValidation;
 using FluentValidation.Results;
@@ -35,6 +36,7 @@ public class FinancePnlController : ControllerBase
     public async Task<ActionResult<PnlLinesResponse>> GetLines(
         [FromQuery] Guid? channelId,
         [FromQuery] Guid? productId,
+        [FromQuery] Guid[]? productIds,
         [FromQuery] Guid? channelProductId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
@@ -53,6 +55,7 @@ public class FinancePnlController : ControllerBase
                 {
                     ChannelId = channelId,
                     ProductId = productId,
+                    ProductIds = productIds,
                     ChannelProductId = channelProductId,
                     From = from,
                     To = to,
@@ -77,6 +80,7 @@ public class FinancePnlController : ControllerBase
     public async Task<ActionResult<PnlSummaryResponse>> GetSummary(
         [FromQuery] Guid? channelId,
         [FromQuery] Guid? productId,
+        [FromQuery] Guid[]? productIds,
         [FromQuery] Guid? channelProductId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
@@ -128,6 +132,7 @@ public class FinancePnlController : ControllerBase
                 {
                     ChannelId = channelId,
                     ProductId = productId,
+                    ProductIds = productIds,
                     ChannelProductId = channelProductId,
                     From = from,
                     To = to,
@@ -135,6 +140,96 @@ public class FinancePnlController : ControllerBase
                 },
                 Granularity = parsedGranularity,
                 GroupBy = parsedGroupBy,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Returns the products ranked by one metric over the whole requested range. A ranking has no
+    /// period or grouping axis: one row per product, <c>rank</c> assigned from 1, and the counts of
+    /// the population the slice was taken from. A row without the ranked metric never enters the
+    /// ranking, so <c>rankedRows</c> can be smaller than <c>totalRows</c>.
+    /// </summary>
+    [HttpGet("pnl-product-ranking")]
+    [ProducesResponseType(typeof(PnlProductRankingResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PnlProductRankingResponse>> GetProductRanking(
+        [FromQuery] Guid? channelId,
+        [FromQuery] Guid? channelProductId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] string? completeness,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDir,
+        [FromQuery] int? take,
+        [FromQuery] string? coverage,
+        [FromQuery] decimal? minRevenue,
+        CancellationToken cancellationToken)
+    {
+        ValidateCompleteness(completeness);
+
+        PnlRankingSortKey parsedSortBy = PnlRankingSortKey.Margin;
+
+        if (sortBy != null
+            && (!Enum.TryParse(sortBy, ignoreCase: true, out parsedSortBy)
+                || !Enum.IsDefined(parsedSortBy)))
+        {
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure(
+                        nameof(sortBy),
+                        "Сортировка должна быть одной из: margin, roi, contributionMarginPercent, revenue, netRevenue, quantitySold, quantityOrdered."),
+                });
+        }
+
+        bool descending = true;
+
+        if (sortDir != null)
+        {
+            if (!string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ValidationException(
+                    new[]
+                    {
+                        new ValidationFailure(nameof(sortDir), "Направление сортировки должно быть asc или desc."),
+                    });
+            }
+
+            descending = !string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        PnlRankingCoverage parsedCoverage = PnlRankingCoverage.Complete;
+
+        if (coverage != null
+            && (!Enum.TryParse(coverage, ignoreCase: true, out parsedCoverage)
+                || !Enum.IsDefined(parsedCoverage)))
+        {
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure(nameof(coverage), "Покрытие должно быть одним из: any, complete."),
+                });
+        }
+
+        PnlProductRankingResponse response = await _mediator.Send(
+            new GetPnlProductRankingQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    ChannelId = channelId,
+                    ChannelProductId = channelProductId,
+                    From = from,
+                    To = to,
+                    Completeness = completeness,
+                },
+                SortBy = parsedSortBy,
+                Descending = descending,
+                Take = take ?? GetPnlProductRankingQuery.DefaultTake,
+                Coverage = parsedCoverage,
+                MinRevenue = minRevenue,
             },
             cancellationToken);
 

@@ -214,6 +214,25 @@ public class PnlReadStoreSqlTests
         sql.Should().Contain("WHERE");
     }
 
+    [Fact]
+    public void BuildLinesQuery_MultipleProductIds_FiltersInSql()
+    {
+        // The list must become one ANY(...) predicate: materialising the ids in memory would read
+        // the whole tenant.
+        using FinanceDbContext context = CreateContext();
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext());
+
+        string sql = store
+            .BuildLinesQuery(
+                "RUB",
+                new PnlLineFilter { ProductIds = new[] { Guid.NewGuid(), Guid.NewGuid() } },
+                null)
+            .ToQueryString();
+
+        sql.Should().Contain("= ANY");
+        sql.Should().Contain("\"ProductId\"");
+    }
+
     private static PnlEntry Entry(string? externalLineId, string? externalOrderId)
     {
         return new PnlEntry

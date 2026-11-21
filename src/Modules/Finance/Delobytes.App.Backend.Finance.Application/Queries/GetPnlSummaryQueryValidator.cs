@@ -32,5 +32,13 @@ public class GetPnlSummaryQueryValidator : AbstractValidator<GetPnlSummaryQuery>
             .When(query => query.Filter.From.HasValue
                 && query.Filter.To.HasValue
                 && query.Granularity != PnlPeriodGranularity.Total);
+
+        RuleFor(query => query.Filter.ProductIds)
+            .Must(ids => ids == null || ids.Length <= PnlQueryFilter.MaxProductIds)
+            .WithMessage($"За один запрос можно запросить не более {PnlQueryFilter.MaxProductIds} товаров.");
+
+        RuleFor(query => query.Filter)
+            .Must(filter => !(filter.ProductId.HasValue && filter.ProductIds is { Length: > 0 }))
+            .WithMessage("Укажите либо productId, либо productIds, но не оба параметра.");
     }
 }

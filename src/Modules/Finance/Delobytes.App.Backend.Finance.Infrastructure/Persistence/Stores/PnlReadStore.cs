@@ -382,6 +382,12 @@ public class PnlReadStore : IPnlReadStore
             query = query.Where(row => row.ProductId == productId);
         }
 
+        if (filter.ProductIds is { Count: > 0 })
+        {
+            List<Guid> productIds = filter.ProductIds.ToList();
+            query = query.Where(row => row.ProductId.HasValue && productIds.Contains(row.ProductId.Value));
+        }
+
         if (filter.ChannelProductId.HasValue)
         {
             Guid channelProductId = filter.ChannelProductId.Value;

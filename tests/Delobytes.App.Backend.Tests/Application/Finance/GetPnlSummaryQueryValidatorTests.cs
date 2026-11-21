@@ -136,6 +136,47 @@ public class GetPnlSummaryQueryValidatorTests
             .Which.PropertyName.Should().Be($"{nameof(GetPnlSummaryQuery.Filter)}.{nameof(PnlQueryFilter.To)}");
     }
 
+    [Fact]
+    public void ProductIdsAtTheCap_AreAllowed()
+    {
+        GetPnlSummaryQuery query = Query(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            PnlPeriodGranularity.Day);
+        query.Filter.ProductIds = Enumerable.Range(0, PnlQueryFilter.MaxProductIds)
+            .Select(_ => Guid.NewGuid())
+            .ToArray();
+
+        _validator.Validate(query).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ProductIdsOverTheCap_AreRejected()
+    {
+        GetPnlSummaryQuery query = Query(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            PnlPeriodGranularity.Day);
+        query.Filter.ProductIds = Enumerable.Range(0, PnlQueryFilter.MaxProductIds + 1)
+            .Select(_ => Guid.NewGuid())
+            .ToArray();
+
+        _validator.Validate(query).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ProductIdAndProductIdsTogether_AreRejected()
+    {
+        GetPnlSummaryQuery query = Query(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            PnlPeriodGranularity.Day);
+        query.Filter.ProductId = Guid.NewGuid();
+        query.Filter.ProductIds = new[] { Guid.NewGuid() };
+
+        _validator.Validate(query).IsValid.Should().BeFalse();
+    }
+
     private static GetPnlSummaryQuery Query(
         DateOnly from,
         DateOnly to,

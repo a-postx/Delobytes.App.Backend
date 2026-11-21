@@ -799,6 +799,51 @@ public class PnlReadStoreTests
         PnlReadStore.ParseCursor("  ").Should().BeNull();
     }
 
+    [Fact]
+    public async Task GetLinesAsync_FiltersByMultipleProductIds()
+    {
+        // Arrange: three lines of three products; the filter keeps the first and the third.
+        string database = NewDatabaseName();
+        Guid firstLine = Guid.Parse("00000011-0000-0000-0000-000000000011");
+        Guid secondLine = Guid.Parse("00000012-0000-0000-0000-000000000012");
+        Guid thirdLine = Guid.Parse("00000013-0000-0000-0000-000000000013");
+        Guid firstProduct = Guid.Parse("00000021-0000-0000-0000-000000000021");
+        Guid secondProduct = Guid.Parse("00000022-0000-0000-0000-000000000022");
+        Guid thirdProduct = Guid.Parse("00000023-0000-0000-0000-000000000023");
+
+        using (FinanceDbContext seed = CreateContext(database, TenantId))
+        {
+            seed.PnlLines.AddRange(
+                Line(Guid.NewGuid(), firstLine, "RUB", Day1),
+                Line(Guid.NewGuid(), secondLine, "RUB", Day1),
+                Line(Guid.NewGuid(), thirdLine, "RUB", Day1));
+            seed.OrderLineRefs.AddRange(
+                Reference(firstLine, ChannelId),
+                Reference(secondLine, ChannelId),
+                Reference(thirdLine, ChannelId));
+            seed.OrderLineCosts.AddRange(
+                Cost(firstLine, firstProduct),
+                Cost(secondLine, secondProduct),
+                Cost(thirdLine, thirdProduct));
+
+            await seed.SaveChangesAsync();
+        }
+
+        using FinanceDbContext context = CreateContext(database, TenantId);
+        PnlReadStore store = new PnlReadStore(context, CreateTenantContext(TenantId));
+
+        // Act
+        PnlLinePage page = await store.GetLinesAsync(
+            "RUB",
+            new PnlLineFilter { ProductIds = new[] { firstProduct, thirdProduct } },
+            100,
+            null,
+            CancellationToken.None);
+
+        // Assert
+        page.Rows.Select(row => row.ProductId).Should().BeEquivalentTo(new[] { firstProduct, thirdProduct });
+    }
+
     private static async Task<Guid[]> SeedLinesAsync(string database)
     {
         Guid firstOrderLine = Guid.Parse("00000001-0000-0000-0000-000000000001");

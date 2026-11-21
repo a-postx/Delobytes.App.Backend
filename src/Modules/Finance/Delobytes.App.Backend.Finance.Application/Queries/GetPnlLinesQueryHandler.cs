@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Contracts.Lookup;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
+using Delobytes.App.Backend.Finance.Application.Labeling;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using MediatR;
 
@@ -64,6 +65,7 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
         {
             ChannelId = request.Filter.ChannelId,
             ProductId = request.Filter.ProductId,
+            ProductIds = request.Filter.ProductIds,
             ChannelProductId = request.Filter.ChannelProductId,
             From = request.Filter.From,
             To = request.Filter.To,
@@ -86,7 +88,7 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             _settingsProvider,
             cancellationToken);
 
-        await EnrichSkusAsync(views, cancellationToken);
+        await PnlSkuLabeler.ApplyAsync(_skuLookup, views, cancellationToken);
 
         return new PnlLinesResponse
         {
@@ -95,31 +97,5 @@ public sealed class GetPnlLinesQueryHandler : IRequestHandler<GetPnlLinesQuery, 
             Currency = settings.Currency,
             ExcludedByCurrency = page.ExcludedByCurrency,
         };
-    }
-
-    // One lookup per page: identifiers are deduplicated, so two lines of the same product cost one
-    // entry. A page with no product link skips the call entirely.
-    private async Task EnrichSkusAsync(List<PnlLineView> views, CancellationToken cancellationToken)
-    {
-        Guid[] productIds = views
-            .Where(view => view.ProductId.HasValue)
-            .Select(view => view.ProductId!.Value)
-            .Distinct()
-            .ToArray();
-
-        if (productIds.Length == 0)
-        {
-            return;
-        }
-
-        IReadOnlyDictionary<Guid, string> skus = await _skuLookup.GetSkusAsync(productIds, cancellationToken);
-
-        foreach (PnlLineView view in views)
-        {
-            if (view.ProductId.HasValue && skus.TryGetValue(view.ProductId.Value, out string sku))
-            {
-                view.Sku = sku;
-            }
-        }
     }
 }

@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Queries;
+using Delobytes.App.Backend.Finance.Application.Ranking;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Enums;
 using FluentAssertions;
@@ -1691,6 +1692,224 @@ public class PnlQueryHandlerTests
         lookup.Verify(
             l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProductRanking_ReturnsTopRowWithRankAndLabelsOnlyThatProduct()
+    {
+        // Arrange: two products, the second earns more margin, so a slice of one must hold it.
+        Guid topId = Guid.NewGuid();
+        Guid lowId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, lowId),
+            Row(new DateOnly(2026, 8, 1), 300m, 270m, 30m, topId),
+        };
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [topId] = "SKU-TOP" });
+
+        GetPnlProductRankingQueryHandler handler = new GetPnlProductRankingQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlProductRankingResponse response = await handler.Handle(
+            new GetPnlProductRankingQuery { Take = 1, Coverage = PnlRankingCoverage.Any },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().ContainSingle();
+        response.Rows[0].ProductId.Should().Be(topId);
+        response.Rows[0].Sku.Should().Be("SKU-TOP");
+        response.Rows[0].Rank.Should().Be(1);
+        response.RankedRows.Should().Be(2);
+        response.TotalRows.Should().Be(2);
+        response.Take.Should().Be(1);
+        lookup.Verify(
+            l => l.GetSkusAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(topId)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetProductRanking_RowWithoutMargin_IsNotRanked()
+    {
+        // Arrange: the line without a cost fact has no margin, so it cannot take a place. Distinct
+        // product identifiers keep the two lines in separate groups; an unlinked pair would fold
+        // into one "no product" group.
+        Guid knownId = Guid.NewGuid();
+        Guid unknownId = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, knownId),
+            Row(new DateOnly(2026, 8, 1), 1000m, 900m, cost: null, productId: unknownId),
+        };
+
+        GetPnlProductRankingQueryHandler handler = new GetPnlProductRankingQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        PnlProductRankingResponse response = await handler.Handle(
+            new GetPnlProductRankingQuery { Take = 10, Coverage = PnlRankingCoverage.Any },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().ContainSingle().Which.Margin.Should().Be(80m);
+        response.RankedRows.Should().Be(1);
+        response.TotalRows.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetSummary_MultipleProductIds_ArePassedToTheStore()
+    {
+        // Arrange
+        Guid first = Guid.NewGuid();
+        Guid second = Guid.NewGuid();
+        FakeStore store = new FakeStore(new PnlLinePage(), new List<PnlLineRow>());
+
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        await handler.Handle(
+            new GetPnlSummaryQuery
+            {
+                Filter = new PnlQueryFilter { ProductIds = new[] { first, second } },
+                Granularity = PnlPeriodGranularity.Total,
+            },
+            CancellationToken.None);
+
+        // Assert
+        store.LastFilter.Should().NotBeNull();
+        store.LastFilter!.ProductIds.Should().BeEquivalentTo(new[] { first, second });
+    }
+
+    [Fact]
+    public async Task GetLines_MultipleProductIds_ArePassedToTheStore()
+    {
+        // Arrange
+        Guid first = Guid.NewGuid();
+        Guid second = Guid.NewGuid();
+        FakeStore store = new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow>() });
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        await handler.Handle(
+            new GetPnlLinesQuery
+            {
+                Filter = new PnlQueryFilter { ProductIds = new[] { first, second } },
+            },
+            CancellationToken.None);
+
+        // Assert
+        store.LastFilter.Should().NotBeNull();
+        store.LastFilter!.ProductIds.Should().BeEquivalentTo(new[] { first, second });
+    }
+
+    [Fact]
+    public async Task GetSummary_OverTheResponseBudget_IsRejectedBeforeTheWholeFold()
+    {
+        // Arrange: one product group per row, far above the response budget. The handler must stop
+        // as soon as the budget is exceeded instead of folding the whole history.
+        List<PnlLineRow> rows = new();
+
+        for (int index = 0; index < 20_000; index++)
+        {
+            rows.Add(Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()));
+        }
+
+        FakeStore store = new FakeStore(new PnlLinePage(), rows);
+        GetPnlSummaryQueryHandler handler = new GetPnlSummaryQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        Func<Task> act = () => handler.Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                GroupBy = PnlSummaryGroupBy.Product,
+            },
+            CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .WithMessage($"*{GetPnlSummaryQueryHandler.MaxResponseRows}*");
+
+        store.PulledRows.Should().Be(GetPnlSummaryQueryHandler.MaxResponseRows + 1);
+    }
+
+    [Fact]
+    public async Task GetSummary_AtTheResponseBudget_IsAllowed()
+    {
+        // Arrange: exactly the budget is still a valid, readable report.
+        List<PnlLineRow> rows = new();
+
+        for (int index = 0; index < GetPnlSummaryQueryHandler.MaxResponseRows; index++)
+        {
+            rows.Add(Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()));
+        }
+
+        // Act
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery
+            {
+                Granularity = PnlPeriodGranularity.Total,
+                GroupBy = PnlSummaryGroupBy.Product,
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().HaveCount(GetPnlSummaryQueryHandler.MaxResponseRows);
+    }
+
+    [Fact]
+    public async Task GetProductRanking_ManyGroups_IsNotLimitedByTheSummaryResponseBudget()
+    {
+        // Arrange: the ranking shares the fold but returns only its top slice, so the summary's
+        // response budget must not reject it.
+        List<PnlLineRow> rows = new();
+
+        for (int index = 0; index <= GetPnlSummaryQueryHandler.MaxResponseRows; index++)
+        {
+            rows.Add(Row(new DateOnly(2026, 8, 1), 100m, 90m, 10m, Guid.NewGuid()));
+        }
+
+        GetPnlProductRankingQueryHandler handler = new GetPnlProductRankingQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        PnlProductRankingResponse response = await handler.Handle(
+            new GetPnlProductRankingQuery { Take = 50, Coverage = PnlRankingCoverage.Any },
+            CancellationToken.None);
+
+        // Assert
+        response.Rows.Should().HaveCount(50);
+        response.TotalRows.Should().Be(GetPnlSummaryQueryHandler.MaxResponseRows + 1);
     }
 
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)

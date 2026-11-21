@@ -14,6 +14,12 @@ public sealed class PnlLineFilter
     public Guid? ProductId { get; set; }
 
     /// <summary>
+    /// Gets or sets the optional multi-product filter. Null or empty means no restriction; the
+    /// single <see cref="ProductId"/> stays the shortcut for one product.
+    /// </summary>
+    public IReadOnlyList<Guid>? ProductIds { get; set; }
+
+    /// <summary>
     /// Gets or sets the optional channel product filter. It matches the link Sales captured, so a
     /// sale whose catalogue product is not resolved yet can still be read.
     /// </summary>

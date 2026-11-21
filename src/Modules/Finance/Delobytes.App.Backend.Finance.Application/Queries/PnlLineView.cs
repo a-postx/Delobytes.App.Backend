@@ -1,7 +1,9 @@
+using Delobytes.App.Backend.Finance.Application.ReadModels;
+
 namespace Delobytes.App.Backend.Finance.Application.Queries;
 
 /// <summary>One P&amp;L line returned by the read model.</summary>
-public sealed class PnlLineView
+public sealed class PnlLineView : IPnlSkuLabelTarget
 {
     public Guid OrderLineId { get; set; }
 
