@@ -22,6 +22,9 @@ public sealed class FinanceMappingDiagnostics
     /// <summary>Gets or sets reversals recognised in the document.</summary>
     public int Reversals { get; set; }
 
+    /// <summary>Gets or sets buyer returns recognised in the document.</summary>
+    public int Returns { get; set; }
+
     /// <summary>Gets or sets accruals where the sale amount identity did not hold.</summary>
     public int SaleAmountMismatches { get; set; }
 
@@ -52,6 +55,7 @@ public sealed class FinanceMappingDiagnostics
         RowsWithoutRrDate += other.RowsWithoutRrDate;
         AccrualsWithoutControlTotal += other.AccrualsWithoutControlTotal;
         Reversals += other.Reversals;
+        Returns += other.Returns;
         SaleAmountMismatches += other.SaleAmountMismatches;
         CommissionFallbacks += other.CommissionFallbacks;
         SplitFallbacks += other.SplitFallbacks;

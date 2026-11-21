@@ -12,6 +12,7 @@ namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Wildberri
 internal static class WildberriesFinanceMapper
 {
     private const string SaleOperation = "Продажа";
+    private const string ReturnOperation = "Возврат";
     private const string LogisticsOperation = "Логистика";
     private const decimal ControlTolerance = 0.01m;
 
@@ -58,7 +59,11 @@ internal static class WildberriesFinanceMapper
 
         foreach (WildberriesFinanceReportRow row in rows)
         {
-            if (!string.Equals(row.SellerOperName, SaleOperation, StringComparison.Ordinal)
+            bool isSale = string.Equals(row.SellerOperName, SaleOperation, StringComparison.Ordinal);
+            bool isReturn = string.Equals(row.SellerOperName, ReturnOperation, StringComparison.Ordinal);
+
+            if (!isSale
+                && !isReturn
                 && !string.Equals(row.SellerOperName, LogisticsOperation, StringComparison.Ordinal))
             {
                 diagnostics.SkippedOperations++;
@@ -87,13 +92,24 @@ internal static class WildberriesFinanceMapper
             string externalProductId = row.NmId.ToString(CultureInfo.InvariantCulture);
             string externalEntryId = row.RrdId.ToString(CultureInfo.InvariantCulture);
 
-            if (string.Equals(row.SellerOperName, SaleOperation, StringComparison.Ordinal))
+            if (isSale || isReturn)
             {
                 decimal retail = row.RetailAmount ?? 0m;
 
-                if (retail < 0m)
+                // A return repeats the sale it reverses: the buyer's payment and the marketplace
+                // discount go back to the buyer, the commission and the acquiring fee go back to the
+                // seller. The report states the amounts of a return as positive, so the operation
+                // name, not the sign, is what says which way the money moves.
+                bool reversal = isReturn || retail < 0m;
+
+                if (reversal)
                 {
                     diagnostics.Reversals++;
+                }
+
+                if (isReturn)
+                {
+                    diagnostics.Returns++;
                 }
 
                 // The report separates the buyer's payment from the seller's price, and the gap is
@@ -104,7 +120,7 @@ internal static class WildberriesFinanceMapper
                 // revenue and hides the commission inside an income adjustment.
                 SaleSplit split = default;
 
-                if (retail != 0m && TryMapSellerPriceSplit(row, retail, out split))
+                if (retail != 0m && TryMapSellerPriceSplit(row, retail, reversal, out split))
                 {
                     Emit(
                         entries,
@@ -119,7 +135,7 @@ internal static class WildberriesFinanceMapper
                         FinanceEntryKind.Component,
                         FinanceEntryType.Sale,
                         split.BuyerPaid,
-                        split.Reversal ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                        reversal ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
 
                     if (split.Compensation != 0m)
                     {
@@ -136,7 +152,7 @@ internal static class WildberriesFinanceMapper
                             FinanceEntryKind.Component,
                             FinanceEntryType.Compensation,
                             split.Compensation,
-                            split.Reversal ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                            reversal ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
                     }
 
                     if (split.Commission != 0m)
@@ -154,7 +170,7 @@ internal static class WildberriesFinanceMapper
                             FinanceEntryKind.Component,
                             FinanceEntryType.Commission,
                             split.Commission,
-                            split.Reversal ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                            reversal ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
                     }
 
                     if (split.Acquiring != 0m)
@@ -172,11 +188,14 @@ internal static class WildberriesFinanceMapper
                             FinanceEntryKind.Component,
                             FinanceEntryType.Acquiring,
                             split.Acquiring,
-                            split.Reversal ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                            reversal ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
                     }
                 }
                 else
                 {
+                    // A negative sale row reverses the sale but keeps the fee amounts as charges, so
+                    // its components follow their own sign. A return row reports the same fee as
+                    // money coming back, so only there is the direction inverted.
                     if (retail != 0m)
                     {
                         diagnostics.SplitFallbacks++;
@@ -194,7 +213,9 @@ internal static class WildberriesFinanceMapper
                             FinanceEntryKind.Component,
                             FinanceEntryType.Sale,
                             retail,
-                            retail >= 0m ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                            (retail >= 0m) != isReturn
+                                ? FinanceEntryDirection.Income
+                                : FinanceEntryDirection.Expense);
                     }
 
                     decimal acquiring = row.AcquiringFee ?? 0m;
@@ -214,7 +235,9 @@ internal static class WildberriesFinanceMapper
                             FinanceEntryKind.Component,
                             FinanceEntryType.Acquiring,
                             acquiring,
-                            acquiring >= 0m ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                            (acquiring >= 0m) != isReturn
+                                ? FinanceEntryDirection.Expense
+                                : FinanceEntryDirection.Income);
                     }
 
                     // Fallback: the commission is the signed composite of vw, its VAT and the reward.
@@ -238,7 +261,9 @@ internal static class WildberriesFinanceMapper
                             FinanceEntryKind.Component,
                             FinanceEntryType.Commission,
                             commission,
-                            commission >= 0m ? FinanceEntryDirection.Expense : FinanceEntryDirection.Income);
+                            (commission >= 0m) != isReturn
+                                ? FinanceEntryDirection.Expense
+                                : FinanceEntryDirection.Income);
                     }
                 }
 
@@ -259,7 +284,9 @@ internal static class WildberriesFinanceMapper
                         FinanceEntryKind.ControlTotal,
                         FinanceEntryType.Payout,
                         forPay,
-                        forPay >= 0m ? FinanceEntryDirection.Income : FinanceEntryDirection.Expense);
+                        (forPay >= 0m) != isReturn
+                            ? FinanceEntryDirection.Income
+                            : FinanceEntryDirection.Expense);
                 }
 
                 continue;
@@ -400,18 +427,23 @@ internal static class WildberriesFinanceMapper
     }
 
     /// <summary>
-    /// Splits a sale row into the seller's own components: what the buyer paid, the discount the
-    /// marketplace financed, the commission charged on the seller's price and the acquiring fee.
+    /// Splits a sale or a return row into the seller's own components: what the buyer paid, the
+    /// discount the marketplace financed, the commission charged on the seller's price and the
+    /// acquiring fee. A return reports the same figures as the sale it reverses, so only the caller
+    /// knows which way they move.
     /// </summary>
     /// <remarks>
     /// The split is taken only when it reproduces the channel's own payout to the kopeck. Both the
     /// rate and the discount are read from the row, so a row that does not add up — a changed tariff
     /// shape, an operation the report prices differently — is left to the reported composite instead
-    /// of replacing revenue with an unverifiable figure.
+    /// of replacing revenue with an unverifiable figure. Only the magnitude of the payout is
+    /// comparable: the report signs a return as a positive amount of money taken back, so its sign
+    /// does not say whether the row adds to or subtracts from the seller's result.
     /// </remarks>
     private static bool TryMapSellerPriceSplit(
         WildberriesFinanceReportRow row,
         decimal retailAmount,
+        bool reversal,
         out SaleSplit split)
     {
         split = default;
@@ -429,7 +461,6 @@ internal static class WildberriesFinanceMapper
             return false;
         }
 
-        bool reversal = retailAmount < 0m;
         decimal compensation = sellerPrice - buyerPaid;
         decimal commission = decimal.Round(
             sellerPrice * commissionPercent / 100m,
@@ -437,15 +468,14 @@ internal static class WildberriesFinanceMapper
             MidpointRounding.AwayFromZero);
         decimal acquiring = Math.Abs(row.AcquiringFee ?? 0m);
 
-        decimal sign = reversal ? -1m : 1m;
-        decimal derived = sign * (buyerPaid + compensation - commission - acquiring);
+        decimal derived = buyerPaid + compensation - commission - acquiring;
 
-        if (Math.Abs(derived - (row.ForPay ?? 0m)) > ControlTolerance)
+        if (Math.Abs(derived - Math.Abs(row.ForPay ?? 0m)) > ControlTolerance)
         {
             return false;
         }
 
-        split = new SaleSplit(buyerPaid, compensation, commission, acquiring, reversal);
+        split = new SaleSplit(buyerPaid, compensation, commission, acquiring);
 
         return true;
     }
@@ -454,8 +484,7 @@ internal static class WildberriesFinanceMapper
         decimal BuyerPaid,
         decimal Compensation,
         decimal Commission,
-        decimal Acquiring,
-        bool Reversal);
+        decimal Acquiring);
 }
 
 /// <summary>

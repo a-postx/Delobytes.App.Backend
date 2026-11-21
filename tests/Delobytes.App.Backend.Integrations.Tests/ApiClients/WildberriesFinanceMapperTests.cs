@@ -196,6 +196,78 @@ public class WildberriesFinanceMapperTests
     }
 
     [Fact]
+    public void Map_ReturnRow_MirrorsTheSaleItReverses()
+    {
+        string json = """
+        [
+          {
+            "reportId": 806538296, "dateFrom": "2026-08-03", "dateTo": "2026-08-09",
+            "createDate": "2026-08-10", "currency": "RUB", "rrdId": 3132248693513,
+            "nmId": 1119407553, "srid": "eBC.ra85fcc0ac12b4a539a118c6706c410f7.0.0",
+            "sellerOperName": "Возврат", "saleDt": "2026-08-08T14:58:52Z", "rrDate": "2026-08-08",
+            "retailAmount": "481", "retailPriceWithDisc": "602", "commissionPercent": 38.5,
+            "acquiringFee": "19.24", "vw": "80.8729508196721311", "vwNds": "17.79",
+            "ppvzReward": "12.105", "forPay": "350.99", "deliveryService": "0"
+          }
+        ]
+        """;
+
+        WildberriesFinanceMappingResult result = Map(json);
+
+        result.Diagnostics.SkippedOperations.Should().Be(0);
+        result.Diagnostics.Returns.Should().Be(1);
+        result.Diagnostics.Reversals.Should().Be(1);
+        result.Diagnostics.SplitFallbacks.Should().Be(0);
+
+        // The buyer paid 481 of the seller's price 602 and Wildberries financed the 121 difference;
+        // the commission is 38.5 % of 602. The return takes that payout back: 481 + 121 - 231.77 -
+        // 19.24 = 350.99, the same figure the row reports as forPay, so every component flips.
+        AssertEntry(result, "3132248693513", FinanceEntryKind.Component, FinanceEntryType.Sale, 481m, FinanceEntryDirection.Expense);
+        AssertEntry(result, "3132248693513", FinanceEntryKind.Component, FinanceEntryType.Compensation, 121m, FinanceEntryDirection.Expense);
+        AssertEntry(result, "3132248693513", FinanceEntryKind.Component, FinanceEntryType.Commission, 231.77m, FinanceEntryDirection.Income);
+        AssertEntry(result, "3132248693513", FinanceEntryKind.Component, FinanceEntryType.Acquiring, 19.24m, FinanceEntryDirection.Income);
+        AssertEntry(result, "3132248693513", FinanceEntryKind.ControlTotal, FinanceEntryType.Payout, 350.99m, FinanceEntryDirection.Expense);
+
+        decimal netRevenue = result.Entries
+            .Where(e => e.Kind == FinanceEntryKind.Component)
+            .Sum(e => e.Direction == FinanceEntryDirection.Income ? e.Amount : -e.Amount);
+
+        decimal controlTotal = result.Entries
+            .Where(e => e.Kind == FinanceEntryKind.ControlTotal)
+            .Sum(e => e.Direction == FinanceEntryDirection.Income ? e.Amount : -e.Amount);
+
+        netRevenue.Should().Be(-350.99m);
+        controlTotal.Should().Be(-350.99m);
+    }
+
+    [Fact]
+    public void Map_ReturnWithoutCommissionRate_KeepsTheReportedCompositeAndFlipsItsDirection()
+    {
+        string json = """
+        [
+          {
+            "reportId": 1, "createDate": "2026-08-10", "dateFrom": "2026-08-03", "dateTo": "2026-08-09",
+            "currency": "RUB", "rrdId": 15, "nmId": 5, "srid": "srid-1", "sellerOperName": "Возврат",
+            "rrDate": "2026-08-08", "retailAmount": "204", "retailPriceWithDisc": "340",
+            "acquiringFee": "8.16", "vw": "21.0991803278688525", "vwNds": "4.64",
+            "ppvzReward": "-7.041", "forPay": "214.54", "deliveryService": "0"
+          }
+        ]
+        """;
+
+        WildberriesFinanceMappingResult result = Map(json);
+
+        result.Diagnostics.Returns.Should().Be(1);
+        result.Diagnostics.SplitFallbacks.Should().Be(1);
+
+        AssertEntry(result, "15", FinanceEntryKind.Component, FinanceEntryType.Sale, 204m, FinanceEntryDirection.Expense);
+        AssertEntry(result, "15", FinanceEntryKind.Component, FinanceEntryType.Acquiring, 8.16m, FinanceEntryDirection.Income);
+        AssertEntry(result, "15", FinanceEntryKind.Component, FinanceEntryType.Commission, 18.6981803278688525m, FinanceEntryDirection.Income);
+        AssertEntry(result, "15", FinanceEntryKind.ControlTotal, FinanceEntryType.Payout, 214.54m, FinanceEntryDirection.Expense);
+        result.Entries.Should().NotContain(e => e.Type == FinanceEntryType.Compensation);
+    }
+
+    [Fact]
     public void Map_RrDateWinsEvenWhenSaleDateFallsOnAnotherCalendarDay()
     {
         string json = """
