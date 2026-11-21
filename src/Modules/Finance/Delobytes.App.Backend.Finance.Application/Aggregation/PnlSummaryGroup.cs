@@ -12,6 +12,11 @@ namespace Delobytes.App.Backend.Finance.Application.Aggregation;
 public sealed class PnlSummaryGroup
 {
     private decimal? _revenue;
+    private decimal? _commission;
+    private decimal? _acquiring;
+    private decimal? _deliveryFee;
+    private decimal? _refund;
+    private decimal? _compensation;
     private decimal? _netRevenue;
     private decimal? _productionCost;
     private decimal? _estimatedTax;
@@ -76,6 +81,11 @@ public sealed class PnlSummaryGroup
         return new PnlSummaryGroup(groupId, periodStart)
         {
             _revenue = 0m,
+            _commission = 0m,
+            _acquiring = 0m,
+            _deliveryFee = 0m,
+            _refund = 0m,
+            _compensation = 0m,
             _netRevenue = 0m,
             _productionCost = 0m,
             _estimatedTax = 0m,
@@ -91,6 +101,17 @@ public sealed class PnlSummaryGroup
         _lines++;
 
         _revenue = Accumulate(_revenue, view.RevenueAmount);
+
+        // The deduction components are summed over every line of the group, like the revenue they
+        // split it into: a component no line reported stays unknown instead of becoming zero, and
+        // the identity revenue + components = net revenue holds for the group because a missing
+        // component contributes nothing to either side.
+        _commission = Accumulate(_commission, view.CommissionAmount);
+        _acquiring = Accumulate(_acquiring, view.AcquiringAmount);
+        _deliveryFee = Accumulate(_deliveryFee, view.DeliveryFeeAmount);
+        _refund = Accumulate(_refund, view.RefundAmount);
+        _compensation = Accumulate(_compensation, view.CompensationAmount);
+
         _netRevenue = Accumulate(_netRevenue, view.NetRevenueAmount);
         _productionCost = Accumulate(_productionCost, view.ProductionCostAmount);
         _estimatedTax = Accumulate(_estimatedTax, view.EstimatedTax);
@@ -207,6 +228,11 @@ public sealed class PnlSummaryGroup
             IsPartial = isPartial,
             Lines = _lines,
             RevenueAmount = _revenue,
+            CommissionAmount = _commission,
+            AcquiringAmount = _acquiring,
+            DeliveryFeeAmount = _deliveryFee,
+            RefundAmount = _refund,
+            CompensationAmount = _compensation,
             NetRevenueAmount = _netRevenue,
             ProductionCostAmount = _productionCost,
             EstimatedTax = _estimatedTax,

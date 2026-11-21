@@ -35,8 +35,40 @@ public sealed class PnlLineView : IPnlSkuLabelTarget
 
     public decimal? RevenueAmount { get; set; }
 
+    /// <summary>
+    /// Gets or sets the signed commission the channel withheld: negative when money left the seller.
+    /// Null when no commission entry arrived at all, which is not the same as a reported zero.
+    /// </summary>
+    public decimal? CommissionAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed acquiring fee: negative when money left the seller. Null when the
+    /// channel reported none.
+    /// </summary>
+    public decimal? AcquiringAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed delivery and logistics charge: negative when money left the seller.
+    /// Null when the channel reported none.
+    /// </summary>
+    public decimal? DeliveryFeeAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed refund of a returned unit: negative when money left the seller. It is
+    /// a separate line of the breakdown and is already part of <see cref="NetRevenueAmount"/>.
+    /// </summary>
+    public decimal? RefundAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed marketplace-funded discount compensation: income, so positive when
+    /// the channel paid the seller back. Null when no compensation entry arrived.
+    /// </summary>
     public decimal? CompensationAmount { get; set; }
 
+    /// <summary>
+    /// Gets or sets the money the sale left before cost of goods: the sale plus every deduction of
+    /// the breakdown. The components always add up to it.
+    /// </summary>
     public decimal? NetRevenueAmount { get; set; }
 
     public decimal? ProductionCostAmount { get; set; }
@@ -45,6 +77,11 @@ public sealed class PnlLineView : IPnlSkuLabelTarget
 
     public decimal? EstimatedTax { get; set; }
 
+    /// <summary>
+    /// Gets or sets the channel fee with a positive sign: the commission, the acquiring fee and the
+    /// delivery charge together. It is a convenience total for the older callers; the breakdown is
+    /// reported by the signed component amounts, which are the source of truth.
+    /// </summary>
     public decimal? MarketplaceFee { get; set; }
 
     /// <summary>

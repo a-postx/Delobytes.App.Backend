@@ -51,6 +51,39 @@ public sealed class PnlSummaryRowView : IPnlSkuLabelTarget
 
     public decimal? RevenueAmount { get; set; }
 
+    /// <summary>
+    /// Gets or sets the signed commission the channel withheld over the lines of the group: negative
+    /// when money left the seller. Null when no line of the group reported one.
+    /// </summary>
+    public decimal? CommissionAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed acquiring fee of the group. Null when no line reported one.
+    /// </summary>
+    public decimal? AcquiringAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed delivery and logistics charge of the group. Null when no line
+    /// reported one.
+    /// </summary>
+    public decimal? DeliveryFeeAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed refunds of the group: negative when money left the seller. Null when
+    /// no line reported one.
+    /// </summary>
+    public decimal? RefundAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signed marketplace-funded discount compensation of the group: income, so
+    /// positive when the channel paid the seller back. Null when no line reported one.
+    /// </summary>
+    public decimal? CompensationAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the money the sales of the group left before cost of goods, on the same basis as
+    /// <see cref="RevenueAmount"/>: the revenue plus every component of the deduction breakdown.
+    /// </summary>
     public decimal? NetRevenueAmount { get; set; }
 
     public decimal? ProductionCostAmount { get; set; }

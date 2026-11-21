@@ -1387,6 +1387,7 @@ public class PnlQueryHandlerTests
         september.Lines.Should().Be(0);
         september.RevenueAmount.Should().Be(0m);
         september.NetRevenueAmount.Should().Be(0m);
+        september.CommissionAmount.Should().Be(0m);
         september.ProductionCostAmount.Should().Be(0m);
         september.Margin.Should().BeNull();
         september.ContributionMarginPercent.Should().BeNull();
@@ -1968,6 +1969,131 @@ public class PnlQueryHandlerTests
         response.TotalRows.Should().Be(GetPnlSummaryQueryHandler.MaxResponseRows + 1);
     }
 
+    [Fact]
+    public async Task GetLines_ExposesTheSignedDeductionBreakdown()
+    {
+        // The components keep their journal sign, so a fee is negative, and the sale plus every
+        // component is the net revenue the line already carries. A line that reported nothing keeps
+        // nulls: an unreported component is not a zero.
+        PnlLineRow withDeductions = Row(
+            new DateOnly(2026, 8, 1),
+            revenue: 1000m,
+            netRevenue: 639m,
+            cost: 300m,
+            commission: -250m,
+            acquiring: -20m,
+            deliveryFee: -30m,
+            refund: -61m,
+            compensation: 0m);
+
+        PnlLineRow withoutDeductions = Row(new DateOnly(2026, 8, 2), revenue: 500m, netRevenue: 500m, cost: 200m);
+
+        GetPnlLinesQueryHandler handler = new GetPnlLinesQueryHandler(
+            new FakeStore(new PnlLinePage { Rows = new List<PnlLineRow> { withDeductions, withoutDeductions } }),
+            BuildTenantContext(),
+            BuildProvider().Object, BuildLookup().Object);
+
+        PnlLinesResponse response = await handler.Handle(new GetPnlLinesQuery(), CancellationToken.None);
+
+        PnlLineView line = response.Lines[0];
+
+        line.CommissionAmount.Should().Be(-250m);
+        line.AcquiringAmount.Should().Be(-20m);
+        line.DeliveryFeeAmount.Should().Be(-30m);
+        line.RefundAmount.Should().Be(-61m);
+        line.CompensationAmount.Should().Be(0m);
+        line.NetRevenueAmount.Should().Be(639m);
+
+        (line.RevenueAmount!.Value
+            + line.CommissionAmount!.Value
+            + line.AcquiringAmount!.Value
+            + line.DeliveryFeeAmount!.Value
+            + line.RefundAmount!.Value
+            + line.CompensationAmount!.Value)
+            .Should().Be(line.NetRevenueAmount!.Value);
+
+        PnlLineView bare = response.Lines[1];
+
+        bare.CommissionAmount.Should().BeNull();
+        bare.AcquiringAmount.Should().BeNull();
+        bare.DeliveryFeeAmount.Should().BeNull();
+        bare.RefundAmount.Should().BeNull();
+        bare.CompensationAmount.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetSummary_SumsTheDeductionBreakdownAndReconcilesWithNetRevenue()
+    {
+        // The breakdown is a column of the group, not a copy of one line: each component is summed
+        // over the whole group, and the group still reconciles revenue + components = net revenue.
+        List<PnlLineRow> rows = new()
+        {
+            Row(
+                new DateOnly(2026, 8, 1),
+                revenue: 1000m,
+                netRevenue: 700m,
+                cost: 300m,
+                commission: -250m,
+                acquiring: -20m,
+                deliveryFee: -30m,
+                refund: 0m,
+                compensation: 0m),
+            Row(
+                new DateOnly(2026, 8, 2),
+                revenue: 500m,
+                netRevenue: 400m,
+                cost: 100m,
+                commission: -80m,
+                deliveryFee: -20m),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.RevenueAmount.Should().Be(1500m);
+        row.CommissionAmount.Should().Be(-330m);
+        row.AcquiringAmount.Should().Be(-20m);
+        row.DeliveryFeeAmount.Should().Be(-50m);
+        row.RefundAmount.Should().Be(0m);
+        row.CompensationAmount.Should().Be(0m);
+        row.NetRevenueAmount.Should().Be(1100m);
+
+        (row.RevenueAmount!.Value
+            + row.CommissionAmount!.Value
+            + row.AcquiringAmount!.Value
+            + row.DeliveryFeeAmount!.Value
+            + row.RefundAmount!.Value
+            + row.CompensationAmount!.Value)
+            .Should().Be(row.NetRevenueAmount!.Value);
+    }
+
+    [Fact]
+    public async Task GetSummary_ComponentNoLineReported_StaysUnknown()
+    {
+        // A channel that never charges acquiring is different from one that reported a zero fee, so
+        // a component absent from every line of the group must not read as a zero deduction.
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), revenue: 1000m, netRevenue: 700m, cost: 300m, commission: -300m),
+            Row(new DateOnly(2026, 8, 2), revenue: 1000m, netRevenue: 800m, cost: 200m, commission: -200m),
+        };
+
+        PnlSummaryResponse response = await BuildSummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.CommissionAmount.Should().Be(-500m);
+        row.AcquiringAmount.Should().BeNull();
+        row.DeliveryFeeAmount.Should().BeNull();
+        row.RefundAmount.Should().BeNull();
+        row.CompensationAmount.Should().BeNull();
+    }
+
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
     {
         return new GetPnlSummaryQueryHandler(
@@ -1990,7 +2116,12 @@ public class PnlQueryHandlerTests
         int returnedQuantity = 0,
         decimal? unitCost = null,
         decimal? costTotal = null,
-        int? costQuantity = null)
+        int? costQuantity = null,
+        decimal? commission = null,
+        decimal? acquiring = null,
+        decimal? deliveryFee = null,
+        decimal? refund = null,
+        decimal? compensation = null)
     {
         // The line stores only the cost of the units that stayed sold, so the unit cost is derived
         // from that population unless the caller spells the cost fact out. A caller that passes a
@@ -2017,6 +2148,11 @@ public class PnlQueryHandlerTests
             Quantity = quantity,
             ReturnedQuantity = returnedQuantity,
             RevenueAmount = revenue,
+            CommissionAmount = commission,
+            AcquiringAmount = acquiring,
+            DeliveryFeeAmount = deliveryFee,
+            RefundAmount = refund,
+            CompensationAmount = compensation,
             NetRevenueAmount = netRevenue,
             ProductionCostAmount = cost,
             ControlDifferenceAmount = 0m,
