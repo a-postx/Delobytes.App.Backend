@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Ingestion;
 using Delobytes.App.Backend.Finance.Application.Journal;
+using Delobytes.App.Backend.Finance.Application.Models;
 using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Finance.Domain.Enums;
@@ -243,10 +244,131 @@ public class FinanceEntriesBatchImporterTests
         completed.RecomputeFailed.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessAsync_NewEntry_RecordsCheckpointOfTheDelivery()
+    {
+        // Arrange
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        InMemoryPnlFeedStateStore feedStore = new InMemoryPnlFeedStateStore();
+        FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, feedStore: feedStore);
+
+        Guid jobRunId = Guid.NewGuid();
+        Guid connectionId = Guid.NewGuid();
+
+        FinanceEntriesBatchImportRequestedEvent message = new FinanceEntriesBatchImportRequestedEvent
+        {
+            JobRunId = jobRunId,
+            ConnectionId = connectionId,
+            ChannelId = ChannelId,
+            BatchId = Guid.NewGuid(),
+            Entries = new List<ChannelFinanceEntrySnapshot>
+            {
+                Snapshot("799692300:2026-08-03", "rrd-1"),
+            },
+        };
+
+        // Act
+        await importer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        PnlFeedCheckpoint checkpoint = feedStore.Recorded.Should().ContainSingle().Subject;
+        checkpoint.ChannelId.Should().Be(ChannelId);
+        checkpoint.JobRunId.Should().Be(jobRunId);
+        checkpoint.BatchCompletedAt.Should().Be(Now);
+        checkpoint.Appended.Should().Be(1);
+        checkpoint.Duplicates.Should().Be(0);
+        checkpoint.Failed.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_DuplicateOnlyBatch_StillRecordsTheDelivery()
+    {
+        // Arrange
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        InMemoryPnlFeedStateStore feedStore = new InMemoryPnlFeedStateStore();
+        FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, feedStore: feedStore);
+
+        journal.Entries.Add(new PnlEntry
+        {
+            Id = Guid.NewGuid(),
+            Source = PnlSource.WbReport,
+            ReportInstanceKey = "799692300:2026-08-03",
+            ExternalEntryId = "rrd-1",
+            ChannelId = ChannelId,
+            ExternalLineId = "srid-1",
+            ExternalProductId = "174371959",
+            Kind = PnlEntryKind.Component,
+            Type = PnlEntryType.Sale,
+            Amount = 204m,
+            Direction = PnlEntryDirection.Income,
+            Currency = "RUB",
+            DocumentDate = new DateOnly(2026, 8, 1),
+            PeriodFrom = new DateOnly(2026, 7, 27),
+            PeriodTo = new DateOnly(2026, 8, 2),
+        });
+
+        FinanceEntriesBatchImportRequestedEvent message = new FinanceEntriesBatchImportRequestedEvent
+        {
+            JobRunId = Guid.NewGuid(),
+            ChannelId = ChannelId,
+            BatchId = Guid.NewGuid(),
+            Entries = new List<ChannelFinanceEntrySnapshot>
+            {
+                Snapshot("799692300:2026-08-03", "rrd-1"),
+            },
+        };
+
+        // Act
+        await importer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        // A report that delivered nothing new must still refresh the checkpoint: otherwise the age
+        // of the data on the dashboard would keep growing after a successful re-sync.
+        PnlFeedCheckpoint checkpoint = feedStore.Recorded.Should().ContainSingle().Subject;
+        checkpoint.Appended.Should().Be(0);
+        checkpoint.Duplicates.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_MappingFailure_CountsIntoTheCheckpoint()
+    {
+        // Arrange
+        InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
+        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        InMemoryPnlFeedStateStore feedStore = new InMemoryPnlFeedStateStore();
+        FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, feedStore: feedStore);
+
+        ChannelFinanceEntrySnapshot invalid = Snapshot("799692300:2026-08-03", "rrd-1");
+        invalid = invalid with { Type = (FinanceEntryType)999 };
+
+        FinanceEntriesBatchImportRequestedEvent message = new FinanceEntriesBatchImportRequestedEvent
+        {
+            JobRunId = Guid.NewGuid(),
+            ChannelId = ChannelId,
+            BatchId = Guid.NewGuid(),
+            Entries = new List<ChannelFinanceEntrySnapshot>
+            {
+                invalid,
+                Snapshot("799692300:2026-08-03", "rrd-2"),
+            },
+        };
+
+        // Act
+        await importer.ProcessAsync(message, CancellationToken.None);
+
+        // Assert
+        PnlFeedCheckpoint checkpoint = feedStore.Recorded.Should().ContainSingle().Subject;
+        checkpoint.Appended.Should().Be(1);
+        checkpoint.Failed.Should().Be(1);
+    }
+
     private static FinanceEntriesBatchImporter CreateImporter(
         InMemoryPnlJournalStore journal,
         RecordingEventPublisher publisher,
-        InMemoryOrderLineRefStore? refs = null)
+        InMemoryOrderLineRefStore? refs = null,
+        InMemoryPnlFeedStateStore? feedStore = null)
     {
         FixedTimeProvider timeProvider = new FixedTimeProvider(Now);
         refs ??= new InMemoryOrderLineRefStore();
@@ -269,6 +391,7 @@ public class FinanceEntriesBatchImporterTests
         return new FinanceEntriesBatchImporter(
             appender,
             projector,
+            feedStore ?? new InMemoryPnlFeedStateStore(),
             publisher,
             new StubTenantContext(),
             timeProvider,

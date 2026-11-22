@@ -282,6 +282,52 @@ namespace Delobytes.App.Backend.Finance.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Delobytes.App.Backend.Finance.Domain.Entities.PnlFeedState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LastBatchAppended")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("LastBatchAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LastBatchDuplicates")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LastBatchFailed")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LastChangeAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("LastJobRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ChannelId")
+                        .IsUnique();
+
+                    b.ToTable("PnlFeedStates", "finance");
+                });
+
             modelBuilder.Entity("Delobytes.App.Backend.Finance.Domain.Entities.PnlLine", b =>
                 {
                     b.Property<Guid>("Id")

@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPnlExpectationStore, PnlExpectationStore>();
         services.AddScoped<IPnlLineStore, PnlLineStore>();
         services.AddScoped<IPnlReadStore, PnlReadStore>();
+        services.AddScoped<IPnlFeedStateStore, PnlFeedStateStore>();
         services.AddScoped<JournalAppender>();
         services.AddScoped<PnlLineProjector>();
         services.AddScoped<ExpectationStateUpdater>();

@@ -292,6 +292,22 @@ public class FinancePnlController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Returns the per-channel feed freshness: when each channel last delivered a batch and when its
+    /// figures last changed. It takes no period filter on purpose вЂ” the age of the data is a property
+    /// of the feed, not of the range the dashboard shows.
+    /// </summary>
+    [HttpGet("freshness")]
+    [ProducesResponseType(typeof(PnlFeedFreshnessResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PnlFeedFreshnessResponse>> GetFreshness(CancellationToken cancellationToken)
+    {
+        PnlFeedFreshnessResponse response = await _mediator.Send(
+            new GetPnlFeedFreshnessQuery(),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
     private static void ValidateCompleteness(string? completeness)
     {
         if (PnlCompletenessFilter.TryParse(completeness, out _))

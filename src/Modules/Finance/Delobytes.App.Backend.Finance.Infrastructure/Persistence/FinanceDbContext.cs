@@ -45,6 +45,11 @@ public class FinanceDbContext : TenantScopedDbContext
     /// </summary>
     public DbSet<PnlLineExpectation> PnlLineExpectations => Set<PnlLineExpectation>();
 
+    /// <summary>
+    /// Gets the per-channel delivery checkpoints of the finance feed.
+    /// </summary>
+    public DbSet<PnlFeedState> PnlFeedStates => Set<PnlFeedState>();
+
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)

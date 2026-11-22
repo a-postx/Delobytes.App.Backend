@@ -23,6 +23,7 @@ public class FinanceEntriesBatchImporter
 {
     private readonly JournalAppender _appender;
     private readonly PnlLineProjector _projector;
+    private readonly IPnlFeedStateStore _feedStateStore;
     private readonly IEventPublisher _eventPublisher;
     private readonly ITenantContext _tenantContext;
     private readonly TimeProvider _timeProvider;
@@ -33,6 +34,7 @@ public class FinanceEntriesBatchImporter
     /// </summary>
     /// <param name="appender">Journal appender.</param>
     /// <param name="projector">P&amp;L line projector.</param>
+    /// <param name="feedStateStore">Per-channel feed checkpoint store.</param>
     /// <param name="eventPublisher">Event publisher.</param>
     /// <param name="tenantContext">Tenant context, used for diagnostics.</param>
     /// <param name="timeProvider">Clock source.</param>
@@ -40,6 +42,7 @@ public class FinanceEntriesBatchImporter
     public FinanceEntriesBatchImporter(
         JournalAppender appender,
         PnlLineProjector projector,
+        IPnlFeedStateStore feedStateStore,
         IEventPublisher eventPublisher,
         ITenantContext tenantContext,
         TimeProvider timeProvider,
@@ -47,6 +50,7 @@ public class FinanceEntriesBatchImporter
     {
         _appender = appender;
         _projector = projector;
+        _feedStateStore = feedStateStore;
         _eventPublisher = eventPublisher;
         _tenantContext = tenantContext;
         _timeProvider = timeProvider;
@@ -100,6 +104,20 @@ public class FinanceEntriesBatchImporter
 
         PnlRecomputeResult recomputeResult = await _projector.RecomputeAsync(
             result.AffectedOrderLineIds, cancellationToken);
+
+        // Stamped after the work, not with the instant the batch was mapped: the heading shows when
+        // the figures became available, and the projection is a part of that. Recorded for every
+        // batch, including one that only produced duplicates вЂ” "arrived, nothing new" and "never
+        // arrived" are different answers to the dashboard.
+        await _feedStateStore.RecordBatchAsync(
+            new PnlFeedCheckpoint(
+                message.ChannelId,
+                message.JobRunId,
+                _timeProvider.GetUtcNow(),
+                result.Appended,
+                result.Duplicates,
+                failed + recomputeResult.Failed),
+            cancellationToken);
 
         FinanceEntriesBatchImportCompletedEvent completedEvent = new FinanceEntriesBatchImportCompletedEvent
         {
