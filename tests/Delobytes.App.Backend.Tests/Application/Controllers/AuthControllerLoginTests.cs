@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using FluentAssertions;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -78,5 +80,68 @@ public class AuthControllerLoginTests
         request.Should().NotBeNull();
         request!.Email.Should().Be("user@example.com");
         request.Password.Should().Be("secret");
+    }
+
+    [Fact]
+    public async Task ChangePassword_AuthenticatedUser_SendsCommandWithUserIdFromClaims()
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+        AuthController controller = BuildController();
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    new[] { new Claim("sub", userId.ToString()) },
+                    "test")),
+            },
+        };
+
+        ChangePasswordRequest request = new ChangePasswordRequest
+        {
+            CurrentPassword = "old-password",
+            NewPassword = "new-password",
+        };
+
+        // Act
+        IActionResult result = await controller.ChangePassword(request, CancellationToken.None);
+
+        // Assert
+        _mediator.Verify(
+            m => m.Send(
+                It.Is<ChangePasswordCommand>(c =>
+                    c.UserId == userId
+                    && c.CurrentPassword == "old-password"
+                    && c.NewPassword == "new-password"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        result.Should().BeOfType<NoContentResult>();
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithoutSubjectClaim_ReturnsUnauthorized()
+    {
+        // Arrange
+        AuthController controller = BuildController();
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity()),
+            },
+        };
+
+        // Act
+        IActionResult result = await controller.ChangePassword(
+            new ChangePasswordRequest { CurrentPassword = "old", NewPassword = "new" },
+            CancellationToken.None);
+
+        // Assert
+        result.Should().BeOfType<UnauthorizedResult>();
+        _mediator.Verify(
+            m => m.Send(It.IsAny<ChangePasswordCommand>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

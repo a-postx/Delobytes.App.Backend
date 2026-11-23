@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Models;
+using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
 
@@ -78,12 +79,24 @@ public class YandexCallbackCommandHandler : IRequestHandler<YandexCallbackComman
 
         if (user == null)
         {
+            if (!string.IsNullOrWhiteSpace(userInfo.DefaultEmail))
+            {
+                User? sameEmail = await _userRepository.FindByEmailAsync(
+                    userInfo.DefaultEmail, "YandexID", cancellationToken);
+
+                if (sameEmail != null)
+                {
+                    throw new AppException(ErrorCodes.Common.Conflict, "Аккаунт с таким email уже существует.");
+                }
+            }
+
             user = new User
             {
                 Id = Guid.NewGuid(),
                 ExternalId = userInfo.Id,
                 IdentityProvider = "YandexID",
                 Email = userInfo.DefaultEmail,
+                NormalizedEmail = EmailNormalizer.Normalize(userInfo.DefaultEmail),
                 CreatedAt = DateTimeOffset.UtcNow,
                 IsActive = true,
             };

@@ -145,6 +145,7 @@ public class GoogleCallbackCommandHandlerTests
         capturedUser!.ExternalId.Should().Be("new-google-sub");
         capturedUser.IdentityProvider.Should().Be("GoogleID");
         capturedUser.Email.Should().Be("new@gmail.com");
+        capturedUser.NormalizedEmail.Should().Be("new@gmail.com");
         capturedUser.IsActive.Should().BeTrue();
         capturedUser.Id.Should().NotBeEmpty();
 
@@ -333,5 +334,29 @@ public class GoogleCallbackCommandHandlerTests
         _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()), Times.Never);
         _membershipRepo.Verify(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _userRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_NewExternalIdWithExistingProviderEmail_ThrowsConflict()
+    {
+        // Arrange
+        _googleService.Setup(s => s.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("token");
+        _googleService.Setup(s => s.GetUserInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(BuildUserInfo());
+
+        _userRepo
+            .Setup(r => r.FindByExternalIdAsync(It.IsAny<string>(), "GoogleID", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+        _userRepo
+            .Setup(r => r.FindByEmailAsync("ivan@gmail.com", "GoogleID", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = Guid.NewGuid(), ExternalId = "another-sub", IdentityProvider = "GoogleID", Email = "ivan@gmail.com", NormalizedEmail = "ivan@gmail.com", IsActive = true });
+
+        // Act
+        AppException exception = await Assert.ThrowsAsync<AppException>(
+            () => BuildHandler().Handle(BuildCommand(), CancellationToken.None));
+
+        // Assert
+        exception.Code.Should().Be(ErrorCodes.Common.Conflict);
+        _userRepo.Verify(r => r.Add(It.IsAny<User>()), Times.Never);
+        _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()), Times.Never);
     }
 }

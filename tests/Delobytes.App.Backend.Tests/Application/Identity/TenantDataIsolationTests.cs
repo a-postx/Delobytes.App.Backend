@@ -40,6 +40,7 @@ public class TenantDataIsolationTests
             {
                 Id = userId,
                 Email = $"user-{userId}@example.com",
+                NormalizedEmail = $"user-{userId}@example.com",
                 ExternalId = $"ext-{userId}",
                 IdentityProvider = "GoogleID",
                 IsActive = true,

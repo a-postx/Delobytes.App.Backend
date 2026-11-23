@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Models;
+using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
 
@@ -78,12 +79,24 @@ public class GoogleCallbackCommandHandler : IRequestHandler<GoogleCallbackComman
 
         if (user == null)
         {
+            if (!string.IsNullOrWhiteSpace(userInfo.Email))
+            {
+                User? sameEmail = await _userRepository.FindByEmailAsync(
+                    userInfo.Email, "GoogleID", cancellationToken);
+
+                if (sameEmail != null)
+                {
+                    throw new AppException(ErrorCodes.Common.Conflict, "Аккаунт с таким email уже существует.");
+                }
+            }
+
             user = new User
             {
                 Id = Guid.NewGuid(),
                 ExternalId = userInfo.Sub,
                 IdentityProvider = "GoogleID",
                 Email = userInfo.Email,
+                NormalizedEmail = EmailNormalizer.Normalize(userInfo.Email),
                 CreatedAt = DateTimeOffset.UtcNow,
                 IsActive = true,
             };

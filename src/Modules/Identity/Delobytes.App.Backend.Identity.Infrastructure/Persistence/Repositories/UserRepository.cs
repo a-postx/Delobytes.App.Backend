@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,15 +32,23 @@ public class UserRepository : IUserRepository
 
     /// <inheritdoc/>
     public Task<User?> FindByEmailAsync(string email, string identityProvider, CancellationToken cancellationToken)
-        => _context.Users
+    {
+        string normalizedEmail = EmailNormalizer.Normalize(email);
+
+        return _context.Users
             .FirstOrDefaultAsync(
-                u => u.Email == email && u.IdentityProvider == identityProvider,
+                u => u.NormalizedEmail == normalizedEmail && u.IdentityProvider == identityProvider,
                 cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task<User?> FindByEmailAsync(string email, CancellationToken cancellationToken)
-        => _context.Users
-            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+    {
+        string normalizedEmail = EmailNormalizer.Normalize(email);
+
+        return _context.Users
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task<User?> FindByIdAsync(Guid id, CancellationToken cancellationToken)

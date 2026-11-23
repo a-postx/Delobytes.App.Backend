@@ -28,6 +28,11 @@ public class User
     public string Email { get; set; } = default!;
 
     /// <summary>
+    /// Gets or sets the canonical email used for lookups and uniqueness.
+    /// </summary>
+    public string NormalizedEmail { get; set; } = default!;
+
+    /// <summary>
     /// Gets or sets the user display name.
     /// </summary>
     public string? DisplayName { get; set; }
@@ -51,6 +56,12 @@ public class User
     /// Gets or sets a value indicating whether the user account is active.
     /// </summary>
     public bool IsActive { get; set; }
+
+    /// <summary>
+    /// Gets or sets the instant before which issued tokens are no longer accepted.
+    /// Set when the password changes so existing sessions stop working.
+    /// </summary>
+    public DateTimeOffset? TokensValidAfter { get; set; }
 
     /// <summary>
     /// Gets or sets the last active tenant identifier for this user.

@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
 using Delobytes.App.Backend.Persistence.Interceptors;
@@ -74,6 +76,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<AuditableEntityInterceptor>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<ITokenValidityCache, TokenValidityCache>();
 
         services.AddDbContext<IdentityDbContext>((serviceProvider, options) =>
         {
@@ -136,6 +139,46 @@ public static class ServiceCollectionExtensions
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
                 ClockSkew = TimeSpan.FromSeconds(1)
+            };
+
+            // A password change records TokensValidAfter; tokens issued earlier are rejected.
+            // The value is cached for a minute, so most requests do not query the database.
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = async context =>
+                {
+                    string? subject = context.Principal?.FindFirst("sub")?.Value;
+                    string? issuedAt = context.Principal?.FindFirst("iat")?.Value;
+
+                    if (!Guid.TryParse(subject, out Guid userId)
+                        || !long.TryParse(issuedAt, NumberStyles.Integer, CultureInfo.InvariantCulture, out long issuedAtSeconds))
+                    {
+                        context.Fail("Token is missing required claims.");
+                        return;
+                    }
+
+                    ITokenValidityCache cache = context.HttpContext.RequestServices
+                        .GetRequiredService<ITokenValidityCache>();
+
+                    if (!cache.TryGet(userId, out DateTimeOffset? tokensValidAfter))
+                    {
+                        IUserRepository users = context.HttpContext.RequestServices
+                            .GetRequiredService<IUserRepository>();
+
+                        User? user = await users.FindByIdAsync(userId, context.HttpContext.RequestAborted);
+                        tokensValidAfter = user?.TokensValidAfter;
+                        cache.Set(userId, tokensValidAfter);
+                    }
+
+                    // iat has one-second precision. Comparing whole seconds accepts tokens
+                    // issued in the same second as the password change, so a fresh login is
+                    // never rejected; earlier tokens are still revoked. Grace is under one second.
+                    if (tokensValidAfter.HasValue
+                        && issuedAtSeconds < tokensValidAfter.Value.ToUnixTimeSeconds())
+                    {
+                        context.Fail("Token was revoked by a password change.");
+                    }
+                },
             };
         });
 

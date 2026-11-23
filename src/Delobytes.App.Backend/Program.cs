@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Api;
@@ -19,6 +20,7 @@ using Delobytes.AspNetCore.Common.Constants;
 using Delobytes.AspNetCore.Logging;
 using MassTransit;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi.Models;
 using Serilog;
 
@@ -175,6 +177,24 @@ public partial class Program
                 options.SkipRequestHeaders = new List<string> { "Authorization" };
             });
 
+            // Limits password guessing per client address. Behind a reverse proxy this key is
+            // only useful with ForwardedHeaders configured to trust that proxy.
+            builder.Services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+                options.AddPolicy("login", httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = 10,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0,
+                            AutoReplenishment = true,
+                        }));
+            });
+
             // ── Infrastructure (Http / EF Core / PostgreSQL) ───────────────────────────────
             builder.Services
                 .AddInfrastructure(builder.Configuration, secrets);
@@ -243,6 +263,8 @@ public partial class Program
                 options.SwaggerEndpoint("/swagger/v1/swagger.json", "Delobytes App Backend v1");
                 options.RoutePrefix = "swagger";
             });
+
+            app.UseRateLimiter();
 
             // Authentication & authorization middleware must come before MapControllers
             app.UseAuthentication()

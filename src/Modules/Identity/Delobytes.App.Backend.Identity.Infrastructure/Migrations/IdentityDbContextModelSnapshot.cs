@@ -18,7 +18,7 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("identity")
-                .HasAnnotation("ProductVersion", "8.0.2")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -279,16 +279,27 @@ namespace Delobytes.App.Backend.Identity.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("LastLoginAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<string>("PasswordHash")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.HasKey("Id");
+                    b.Property<DateTimeOffset?>("TokensValidAfter")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.HasIndex("Email");
+                    b.HasKey("Id");
 
                     b.HasIndex("ExternalId", "IdentityProvider")
                         .IsUnique();
+
+                    b.HasIndex("NormalizedEmail", "IdentityProvider")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_NormalizedEmail_IdentityProvider")
+                        .HasFilter("\"NormalizedEmail\" <> ''");
 
                     b.ToTable("Users", "identity");
                 });

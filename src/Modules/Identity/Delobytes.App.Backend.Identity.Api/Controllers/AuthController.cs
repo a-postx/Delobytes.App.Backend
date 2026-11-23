@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Identity.Application.Commands;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Identity.Api.Controllers;
@@ -53,6 +54,7 @@ public class AuthController : ControllerBase
     /// <returns>Login result with JWT token.</returns>
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<ActionResult<LoginResponse>> Login(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
@@ -66,6 +68,37 @@ public class AuthController : ControllerBase
             cancellationToken);
 
         return Ok(response);
+    }
+
+    /// <summary>
+    /// Change the password of the current local user and revoke existing tokens.
+    /// </summary>
+    /// <param name="request">Current and new password.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>No content on success.</returns>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? userIdClaim = User.FindFirstValue("sub");
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
+        {
+            return Unauthorized();
+        }
+
+        await _mediator.Send(
+            new ChangePasswordCommand
+            {
+                UserId = userId,
+                CurrentPassword = request.CurrentPassword,
+                NewPassword = request.NewPassword,
+            },
+            cancellationToken);
+
+        return NoContent();
     }
 
     /// <summary>
@@ -158,6 +191,22 @@ public class LoginRequest
     /// Gets or sets the password.
     /// </summary>
     public string Password { get; set; } = default!;
+}
+
+/// <summary>
+/// Request model for changing the current user's password.
+/// </summary>
+public class ChangePasswordRequest
+{
+    /// <summary>
+    /// Gets or sets the current password.
+    /// </summary>
+    public string CurrentPassword { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the new password.
+    /// </summary>
+    public string NewPassword { get; set; } = default!;
 }
 
 /// <summary>

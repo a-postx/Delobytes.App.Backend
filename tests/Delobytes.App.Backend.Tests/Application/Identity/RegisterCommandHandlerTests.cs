@@ -117,6 +117,7 @@ public class RegisterCommandHandlerTests
         addedUser.ExternalId.Should().Be(email);
         addedUser.IdentityProvider.Should().Be(LocalProvider);
         addedUser.Email.Should().Be(email);
+        addedUser.NormalizedEmail.Should().Be(email);
         addedUser.DisplayName.Should().Be("Иван");
         addedUser.PasswordHash.Should().Be(passwordHash);
         addedUser.IsActive.Should().BeTrue();

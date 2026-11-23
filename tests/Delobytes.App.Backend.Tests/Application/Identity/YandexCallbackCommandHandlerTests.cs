@@ -146,6 +146,7 @@ public class YandexCallbackCommandHandlerTests
         capturedUser!.ExternalId.Should().Be("new-yandex-id");
         capturedUser.IdentityProvider.Should().Be("YandexID");
         capturedUser.Email.Should().Be("new@yandex.ru");
+        capturedUser.NormalizedEmail.Should().Be("new@yandex.ru");
         capturedUser.IsActive.Should().BeTrue();
         capturedUser.Id.Should().NotBeEmpty();
 
@@ -332,5 +333,29 @@ public class YandexCallbackCommandHandlerTests
         _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()), Times.Never);
         _membershipRepo.Verify(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _userRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_NewExternalIdWithExistingProviderEmail_ThrowsConflict()
+    {
+        // Arrange
+        _yandexService.Setup(s => s.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("token");
+        _yandexService.Setup(s => s.GetUserInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(BuildUserInfo());
+
+        _userRepo
+            .Setup(r => r.FindByExternalIdAsync(It.IsAny<string>(), "YandexID", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+        _userRepo
+            .Setup(r => r.FindByEmailAsync("ivan@yandex.ru", "YandexID", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = Guid.NewGuid(), ExternalId = "another-id", IdentityProvider = "YandexID", Email = "ivan@yandex.ru", NormalizedEmail = "ivan@yandex.ru", IsActive = true });
+
+        // Act
+        AppException exception = await Assert.ThrowsAsync<AppException>(
+            () => BuildHandler().Handle(BuildCommand(), CancellationToken.None));
+
+        // Assert
+        exception.Code.Should().Be(ErrorCodes.Common.Conflict);
+        _userRepo.Verify(r => r.Add(It.IsAny<User>()), Times.Never);
+        _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()), Times.Never);
     }
 }

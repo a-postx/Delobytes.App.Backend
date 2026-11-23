@@ -28,6 +28,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasMaxLength(256);
 
+        builder.Property(u => u.NormalizedEmail)
+            .IsRequired()
+            .HasMaxLength(256);
+
         builder.Property(u => u.DisplayName)
             .HasMaxLength(200);
 
@@ -41,13 +45,22 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasDefaultValue(true);
 
+        builder.Property(u => u.TokensValidAfter)
+            .IsRequired(false);
+
         builder.Property(u => u.LastActiveTenantId)
             .IsRequired(false);
 
         builder.HasIndex(u => new { u.ExternalId, u.IdentityProvider })
             .IsUnique();
 
-        builder.HasIndex(u => u.Email);
+        // Email is unique only inside one provider: a local account and an OAuth account
+        // may legitimately share an address until account linking exists. Empty addresses
+        // (a provider may not return one) are excluded so they never collide.
+        builder.HasIndex(u => new { u.NormalizedEmail, u.IdentityProvider })
+            .IsUnique()
+            .HasFilter("\"NormalizedEmail\" <> ''")
+            .HasDatabaseName("IX_Users_NormalizedEmail_IdentityProvider");
 
         builder.HasMany(u => u.Memberships)
             .WithOne(m => m.User)

@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
 
@@ -92,6 +93,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
             ExternalId = request.Email,
             IdentityProvider = "Local",
             Email = request.Email,
+            NormalizedEmail = EmailNormalizer.Normalize(request.Email),
             DisplayName = request.DisplayName ?? request.Email,
             PasswordHash = _passwordHasher.Hash(request.Password),
             CreatedAt = DateTimeOffset.UtcNow,
