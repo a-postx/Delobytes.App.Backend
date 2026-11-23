@@ -182,6 +182,48 @@ public class FinancePnlController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the whole overview of a period in one response: the totals, their movement against
+    /// the comparison range, the channels with their own figures, and the remarks a reader should
+    /// see before them. The period is folded once along every dimension shown, so the blocks of the
+    /// page cannot disagree about the same line. An omitted <c>completeness</c> means <c>all</c>:
+    /// the overview is the full picture, and its totals are what the reader reconciles.
+    /// </summary>
+    [HttpGet("overview")]
+    [ProducesResponseType(typeof(PnlOverviewResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PnlOverviewResponse>> GetOverview(
+        [FromQuery] Guid? channelId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] DateOnly? compareFrom,
+        [FromQuery] DateOnly? compareTo,
+        [FromQuery] string? completeness,
+        CancellationToken cancellationToken)
+    {
+        (DateOnly periodFrom, DateOnly periodTo) = PnlPeriodQuery.Require(from, to);
+
+        ValidateCompleteness(completeness);
+
+        PnlOverviewResponse response = await _mediator.Send(
+            new GetPnlOverviewQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    ChannelId = channelId,
+                    From = periodFrom,
+                    To = periodTo,
+                    Completeness = string.IsNullOrWhiteSpace(completeness)
+                        ? PnlCompletenessFilter.All
+                        : completeness,
+                },
+                ComparisonFrom = compareFrom,
+                ComparisonTo = compareTo,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
     /// Returns the products ranked by one metric over the whole requested range. A ranking has no
     /// period or grouping axis: one row per product, <c>rank</c> assigned from 1, and the counts of
     /// the population the slice was taken from. A row without the ranked metric never enters the

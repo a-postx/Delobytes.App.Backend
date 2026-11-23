@@ -265,6 +265,12 @@ public sealed class PnlSummaryRowView : IPnlSkuLabelTarget
     public decimal ProvisionalRevenueAmount { get; set; }
 
     /// <summary>
+    /// Gets or sets the number of lines of the group whose expected document is past its window and
+    /// still open: the population of <see cref="OverdueRevenueAmount"/>.
+    /// </summary>
+    public int OverdueLines { get; set; }
+
+    /// <summary>
     /// Gets or sets the overdue part of <see cref="ProvisionalRevenueAmount"/>: the lines whose
     /// expected document is past its window and still open. It never exceeds the provisional amount.
     /// </summary>

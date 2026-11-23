@@ -39,6 +39,7 @@ public sealed class PnlSummaryGroup
     private decimal _closedWithExceptionRevenue;
     private int _lines;
     private int _linesWithMargin;
+    private int _overdueLines;
     private int _linesWithTaxAdjustedMargin;
     private int _linesWithTaxAdjustedInvestedCost;
     private int _quantityOrdered;
@@ -187,6 +188,7 @@ public sealed class PnlSummaryGroup
 
         if (view.CompletenessState == PnlLineCompleteness.Overdue)
         {
+            _overdueLines++;
             _overdueRevenue += view.RevenueAmount ?? 0m;
         }
 
@@ -274,6 +276,7 @@ public sealed class PnlSummaryGroup
             IsTaxAdjustedRoiComplete = taxRoiComplete,
             ControlDifferenceAmount = _controlDifference,
             ProvisionalRevenueAmount = _provisionalRevenue,
+            OverdueLines = _overdueLines,
             OverdueRevenueAmount = _overdueRevenue,
             ClosedWithExceptionRevenueAmount = _closedWithExceptionRevenue,
             CompletenessState = _worst,
