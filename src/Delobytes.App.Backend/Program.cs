@@ -173,7 +173,23 @@ public partial class Program
                 options.LogRequestBody = true;
                 options.LogResponseBody = true;
                 options.MaxBodyLength = 32759;
-                options.SkipPaths = new List<PathString> { "/metrics" };
+                // These paths carry passwords, authorization codes, JWTs, invitation tokens
+                // or marketplace API keys in their bodies. The middleware can only skip a
+                // whole path (exact match), so no request/response event is written for them.
+                options.SkipPaths = new List<PathString>
+                {
+                    "/metrics",
+                    "/api/auth/login",
+                    "/api/auth/register",
+                    "/api/auth/change-password",
+                    "/api/auth/yandex/callback",
+                    "/api/auth/google/callback",
+                    "/api/auth/create-tenant",
+                    "/api/tenant/switch",
+                    "/api/tenant/invitations",
+                    "/api/tenant/invitations/accept",
+                    "/api/integrations/connections",
+                };
                 options.SkipRequestHeaders = new List<string> { "Authorization" };
             });
 
