@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Models;
@@ -307,5 +308,30 @@ public class GoogleCallbackCommandHandlerTests
         // Assert — must use "GoogleID", never "YandexID"
         _userRepo.Verify(r => r.FindByExternalIdAsync("sub-xyz", "GoogleID", It.IsAny<CancellationToken>()), Times.Once);
         _userRepo.Verify(r => r.FindByExternalIdAsync(It.IsAny<string>(), "YandexID", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ExistingInactiveUser_ThrowsForbiddenAndDoesNotIssueToken()
+    {
+        // Arrange
+        User inactiveUser = new User { Id = Guid.NewGuid(), ExternalId = "google-sub-001", IdentityProvider = "GoogleID", Email = "ivan@gmail.com", IsActive = false, CreatedAt = DateTimeOffset.UtcNow };
+
+        _googleService.Setup(s => s.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("token");
+        _googleService.Setup(s => s.GetUserInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(BuildUserInfo());
+
+        _userRepo
+            .Setup(r => r.FindByExternalIdAsync("google-sub-001", "GoogleID", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inactiveUser);
+
+        // Act
+        AppException exception = await Assert.ThrowsAsync<AppException>(
+            () => BuildHandler().Handle(BuildCommand(), CancellationToken.None));
+
+        // Assert
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+
+        _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()), Times.Never);
+        _membershipRepo.Verify(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _userRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }

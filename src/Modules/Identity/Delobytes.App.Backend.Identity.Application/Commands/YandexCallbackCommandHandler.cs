@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Models;
 using Delobytes.App.Backend.Identity.Domain.Entities;
@@ -69,6 +70,11 @@ public class YandexCallbackCommandHandler : IRequestHandler<YandexCallbackComman
             userInfo.Id,
             "YandexID",
             cancellationToken);
+
+        if (user != null && !user.IsActive)
+        {
+            throw new AppException(ErrorCodes.Common.Forbidden, "Учётная запись отключена. Обратитесь к администратору.");
+        }
 
         if (user == null)
         {

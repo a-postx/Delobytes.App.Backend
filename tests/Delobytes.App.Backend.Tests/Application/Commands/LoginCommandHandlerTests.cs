@@ -1,4 +1,5 @@
 ﻿using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
@@ -349,5 +350,155 @@ public class LoginCommandHandlerTests
         _userRepositoryMock.Verify(
             x => x.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task Handle_WhenUserDoesNotExist_ThrowsUnauthorizedAndDoesNotIssueToken()
+    {
+        // Arrange
+        LoginCommand command = new LoginCommand { Email = "missing@example.com", Password = "password123" };
+
+        _userRepositoryMock
+            .Setup(x => x.FindByEmailAsync(command.Email, "Local", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        _jwtTokenServiceMock.Verify(
+            x => x.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_WhenPasswordHashIsMissing_ThrowsUnauthorizedWithoutCallingHasher()
+    {
+        // Arrange
+        User user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "user@example.com",
+            ExternalId = "user@example.com",
+            IdentityProvider = "Local",
+            PasswordHash = null,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        LoginCommand command = new LoginCommand { Email = user.Email, Password = "password123" };
+
+        _userRepositoryMock
+            .Setup(x => x.FindByEmailAsync(command.Email, "Local", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        _passwordHasherMock.Verify(
+            x => x.Verify(It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_WhenPasswordIsWrong_ThrowsUnauthorized()
+    {
+        // Arrange
+        User user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "user@example.com",
+            ExternalId = "user@example.com",
+            IdentityProvider = "Local",
+            PasswordHash = "hashed_password",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        LoginCommand command = new LoginCommand { Email = user.Email, Password = "wrong" };
+
+        _userRepositoryMock
+            .Setup(x => x.FindByEmailAsync(command.Email, "Local", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _passwordHasherMock
+            .Setup(x => x.Verify(command.Password, user.PasswordHash))
+            .Returns(false);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => _handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_WhenUserIsInactive_ThrowsForbiddenAndDoesNotIssueToken()
+    {
+        // Arrange
+        User user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "user@example.com",
+            ExternalId = "user@example.com",
+            IdentityProvider = "Local",
+            PasswordHash = "hashed_password",
+            IsActive = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        LoginCommand command = new LoginCommand { Email = user.Email, Password = "password123" };
+
+        _userRepositoryMock
+            .Setup(x => x.FindByEmailAsync(command.Email, "Local", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _passwordHasherMock
+            .Setup(x => x.Verify(command.Password, user.PasswordHash))
+            .Returns(true);
+
+        // Act
+        AppException exception = await Assert.ThrowsAsync<AppException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        // Assert
+        Assert.Equal(ErrorCodes.Common.Forbidden, exception.Code);
+
+        _jwtTokenServiceMock.Verify(
+            x => x.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()),
+            Times.Never);
+
+        _membershipRepositoryMock.Verify(
+            x => x.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_WhenUserIsInactiveAndPasswordIsWrong_ThrowsUnauthorized()
+    {
+        // Arrange
+        User user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "user@example.com",
+            ExternalId = "user@example.com",
+            IdentityProvider = "Local",
+            PasswordHash = "hashed_password",
+            IsActive = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        LoginCommand command = new LoginCommand { Email = user.Email, Password = "wrong" };
+
+        _userRepositoryMock
+            .Setup(x => x.FindByEmailAsync(command.Email, "Local", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _passwordHasherMock
+            .Setup(x => x.Verify(command.Password, user.PasswordHash))
+            .Returns(false);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => _handler.Handle(command, CancellationToken.None));
     }
 }

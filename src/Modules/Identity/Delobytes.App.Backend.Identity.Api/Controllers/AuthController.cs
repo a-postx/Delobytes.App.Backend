@@ -46,18 +46,25 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Login with email/password or external provider.
+    /// Login with email/password. External identities use the OAuth callback endpoints.
     /// </summary>
-    /// <param name="command">Login details.</param>
+    /// <param name="request">Login details.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Login result with JWT token.</returns>
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<ActionResult<LoginResponse>> Login(
-        [FromBody] LoginCommand command,
+        [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
     {
-        LoginResponse response = await _mediator.Send(command, cancellationToken);
+        LoginResponse response = await _mediator.Send(
+            new LoginCommand
+            {
+                Email = request.Email,
+                Password = request.Password,
+            },
+            cancellationToken);
+
         return Ok(response);
     }
 
@@ -135,6 +142,22 @@ public class AuthController : ControllerBase
         LoginResponse response = await _mediator.Send(command, cancellationToken);
         return Ok(response);
     }
+}
+
+/// <summary>
+/// Request model for local email/password login.
+/// </summary>
+public class LoginRequest
+{
+    /// <summary>
+    /// Gets or sets the email address.
+    /// </summary>
+    public string Email { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the password.
+    /// </summary>
+    public string Password { get; set; } = default!;
 }
 
 /// <summary>

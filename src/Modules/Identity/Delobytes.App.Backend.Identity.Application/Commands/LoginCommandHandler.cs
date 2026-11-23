@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -6,7 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
 /// <summary>
-/// Command to authenticate a user via email/password or external provider.
+/// Command to authenticate a local user with email and password.
+/// External identities are authenticated only by the OAuth callback handlers.
 /// </summary>
 public class LoginCommand : IRequest<LoginResponse>
 {
@@ -16,24 +18,9 @@ public class LoginCommand : IRequest<LoginResponse>
     public string Email { get; set; } = default!;
 
     /// <summary>
-    /// Gets or sets the password (for local authentication).
+    /// Gets or sets the password.
     /// </summary>
-    public string? Password { get; set; }
-
-    /// <summary>
-    /// Gets or sets the external identity provider (e.g., "YandexID").
-    /// </summary>
-    public string? IdentityProvider { get; set; }
-
-    /// <summary>
-    /// Gets or sets the external identifier from the identity provider.
-    /// </summary>
-    public string? ExternalId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the display name.
-    /// </summary>
-    public string? DisplayName { get; set; }
+    public string Password { get; set; } = default!;
 }
 
 /// <summary>
@@ -64,57 +51,24 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
     /// <inheritdoc/>
     public async Task<LoginResponse> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        User user;
+        User? user = await _userRepository.FindByEmailAsync(request.Email, "Local", cancellationToken);
 
-        if (!string.IsNullOrEmpty(request.ExternalId) && !string.IsNullOrEmpty(request.IdentityProvider))
+        // Verify the password before reporting the account state, so an unknown email
+        // and a disabled account answer differently only to someone holding the password.
+        if (user == null
+            || string.IsNullOrEmpty(user.PasswordHash)
+            || !_passwordHasher.Verify(request.Password, user.PasswordHash))
         {
-            // External provider authentication (e.g., Yandex ID)
-            User? existing = await _userRepository.FindByExternalIdAsync(
-                request.ExternalId, request.IdentityProvider, cancellationToken);
-
-            if (existing == null)
-            {
-                existing = new User
-                {
-                    Id = Guid.NewGuid(),
-                    ExternalId = request.ExternalId,
-                    IdentityProvider = request.IdentityProvider,
-                    Email = request.Email,
-                    DisplayName = request.DisplayName,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    IsActive = true,
-                };
-
-                _userRepository.Add(existing);
-                await _userRepository.SaveChangesAsync(cancellationToken);
-            }
-            else
-            {
-                existing.LastLoginAt = DateTimeOffset.UtcNow;
-                await _userRepository.SaveChangesAsync(cancellationToken);
-            }
-
-            user = existing;
+            throw new UnauthorizedAccessException("Неверный адрес или пароль.");
         }
-        else if (!string.IsNullOrEmpty(request.Password))
+
+        if (!user.IsActive)
         {
-            // Local email/password authentication
-            User? existing = await _userRepository.FindByEmailAsync(request.Email, "Local", cancellationToken);
-
-            if (existing == null || !_passwordHasher.Verify(request.Password, existing.PasswordHash ?? string.Empty))
-            {
-                throw new UnauthorizedAccessException("Неверный адрес или пароль.");
-            }
-
-            existing.LastLoginAt = DateTimeOffset.UtcNow;
-            await _userRepository.SaveChangesAsync(cancellationToken);
-
-            user = existing;
+            throw new AppException(ErrorCodes.Common.Forbidden, "Учётная запись отключена. Обратитесь к администратору.");
         }
-        else
-        {
-            throw new InvalidOperationException("Either Password or ExternalId/IdentityProvider must be provided.");
-        }
+
+        user.LastLoginAt = DateTimeOffset.UtcNow;
+        await _userRepository.SaveChangesAsync(cancellationToken);
 
         IReadOnlyList<TenantMembership> memberships = await _membershipRepository.GetActiveByUserAsync(user.Id, cancellationToken);
 

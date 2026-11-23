@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Models;
@@ -306,5 +307,30 @@ public class YandexCallbackCommandHandlerTests
 
         // Assert
         _jwtService.Verify(s => s.GenerateToken(userId, tenantId, Role.ReadOnly), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ExistingInactiveUser_ThrowsForbiddenAndDoesNotIssueToken()
+    {
+        // Arrange
+        User inactiveUser = new User { Id = Guid.NewGuid(), ExternalId = "123456789", IdentityProvider = "YandexID", Email = "ivan@yandex.ru", IsActive = false, CreatedAt = DateTimeOffset.UtcNow };
+
+        _yandexService.Setup(s => s.ExchangeCodeForTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("token");
+        _yandexService.Setup(s => s.GetUserInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(BuildUserInfo());
+
+        _userRepo
+            .Setup(r => r.FindByExternalIdAsync("123456789", "YandexID", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inactiveUser);
+
+        // Act
+        AppException exception = await Assert.ThrowsAsync<AppException>(
+            () => BuildHandler().Handle(BuildCommand(), CancellationToken.None));
+
+        // Assert
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+
+        _jwtService.Verify(s => s.GenerateToken(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Role?>()), Times.Never);
+        _membershipRepo.Verify(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _userRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }
