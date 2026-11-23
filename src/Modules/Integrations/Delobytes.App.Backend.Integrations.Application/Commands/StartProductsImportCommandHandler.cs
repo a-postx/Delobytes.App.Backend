@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -9,8 +10,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
-public class StartProductsImportCommand : IRequest<StartProductsImportResponse>
+public class StartProductsImportCommand : IRequest<StartProductsImportResponse>, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Administrator };
+
     public Guid ConnectionId { get; set; }
 }
 

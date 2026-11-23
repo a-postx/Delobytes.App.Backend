@@ -1,12 +1,16 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
 
-public class ArchiveProductCommand : IRequest<ArchiveProductResponse>
+public class ArchiveProductCommand : IRequest<ArchiveProductResponse>, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public Guid ProductId { get; set; }
 }
 

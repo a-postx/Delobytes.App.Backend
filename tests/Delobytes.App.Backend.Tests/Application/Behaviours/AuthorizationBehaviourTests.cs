@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -49,7 +50,7 @@ public class AuthorizationBehaviourTests
     }
 
     [Fact]
-    public async Task Handle_AdministratorCommand_WithManagerRole_ShouldThrowUnauthorizedAccessException()
+    public async Task Handle_AdministratorCommand_WithManagerRole_ShouldThrowForbidden()
     {
         AuthorizationBehaviour<AuthTestCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestCommand>();
         Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
@@ -58,13 +59,14 @@ public class AuthorizationBehaviourTests
 
         Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*недостаточно прав*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+        exception.Message.Should().Contain("недостаточно прав");
         nextMock.Verify(x => x(), Times.Never);
     }
 
     [Fact]
-    public async Task Handle_AdministratorCommand_WithReadOnlyRole_ShouldThrowUnauthorizedAccessException()
+    public async Task Handle_AdministratorCommand_WithReadOnlyRole_ShouldThrowForbidden()
     {
         AuthorizationBehaviour<AuthTestCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestCommand>();
         Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
@@ -73,8 +75,8 @@ public class AuthorizationBehaviourTests
 
         Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*недостаточно прав*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
         nextMock.Verify(x => x(), Times.Never);
     }
 
@@ -107,7 +109,7 @@ public class AuthorizationBehaviourTests
     }
 
     [Fact]
-    public async Task Handle_ManagerOrHigherCommand_WithReadOnlyRole_ShouldThrowUnauthorizedAccessException()
+    public async Task Handle_ManagerOrHigherCommand_WithReadOnlyRole_ShouldThrowForbidden()
     {
         AuthorizationBehaviour<AuthTestManagerCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestManagerCommand>();
         Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
@@ -116,12 +118,13 @@ public class AuthorizationBehaviourTests
 
         Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
         nextMock.Verify(x => x(), Times.Never);
     }
 
     [Fact]
-    public async Task Handle_CommandRestrictedToManager_WithAdministratorRole_ShouldThrowUnauthorizedAccessException()
+    public async Task Handle_CommandRestrictedToManager_WithAdministratorRole_ShouldThrowForbidden()
     {
         // Locks in Contracts.Authorization.IRequireRole semantics: AllowedRoles is authoritative,
         // Administrator receives no implicit bypass, so a request can exclude it deliberately.
@@ -132,8 +135,9 @@ public class AuthorizationBehaviourTests
 
         Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*недостаточно прав*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+        exception.Message.Should().Contain("недостаточно прав");
         nextMock.Verify(x => x(), Times.Never);
     }
 
@@ -167,7 +171,7 @@ public class AuthorizationBehaviourTests
     }
 
     [Fact]
-    public async Task Handle_MissingRoleClaim_ShouldThrowUnauthorizedAccessException()
+    public async Task Handle_MissingRoleClaim_ShouldThrowForbidden()
     {
         AuthorizationBehaviour<AuthTestCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestCommand>();
         Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
@@ -176,13 +180,14 @@ public class AuthorizationBehaviourTests
 
         Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*Роль пользователя не определена*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+        exception.Message.Should().Contain("Роль пользователя не определена");
         nextMock.Verify(x => x(), Times.Never);
     }
 
     [Fact]
-    public async Task Handle_InvalidRoleValue_ShouldThrowUnauthorizedAccessException()
+    public async Task Handle_InvalidRoleValue_ShouldThrowForbidden()
     {
         AuthorizationBehaviour<AuthTestCommand, AuthTestResponse> behaviour = CreateBehaviour<AuthTestCommand>();
         Mock<RequestHandlerDelegate<AuthTestResponse>> nextMock = CreateNextMock();
@@ -191,8 +196,9 @@ public class AuthorizationBehaviourTests
 
         Func<Task> act = async () => await behaviour.Handle(command, nextMock.Object, CancellationToken.None);
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*Недопустимое значение роли*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+        exception.Message.Should().Contain("Недопустимое значение роли");
         nextMock.Verify(x => x(), Times.Never);
     }
 

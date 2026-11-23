@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -10,8 +11,11 @@ namespace Delobytes.App.Backend.Integrations.Application.Commands;
 /// Requests cooperative cancellation of any job run. The handler decides whether the job type
 /// is cancellable at all, so the endpoint stays type-agnostic.
 /// </summary>
-public class CancelJobCommand : IRequest
+public class CancelJobCommand : IRequest, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public Guid JobRunId { get; set; }
 }
 

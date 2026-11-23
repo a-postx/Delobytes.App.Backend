@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
@@ -26,8 +27,11 @@ namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
 /// on every save of a manual product. Tightening that contract belongs with the write-back work,
 /// not with allowing the SKU to be edited.
 /// </summary>
-public class UpdateProductCommand : IRequest<UpdateProductResponse>
+public class UpdateProductCommand : IRequest<UpdateProductResponse>, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public Guid Id { get; set; }
 
     /// <summary>Gets or sets the new SKU. Null leaves the current SKU in place.</summary>

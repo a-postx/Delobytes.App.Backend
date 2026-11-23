@@ -3,14 +3,18 @@ using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
-public class CreateConnectionCommand : IRequest<CreateConnectionResponse>
+public class CreateConnectionCommand : IRequest<CreateConnectionResponse>, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public Guid ChannelId { get; set; }
     public string SystemChannelTemplateCode { get; set; } = default!;
     public string ApiKey { get; set; } = default!;

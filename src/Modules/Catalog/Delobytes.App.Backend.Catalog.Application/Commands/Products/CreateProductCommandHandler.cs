@@ -5,13 +5,17 @@ using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
 
-public class CreateProductCommand : IRequest<CreateProductResponse>
+public class CreateProductCommand : IRequest<CreateProductResponse>, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public string Sku { get; set; } = default!;
 
     public string Name { get; set; } = default!;

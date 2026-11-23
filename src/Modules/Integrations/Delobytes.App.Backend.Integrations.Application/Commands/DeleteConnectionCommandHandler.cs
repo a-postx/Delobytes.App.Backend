@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
@@ -5,8 +6,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
-public class DeleteConnectionCommand : IRequest
+public class DeleteConnectionCommand : IRequest, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public Guid Id { get; set; }
 }
 

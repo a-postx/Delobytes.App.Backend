@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 using FluentAssertions;
 using MediatR;
@@ -100,8 +101,9 @@ public class TaxProfileCommandsAuthorizationTests
         Func<Task> act = async () => await behaviour.Handle(BuildCreateCommand(), nextMock.Object, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*недостаточно прав*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+        exception.Message.Should().Contain("недостаточно прав");
         nextMock.Verify(x => x(), Times.Never);
     }
 
@@ -122,8 +124,9 @@ public class TaxProfileCommandsAuthorizationTests
         Func<Task> act = async () => await behaviour.Handle(BuildDeleteCommand(), nextMock.Object, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*недостаточно прав*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
+        exception.Message.Should().Contain("недостаточно прав");
         nextMock.Verify(x => x(), Times.Never);
     }
 

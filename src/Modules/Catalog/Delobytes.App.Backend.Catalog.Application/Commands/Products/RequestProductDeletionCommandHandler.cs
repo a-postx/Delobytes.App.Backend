@@ -1,10 +1,14 @@
 using Delobytes.App.Backend.Catalog.Application.Services;
+using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
 
-public class RequestProductDeletionCommand : IRequest<RequestProductDeletionResponse>
+public class RequestProductDeletionCommand : IRequest<RequestProductDeletionResponse>, IRequireRole
 {
+    /// <inheritdoc/>
+    public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
+
     public Guid ProductId { get; set; }
 }
 

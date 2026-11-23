@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 
@@ -52,7 +53,7 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
                 _logger.LogWarning(
                     "Authorization failed for {RequestType}: Role claim not found",
                     typeof(TRequest).Name);
-                throw new UnauthorizedAccessException("Роль пользователя не определена.");
+                throw new AppException(ErrorCodes.Common.Forbidden, "Роль пользователя не определена.");
             }
 
             if (!Enum.TryParse<Role>(roleClaim, out Role userRole))
@@ -61,7 +62,7 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
                     "Authorization failed for {RequestType}: Invalid role value {RoleClaim}",
                     typeof(TRequest).Name,
                     roleClaim);
-                throw new UnauthorizedAccessException("Недопустимое значение роли.");
+                throw new AppException(ErrorCodes.Common.Forbidden, "Недопустимое значение роли.");
             }
 
             if (!requireRole.AllowedRoles.Contains(userRole))
@@ -77,7 +78,8 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
                     userRole,
                     string.Join(", ", requireRole.AllowedRoles));
 
-                throw new UnauthorizedAccessException(
+                throw new AppException(
+                    ErrorCodes.Common.Forbidden,
                     $"У вас недостаточно прав для выполнения этой операции. Требуется одна из ролей: {string.Join(", ", requireRole.AllowedRoles)}.");
             }
 
