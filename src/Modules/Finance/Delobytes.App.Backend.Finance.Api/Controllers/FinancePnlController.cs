@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Finance.Application.ProductTable;
 using Delobytes.App.Backend.Finance.Application.Queries;
 using Delobytes.App.Backend.Finance.Application.Ranking;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
@@ -307,6 +308,134 @@ public class FinancePnlController : ControllerBase
                 Take = take ?? GetPnlProductRankingQuery.DefaultTake,
                 Coverage = parsedCoverage,
                 MinRevenue = minRevenue,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Returns one page of the product table: the products of the range with their economy,
+    /// filtered by segment and SKU search, ordered and sliced by the server. The response also
+    /// carries the counters, the summary and the sales without a catalogue link.
+    /// </summary>
+    [HttpGet("pnl-products")]
+    [ProducesResponseType(typeof(PnlProductTableResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PnlProductTableResponse>> GetProducts(
+        [FromQuery] Guid? channelId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] string? completeness,
+        [FromQuery] string? segment,
+        [FromQuery] string? search,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? sortDir,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        (DateOnly periodFrom, DateOnly periodTo) = PnlPeriodQuery.Require(from, to);
+
+        ValidateCompleteness(completeness);
+
+        PnlProductSegment parsedSegment = PnlProductSegment.All;
+
+        if (segment != null
+            && (!Enum.TryParse(segment, ignoreCase: true, out parsedSegment)
+                || !Enum.IsDefined(parsedSegment)))
+        {
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure(
+                        nameof(segment),
+                        "Сегмент должен быть одним из: all, loss, withoutCost."),
+                });
+        }
+
+        PnlProductSortKey parsedSortBy = PnlProductSortKey.Margin;
+
+        if (sortBy != null
+            && (!Enum.TryParse(sortBy, ignoreCase: true, out parsedSortBy)
+                || !Enum.IsDefined(parsedSortBy)))
+        {
+            throw new ValidationException(
+                new[]
+                {
+                    new ValidationFailure(
+                        nameof(sortBy),
+                        "Сортировка должна быть одной из: sku, revenue, deductions, netRevenue, soldCost, margin, contributionMarginPercent, returnOnSoldCostPercent, quantitySold, buyoutPercent."),
+                });
+        }
+
+        bool descending = true;
+
+        if (sortDir != null)
+        {
+            if (!string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ValidationException(
+                    new[]
+                    {
+                        new ValidationFailure(nameof(sortDir), "Направление сортировки должно быть asc или desc."),
+                    });
+            }
+
+            descending = !string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        PnlProductTableResponse response = await _mediator.Send(
+            new GetPnlProductTableQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    ChannelId = channelId,
+                    From = periodFrom,
+                    To = periodTo,
+                    Completeness = completeness,
+                },
+                Segment = parsedSegment,
+                Search = search,
+                SortBy = parsedSortBy,
+                Descending = descending,
+                Page = page ?? 1,
+                PageSize = pageSize ?? GetPnlProductTableQuery.DefaultPageSize,
+            },
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Returns the product sheet: the product over the range, its channels and the documents it
+    /// still waits for. An unknown product or a product without lines answers 200 with no product.
+    /// </summary>
+    [HttpGet("pnl-products/{productId:guid}")]
+    [ProducesResponseType(typeof(PnlProductDetailsResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PnlProductDetailsResponse>> GetProductDetails(
+        [FromRoute] Guid productId,
+        [FromQuery] Guid? channelId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] string? completeness,
+        CancellationToken cancellationToken)
+    {
+        (DateOnly periodFrom, DateOnly periodTo) = PnlPeriodQuery.Require(from, to);
+
+        ValidateCompleteness(completeness);
+
+        PnlProductDetailsResponse response = await _mediator.Send(
+            new GetPnlProductDetailsQuery
+            {
+                ProductId = productId,
+                Filter = new PnlQueryFilter
+                {
+                    ChannelId = channelId,
+                    From = periodFrom,
+                    To = periodTo,
+                    Completeness = completeness,
+                },
             },
             cancellationToken);
 

@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Catalog.Contracts.Lookup;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
+using Delobytes.App.Backend.Finance.Application.ProductTable;
 using Delobytes.App.Backend.Finance.Application.Queries;
 using Delobytes.App.Backend.Finance.Application.Ranking;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
@@ -2187,6 +2188,424 @@ public class PnlQueryHandlerTests
         row.DeliveryFeeAmount.Should().BeNull();
         row.RefundAmount.Should().BeNull();
         row.CompensationAmount.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProductTable_KeepsTheUnlinkedSaleAsideFromEveryProductFigure()
+    {
+        // Arrange: three products with different coverage and one sale without a catalogue link.
+        Guid profitable = Guid.NewGuid();
+        Guid loss = Guid.NewGuid();
+        Guid withoutCost = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m, profitable),
+            Row(new DateOnly(2026, 8, 1), 500m, 450m, 600m, loss),
+            Row(new DateOnly(2026, 8, 1), 300m, 300m, cost: null, productId: withoutCost),
+            Row(new DateOnly(2026, 8, 1), 200m, 200m, cost: null, productId: null),
+        };
+
+        GetPnlProductTableQueryHandler handler = new GetPnlProductTableQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        PnlProductTableResponse response = await handler.Handle(
+            new GetPnlProductTableQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+                PageSize = 25,
+            },
+            CancellationToken.None);
+
+        // Assert: the aggregate of unlinked sales is reported next to the table, not as a product.
+        response.TotalCount.Should().Be(3);
+        response.Items.Should().HaveCount(3).And.OnlyContain(row => row.ProductId != null);
+
+        response.Counts.All.Should().Be(3);
+        response.Counts.Loss.Should().Be(1);
+        response.Counts.WithoutCost.Should().Be(1);
+
+        response.Summary.Products.Should().Be(3);
+        response.Summary.LossProducts.Should().Be(1);
+        response.Summary.LossMarginAmount.Should().Be(-150m);
+        response.Summary.WithoutCostProducts.Should().Be(1);
+        response.Summary.WithoutCostNetRevenueAmount.Should().Be(300m);
+
+        response.Unlinked.Should().NotBeNull();
+        response.Unlinked!.Lines.Should().Be(1);
+        response.Unlinked.RevenueAmount.Should().Be(200m);
+        response.Unlinked.NetRevenueAmount.Should().Be(200m);
+
+        response.Currency.Should().Be("RUB");
+    }
+
+    [Fact]
+    public async Task GetProductTable_NoSearchAndMetricSort_LabelsOnlyTheServedPage()
+    {
+        // Arrange: three products, one row per page. A product outside the page costs no lookup.
+        Guid top = Guid.NewGuid();
+        Guid middle = Guid.NewGuid();
+        Guid bottom = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m, top),
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 400m, middle),
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 600m, bottom),
+        };
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>
+            {
+                [top] = "SKU-TOP",
+                [middle] = "SKU-MIDDLE",
+                [bottom] = "SKU-BOTTOM",
+            });
+
+        GetPnlProductTableQueryHandler handler = new GetPnlProductTableQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlProductTableResponse response = await handler.Handle(
+            new GetPnlProductTableQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+                SortBy = PnlProductSortKey.Margin,
+                Descending = true,
+                PageSize = 1,
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Items.Should().ContainSingle().Which.ProductId.Should().Be(top);
+        response.Items[0].Sku.Should().Be("SKU-TOP");
+        response.TotalCount.Should().Be(3);
+
+        lookup.Verify(
+            l => l.GetSkusAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(top)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetProductTable_WithSearch_LabelsTheWholePopulationBeforeFiltering()
+    {
+        // Arrange: a search is matched against SKUs, so every product needs its label first.
+        Guid first = Guid.NewGuid();
+        Guid second = Guid.NewGuid();
+        Guid third = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m, first),
+            Row(new DateOnly(2026, 8, 1), 500m, 450m, 600m, second),
+            Row(new DateOnly(2026, 8, 1), 300m, 300m, cost: null, productId: third),
+        };
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>
+            {
+                [first] = "BAG-CLASSIC-BLK",
+                [second] = "WALLET-SLIM-BRN",
+                [third] = "BELT-35-BLK",
+            });
+
+        GetPnlProductTableQueryHandler handler = new GetPnlProductTableQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlProductTableResponse response = await handler.Handle(
+            new GetPnlProductTableQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+                Search = "  bag  ",
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Items.Should().ContainSingle()
+            .Which.Sku.Should().Be("BAG-CLASSIC-BLK");
+        response.Search.Should().Be("bag");
+        response.TotalCount.Should().Be(1);
+
+        lookup.Verify(
+            l => l.GetSkusAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 3),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetProductTable_SortedBySku_LabelsTheWholePopulation()
+    {
+        // Arrange: the order itself is built from labels, so a page-only lookup is not enough.
+        Guid first = Guid.NewGuid();
+        Guid second = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m, first),
+            Row(new DateOnly(2026, 8, 1), 500m, 450m, 600m, second),
+        };
+
+        Mock<IProductSkuLookup> lookup = BuildLookup();
+        lookup
+            .Setup(l => l.GetSkusAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string>
+            {
+                [first] = "SKU-B",
+                [second] = "SKU-A",
+            });
+
+        GetPnlProductTableQueryHandler handler = new GetPnlProductTableQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            lookup.Object);
+
+        // Act
+        PnlProductTableResponse response = await handler.Handle(
+            new GetPnlProductTableQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+                SortBy = PnlProductSortKey.Sku,
+                Descending = false,
+                PageSize = 1,
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Items.Should().ContainSingle().Which.Sku.Should().Be("SKU-A");
+
+        lookup.Verify(
+            l => l.GetSkusAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetProductTable_EchoesTheRequestAndReportsTheServedPage()
+    {
+        // Arrange: a page far beyond the last one is clamped, and the echo says which page ran.
+        FakeStore store = new FakeStore(new PnlLinePage(), new List<PnlLineRow>())
+        {
+            CurrencyExclusions = new List<PnlCurrencyExclusion>
+            {
+                new() { Currency = "KZT", Lines = 54, RevenueAmount = 512000m },
+                new() { Currency = "BYN", Lines = 8, RevenueAmount = 410m },
+            },
+        };
+
+        GetPnlProductTableQueryHandler handler = new GetPnlProductTableQueryHandler(
+            store,
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        PnlProductTableResponse response = await handler.Handle(
+            new GetPnlProductTableQuery
+            {
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+                Segment = PnlProductSegment.Loss,
+                Search = " bag ",
+                SortBy = PnlProductSortKey.ReturnOnSoldCostPercent,
+                Descending = false,
+                Page = 5,
+                PageSize = 50,
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Page.Should().Be(1);
+        response.PageSize.Should().Be(50);
+        response.Segment.Should().Be(PnlProductSegment.Loss);
+        response.Search.Should().Be("bag");
+        response.SortBy.Should().Be(PnlProductSortKey.ReturnOnSoldCostPercent);
+        response.Descending.Should().BeFalse();
+        response.ExcludedByCurrency.Should().Be(62);
+        response.ExcludedCurrencies.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetProductDetails_ProductWithoutLines_AnswersAnEmptySheet()
+    {
+        GetPnlProductDetailsQueryHandler handler = new GetPnlProductDetailsQueryHandler(
+            new FakeStore(new PnlLinePage(), new List<PnlLineRow>()),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        PnlProductDetailsResponse response = await handler.Handle(
+            new GetPnlProductDetailsQuery
+            {
+                ProductId = Guid.NewGuid(),
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+            },
+            CancellationToken.None);
+
+        response.Product.Should().BeNull();
+        response.Channels.Should().BeEmpty();
+        response.Documents.Pending.Lines.Should().Be(0);
+        response.Documents.Overdue.Lines.Should().Be(0);
+        response.Documents.ControlDifferenceAmount.Should().BeNull();
+        response.Currency.Should().Be("RUB");
+    }
+
+    [Fact]
+    public async Task GetProductDetails_ChannelsAreOrderedAndTheirSharesAddUpToHundred()
+    {
+        // Arrange: one product sold through two channels, the first earning three times more.
+        Guid productId = Guid.NewGuid();
+        Guid firstChannel = Guid.NewGuid();
+        Guid secondChannel = Guid.NewGuid();
+
+        List<PnlLineRow> rows = new()
+        {
+            Row(new DateOnly(2026, 8, 1), 300m, 270m, 100m, productId, channelId: firstChannel),
+            Row(new DateOnly(2026, 8, 1), 100m, 90m, 20m, productId, channelId: secondChannel),
+        };
+
+        GetPnlProductDetailsQueryHandler handler = new GetPnlProductDetailsQueryHandler(
+            new FakeStore(new PnlLinePage(), rows),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        PnlProductDetailsResponse response = await handler.Handle(
+            new GetPnlProductDetailsQuery
+            {
+                ProductId = productId,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                },
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Product.Should().NotBeNull();
+        response.Product!.RevenueAmount.Should().Be(400m);
+
+        response.Channels.Should().HaveCount(2);
+        response.Channels[0].ChannelId.Should().Be(firstChannel);
+        response.Channels[0].RevenueSharePercent.Should().Be(75m);
+        response.Channels[1].ChannelId.Should().Be(secondChannel);
+        response.Channels[1].RevenueSharePercent.Should().Be(25m);
+        response.Channels.Sum(channel => channel.RevenueSharePercent!.Value).Should().Be(100m);
+    }
+
+    [Fact]
+    public async Task GetProductDetails_DocumentsReconcileWithTheProductRow()
+    {
+        // Arrange: one complete, one provisional and one overdue line of the same product.
+        Guid productId = Guid.NewGuid();
+
+        PnlLineRow complete = Row(
+            new DateOnly(2026, 8, 1),
+            100m,
+            90m,
+            10m,
+            productId,
+            completeness: PnlLineCompleteness.Complete);
+
+        PnlLineRow provisional = Row(
+            new DateOnly(2026, 8, 1),
+            200m,
+            180m,
+            20m,
+            productId,
+            completeness: PnlLineCompleteness.Provisional);
+        provisional.MissingDocumentTypes = new List<string> { "Commission" };
+        provisional.ExpectedBy = new DateTimeOffset(2026, 8, 14, 0, 0, 0, TimeSpan.Zero);
+
+        PnlLineRow overdue = Row(
+            new DateOnly(2026, 8, 1),
+            300m,
+            270m,
+            30m,
+            productId,
+            completeness: PnlLineCompleteness.Overdue);
+        overdue.MissingDocumentTypes = new List<string> { "Acquiring" };
+        overdue.ExpectedBy = new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero);
+
+        GetPnlProductDetailsQueryHandler handler = new GetPnlProductDetailsQueryHandler(
+            new FakeStore(new PnlLinePage(), new List<PnlLineRow> { complete, provisional, overdue }),
+            BuildTenantContext(),
+            BuildProvider().Object,
+            BuildLookup().Object);
+
+        // Act
+        PnlProductDetailsResponse response = await handler.Handle(
+            new GetPnlProductDetailsQuery
+            {
+                ProductId = productId,
+                Filter = new PnlQueryFilter
+                {
+                    From = new DateOnly(2026, 8, 1),
+                    To = new DateOnly(2026, 8, 31),
+                    Completeness = "all",
+                },
+            },
+            CancellationToken.None);
+
+        // Assert
+        response.Product.Should().NotBeNull();
+        response.Product!.ProvisionalRevenueAmount.Should().Be(500m);
+        response.Product.OverdueRevenueAmount.Should().Be(300m);
+
+        response.Documents.Pending.Lines.Should().Be(1);
+        response.Documents.Pending.RevenueAmount.Should().Be(200m);
+        response.Documents.Overdue.Lines.Should().Be(1);
+        response.Documents.Overdue.RevenueAmount.Should().Be(300m);
+
+        (response.Documents.Pending.RevenueAmount + response.Documents.Overdue.RevenueAmount)
+            .Should().Be(response.Product.ProvisionalRevenueAmount);
+        response.Documents.Overdue.RevenueAmount.Should().Be(response.Product.OverdueRevenueAmount);
+        response.Documents.ControlDifferenceAmount.Should().Be(response.Product.ControlDifferenceAmount);
+        response.Documents.LinesWithControlDifference.Should().Be(0);
     }
 
     private static GetPnlSummaryQueryHandler BuildSummaryHandler(IReadOnlyList<PnlLineRow> rows)
