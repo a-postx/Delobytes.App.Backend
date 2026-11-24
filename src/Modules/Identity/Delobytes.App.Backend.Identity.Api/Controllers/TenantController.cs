@@ -511,7 +511,7 @@ public class TenantController : ControllerBase
 
         if (response.Conflict)
         {
-            return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileConflict));
+            return Conflict(ErrorResponse.FromCode(IdentityErrorCodes.TenantTaxProfileConflict));
         }
 
         return CreatedAtAction(nameof(GetTaxProfiles), null, response);
@@ -543,21 +543,6 @@ public class TenantController : ControllerBase
                 Id = id,
             },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileNotFound));
-        }
-
-        if (response.NotLatest)
-        {
-            return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileNotLatest));
-        }
-
-        if (response.AlreadyEffective)
-        {
-            return Conflict(ErrorResponse.FromCode(ErrorCodes.Identity.TenantTaxProfileAlreadyEffective));
-        }
 
         return Ok(response);
     }

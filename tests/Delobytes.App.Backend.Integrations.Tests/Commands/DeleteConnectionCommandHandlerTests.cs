@@ -51,8 +51,8 @@ public class DeleteConnectionCommandHandlerTests
 
         Func<Task> act = () => handler.Handle(new DeleteConnectionCommand { Id = id }, CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"*{id}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ConnectionNotFound);
 
         _scheduleRepo.Verify(
             r => r.DisableForConnectionAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),

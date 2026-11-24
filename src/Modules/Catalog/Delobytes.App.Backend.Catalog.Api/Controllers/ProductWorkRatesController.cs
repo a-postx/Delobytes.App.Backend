@@ -106,7 +106,7 @@ public class ProductWorkRatesController : ControllerBase
         [FromBody] UpdateProductWorkRateApiRequest request,
         CancellationToken cancellationToken)
     {
-        UpdateProductWorkRateResponse response = await _mediator.Send(
+        await _mediator.Send(
             new UpdateProductWorkRateCommand
             {
                 Id = id,
@@ -115,11 +115,6 @@ public class ProductWorkRatesController : ControllerBase
                 ValidFrom = request.ValidFrom,
             },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }
@@ -132,14 +127,9 @@ public class ProductWorkRatesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        DeleteProductWorkRateResponse response = await _mediator.Send(
+        await _mediator.Send(
             new DeleteProductWorkRateCommand { Id = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }

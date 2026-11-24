@@ -92,8 +92,8 @@ public class AcceptInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*не найдено*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationNotFound);
     }
 
     [Fact]
@@ -117,8 +117,8 @@ public class AcceptInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*уже принято*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationAlreadyAccepted);
     }
 
     [Fact]
@@ -141,8 +141,8 @@ public class AcceptInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*истёк*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationExpired);
     }
 
     // ── User validation ───────────────────────────────────────────────────────────────
@@ -169,8 +169,8 @@ public class AcceptInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Пользователь не найден*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.UserNotFound);
     }
 
     [Fact]
@@ -198,8 +198,8 @@ public class AcceptInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*для другого email*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationEmailMismatch);
     }
 
     // ── Tenant isolation checks ───────────────────────────────────────────────────────
@@ -242,8 +242,8 @@ public class AcceptInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*уже являетесь членом*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.AlreadyMember);
     }
 
     [Fact]

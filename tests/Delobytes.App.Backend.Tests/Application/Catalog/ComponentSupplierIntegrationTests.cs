@@ -92,11 +92,9 @@ public class ComponentSupplierIntegrationTests
         };
 
         // Act
-        UpdateComponentResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.Name.Should().Be("Обновлённая коробка");
         existing.Description.Should().Be("Новое описание");
 

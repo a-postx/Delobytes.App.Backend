@@ -12,6 +12,10 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.15" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="Delobytes.App.Backend.Identity.Application.Errors" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

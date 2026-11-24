@@ -52,7 +52,6 @@ public class GetProductQueryHandlerTests
             new GetProductQuery { Id = product.Id },
             CancellationToken.None);
 
-        response.Found.Should().BeTrue();
         response.Photos.Should().HaveCount(3);
         response.Photos!.Select(p => p.DisplayOrder).Should().Equal(1, 1, 2);
         response.Photos!.Select(p => p.SizeVariant).Should().BeEquivalentTo(
@@ -89,12 +88,14 @@ public class GetProductQueryHandlerTests
             .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Product?)null);
 
-        GetProductResponse response = await _handler.Handle(
+        // Act
+        Func<Task> act = () => _handler.Handle(
             new GetProductQuery { Id = Guid.NewGuid() },
             CancellationToken.None);
 
-        response.Found.Should().BeFalse();
-        response.Photos.Should().BeNull();
+        // Assert
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
     }
 
     private static ProductPhoto BuildPhoto(

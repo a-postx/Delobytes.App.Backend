@@ -70,8 +70,8 @@ public class CreateInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     [Fact]
@@ -91,8 +91,8 @@ public class CreateInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     [Fact]
@@ -112,8 +112,8 @@ public class CreateInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     // ── Tenant isolation checks ──────────────────────────────────────────────────────
@@ -138,8 +138,8 @@ public class CreateInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _invitationRepo.Verify(r => r.Add(It.IsAny<Invitation>()), Times.Never);
         _invitationRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
@@ -187,8 +187,8 @@ public class CreateInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*уже является членом*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.AlreadyMember);
     }
 
     [Fact]
@@ -230,8 +230,8 @@ public class CreateInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Активное приглашение*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationAlreadyExists);
     }
 
     // ── Successful invitation creation ────────────────────────────────────────────────

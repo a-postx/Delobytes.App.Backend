@@ -80,8 +80,8 @@ public class TenantSettingsProviderTests
         Func<Task> act = () => _provider.GetAccountingSettingsAsync(tenantId, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"*{tenantId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantNotFound);
     }
 
     // ── GetTaxProfileAtAsync ──────────────────────────────────────────────────
@@ -195,8 +195,8 @@ public class TenantSettingsProviderTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"*{tenantId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantNotFound);
 
         _taxProfileRepositoryMock.Verify(
             r => r.GetAtDateAsync(It.IsAny<Guid>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
@@ -330,8 +330,8 @@ public class TenantSettingsProviderTests
         Func<Task> act = () => _provider.GetTaxProfileHistoryAsync(tenantId, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"*{tenantId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantNotFound);
 
         _taxProfileRepositoryMock.Verify(
             r => r.GetByTenantAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),

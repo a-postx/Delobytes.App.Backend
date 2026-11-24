@@ -1,10 +1,11 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Suppliers;
 
-public class GetSupplierQuery : IRequest<GetSupplierResponse?>
+public class GetSupplierQuery : IRequest<GetSupplierResponse>
 {
     public Guid Id { get; set; }
 }
@@ -30,7 +31,7 @@ public class GetSupplierResponse
     public DateTimeOffset? UpdatedAt { get; set; }
 }
 
-public class GetSupplierQueryHandler : IRequestHandler<GetSupplierQuery, GetSupplierResponse?>
+public class GetSupplierQueryHandler : IRequestHandler<GetSupplierQuery, GetSupplierResponse>
 {
     private readonly ISupplierRepository _repository;
 
@@ -39,13 +40,13 @@ public class GetSupplierQueryHandler : IRequestHandler<GetSupplierQuery, GetSupp
         _repository = repository;
     }
 
-    public async Task<GetSupplierResponse?> Handle(GetSupplierQuery request, CancellationToken cancellationToken)
+    public async Task<GetSupplierResponse> Handle(GetSupplierQuery request, CancellationToken cancellationToken)
     {
         Supplier? supplier = await _repository.GetByIdAsync(request.Id, cancellationToken);
 
         if (supplier == null)
         {
-            return null;
+            throw new AppException(CatalogErrorCodes.SupplierNotFound);
         }
 
         return new GetSupplierResponse

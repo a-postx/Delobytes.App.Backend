@@ -1,10 +1,11 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.WorkRates;
 
-public class GetWorkRateQuery : IRequest<GetWorkRateResponse?>
+public class GetWorkRateQuery : IRequest<GetWorkRateResponse>
 {
     public Guid Id { get; set; }
 }
@@ -35,7 +36,7 @@ public class GetWorkRateResponse
     public DateTimeOffset? UpdatedAt { get; set; }
 }
 
-public class GetWorkRateQueryHandler : IRequestHandler<GetWorkRateQuery, GetWorkRateResponse?>
+public class GetWorkRateQueryHandler : IRequestHandler<GetWorkRateQuery, GetWorkRateResponse>
 {
     private readonly IWorkRateRepository _repository;
     private readonly IWorkRateVersionRepository _versionRepository;
@@ -46,13 +47,13 @@ public class GetWorkRateQueryHandler : IRequestHandler<GetWorkRateQuery, GetWork
         _versionRepository = versionRepository;
     }
 
-    public async Task<GetWorkRateResponse?> Handle(GetWorkRateQuery request, CancellationToken cancellationToken)
+    public async Task<GetWorkRateResponse> Handle(GetWorkRateQuery request, CancellationToken cancellationToken)
     {
         WorkRate? workRate = await _repository.GetByIdAsync(request.Id, cancellationToken);
 
         if (workRate == null)
         {
-            return null;
+            throw new AppException(CatalogErrorCodes.WorkRateNotFound);
         }
 
         WorkRateVersion? activeVersion = await _versionRepository.GetActiveByWorkRateIdAsync(workRate.Id, cancellationToken);

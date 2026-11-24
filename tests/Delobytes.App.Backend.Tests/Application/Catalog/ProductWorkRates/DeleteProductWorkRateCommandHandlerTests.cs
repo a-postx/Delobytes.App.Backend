@@ -81,11 +81,10 @@ public class DeleteProductWorkRateCommandHandlerTests
 
         DeleteProductWorkRateCommandHandler handler = BuildHandler();
 
-        DeleteProductWorkRateResponse response = await handler.Handle(
+        await handler.Handle(
             new DeleteProductWorkRateCommand { Id = rate.Id },
             CancellationToken.None);
 
-        response.Found.Should().BeTrue();
         rate.Status.Should().Be(ProductWorkRateStatus.Removed);
         rate.RemovedFrom.Should().Be(today);
         rate.UpdatedAt.Should().NotBeNull();
@@ -180,9 +179,8 @@ public class DeleteProductWorkRateCommandHandlerTests
             new DeleteProductWorkRateCommand { Id = rate.Id },
             CancellationToken.None);
 
-        // A response, not an exception: the end state the caller asked for is already in place, and
-        // moving RemovedFrom forward would extend the period the version is still charged for.
-        response.Found.Should().BeTrue();
+        // No exception: the end state the caller asked for is already in place, and moving
+        // RemovedFrom forward would extend the period the version is still charged for.
         rate.RemovedFrom.Should().Be(originalRemoval);
 
         _snapshotServiceMock.Verify(
@@ -204,11 +202,12 @@ public class DeleteProductWorkRateCommandHandlerTests
 
         DeleteProductWorkRateCommandHandler handler = BuildHandler();
 
-        DeleteProductWorkRateResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new DeleteProductWorkRateCommand { Id = Guid.NewGuid() },
             CancellationToken.None);
 
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateNotFound);
 
         _snapshotServiceMock.Verify(
             s => s.CaptureBeforeChangeAsync(

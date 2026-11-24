@@ -15,6 +15,10 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.15" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="Delobytes.App.Backend.Catalog.Contracts.Errors" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

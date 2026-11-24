@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -30,20 +31,6 @@ public class DeleteTenantTaxProfileCommand : IRequest<DeleteTenantTaxProfileResp
 /// </summary>
 public class DeleteTenantTaxProfileResponse
 {
-    /// <summary>
-    /// Gets or sets признак того, что профиль не найден или принадлежит другому тенанту.
-    /// </summary>
-    public bool Found { get; set; }
-
-    /// <summary>
-    /// Gets or sets признак того, что удаляемая версия не является последней.
-    /// </summary>
-    public bool NotLatest { get; set; }
-
-    /// <summary>
-    /// Gets or sets признак того, что удаляемая версия уже используется.
-    /// </summary>
-    public bool AlreadyEffective { get; set; }
 }
 
 /// <summary>
@@ -74,7 +61,7 @@ public class DeleteTenantTaxProfileCommandHandler : IRequestHandler<DeleteTenant
 
         if (profile == null)
         {
-            return new DeleteTenantTaxProfileResponse { Found = false };
+            throw new AppException(IdentityErrorCodes.TenantTaxProfileNotFound);
         }
 
         TenantTaxProfile? latest = await _taxProfileRepository.GetLatestAsync(request.TenantId, cancellationToken);
@@ -83,10 +70,10 @@ public class DeleteTenantTaxProfileCommandHandler : IRequestHandler<DeleteTenant
         // начал бы применяться к периоду, который уже посчитан по удалённому.
         if (latest != null && latest.Id != profile.Id)
         {
-            return new DeleteTenantTaxProfileResponse { Found = true, NotLatest = true };
+            throw new AppException(IdentityErrorCodes.TenantTaxProfileNotLatest);
         }
 
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound);
 
         // Дата тенанта, а не UTC: иначе ставка, срок действия которой наступил в 00:30
         // по Москве 1 января, ещё числилась бы "будущей" по UTC (21:30 31 декабря).
@@ -97,12 +84,12 @@ public class DeleteTenantTaxProfileCommandHandler : IRequestHandler<DeleteTenant
         // обесценит. Отменить можно только версию, дата начала которой ещё не настала.
         if (profile.ValidFrom <= tenantToday)
         {
-            return new DeleteTenantTaxProfileResponse { Found = true, AlreadyEffective = true };
+            throw new AppException(IdentityErrorCodes.TenantTaxProfileAlreadyEffective);
         }
 
         _taxProfileRepository.Remove(profile);
         await _taxProfileRepository.SaveChangesAsync(cancellationToken);
 
-        return new DeleteTenantTaxProfileResponse { Found = true };
+        return new DeleteTenantTaxProfileResponse();
     }
 }

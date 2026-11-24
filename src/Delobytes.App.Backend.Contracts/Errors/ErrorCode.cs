@@ -7,7 +7,7 @@ namespace Delobytes.App.Backend.Contracts.Errors;
 /// </summary>
 public readonly record struct ErrorCode
 {
-    internal ErrorCode(string value, int status, string defaultMessage)
+    public ErrorCode(string value, int status, string defaultMessage)
     {
         Value = value;
         Status = status;

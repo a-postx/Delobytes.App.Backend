@@ -35,14 +35,9 @@ public class WorkRatesController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetWorkRateResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        GetWorkRateResponse? response = await _mediator.Send(
+        GetWorkRateResponse response = await _mediator.Send(
             new GetWorkRateQuery { Id = id },
             cancellationToken);
-
-        if (response == null)
-        {
-            return NotFound();
-        }
 
         return Ok(response);
     }
@@ -72,7 +67,7 @@ public class WorkRatesController : ControllerBase
         [FromBody] UpdateWorkRateApiRequest request,
         CancellationToken cancellationToken)
     {
-        UpdateWorkRateResponse response = await _mediator.Send(
+        await _mediator.Send(
             new UpdateWorkRateCommand
             {
                 Id = id,
@@ -80,11 +75,6 @@ public class WorkRatesController : ControllerBase
                 IsActive = request.IsActive,
             },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }
@@ -105,11 +95,6 @@ public class WorkRatesController : ControllerBase
             },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return Ok(response);
     }
 
@@ -117,14 +102,9 @@ public class WorkRatesController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        DeleteWorkRateResponse response = await _mediator.Send(
+        await _mediator.Send(
             new DeleteWorkRateCommand { Id = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }

@@ -402,7 +402,7 @@ public class TenantControllerTaxProfileTests
 
         _mediatorMock
             .Setup(m => m.Send(It.IsAny<DeleteTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DeleteTenantTaxProfileResponse { Found = true });
+            .ReturnsAsync(new DeleteTenantTaxProfileResponse());
 
         SetupUserClaims(tenantId);
 
@@ -421,48 +421,47 @@ public class TenantControllerTaxProfileTests
     }
 
     [Fact]
-    public async Task DeleteTaxProfile_ProfileNotFoundOrForeign_ReturnsNotFound()
+    public async Task DeleteTaxProfile_ProfileNotFoundOrForeign_ThrowsNotFound()
     {
         // Arrange
         Guid tenantId = Guid.NewGuid();
 
         _mediatorMock
             .Setup(m => m.Send(It.IsAny<DeleteTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DeleteTenantTaxProfileResponse { Found = false });
+            .ThrowsAsync(new AppException(IdentityErrorCodes.TenantTaxProfileNotFound));
 
         SetupUserClaims(tenantId);
 
         // Act
-        ActionResult<DeleteTenantTaxProfileResponse> result =
-            await _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
+        Func<Task> act = () => _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
 
         // Assert
-        NotFoundObjectResult notFound = result.Result.Should().BeOfType<NotFoundObjectResult>().Subject;
-        notFound.Value.Should().NotBeNull();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileNotFound);
     }
 
     [Fact]
-    public async Task DeleteTaxProfile_NonLatestVersion_ReturnsConflict()
+    public async Task DeleteTaxProfile_NonLatestVersion_ThrowsNotLatest()
     {
         // Arrange
         Guid tenantId = Guid.NewGuid();
 
         _mediatorMock
             .Setup(m => m.Send(It.IsAny<DeleteTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DeleteTenantTaxProfileResponse { Found = true, NotLatest = true });
+            .ThrowsAsync(new AppException(IdentityErrorCodes.TenantTaxProfileNotLatest));
 
         SetupUserClaims(tenantId);
 
         // Act
-        ActionResult<DeleteTenantTaxProfileResponse> result =
-            await _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
+        Func<Task> act = () => _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<ConflictObjectResult>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileNotLatest);
     }
 
     [Fact]
-    public async Task DeleteTaxProfile_AlreadyEffectiveVersion_ReturnsConflict()
+    public async Task DeleteTaxProfile_AlreadyEffectiveVersion_ThrowsAlreadyEffective()
     {
         // Arrange
         // Even the latest (and possibly only) version must be refused once its ValidFrom
@@ -471,16 +470,16 @@ public class TenantControllerTaxProfileTests
 
         _mediatorMock
             .Setup(m => m.Send(It.IsAny<DeleteTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DeleteTenantTaxProfileResponse { Found = true, AlreadyEffective = true });
+            .ThrowsAsync(new AppException(IdentityErrorCodes.TenantTaxProfileAlreadyEffective));
 
         SetupUserClaims(tenantId);
 
         // Act
-        ActionResult<DeleteTenantTaxProfileResponse> result =
-            await _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
+        Func<Task> act = () => _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<ConflictObjectResult>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileAlreadyEffective);
     }
 
     [Fact]

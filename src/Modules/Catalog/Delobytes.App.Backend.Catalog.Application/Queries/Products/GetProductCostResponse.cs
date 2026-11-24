@@ -7,9 +7,6 @@ namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
 /// </summary>
 public class GetProductCostResponse
 {
-    /// <summary>Gets or sets a value indicating whether the product exists.</summary>
-    public bool Found { get; set; }
-
     /// <summary>Gets or sets the product identifier.</summary>
     public Guid ProductId { get; set; }
 

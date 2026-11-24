@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
@@ -12,8 +13,6 @@ public class GetProductDeletionStatusQuery : IRequest<GetProductDeletionStatusRe
 
 public class GetProductDeletionStatusResponse
 {
-    public bool Found { get; set; }
-
     public Guid ProductId { get; set; }
 
     public ProductStatus Status { get; set; }
@@ -40,7 +39,7 @@ public class GetProductDeletionStatusQueryHandler : IRequestHandler<GetProductDe
 
         if (product == null)
         {
-            return new GetProductDeletionStatusResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         string statusMessage = product.Status switch
@@ -53,7 +52,6 @@ public class GetProductDeletionStatusQueryHandler : IRequestHandler<GetProductDe
 
         return new GetProductDeletionStatusResponse
         {
-            Found = true,
             ProductId = product.Id,
             Status = product.Status,
             DeletionRequestedAt = product.DeletionRequestedAt,

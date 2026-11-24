@@ -97,7 +97,6 @@ public class PreviewProductBomCostQueryHandlerTests
         PreviewProductBomCostResponse response = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.Preview.Should().NotBeNull();
         response.Preview!.TotalCost.Should().Be(230m);
 
@@ -260,7 +259,7 @@ public class PreviewProductBomCostQueryHandlerTests
         ExceptionAssertions<AppException> exception =
             await act.Should().ThrowAsync<AppException>();
 
-        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomLineInvalidQuantity);
+        exception.Which.Code.Should().Be(CatalogErrorCodes.BomLineInvalidQuantity);
     }
 
     [Fact]
@@ -299,7 +298,7 @@ public class PreviewProductBomCostQueryHandlerTests
         ExceptionAssertions<AppException> exception =
             await act.Should().ThrowAsync<AppException>();
 
-        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomComponentNotFound);
+        exception.Which.Code.Should().Be(CatalogErrorCodes.BomComponentNotFound);
 
         _costCalculatorMock.Verify(
             calculator => calculator.CalculateForLinesAsync(
@@ -365,7 +364,6 @@ public class PreviewProductBomCostQueryHandlerTests
         PreviewProductBomCostResponse response = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.Preview.Should().NotBeNull();
         response.Preview!.IsComplete.Should().BeFalse();
         response.Preview.Warnings.Should().ContainSingle();
@@ -401,17 +399,11 @@ public class PreviewProductBomCostQueryHandlerTests
         };
 
         // Act
-        PreviewProductBomCostResponse response = await _handler.Handle(query, CancellationToken.None);
+        Func<Task> act = () => _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
-        response.Preview.Should().BeNull();
-        response.Baseline.Should().BeNull();
-        response.Delta.Should().BeNull();
-
-        _costCalculatorMock.Verify(
-            calculator => calculator.CalculateAsync(It.IsAny<Guid>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
     }
 
     [Fact]

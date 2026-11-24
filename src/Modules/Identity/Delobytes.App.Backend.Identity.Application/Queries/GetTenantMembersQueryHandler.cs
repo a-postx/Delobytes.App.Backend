@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -136,7 +137,7 @@ public class GetTenantMembersQueryHandler : IRequestHandler<GetTenantMembersQuer
     public async Task<GetTenantMembersResponse> Handle(GetTenantMembersQuery request, CancellationToken cancellationToken)
     {
         TenantMembership? requesterMembership = await _membershipRepository
-            .FindActiveByUserAndTenantAsync(request.RequestedByUserId, request.TenantId, cancellationToken) ?? throw new InvalidOperationException("Вы не являетесь членом данного тенанта.");
+            .FindActiveByUserAndTenantAsync(request.RequestedByUserId, request.TenantId, cancellationToken) ?? throw new AppException(ErrorCodes.Common.Forbidden, "Вы не являетесь членом данного тенанта.");
 
         IReadOnlyList<TenantMembership> memberships = await _membershipRepository
             .GetActiveByTenantAsync(request.TenantId, cancellationToken);

@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Suppliers;
@@ -26,7 +27,6 @@ public class UpdateSupplierCommand : IRequest<UpdateSupplierResponse>, IRequireR
 
 public class UpdateSupplierResponse
 {
-    public bool Found { get; set; }
 }
 
 public class UpdateSupplierCommandHandler : IRequestHandler<UpdateSupplierCommand, UpdateSupplierResponse>
@@ -44,7 +44,7 @@ public class UpdateSupplierCommandHandler : IRequestHandler<UpdateSupplierComman
 
         if (supplier == null)
         {
-            return new UpdateSupplierResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.SupplierNotFound);
         }
 
         supplier.Inn = request.Inn;
@@ -57,6 +57,6 @@ public class UpdateSupplierCommandHandler : IRequestHandler<UpdateSupplierComman
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new UpdateSupplierResponse { Found = true };
+        return new UpdateSupplierResponse();
     }
 }

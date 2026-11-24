@@ -81,8 +81,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     [Fact]
@@ -127,8 +127,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     // ── Tenant isolation checks ───────────────────────────────────────────────────────
@@ -160,8 +160,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*не принадлежит*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationNotFound);
 
         _invitationRepo.Verify(r => r.Remove(It.IsAny<Invitation>()), Times.Never);
         _invitationRepo.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
@@ -186,7 +186,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _invitationRepo.Verify(r => r.Remove(It.IsAny<Invitation>()), Times.Never);
     }
@@ -216,8 +217,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*не найдено*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationNotFound);
     }
 
     [Fact]
@@ -248,8 +249,8 @@ public class RevokeInvitationCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*принятое приглашение*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.InvitationAlreadyAccepted);
     }
 
     // ── Successful revocation ─────────────────────────────────────────────────────────

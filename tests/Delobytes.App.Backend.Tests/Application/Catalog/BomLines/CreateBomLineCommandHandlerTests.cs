@@ -53,7 +53,7 @@ public class CreateBomLineCommandHandlerTests
         ExceptionAssertions<AppException> exception =
             await action.Should().ThrowAsync<AppException>();
 
-        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomLineInvalidQuantity);
+        exception.Which.Code.Should().Be(CatalogErrorCodes.BomLineInvalidQuantity);
 
         _bomLineRepositoryMock.Verify(
             repository => repository.Add(It.IsAny<BomLine>()),
@@ -84,7 +84,7 @@ public class CreateBomLineCommandHandlerTests
         ExceptionAssertions<AppException> exception =
             await action.Should().ThrowAsync<AppException>();
 
-        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomComponentNotFound);
+        exception.Which.Code.Should().Be(CatalogErrorCodes.BomComponentNotFound);
 
         _bomLineRepositoryMock.Verify(
             repository => repository.Add(It.IsAny<BomLine>()),
@@ -204,7 +204,7 @@ public class CreateBomLineCommandHandlerTests
         // An equal date would close the existing version on the day it started, producing an empty
         // interval and silently deleting a version that had been in force; an earlier one would
         // rewrite the past. Neither is a correction the caller can express here.
-        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomLineValidFromConflict);
+        exception.Which.Code.Should().Be(CatalogErrorCodes.BomLineValidFromConflict);
 
         previous.ValidTo.Should().BeNull();
 

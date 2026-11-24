@@ -64,7 +64,6 @@ public class ProductChannelLinksTests
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.ChannelLinks.Should().ContainSingle();
         response.ChannelLinks![0].ChannelId.Should().Be(channelId);
         response.ChannelLinks[0].ChannelName.Should().Be("Wildberries");
@@ -92,7 +91,6 @@ public class ProductChannelLinksTests
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.ChannelLinks.Should().BeEmpty();
     }
 

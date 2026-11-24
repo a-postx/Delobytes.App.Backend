@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.WorkRates;
@@ -22,7 +23,6 @@ public class UpdateWorkRateCommand : IRequest<UpdateWorkRateResponse>, IRequireR
 
 public class UpdateWorkRateResponse
 {
-    public bool Found { get; set; }
 }
 
 public class UpdateWorkRateCommandHandler : IRequestHandler<UpdateWorkRateCommand, UpdateWorkRateResponse>
@@ -40,7 +40,7 @@ public class UpdateWorkRateCommandHandler : IRequestHandler<UpdateWorkRateComman
 
         if (workRate == null)
         {
-            return new UpdateWorkRateResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.WorkRateNotFound);
         }
 
         workRate.Name = request.Name;
@@ -49,6 +49,6 @@ public class UpdateWorkRateCommandHandler : IRequestHandler<UpdateWorkRateComman
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new UpdateWorkRateResponse { Found = true };
+        return new UpdateWorkRateResponse();
     }
 }

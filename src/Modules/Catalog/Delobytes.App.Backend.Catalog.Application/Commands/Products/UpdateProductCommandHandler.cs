@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Application.Queries.Products;
 using Delobytes.App.Backend.Catalog.Domain;
@@ -56,7 +57,6 @@ public class UpdateProductCommand : IRequest<UpdateProductResponse>, IRequireRol
 
 public class UpdateProductResponse
 {
-    public bool Found { get; set; }
 }
 
 /// <summary>
@@ -87,7 +87,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
 
         if (product == null || product.Status == ProductStatus.Deleted)
         {
-            return new UpdateProductResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         if (request.Sku != null)
@@ -118,7 +118,7 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
         }
 
         await _repository.SaveChangesAsync(cancellationToken);
-        return new UpdateProductResponse { Found = true };
+        return new UpdateProductResponse();
     }
 
     /// <summary>

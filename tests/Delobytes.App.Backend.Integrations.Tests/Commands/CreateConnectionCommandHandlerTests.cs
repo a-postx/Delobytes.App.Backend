@@ -1,11 +1,13 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using FluentAssertions;
@@ -72,12 +74,12 @@ public class CreateConnectionCommandHandlerTests
 
         Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage("*unknown*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ChannelTemplateNotFound);
     }
 
     [Fact]
-    public async Task Handle_ActiveConnectionForChannelAlreadyExists_ThrowsConflictException()
+    public async Task Handle_ActiveConnectionForChannelAlreadyExists_ThrowsConnectionAlreadyActive()
     {
         SystemChannelTemplate template = BuildTemplate();
         Guid channelId = Guid.NewGuid();
@@ -94,8 +96,8 @@ public class CreateConnectionCommandHandlerTests
 
         Func<Task> act = () => handler.Handle(BuildCommand(channelId: channelId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<ConflictException>()
-            .WithMessage("К этому каналу продаж уже привязано активное подключение.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ConnectionAlreadyActive);
     }
 
     [Fact]
@@ -128,8 +130,8 @@ public class CreateConnectionCommandHandlerTests
 
         Func<Task> act = () => handler.Handle(BuildCommand(channelId: channelId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Неверный API-ключ*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ApiKeyValidationFailed);
     }
 
     [Fact]

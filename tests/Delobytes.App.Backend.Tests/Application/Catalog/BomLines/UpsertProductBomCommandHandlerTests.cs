@@ -114,7 +114,7 @@ public class UpsertProductBomCommandHandlerTests
         ExceptionAssertions<AppException> exception =
             await action.Should().ThrowAsync<AppException>();
 
-        exception.Which.Code.Should().Be(ErrorCodes.Catalog.BomLineInvalidQuantity);
+        exception.Which.Code.Should().Be(CatalogErrorCodes.BomLineInvalidQuantity);
     }
 
     [Fact]

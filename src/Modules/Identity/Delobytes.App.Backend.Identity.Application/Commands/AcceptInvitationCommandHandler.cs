@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -74,23 +75,23 @@ public class AcceptInvitationCommandHandler : IRequestHandler<AcceptInvitationCo
     /// <inheritdoc/>
     public async Task<AcceptInvitationResponse> Handle(AcceptInvitationCommand request, CancellationToken cancellationToken)
     {
-        Invitation? invitation = await _invitationRepository.FindByTokenAsync(request.Token, cancellationToken) ?? throw new InvalidOperationException("Приглашение не найдено.");
+        Invitation? invitation = await _invitationRepository.FindByTokenAsync(request.Token, cancellationToken) ?? throw new AppException(IdentityErrorCodes.InvitationNotFound);
 
         if (invitation.IsAccepted)
         {
-            throw new InvalidOperationException("Приглашение уже принято.");
+            throw new AppException(IdentityErrorCodes.InvitationAlreadyAccepted);
         }
 
         if (invitation.ExpiresAt < DateTimeOffset.UtcNow)
         {
-            throw new InvalidOperationException("Срок действия приглашения истёк.");
+            throw new AppException(IdentityErrorCodes.InvitationExpired);
         }
 
-        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken) ?? throw new InvalidOperationException("Пользователь не найден.");
+        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.UserNotFound);
 
         if (!string.Equals(user.Email, invitation.Email, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Приглашение предназначено для другого email адреса.");
+            throw new AppException(IdentityErrorCodes.InvitationEmailMismatch);
         }
 
         TenantMembership? existingMembership = await _membershipRepository
@@ -98,7 +99,7 @@ public class AcceptInvitationCommandHandler : IRequestHandler<AcceptInvitationCo
 
         if (existingMembership != null)
         {
-            throw new InvalidOperationException("Вы уже являетесь членом этого тенанта.");
+            throw new AppException(IdentityErrorCodes.AlreadyMember);
         }
 
         TenantMembership membership = new TenantMembership

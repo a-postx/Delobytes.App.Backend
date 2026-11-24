@@ -32,7 +32,7 @@ public class CreateProductCommandHandlerSkuTests
 
         // Assert
         (await act.Should().ThrowAsync<AppException>())
-            .Which.Code.Should().Be(ErrorCodes.Catalog.ProductSkuConflict);
+            .Which.Code.Should().Be(CatalogErrorCodes.ProductSkuConflict);
 
         repositoryMock.Verify(r => r.Add(It.IsAny<Product>()), Times.Never);
         repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);

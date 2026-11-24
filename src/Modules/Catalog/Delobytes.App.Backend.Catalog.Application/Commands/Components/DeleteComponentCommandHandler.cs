@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components;
@@ -14,7 +15,6 @@ public class DeleteComponentCommand : IRequest<DeleteComponentResponse>, IRequir
 
 public class DeleteComponentResponse
 {
-    public bool Found { get; set; }
 }
 
 public class DeleteComponentCommandHandler : IRequestHandler<DeleteComponentCommand, DeleteComponentResponse>
@@ -36,7 +36,7 @@ public class DeleteComponentCommandHandler : IRequestHandler<DeleteComponentComm
 
         if (component == null)
         {
-            return new DeleteComponentResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ComponentNotFound);
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -55,6 +55,6 @@ public class DeleteComponentCommandHandler : IRequestHandler<DeleteComponentComm
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new DeleteComponentResponse { Found = true };
+        return new DeleteComponentResponse();
     }
 }

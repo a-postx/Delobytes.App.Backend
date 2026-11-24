@@ -50,9 +50,6 @@ public class PreviewProductBomCostLine
 /// </summary>
 public class PreviewProductBomCostResponse
 {
-    /// <summary>Gets or sets a value indicating whether the product exists.</summary>
-    public bool Found { get; set; }
-
     /// <summary>Gets or sets the cost breakdown of the draft.</summary>
     public GetProductCostResponse? Preview { get; set; }
 
@@ -142,14 +139,14 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
 
         if (product == null)
         {
-            return new PreviewProductBomCostResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         // The draft is rejected exactly like a save would be, so the preview cannot show a figure
         // the save would later refuse to produce.
         if (request.Lines.Any(line => line.Quantity <= 0m))
         {
-            throw new AppException(ErrorCodes.Catalog.BomLineInvalidQuantity);
+            throw new AppException(CatalogErrorCodes.BomLineInvalidQuantity);
         }
 
         if (request.Lines.Select(line => line.ComponentId).Distinct().Count() != request.Lines.Count)
@@ -177,7 +174,6 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
 
         return new PreviewProductBomCostResponse
         {
-            Found = true,
             Preview = ProductCostResponseMapper.Map(previewBreakdown),
             Baseline = MapBaseline(baselineBreakdown),
             Delta = MapDelta(previewBreakdown, baselineBreakdown),
@@ -204,7 +200,7 @@ public class PreviewProductBomCostQueryHandler : IRequestHandler<PreviewProductB
         {
             if (!componentsById.TryGetValue(line.ComponentId, out Component? component))
             {
-                throw new AppException(ErrorCodes.Catalog.BomComponentNotFound);
+                throw new AppException(CatalogErrorCodes.BomComponentNotFound);
             }
 
             lines.Add(new CostCalculationLine(line.ComponentId, component, line.Quantity));

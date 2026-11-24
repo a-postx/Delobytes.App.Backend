@@ -103,12 +103,9 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         };
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(command, CancellationToken.None);
+        await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.NotLatest.Should().BeFalse();
-        response.AlreadyEffective.Should().BeFalse();
 
         _taxProfileRepositoryMock.Verify(r => r.Remove(latest), Times.Once);
         _taxProfileRepositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -130,12 +127,11 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         };
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.NotLatest.Should().BeTrue();
-        response.AlreadyEffective.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileNotLatest);
 
         _taxProfileRepositoryMock.Verify(r => r.Remove(It.IsAny<TenantTaxProfile>()), Times.Never);
         _taxProfileRepositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
@@ -159,10 +155,11 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         };
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileNotFound);
         _taxProfileRepositoryMock.Verify(r => r.Remove(It.IsAny<TenantTaxProfile>()), Times.Never);
         _taxProfileRepositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -197,14 +194,11 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(only, only, BuildTenant(tenantId));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        await _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = only.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.NotLatest.Should().BeFalse();
-        response.AlreadyEffective.Should().BeFalse();
         _taxProfileRepositoryMock.Verify(r => r.Remove(only), Times.Once);
     }
 
@@ -220,14 +214,13 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(only, only, BuildTenant(tenantId));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        Func<Task> act = () => _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = only.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.NotLatest.Should().BeFalse();
-        response.AlreadyEffective.Should().BeTrue();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileAlreadyEffective);
         _taxProfileRepositoryMock.Verify(r => r.Remove(It.IsAny<TenantTaxProfile>()), Times.Never);
         _taxProfileRepositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -241,13 +234,13 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(only, only, BuildTenant(tenantId));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        Func<Task> act = () => _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = only.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.AlreadyEffective.Should().BeTrue();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileAlreadyEffective);
         _taxProfileRepositoryMock.Verify(r => r.Remove(It.IsAny<TenantTaxProfile>()), Times.Never);
     }
 
@@ -265,14 +258,13 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(second, second, BuildTenant(tenantId));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        Func<Task> act = () => _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = second.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.NotLatest.Should().BeFalse();
-        response.AlreadyEffective.Should().BeTrue();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileAlreadyEffective);
         _taxProfileRepositoryMock.Verify(r => r.Remove(It.IsAny<TenantTaxProfile>()), Times.Never);
     }
 
@@ -288,14 +280,11 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(second, second, BuildTenant(tenantId));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        await _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = second.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.NotLatest.Should().BeFalse();
-        response.AlreadyEffective.Should().BeFalse();
         _taxProfileRepositoryMock.Verify(r => r.Remove(second), Times.Once);
     }
 
@@ -312,13 +301,13 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(earlier, latest, BuildTenant(tenantId));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        Func<Task> act = () => _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = earlier.Id },
             CancellationToken.None);
 
         // Assert
-        response.NotLatest.Should().BeTrue();
-        response.AlreadyEffective.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantTaxProfileNotLatest);
     }
 
     [Fact]
@@ -343,12 +332,11 @@ public class DeleteTenantTaxProfileCommandHandlerTests
         Setup(future, future, BuildTenant(tenantId, "Asia/Kamchatka"));
 
         // Act
-        DeleteTenantTaxProfileResponse response = await _handler.Handle(
+        await _handler.Handle(
             new DeleteTenantTaxProfileCommand { TenantId = tenantId, Id = future.Id },
             CancellationToken.None);
 
         // Assert
-        response.AlreadyEffective.Should().BeFalse();
         _taxProfileRepositoryMock.Verify(r => r.Remove(future), Times.Once);
     }
 
@@ -383,7 +371,8 @@ public class DeleteTenantTaxProfileCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantNotFound);
     }
 
     [Fact]

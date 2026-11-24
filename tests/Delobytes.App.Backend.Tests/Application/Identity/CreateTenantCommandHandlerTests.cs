@@ -89,8 +89,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*не найден*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.UserNotFound);
     }
 
     // ── Tenant limit validation ───────────────────────────────────────────────────────
@@ -117,8 +117,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*лимит*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantLimitReached);
 
         _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
     }
@@ -145,8 +145,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*(5)*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.TenantLimitReached);
     }
 
     // ── First tenant creation ─────────────────────────────────────────────────────────
@@ -245,8 +245,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*необходимо указать текущий*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.CurrentTenantRequired);
     }
 
     [Fact]
@@ -276,8 +276,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
     }
@@ -309,8 +309,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Администратор*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
     }
 
     [Fact]
@@ -338,8 +338,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*не состоит*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.MembershipNotFound);
     }
 
     // ── Tenant isolation checks ───────────────────────────────────────────────────────
@@ -372,7 +372,8 @@ public class CreateTenantCommandHandlerTests
         // Act & Assert
         Func<Task> act = async () => await BuildHandler().Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.MembershipNotFound);
 
         _tenantRepo.Verify(r => r.Add(It.IsAny<Tenant>()), Times.Never);
     }

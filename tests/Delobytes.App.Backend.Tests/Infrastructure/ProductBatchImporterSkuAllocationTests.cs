@@ -170,7 +170,7 @@ public class ProductBatchImporterSkuAllocationTests
                     && e.RecordsFailed == 1
                     && e.ErrorMessage != null
                     && e.ErrorMessage.Contains(
-                        ErrorCodes.Catalog.ProductCodeAllocationFailed.DefaultMessage,
+                        CatalogErrorCodes.ProductCodeAllocationFailed.DefaultMessage,
                         StringComparison.Ordinal)),
                 It.IsAny<CancellationToken>()),
             Times.Once);

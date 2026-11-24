@@ -27,7 +27,6 @@ public class UpdateProductWorkRateCommand : IRequest<UpdateProductWorkRateRespon
 
 public class UpdateProductWorkRateResponse
 {
-    public bool Found { get; set; }
 }
 
 public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProductWorkRateCommand, UpdateProductWorkRateResponse>
@@ -52,7 +51,7 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
 
         if (rate == null)
         {
-            return new UpdateProductWorkRateResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductWorkRateNotFound);
         }
 
         // Editing a superseded or removed version would never change a calculation: it is not the
@@ -61,12 +60,12 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
         // touched here: an active version has none, and a removed one cannot be reached.
         if (rate.Status != ProductWorkRateStatus.Active)
         {
-            throw new AppException(ErrorCodes.Catalog.ProductWorkRateNotFound);
+            throw new AppException(CatalogErrorCodes.ProductWorkRateNotFound);
         }
 
         if (request.WorkRateId != rate.WorkRateId)
         {
-            WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken) ?? throw new AppException(ErrorCodes.Catalog.WorkRateNotFound);
+            WorkRate? workRate = await _workRateRepository.GetByIdAsync(request.WorkRateId, cancellationToken) ?? throw new AppException(CatalogErrorCodes.WorkRateNotFound);
         }
 
         List<ProductWorkRate> otherVersions = (await _repository.GetByProductIdAsync(rate.ProductId, cancellationToken))
@@ -78,7 +77,7 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
         // unpredictably.
         if (otherVersions.Any(v => v.ValidFrom == request.ValidFrom))
         {
-            throw new AppException(ErrorCodes.Catalog.ProductWorkRateValidFromConflict);
+            throw new AppException(CatalogErrorCodes.ProductWorkRateValidFromConflict);
         }
 
         // The edited version must remain the latest one for the product; otherwise an older
@@ -86,7 +85,7 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
         // would not take effect.
         if (otherVersions.Any(v => v.ValidFrom > request.ValidFrom))
         {
-            throw new AppException(ErrorCodes.Catalog.ProductWorkRateValidFromNotLatest);
+            throw new AppException(CatalogErrorCodes.ProductWorkRateValidFromNotLatest);
         }
 
         await _snapshotService.CaptureBeforeChangeAsync(new[] { rate.ProductId }, "WorkRateChanged", cancellationToken);
@@ -98,6 +97,6 @@ public class UpdateProductWorkRateCommandHandler : IRequestHandler<UpdateProduct
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new UpdateProductWorkRateResponse { Found = true };
+        return new UpdateProductWorkRateResponse();
     }
 }

@@ -18,7 +18,9 @@ internal static class CatalogDbContextSaveExtensions
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            throw new AppException(ErrorCodes.Common.Conflict, ex.Message);
+            // The provider message quotes entities and row versions; it stays in the log through
+            // the inner exception and never reaches the client.
+            throw new AppException(ErrorCodes.Common.Conflict, innerException: ex);
         }
         catch (DbUpdateException ex)
         {

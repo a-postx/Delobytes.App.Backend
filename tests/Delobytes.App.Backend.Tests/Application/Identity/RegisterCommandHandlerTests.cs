@@ -64,8 +64,8 @@ public class RegisterCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"Адрес {email} уже существует ¯\\_(ツ)_/¯");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.EmailAlreadyExists);
 
         _userRepository.Verify(r => r.Add(It.IsAny<User>()), Times.Never);
         _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);

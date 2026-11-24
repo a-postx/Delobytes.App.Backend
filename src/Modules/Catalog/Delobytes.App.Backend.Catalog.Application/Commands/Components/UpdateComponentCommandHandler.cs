@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components;
@@ -30,7 +31,6 @@ public class UpdateComponentCommand : IRequest<UpdateComponentResponse>, IRequir
 
 public class UpdateComponentResponse
 {
-    public bool Found { get; set; }
 }
 
 public class UpdateComponentCommandHandler : IRequestHandler<UpdateComponentCommand, UpdateComponentResponse>
@@ -48,7 +48,7 @@ public class UpdateComponentCommandHandler : IRequestHandler<UpdateComponentComm
 
         if (component == null)
         {
-            return new UpdateComponentResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ComponentNotFound);
         }
 
         component.Name = request.Name;
@@ -58,6 +58,6 @@ public class UpdateComponentCommandHandler : IRequestHandler<UpdateComponentComm
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new UpdateComponentResponse { Found = true };
+        return new UpdateComponentResponse();
     }
 }

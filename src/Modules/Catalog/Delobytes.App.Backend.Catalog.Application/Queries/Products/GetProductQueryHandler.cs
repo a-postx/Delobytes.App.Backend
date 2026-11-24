@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Packing;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
@@ -14,8 +15,6 @@ public class GetProductQuery : IRequest<GetProductResponse>
 
 public class GetProductResponse
 {
-    public bool Found { get; set; }
-
     public Guid Id { get; set; }
 
     /// <summary>Immutable product code issued by the numbering scheme.</summary>
@@ -72,12 +71,11 @@ public class GetProductQueryHandler : IRequestHandler<GetProductQuery, GetProduc
 
         if (product == null)
         {
-            return new GetProductResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         return new GetProductResponse
         {
-            Found = true,
             Id = product.Id,
             Code = product.Code,
             Sku = product.Sku,

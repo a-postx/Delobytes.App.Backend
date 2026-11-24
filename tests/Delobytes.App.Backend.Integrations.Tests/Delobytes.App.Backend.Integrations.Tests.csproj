@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <Using Include="Delobytes.App.Backend.Contracts.Errors" />
+    <Using Include="Delobytes.App.Backend.Integrations.Contracts.Errors" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

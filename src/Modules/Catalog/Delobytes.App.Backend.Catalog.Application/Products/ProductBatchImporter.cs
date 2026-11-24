@@ -806,7 +806,7 @@ public class ProductBatchImporter
             code = await AllocateCodeAsync(cancellationToken);
         }
 
-        throw new AppException(ErrorCodes.Catalog.ProductCodeAllocationFailed);
+        throw new AppException(CatalogErrorCodes.ProductCodeAllocationFailed);
     }
 
     private async Task<string> AllocateCodeAsync(CancellationToken cancellationToken)

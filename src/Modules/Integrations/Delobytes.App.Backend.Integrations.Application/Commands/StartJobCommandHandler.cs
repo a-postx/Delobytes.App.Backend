@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
@@ -40,14 +41,16 @@ public class StartJobCommandHandler : IRequestHandler<StartJobCommand, StartJobR
     {
         if (!request.JobType.IsManuallyStartable())
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.JobNotManuallyStartable,
                 $"Задача типа '{request.JobType.ToStringCamelCase()}' не может быть запущена вручную: " +
                 "она выполняется планировщиком по расписанию.");
         }
 
         if (!request.JobType.IsProductsImport())
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.JobTypeNotSupported,
                 $"Запуск задач типа '{request.JobType.ToStringCamelCase()}' через API не поддерживается.");
         }
 

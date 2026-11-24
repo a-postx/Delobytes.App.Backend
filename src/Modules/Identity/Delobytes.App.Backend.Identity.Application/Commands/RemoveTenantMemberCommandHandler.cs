@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -63,11 +64,11 @@ public class RemoveTenantMemberCommandHandler : IRequestHandler<RemoveTenantMemb
 
         if (removerMembership == null || removerMembership.Role != Role.Administrator)
         {
-            throw new InvalidOperationException("Только администратор может удалять пользователей из тенанта.");
+            throw new AppException(ErrorCodes.Common.Forbidden);
         }
 
         TenantMembership? targetMembership = await _membershipRepository
-            .FindActiveByUserAndTenantAsync(request.TargetUserId, request.TenantId, cancellationToken) ?? throw new InvalidOperationException("Пользователь не является членом данного тенанта.");
+            .FindActiveByUserAndTenantAsync(request.TargetUserId, request.TenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.MembershipNotFound);
 
         if (targetMembership.Role == Role.Administrator)
         {
@@ -75,7 +76,7 @@ public class RemoveTenantMemberCommandHandler : IRequestHandler<RemoveTenantMemb
 
             if (administratorCount <= 1)
             {
-                throw new InvalidOperationException("Невозможно удалить последнего администратора тенанта.");
+                throw new AppException(IdentityErrorCodes.LastAdministratorProtected);
             }
         }
 

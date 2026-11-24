@@ -33,14 +33,9 @@ public class SuppliersController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetSupplierResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        GetSupplierResponse? response = await _mediator.Send(
+        GetSupplierResponse response = await _mediator.Send(
             new GetSupplierQuery { Id = id },
             cancellationToken);
-
-        if (response == null)
-        {
-            return NotFound();
-        }
 
         return Ok(response);
     }
@@ -72,7 +67,7 @@ public class SuppliersController : ControllerBase
         [FromBody] UpdateSupplierRequest request,
         CancellationToken cancellationToken)
     {
-        UpdateSupplierResponse response = await _mediator.Send(
+        await _mediator.Send(
             new UpdateSupplierCommand
             {
                 Id = id,
@@ -85,11 +80,6 @@ public class SuppliersController : ControllerBase
             },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return NoContent();
     }
 
@@ -100,11 +90,6 @@ public class SuppliersController : ControllerBase
         DeleteSupplierResponse response = await _mediator.Send(
             new DeleteSupplierCommand { Id = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }

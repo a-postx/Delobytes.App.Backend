@@ -66,7 +66,7 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
 
             if (await _repository.SkuExistsAsync(request.Sku, cancellationToken))
             {
-                throw new AppException(ErrorCodes.Catalog.ProductSkuConflict);
+                throw new AppException(CatalogErrorCodes.ProductSkuConflict);
             }
 
             Product product = new Product

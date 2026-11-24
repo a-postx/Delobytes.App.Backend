@@ -35,8 +35,8 @@ public class CancelProductsImportCommandHandlerTests
             new CancelProductsImportCommand { JobRunId = jobRunId },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"*{jobRunId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotFound);
     }
 
     [Fact]
@@ -92,8 +92,8 @@ public class CancelProductsImportCommandHandlerTests
             new CancelProductsImportCommand { JobRunId = jobRun.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*импорта товаров*'wb-orders-import'*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotCancellable);
     }
 
     [Theory]
@@ -121,7 +121,8 @@ public class CancelProductsImportCommandHandlerTests
             new CancelProductsImportCommand { JobRunId = jobRun.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotInCancellableState);
     }
 
     [Theory]

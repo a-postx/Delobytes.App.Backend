@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using MediatR;
 
@@ -67,7 +68,7 @@ public class UpdateTenantLegalEntityCommandHandler : IRequestHandler<UpdateTenan
     /// <inheritdoc/>
     public async Task<UpdateTenantLegalEntityResponse> Handle(UpdateTenantLegalEntityCommand request, CancellationToken cancellationToken)
     {
-        Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
+        Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {request.TenantId} не найдено.");
 
         tenant.LegalName = request.LegalName;
         tenant.Inn = request.Inn;

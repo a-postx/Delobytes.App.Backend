@@ -79,7 +79,7 @@ public class TenantTaxProfileRepository : ITenantTaxProfileRepository
         {
             // Страховка от гонки: между проверкой «последняя версия» в обработчике и вставкой
             // уникальный индекс (TenantId, ValidFrom) может сработать раньше проверки.
-            throw new AppException(ErrorCodes.Identity.TenantTaxProfileConflict, ex.Message);
+            throw new AppException(IdentityErrorCodes.TenantTaxProfileConflict, innerException: ex);
         }
     }
 }

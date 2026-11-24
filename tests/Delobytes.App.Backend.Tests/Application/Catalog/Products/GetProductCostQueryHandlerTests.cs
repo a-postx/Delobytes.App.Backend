@@ -92,7 +92,6 @@ public class GetProductCostQueryHandlerTests
         GetProductCostResponse response = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.ProductId.Should().Be(productId);
         response.AsOfDate.Should().Be(asOf);
         response.MaterialCost.Should().Be(100m);
@@ -131,10 +130,11 @@ public class GetProductCostQueryHandlerTests
         };
 
         // Act
-        GetProductCostResponse response = await _handler.Handle(query, CancellationToken.None);
+        Func<Task> act = () => _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
 
         _costCalculatorMock.Verify(
             calculator => calculator.CalculateAsync(It.IsAny<Guid>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
@@ -184,7 +184,6 @@ public class GetProductCostQueryHandlerTests
         GetProductCostResponse response = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.AsOfDate.Should().Be(today);
 
         _costCalculatorMock.Verify(
@@ -245,7 +244,6 @@ public class GetProductCostQueryHandlerTests
         GetProductCostResponse response = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.IsComplete.Should().BeFalse();
         response.Lines.Should().HaveCount(2);
         response.Warnings.Should().HaveCount(1);

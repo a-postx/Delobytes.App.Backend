@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -63,7 +64,8 @@ public class GetJobsQueryHandler : IRequestHandler<GetJobsQuery, GetJobsResponse
         {
             if (!JobTypeExtensions.TryFromString(request.Type, out JobType parsed))
             {
-                throw new InvalidOperationException(
+                throw new AppException(
+                    IntegrationsErrorCodes.UnknownJobType,
                     $"Неизвестный тип задачи '{request.Type}'. Допустимые значения: " +
                     $"'{JobTypeExtensions.ProductsImport}', '{JobTypeExtensions.WbOrdersImport}', " +
                     $"'{JobTypeExtensions.OzonOrdersImportFbo}', '{JobTypeExtensions.OzonOrdersImportFbs}', " +

@@ -18,7 +18,6 @@ public static class ProductCostResponseMapper
     {
         return new GetProductCostResponse
         {
-            Found = true,
             ProductId = breakdown.ProductId,
             AsOfDate = breakdown.AsOfDate,
             MaterialCost = breakdown.MaterialCost,

@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Commands;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Channels;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Connections;
@@ -142,10 +143,9 @@ public class IntegrationsController : ControllerBase
     {
         if (!JobTypeExtensions.TryFromString(type, out JobType jobType))
         {
-            return BadRequest(new
-            {
-                error = $"Неизвестный тип задачи '{type}'.",
-            });
+            return BadRequest(ErrorResponse.FromCode(
+                IntegrationsErrorCodes.UnknownJobType,
+                $"Неизвестный тип задачи '{type}'."));
         }
 
         StartJobResponse response = await _mediator.Send(
@@ -176,10 +176,9 @@ public class IntegrationsController : ControllerBase
     {
         if (!JobTypeExtensions.TryFromString(request.Type, out JobType jobType))
         {
-            return BadRequest(new
-            {
-                error = $"Неизвестный тип задачи '{request.Type}'.",
-            });
+            return BadRequest(ErrorResponse.FromCode(
+                IntegrationsErrorCodes.UnknownJobType,
+                $"Неизвестный тип задачи '{request.Type}'."));
         }
 
         Guid jobRunId = await _mediator.Send(

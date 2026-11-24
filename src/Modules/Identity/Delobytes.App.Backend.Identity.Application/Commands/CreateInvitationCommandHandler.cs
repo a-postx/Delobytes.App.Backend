@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -95,7 +96,7 @@ public class CreateInvitationCommandHandler : IRequestHandler<CreateInvitationCo
 
         if (inviterMembership == null || inviterMembership.Role != Role.Administrator)
         {
-            throw new InvalidOperationException("Только администратор может приглашать пользователей в тенант.");
+            throw new AppException(ErrorCodes.Common.Forbidden);
         }
 
         User? existingUser = await _userRepository.FindByEmailAsync(request.Email, cancellationToken);
@@ -107,7 +108,7 @@ public class CreateInvitationCommandHandler : IRequestHandler<CreateInvitationCo
 
             if (existingMembership != null)
             {
-                throw new InvalidOperationException("Пользователь уже является членом этого тенанта.");
+                throw new AppException(IdentityErrorCodes.AlreadyMember);
             }
         }
 
@@ -116,7 +117,7 @@ public class CreateInvitationCommandHandler : IRequestHandler<CreateInvitationCo
 
         if (existingInvitation != null)
         {
-            throw new InvalidOperationException("Активное приглашение для этого email уже существует.");
+            throw new AppException(IdentityErrorCodes.InvitationAlreadyExists);
         }
 
         string token = Guid.NewGuid().ToString();

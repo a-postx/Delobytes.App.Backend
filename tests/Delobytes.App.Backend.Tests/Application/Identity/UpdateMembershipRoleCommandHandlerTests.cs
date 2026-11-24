@@ -77,8 +77,8 @@ public class UpdateMembershipRoleCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Только администратор может изменять роли пользователей.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _membershipRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -100,8 +100,8 @@ public class UpdateMembershipRoleCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Только администратор может изменять роли пользователей.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _membershipRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -127,8 +127,8 @@ public class UpdateMembershipRoleCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Пользователь не является членом данного тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.MembershipNotFound);
     }
 
     [Fact]
@@ -157,8 +157,8 @@ public class UpdateMembershipRoleCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Невозможно понизить роль последнего администратора тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.LastAdministratorProtected);
 
         targetMembership.Role.Should().Be(Role.Administrator);
         _membershipRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);

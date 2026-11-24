@@ -220,8 +220,10 @@ public class GetActiveTenantTaxProfileQueryHandlerTests
         };
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(query, CancellationToken.None));
+
+        Assert.Equal(IdentityErrorCodes.TenantNotFound, exception.Code);
 
         _taxProfileRepositoryMock.Verify(
             r => r.GetAtDateAsync(It.IsAny<Guid>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),

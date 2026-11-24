@@ -170,11 +170,11 @@ public class ComponentPriceCommandHandlerTests
         };
 
         // Act
-        CreateComponentPriceResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
         _priceRepoMock.Verify(r => r.Add(It.IsAny<ComponentPrice>()), Times.Never);
         _priceRepoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -223,7 +223,6 @@ public class ComponentPriceCommandHandlerTests
 
         // Assert
         response.Id.Should().NotBe(Guid.Empty);
-        response.Found.Should().BeTrue();
 
         _priceRepoMock.Verify(
             r => r.Add(It.Is<ComponentPrice>(p =>
@@ -307,11 +306,9 @@ public class ComponentPriceCommandHandlerTests
         };
 
         // Act
-        CreateComponentPriceResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
 
         _priceRepoMock.Verify(
             r => r.Add(It.Is<ComponentPrice>(p =>
@@ -346,11 +343,9 @@ public class ComponentPriceCommandHandlerTests
         };
 
         // Act
-        CreateComponentPriceResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
 
         _priceRepoMock.Verify(
             r => r.Add(It.Is<ComponentPrice>(p =>
@@ -486,9 +481,12 @@ public class ComponentPriceCommandHandlerTests
         };
 
         // Act
-        await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
+
         _snapshotServiceMock.Verify(
             s => s.CaptureBeforeChangeAsync(
                 It.IsAny<IReadOnlyCollection<Guid>>(),

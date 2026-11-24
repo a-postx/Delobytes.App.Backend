@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using MediatR;
 
@@ -57,7 +58,7 @@ public class UpdateTenantNameCommandHandler : IRequestHandler<UpdateTenantNameCo
     /// <inheritdoc/>
     public async Task<UpdateTenantNameResponse> Handle(UpdateTenantNameCommand request, CancellationToken cancellationToken)
     {
-        Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
+        Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {request.TenantId} не найдено.");
 
         tenant.Name = request.Name;
         tenant.UpdatedAt = DateTimeOffset.UtcNow;

@@ -64,7 +64,7 @@ public class ExceptionHandlingMiddleware
                 // could not tell an empty SKU from a genuine server fault.
                 errorCode = ErrorCodes.Common.ValidationFailed;
                 validationErrors = validationEx.Errors
-                    .GroupBy(failure => ToCamelCaseField(failure.PropertyName))
+                    .GroupBy(failure => ErrorFieldNames.ToCamelCase(failure.PropertyName))
                     .ToDictionary(
                         group => group.Key,
                         group => group.Select(failure => failure.ErrorMessage).ToArray());
@@ -76,21 +76,6 @@ public class ExceptionHandlingMiddleware
             case UnauthorizedAccessException:
                 errorCode = ErrorCodes.Common.Unauthorized;
                 _logger.LogWarning("Unauthorized: {Message}", exception.Message);
-                break;
-
-            case Integrations.Application.ConflictException:
-                errorCode = ErrorCodes.Common.Conflict;
-                _logger.LogWarning("Conflict: {Message}", exception.Message);
-                break;
-
-            case InvalidOperationException:
-                errorCode = ErrorCodes.Common.ValidationFailed;
-                _logger.LogWarning("Bad request: {Message}", exception.Message);
-                break;
-
-            case KeyNotFoundException:
-                errorCode = ErrorCodes.Common.NotFound;
-                _logger.LogWarning("Not found: {Message}", exception.Message);
                 break;
 
             default:
@@ -114,19 +99,5 @@ public class ExceptionHandlingMiddleware
         ErrorResponse body = ErrorResponse.FromCode(errorCode, message, validationErrors);
         string json = JsonSerializer.Serialize(body, JsonOptions);
         await context.Response.WriteAsync(json);
-    }
-
-    /// <summary>
-    /// Converts a FluentValidation property name ("Sku", "Barcodes[0].Value") to the camelCase
-    /// form the client sends, so the frontend can map errors back onto form fields.
-    /// </summary>
-    private static string ToCamelCaseField(string propertyName)
-    {
-        if (string.IsNullOrEmpty(propertyName) || char.IsLower(propertyName[0]))
-        {
-            return propertyName;
-        }
-
-        return char.ToLowerInvariant(propertyName[0]) + propertyName.Substring(1);
     }
 }

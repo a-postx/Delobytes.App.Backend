@@ -63,8 +63,8 @@ public class GetTenantMembersQueryHandlerTests
         Func<Task> act = async () => await _handler.Handle(BuildQuery(tenantId, requesterId), CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Вы не являетесь членом данного тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _membershipRepository.Verify(
             r => r.GetActiveByTenantAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),

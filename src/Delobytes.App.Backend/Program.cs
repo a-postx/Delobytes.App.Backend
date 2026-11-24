@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.BackgroundServices;
 using Delobytes.App.Backend.Catalog.Api;
 using Delobytes.App.Backend.Constants;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Extensions;
 using Delobytes.App.Backend.Finance.Api;
 using Delobytes.App.Backend.Identity.Api;
@@ -74,6 +75,33 @@ public partial class Program
                 .UseShutdownTimeout(TimeSpan.FromSeconds(Timeouts.WebHostShutdownTimeoutSec));
 
             builder.Services.AddControllers()
+                .ConfigureApiBehaviorOptions(options =>
+                {
+                    // Model binding rejects a request before any handler runs; without this the
+                    // client receives ValidationProblemDetails (400) while FluentValidation
+                    // answers ErrorResponse (422) for the same class of mistake.
+                    options.InvalidModelStateResponseFactory = context =>
+                    {
+                        Dictionary<string, string[]> errors = context.ModelState
+                            .Where(entry => entry.Value is { Errors.Count: > 0 })
+                            .GroupBy(entry => ErrorFieldNames.ToCamelCase(entry.Key))
+                            .ToDictionary(
+                                group => group.Key,
+                                group => group
+                                    .SelectMany(entry => entry.Value!.Errors)
+                                    .Select(error => string.IsNullOrEmpty(error.ErrorMessage)
+                                        ? ErrorCodes.Common.ValidationFailed.DefaultMessage
+                                        : error.ErrorMessage)
+                                    .ToArray());
+
+                        ErrorResponse body = ErrorResponse.FromCode(ErrorCodes.Common.ValidationFailed, errors: errors);
+
+                        return new Microsoft.AspNetCore.Mvc.ObjectResult(body)
+                        {
+                            StatusCode = ErrorCodes.Common.ValidationFailed.Status,
+                        };
+                    };
+                })
                 .AddJsonOptions(options =>
                 {
                     options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());

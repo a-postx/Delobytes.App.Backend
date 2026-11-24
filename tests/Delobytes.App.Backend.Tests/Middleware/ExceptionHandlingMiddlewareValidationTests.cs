@@ -123,7 +123,7 @@ public class ExceptionHandlingMiddlewareValidationTests
         // UniqueConstraintTranslator via the repository's save path, so it must keep its own
         // domain code rather than be reported as a validation failure.
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
-            _ => throw new AppException(ErrorCodes.Catalog.ProductSkuConflict));
+            _ => throw new AppException(CatalogErrorCodes.ProductSkuConflict));
         DefaultHttpContext context = BuildContext();
 
         // Act

@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 
@@ -47,7 +48,7 @@ public class GetProductCostQueryHandler : IRequestHandler<GetProductCostQuery, G
 
         if (product == null)
         {
-            return new GetProductCostResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         // The calculator itself never reads the clock, so "today" is settled here and passed down

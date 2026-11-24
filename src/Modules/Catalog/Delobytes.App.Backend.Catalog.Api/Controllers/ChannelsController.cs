@@ -71,11 +71,6 @@ public class ChannelsController : ControllerBase
             },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return NoContent();
     }
 }

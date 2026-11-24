@@ -15,7 +15,9 @@ public class DeleteBomLineCommand : IRequest<DeleteBomLineResponse>, IRequireRol
     public Role[] AllowedRoles => new[] { Role.Manager, Role.Administrator };
 }
 
-public class DeleteBomLineResponse { public bool Found { get; set; } }
+public class DeleteBomLineResponse
+{
+}
 
 public class DeleteBomLineCommandHandler : IRequestHandler<DeleteBomLineCommand, DeleteBomLineResponse>
 {
@@ -42,7 +44,7 @@ public class DeleteBomLineCommandHandler : IRequestHandler<DeleteBomLineCommand,
 
         if (line == null)
         {
-            throw new AppException(ErrorCodes.Catalog.BomLineNotFound);
+            throw new AppException(CatalogErrorCodes.BomLineNotFound);
         }
 
         DateOnly today = await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
@@ -51,7 +53,7 @@ public class DeleteBomLineCommandHandler : IRequestHandler<DeleteBomLineCommand,
         // now, and moving its ValidTo would rewrite a period that has already been reported on.
         if (line.ValidTo != null && line.ValidTo <= today)
         {
-            throw new AppException(ErrorCodes.Catalog.BomLineNotFound);
+            throw new AppException(CatalogErrorCodes.BomLineNotFound);
         }
 
         // Captured before the mutation: removal changes the material, logistics and packaging
@@ -69,6 +71,6 @@ public class DeleteBomLineCommandHandler : IRequestHandler<DeleteBomLineCommand,
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new DeleteBomLineResponse { Found = true };
+        return new DeleteBomLineResponse();
     }
 }

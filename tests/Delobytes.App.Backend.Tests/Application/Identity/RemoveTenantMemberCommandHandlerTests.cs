@@ -72,8 +72,8 @@ public class RemoveTenantMemberCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Только администратор может удалять пользователей из тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _membershipRepository.Verify(r => r.Remove(It.IsAny<TenantMembership>()), Times.Never);
         _membershipRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
@@ -96,8 +96,8 @@ public class RemoveTenantMemberCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Только администратор может удалять пользователей из тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(ErrorCodes.Common.Forbidden);
 
         _membershipRepository.Verify(r => r.Remove(It.IsAny<TenantMembership>()), Times.Never);
     }
@@ -123,8 +123,8 @@ public class RemoveTenantMemberCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Пользователь не является членом данного тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.MembershipNotFound);
 
         _membershipRepository.Verify(r => r.Remove(It.IsAny<TenantMembership>()), Times.Never);
     }
@@ -153,8 +153,8 @@ public class RemoveTenantMemberCommandHandlerTests
             CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Невозможно удалить последнего администратора тенанта.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IdentityErrorCodes.LastAdministratorProtected);
 
         _membershipRepository.Verify(r => r.Remove(It.IsAny<TenantMembership>()), Times.Never);
         _membershipRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);

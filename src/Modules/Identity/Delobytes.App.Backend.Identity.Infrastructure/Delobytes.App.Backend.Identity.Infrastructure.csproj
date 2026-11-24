@@ -26,6 +26,10 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="Delobytes.App.Backend.Identity.Application.Errors" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -65,11 +65,6 @@ public class ProductsController : ControllerBase
             new GetProductQuery { Id = id },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return Ok(response);
     }
 
@@ -105,7 +100,7 @@ public class ProductsController : ControllerBase
         [FromBody] UpdateProductRequest request,
         CancellationToken cancellationToken)
     {
-        UpdateProductResponse response = await _mediator.Send(
+        await _mediator.Send(
             new UpdateProductCommand
             {
                 Id = id,
@@ -116,11 +111,6 @@ public class ProductsController : ControllerBase
                 PackingUnit = request.PackingUnit,
             },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }
@@ -137,11 +127,6 @@ public class ProductsController : ControllerBase
             new GetProductCostHistoryQuery { ProductId = id, Skip = skip, Take = take },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return Ok(response);
     }
 
@@ -149,14 +134,9 @@ public class ProductsController : ControllerBase
     [HttpPost("{id:guid}/archive")]
     public async Task<ActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
-        ArchiveProductResponse response = await _mediator.Send(
+        await _mediator.Send(
             new ArchiveProductCommand { ProductId = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }
@@ -165,19 +145,9 @@ public class ProductsController : ControllerBase
     [HttpPost("{id:guid}/restore")]
     public async Task<ActionResult> Restore(Guid id, CancellationToken cancellationToken)
     {
-        RestoreProductResponse response = await _mediator.Send(
+        await _mediator.Send(
             new RestoreProductCommand { ProductId = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
-        if (!response.Accepted)
-        {
-            return Conflict(new { message = "Only Archived or DeletionFailed products can be restored." });
-        }
 
         return NoContent();
     }
@@ -198,16 +168,6 @@ public class ProductsController : ControllerBase
             new RequestProductDeletionCommand { ProductId = id },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
-        if (!response.Accepted)
-        {
-            return Conflict(new { message = response.ErrorMessage });
-        }
-
         return Accepted(new { productId = response.ProductId });
     }
 
@@ -223,11 +183,6 @@ public class ProductsController : ControllerBase
         GetProductDeletionStatusResponse response = await _mediator.Send(
             new GetProductDeletionStatusQuery { ProductId = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return Ok(response);
     }

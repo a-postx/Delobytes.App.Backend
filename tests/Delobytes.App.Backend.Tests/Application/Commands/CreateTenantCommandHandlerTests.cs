@@ -203,10 +203,10 @@ public class CreateTenantCommandHandlerTests
         };
 
         // Act & Assert
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("Администратор", exception.Message);
+        Assert.Equal(ErrorCodes.Common.Forbidden, exception.Code);
 
         _tenantRepositoryMock.Verify(
             r => r.Add(It.IsAny<Tenant>()),
@@ -242,10 +242,10 @@ public class CreateTenantCommandHandlerTests
         };
 
         // Act & Assert
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("максимальный лимит", exception.Message);
+        Assert.Equal(IdentityErrorCodes.TenantLimitReached, exception.Code);
 
         _tenantRepositoryMock.Verify(
             r => r.Add(It.IsAny<Tenant>()),
@@ -270,10 +270,10 @@ public class CreateTenantCommandHandlerTests
         };
 
         // Act & Assert
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("не найден", exception.Message);
+        Assert.Equal(IdentityErrorCodes.UserNotFound, exception.Code);
     }
 
     [Fact]
@@ -305,9 +305,9 @@ public class CreateTenantCommandHandlerTests
         };
 
         // Act & Assert
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("текущий активный тенант", exception.Message);
+        Assert.Equal(IdentityErrorCodes.CurrentTenantRequired, exception.Code);
     }
 }

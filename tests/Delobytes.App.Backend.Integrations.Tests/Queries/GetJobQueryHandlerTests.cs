@@ -37,8 +37,8 @@ public class GetJobQueryHandlerTests
             new GetJobQuery { JobRunId = jobRunId },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"*{jobRunId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotFound);
     }
 
     [Fact]

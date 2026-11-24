@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.WorkRates;
@@ -24,8 +25,6 @@ public class CreateWorkRateVersionCommand : IRequest<CreateWorkRateVersionRespon
 public class CreateWorkRateVersionResponse
 {
     public Guid Id { get; set; }
-
-    public bool Found { get; set; }
 }
 
 public class CreateWorkRateVersionCommandHandler : IRequestHandler<CreateWorkRateVersionCommand, CreateWorkRateVersionResponse>
@@ -53,7 +52,7 @@ public class CreateWorkRateVersionCommandHandler : IRequestHandler<CreateWorkRat
 
         if (workRate == null)
         {
-            return new CreateWorkRateVersionResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.WorkRateNotFound);
         }
 
         IReadOnlyList<Guid> affectedProductIds = await _productWorkRateRepository.GetProductIdsByWorkRateIdAsync(
@@ -86,6 +85,6 @@ public class CreateWorkRateVersionCommandHandler : IRequestHandler<CreateWorkRat
 
         await _versionRepository.SaveChangesAsync(cancellationToken);
 
-        return new CreateWorkRateVersionResponse { Id = version.Id, Found = true };
+        return new CreateWorkRateVersionResponse { Id = version.Id };
     }
 }

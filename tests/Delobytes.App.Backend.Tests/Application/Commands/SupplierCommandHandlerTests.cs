@@ -172,11 +172,9 @@ public class SupplierCommandHandlerTests
         };
 
         // Act
-        UpdateSupplierResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.Inn.Should().Be("7743099999");
         existing.Name.Should().Be("ООО Новое Название");
         existing.Description.Should().Be("Обновлённое описание");
@@ -208,11 +206,11 @@ public class SupplierCommandHandlerTests
         };
 
         // Act
-        UpdateSupplierResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.SupplierNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -277,11 +275,10 @@ public class SupplierCommandHandlerTests
             new DeleteSupplierCommandHandler(_repoMock.Object);
 
         // Act
-        DeleteSupplierResponse response = await handler.Handle(
+        await handler.Handle(
             new DeleteSupplierCommand { Id = id }, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
         existing.UpdatedAt.Should().NotBeNull();
 
@@ -300,11 +297,12 @@ public class SupplierCommandHandlerTests
             new DeleteSupplierCommandHandler(_repoMock.Object);
 
         // Act
-        DeleteSupplierResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new DeleteSupplierCommand { Id = Guid.NewGuid() }, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.SupplierNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -330,11 +328,10 @@ public class SupplierCommandHandlerTests
         DateTimeOffset beforeCall = DateTimeOffset.UtcNow;
 
         // Act
-        DeleteSupplierResponse response = await handler.Handle(
+        await handler.Handle(
             new DeleteSupplierCommand { Id = id }, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
         existing.UpdatedAt.Should().BeOnOrAfter(beforeCall);
     }
@@ -381,11 +378,12 @@ public class SupplierCommandHandlerTests
             new GetSupplierQueryHandler(_repoMock.Object);
 
         // Act
-        GetSupplierResponse? response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new GetSupplierQuery { Id = Guid.NewGuid() }, CancellationToken.None);
 
         // Assert
-        response.Should().BeNull();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.SupplierNotFound);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Catalog.Application.Commands.Products;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Contracts.Events;
@@ -65,29 +66,17 @@ public class ProductDeletionService
 
         if (product == null)
         {
-            return new RequestProductDeletionResponse { Found = false, Accepted = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         if (product.Status == ProductStatus.DeletionPending)
         {
-            return new RequestProductDeletionResponse
-            {
-                Found = true,
-                Accepted = false,
-                ErrorMessage = "Product deletion already in progress.",
-                ProductId = product.Id,
-            };
+            throw new AppException(CatalogErrorCodes.ProductDeletionAlreadyInProgress);
         }
 
         if (product.Status == ProductStatus.Deleted)
         {
-            return new RequestProductDeletionResponse
-            {
-                Found = true,
-                Accepted = false,
-                ErrorMessage = "Product is already deleted.",
-                ProductId = product.Id,
-            };
+            throw new AppException(CatalogErrorCodes.ProductAlreadyDeleted);
         }
 
         // No channel products — safe to delete immediately, no cross-module check needed.
@@ -100,7 +89,7 @@ public class ProductDeletionService
 
             _logger.LogInformation("Product {ProductId} deleted immediately (no channel products)", product.Id);
 
-            return new RequestProductDeletionResponse { Found = true, Accepted = true, ProductId = product.Id };
+            return new RequestProductDeletionResponse { ProductId = product.Id };
         }
 
         product.Status = ProductStatus.DeletionPending;
@@ -125,7 +114,7 @@ public class ProductDeletionService
             product.Id,
             channelProductIds.Count);
 
-        return new RequestProductDeletionResponse { Found = true, Accepted = true, ProductId = product.Id };
+        return new RequestProductDeletionResponse { ProductId = product.Id };
     }
 
     /// <summary>

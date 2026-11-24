@@ -97,9 +97,8 @@ public class UpdateProductWorkRateCommandHandlerTests
             ValidFrom = new DateOnly(2026, 3, 15),
         };
 
-        UpdateProductWorkRateResponse response = await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
-        response.Found.Should().BeTrue();
         rate.AssemblyRatePerDay.Should().Be(25);
         rate.ValidFrom.Should().Be(new DateOnly(2026, 3, 15));
         rate.WorkRateId.Should().Be(workRateId);
@@ -178,9 +177,10 @@ public class UpdateProductWorkRateCommandHandlerTests
             ValidFrom = new DateOnly(2026, 1, 1),
         };
 
-        UpdateProductWorkRateResponse response = await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateNotFound);
 
         _snapshotServiceMock.Verify(
             s => s.CaptureBeforeChangeAsync(
@@ -221,7 +221,7 @@ public class UpdateProductWorkRateCommandHandlerTests
         Func<Task> action = () => handler.Handle(command, CancellationToken.None);
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
-        exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateNotFound);
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateNotFound);
 
         _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -257,7 +257,7 @@ public class UpdateProductWorkRateCommandHandlerTests
         Func<Task> action = () => handler.Handle(command, CancellationToken.None);
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
-        exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateNotFound);
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateNotFound);
 
         rate.Status.Should().Be(ProductWorkRateStatus.Removed);
         rate.RemovedFrom.Should().Be(removedFrom);
@@ -303,7 +303,7 @@ public class UpdateProductWorkRateCommandHandlerTests
         Func<Task> action = () => handler.Handle(command, CancellationToken.None);
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
-        exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateValidFromNotLatest);
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateValidFromNotLatest);
 
         _snapshotServiceMock.Verify(
             s => s.CaptureBeforeChangeAsync(
@@ -346,7 +346,7 @@ public class UpdateProductWorkRateCommandHandlerTests
         Func<Task> action = () => handler.Handle(command, CancellationToken.None);
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
-        exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateValidFromConflict);
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateValidFromConflict);
 
         _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -381,7 +381,7 @@ public class UpdateProductWorkRateCommandHandlerTests
         Func<Task> action = () => handler.Handle(command, CancellationToken.None);
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
-        exception.Code.Should().Be(ErrorCodes.Catalog.WorkRateNotFound);
+        exception.Code.Should().Be(CatalogErrorCodes.WorkRateNotFound);
 
         _repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }

@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Suppliers;
@@ -14,7 +15,6 @@ public class DeleteSupplierCommand : IRequest<DeleteSupplierResponse>, IRequireR
 
 public class DeleteSupplierResponse
 {
-    public bool Found { get; set; }
 }
 
 public class DeleteSupplierCommandHandler : IRequestHandler<DeleteSupplierCommand, DeleteSupplierResponse>
@@ -32,7 +32,7 @@ public class DeleteSupplierCommandHandler : IRequestHandler<DeleteSupplierComman
 
         if (supplier == null)
         {
-            return new DeleteSupplierResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.SupplierNotFound);
         }
 
         // Soft delete — deactivate rather than remove so existing references remain intact
@@ -41,6 +41,6 @@ public class DeleteSupplierCommandHandler : IRequestHandler<DeleteSupplierComman
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new DeleteSupplierResponse { Found = true };
+        return new DeleteSupplierResponse();
     }
 }

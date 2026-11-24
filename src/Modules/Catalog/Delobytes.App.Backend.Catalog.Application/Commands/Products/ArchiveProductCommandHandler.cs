@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
@@ -16,7 +17,6 @@ public class ArchiveProductCommand : IRequest<ArchiveProductResponse>, IRequireR
 
 public class ArchiveProductResponse
 {
-    public bool Found { get; set; }
 }
 
 public class ArchiveProductCommandHandler : IRequestHandler<ArchiveProductCommand, ArchiveProductResponse>
@@ -32,14 +32,9 @@ public class ArchiveProductCommandHandler : IRequestHandler<ArchiveProductComman
     {
         Product? product = await _repository.GetWithChannelProductsByIdAsync(request.ProductId, cancellationToken);
 
-        if (product == null)
+        if (product == null || product.Status == ProductStatus.Deleted)
         {
-            return new ArchiveProductResponse { Found = false };
-        }
-
-        if (product.Status == ProductStatus.Deleted)
-        {
-            return new ArchiveProductResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         // The decision is recorded on the product only. ChannelProduct.IsActive reports whether the
@@ -51,6 +46,6 @@ public class ArchiveProductCommandHandler : IRequestHandler<ArchiveProductComman
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new ArchiveProductResponse { Found = true };
+        return new ArchiveProductResponse();
     }
 }

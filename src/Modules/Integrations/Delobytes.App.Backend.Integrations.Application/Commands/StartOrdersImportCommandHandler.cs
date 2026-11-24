@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -50,11 +51,11 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
         CancellationToken cancellationToken)
     {
         Connection? connection = await _connectionRepository
-            .FindByIdAsync(request.ConnectionId, cancellationToken) ?? throw new KeyNotFoundException($"Подключение с ID '{request.ConnectionId}' не найдено.");
+            .FindByIdAsync(request.ConnectionId, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.ConnectionNotFound);
 
         if (!connection.IsActive)
         {
-            throw new InvalidOperationException("Подключение неактивно. Импорт заказов невозможен.");
+            throw new AppException(IntegrationsErrorCodes.ConnectionInactive);
         }
 
         bool hasActiveJob = await _jobRunRepository
@@ -62,8 +63,7 @@ public class StartOrdersImportCommandHandler : IRequestHandler<StartOrdersImport
 
         if (hasActiveJob)
         {
-            throw new ConflictException(
-                "Для этого подключения уже есть активная задача импорта заказов (Pending или Running).");
+            throw new AppException(IntegrationsErrorCodes.JobAlreadyRunning);
         }
 
         JobRun jobRun = await _jobRunStarter.CreatePendingAsync(

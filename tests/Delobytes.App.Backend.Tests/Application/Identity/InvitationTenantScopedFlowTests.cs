@@ -407,7 +407,8 @@ public class InvitationTenantScopedFlowTests
                 },
                 CancellationToken.None);
 
-            await act.Should().ThrowAsync<InvalidOperationException>();
+            AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+            exception.Code.Should().Be(IdentityErrorCodes.InvitationNotFound);
         }
 
         // The invitation must still exist untouched in TenantA.

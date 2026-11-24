@@ -1,5 +1,6 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Products;
@@ -13,7 +14,6 @@ public class GetProductCostHistoryQuery : IRequest<GetProductCostHistoryResponse
 
 public class GetProductCostHistoryResponse
 {
-    public bool Found { get; set; }
     public int TotalCount { get; set; }
     public List<ProductCostSnapshotDto> Items { get; set; } = new List<ProductCostSnapshotDto>();
 }
@@ -52,7 +52,7 @@ public class GetProductCostHistoryQueryHandler : IRequestHandler<GetProductCostH
         Product? product = await _productRepository.GetByIdAsync(request.ProductId, cancellationToken);
         if (product == null)
         {
-            return new GetProductCostHistoryResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         int skip = Math.Max(request.Skip, 0);
@@ -62,7 +62,6 @@ public class GetProductCostHistoryQueryHandler : IRequestHandler<GetProductCostH
 
         return new GetProductCostHistoryResponse
         {
-            Found = true,
             TotalCount = totalCount,
             Items = snapshots.Select(snapshot => new ProductCostSnapshotDto
             {

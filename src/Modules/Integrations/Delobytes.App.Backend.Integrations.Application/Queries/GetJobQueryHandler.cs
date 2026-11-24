@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.DTOs.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -25,7 +26,7 @@ public class GetJobQueryHandler : IRequestHandler<GetJobQuery, JobDto>
 
     public async Task<JobDto> Handle(GetJobQuery request, CancellationToken cancellationToken)
     {
-        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new KeyNotFoundException($"Задача с ID '{request.JobRunId}' не найдена.");
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.JobNotFound);
 
         return new JobDto
         {

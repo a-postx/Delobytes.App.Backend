@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -67,19 +68,19 @@ public class RevokeInvitationCommandHandler : IRequestHandler<RevokeInvitationCo
 
         if (revokerMembership == null || revokerMembership.Role != Role.Administrator)
         {
-            throw new InvalidOperationException("Только администратор может отзывать приглашения.");
+            throw new AppException(ErrorCodes.Common.Forbidden);
         }
 
-        Invitation? invitation = await _invitationRepository.FindByIdAsync(request.InvitationId, cancellationToken) ?? throw new InvalidOperationException("Приглашение не найдено.");
+        Invitation? invitation = await _invitationRepository.FindByIdAsync(request.InvitationId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.InvitationNotFound);
 
         if (invitation.TenantId != request.TenantId)
         {
-            throw new InvalidOperationException("Приглашение не принадлежит указанному тенанту.");
+            throw new AppException(IdentityErrorCodes.InvitationNotFound);
         }
 
         if (invitation.IsAccepted)
         {
-            throw new InvalidOperationException("Невозможно отозвать принятое приглашение.");
+            throw new AppException(IdentityErrorCodes.InvitationAlreadyAccepted);
         }
 
         _invitationRepository.Remove(invitation);

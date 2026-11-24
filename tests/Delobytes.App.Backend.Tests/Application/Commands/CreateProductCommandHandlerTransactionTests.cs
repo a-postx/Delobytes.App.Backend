@@ -79,7 +79,7 @@ public class CreateProductCommandHandlerTransactionTests
         // Arrange: the unique index is the backstop of the pre-check, so the translated 409 must
         // reach the caller untouched — including its error code.
         FakeCatalogTransactionFactory transactionFactory = new FakeCatalogTransactionFactory();
-        AppException conflict = new AppException(ErrorCodes.Catalog.ProductSkuConflict);
+        AppException conflict = new AppException(CatalogErrorCodes.ProductSkuConflict);
 
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(transactionFactory.CallLog, saveException: conflict);
 
@@ -95,7 +95,7 @@ public class CreateProductCommandHandlerTransactionTests
         // Assert
         AppException thrown = (await act.Should().ThrowAsync<AppException>()).Which;
         thrown.Should().BeSameAs(conflict);
-        thrown.Code.Should().Be(ErrorCodes.Catalog.ProductSkuConflict);
+        thrown.Code.Should().Be(CatalogErrorCodes.ProductSkuConflict);
 
         transactionFactory.CallLog.Should().Contain("rollback");
         transactionFactory.CallLog.Should().NotContain("commit");

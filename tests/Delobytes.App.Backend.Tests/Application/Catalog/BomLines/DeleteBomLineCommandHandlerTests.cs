@@ -66,7 +66,7 @@ public class DeleteBomLineCommandHandlerTests
 
         missingLineException.Which.Code
             .Should()
-            .Be(ErrorCodes.Catalog.BomLineNotFound);
+            .Be(CatalogErrorCodes.BomLineNotFound);
 
         _bomLineRepositoryMock.Verify(
             repository => repository.SaveChangesAsync(It.IsAny<CancellationToken>()),
@@ -103,7 +103,7 @@ public class DeleteBomLineCommandHandlerTests
 
         closedLineException.Which.Code
             .Should()
-            .Be(ErrorCodes.Catalog.BomLineNotFound);
+            .Be(CatalogErrorCodes.BomLineNotFound);
 
         // A removal that has already taken effect must not be moved: doing so would rewrite a period
         // whose cost has already been reported on.
@@ -136,14 +136,12 @@ public class DeleteBomLineCommandHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(line);
 
-        DeleteBomLineResponse response = await _handler.Handle(
+        await _handler.Handle(
             new DeleteBomLineCommand
             {
                 Id = lineId,
             },
             CancellationToken.None);
-
-        response.Found.Should().BeTrue();
 
         // The version keeps applying for every date before the tenant's today, which is what makes a
         // past cost reproducible after the component has been withdrawn.

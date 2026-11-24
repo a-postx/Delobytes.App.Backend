@@ -83,7 +83,8 @@ public class StartJobCommandHandlerTests
             new StartJobCommand { JobType = jobType, ConnectionId = Guid.NewGuid() },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotManuallyStartable);
 
         _mediator.Verify(
             m => m.Send(It.IsAny<StartProductsImportCommand>(), It.IsAny<CancellationToken>()),
@@ -99,8 +100,9 @@ public class StartJobCommandHandlerTests
             new StartJobCommand { JobType = JobType.WbOrdersImport, ConnectionId = Guid.NewGuid() },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*orders-import*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotManuallyStartable);
+        exception.Message.Should().Contain("orders-import");
     }
 
     [Fact]

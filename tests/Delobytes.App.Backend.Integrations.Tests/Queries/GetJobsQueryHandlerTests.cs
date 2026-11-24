@@ -138,8 +138,8 @@ public class GetJobsQueryHandlerTests
 
         Func<Task> act = () => handler.Handle(new GetJobsQuery { Type = type }, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*foo*".Equals($"*{type}*") ? $"*{type}*" : $"*{type}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.UnknownJobType);
 
         _jobRunRepo.Verify(
             r => r.GetPagedAsync(

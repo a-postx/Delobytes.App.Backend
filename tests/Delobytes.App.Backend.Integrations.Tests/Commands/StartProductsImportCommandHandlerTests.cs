@@ -1,9 +1,11 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands;
+using Delobytes.App.Backend.Integrations.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -119,8 +121,8 @@ public class StartProductsImportCommandHandlerTests
             new StartProductsImportCommand { ConnectionId = connectionId },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"*{connectionId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ConnectionNotFound);
     }
 
     [Fact]
@@ -138,8 +140,8 @@ public class StartProductsImportCommandHandlerTests
             new StartProductsImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*неакт*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ConnectionInactive);
     }
 
     [Fact]
@@ -157,8 +159,8 @@ public class StartProductsImportCommandHandlerTests
             new StartProductsImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"*Импорт карточек товаров не поддерживается для канала 'yandex.kit'*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ProductsImportNotSupported);
     }
 
     [Fact]
@@ -181,8 +183,8 @@ public class StartProductsImportCommandHandlerTests
             new StartProductsImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ozon*несколько*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ChannelJobTypeAmbiguous);
     }
 
     [Fact]
@@ -239,7 +241,7 @@ public class StartProductsImportCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_DuplicateActiveJob_ThrowsConflictException()
+    public async Task Handle_DuplicateActiveJob_ThrowsJobAlreadyRunning()
     {
         Connection connection = BuildConnection();
 
@@ -257,8 +259,8 @@ public class StartProductsImportCommandHandlerTests
             new StartProductsImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<ConflictException>()
-            .WithMessage("*активная задача*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobAlreadyRunning);
     }
 
     [Fact]

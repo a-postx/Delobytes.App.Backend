@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components;
@@ -26,8 +27,6 @@ public class CreateComponentPriceCommand : IRequest<CreateComponentPriceResponse
 public class CreateComponentPriceResponse
 {
     public Guid Id { get; set; }
-
-    public bool Found { get; set; }
 }
 
 public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponentPriceCommand, CreateComponentPriceResponse>
@@ -55,7 +54,7 @@ public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponen
 
         if (component == null)
         {
-            return new CreateComponentPriceResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ComponentNotFound);
         }
 
         IReadOnlyList<Guid> affectedProductIds = await _bomLineRepository.GetProductIdsByComponentIdAsync(
@@ -86,6 +85,6 @@ public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponen
         _priceRepository.Add(price);
         await _priceRepository.SaveChangesAsync(cancellationToken);
 
-        return new CreateComponentPriceResponse { Id = price.Id, Found = true };
+        return new CreateComponentPriceResponse { Id = price.Id };
     }
 }

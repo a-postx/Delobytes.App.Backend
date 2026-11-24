@@ -111,10 +111,10 @@ public class UpdateTenantLegalEntityCommandHandlerTests
         };
 
         // Act & Assert
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(command, CancellationToken.None));
 
-        Assert.Contains(tenantId.ToString(), exception.Message);
+        Assert.Equal(IdentityErrorCodes.TenantNotFound, exception.Code);
         Assert.Contains("не найдено", exception.Message);
 
         _tenantRepositoryMock.Verify(x => x.Update(It.IsAny<Tenant>()), Times.Never);

@@ -1,4 +1,5 @@
 using System;
+using Delobytes.App.Backend.Contracts.Errors;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -31,7 +32,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     /// <inheritdoc/>
     public async Task<TenantAccountingSettings> GetAccountingSettingsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {tenantId} не найдено.");
 
         return new TenantAccountingSettings
         {
@@ -43,7 +44,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     /// <inheritdoc/>
     public async Task<TenantTaxProfileSnapshot?> GetTaxProfileAtAsync(Guid tenantId, DateTimeOffset moment, CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {tenantId} не найдено.");
 
         TimeZoneInfo timeZone = TenantTimeZones.Resolve(tenant.TimeZone);
 
@@ -72,7 +73,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
         Guid tenantId,
         CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {tenantId} не найдено.");
 
         IReadOnlyList<TenantTaxProfile> profiles =
             await _taxProfileRepository.GetByTenantAsync(tenantId, cancellationToken);
@@ -94,7 +95,7 @@ public class TenantSettingsProvider : ITenantSettingsProvider
     /// <inheritdoc/>
     public async Task<int> GetMaxBackgroundJobsParallelismAsync(Guid tenantId, CancellationToken cancellationToken)
     {
-        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new InvalidOperationException($"Пространство с ID {tenantId} не найдено.");
+        Tenant? tenant = await _tenantRepository.FindByIdAsync(tenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {tenantId} не найдено.");
 
         return tenant.MaxBackgroundJobsParallelism;
     }

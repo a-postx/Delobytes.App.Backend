@@ -1,11 +1,12 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Queries.Components;
 
-public class GetComponentQuery : IRequest<GetComponentResponse?>
+public class GetComponentQuery : IRequest<GetComponentResponse>
 {
     public Guid Id { get; set; }
 }
@@ -31,7 +32,7 @@ public class GetComponentResponse
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-public class GetComponentQueryHandler : IRequestHandler<GetComponentQuery, GetComponentResponse?>
+public class GetComponentQueryHandler : IRequestHandler<GetComponentQuery, GetComponentResponse>
 {
     private readonly IComponentRepository _repository;
 
@@ -40,13 +41,13 @@ public class GetComponentQueryHandler : IRequestHandler<GetComponentQuery, GetCo
         _repository = repository;
     }
 
-    public async Task<GetComponentResponse?> Handle(GetComponentQuery request, CancellationToken cancellationToken)
+    public async Task<GetComponentResponse> Handle(GetComponentQuery request, CancellationToken cancellationToken)
     {
         Component? component = await _repository.GetWithPricesByIdAsync(request.Id, cancellationToken);
 
         if (component == null)
         {
-            return null;
+            throw new AppException(CatalogErrorCodes.ComponentNotFound);
         }
 
         return new GetComponentResponse

@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using MediatR;
 
@@ -61,7 +62,7 @@ public class UpdateTenantSettingsCommandHandler : IRequestHandler<UpdateTenantSe
         CancellationToken cancellationToken)
     {
         Domain.Entities.Tenant? tenant = await _tenantRepository.FindByIdAsync(request.TenantId, cancellationToken)
-            ?? throw new InvalidOperationException($"Пространство с ID {request.TenantId} не найдено.");
+            ?? throw new AppException(IdentityErrorCodes.TenantNotFound, $"Пространство с ID {request.TenantId} не найдено.");
 
         // Уже посчитанный NextRunAt действующих расписаний остаётся в старом поясе до
         // первого срабатывания: планировщик пересчитывает cron только при переносе

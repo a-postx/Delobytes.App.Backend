@@ -111,10 +111,10 @@ public class SwitchTenantCommandHandlerTests
             .ReturnsAsync((TenantMembership?)null);
 
         // Act & Assert
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppException exception = await Assert.ThrowsAsync<AppException>(
             () => _handler.Handle(command, CancellationToken.None));
 
-        Assert.Equal("Пользователь не состоит в указанном пространстве.", exception.Message);
+        Assert.Equal(IdentityErrorCodes.MembershipNotFound, exception.Code);
 
         _userRepositoryMock.Verify(
             x => x.FindByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),

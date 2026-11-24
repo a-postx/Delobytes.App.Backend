@@ -6,7 +6,7 @@ public class NumberingExhaustedException : AppException
 {
     public NumberingExhaustedException(Guid sequenceId, string sequenceName, int endNumber)
         : base(
-            ErrorCodes.Catalog.NumberingExhausted,
+            CatalogErrorCodes.NumberingExhausted,
             $"Numbering sequence '{sequenceName}' ({sequenceId}) is exhausted: its next number would exceed {endNumber}.")
     {
         SequenceId = sequenceId;

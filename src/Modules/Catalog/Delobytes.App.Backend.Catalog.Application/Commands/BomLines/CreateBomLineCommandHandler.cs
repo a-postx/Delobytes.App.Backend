@@ -41,10 +41,10 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
     {
         if (request.Quantity <= 0)
         {
-            throw new AppException(ErrorCodes.Catalog.BomLineInvalidQuantity);
+            throw new AppException(CatalogErrorCodes.BomLineInvalidQuantity);
         }
 
-        Component? component = await _componentRepository.GetByIdAsync(request.ComponentId, cancellationToken) ?? throw new AppException(ErrorCodes.Catalog.BomComponentNotFound);
+        Component? component = await _componentRepository.GetByIdAsync(request.ComponentId, cancellationToken) ?? throw new AppException(CatalogErrorCodes.BomComponentNotFound);
 
         await _snapshotService.CaptureBeforeChangeAsync(new[] { request.ProductId }, "BomChanged", cancellationToken);
 
@@ -60,7 +60,7 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
             // ValidFrom only makes sense if the new version starts later.
             if (request.ValidFrom <= previous.ValidFrom)
             {
-                throw new AppException(ErrorCodes.Catalog.BomLineValidFromConflict);
+                throw new AppException(CatalogErrorCodes.BomLineValidFromConflict);
             }
 
             previous.CloseAt(request.ValidFrom);

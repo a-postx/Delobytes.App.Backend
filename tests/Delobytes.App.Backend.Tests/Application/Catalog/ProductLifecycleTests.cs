@@ -14,6 +14,7 @@ using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Services;
 using Delobytes.App.Backend.Sales.Contracts.Events;
@@ -55,12 +56,11 @@ public class ProductLifecycleTests
         ArchiveProductCommandHandler handler = new ArchiveProductCommandHandler(repositoryMock.Object);
 
         // Act
-        ArchiveProductResponse response = await handler.Handle(
+        await handler.Handle(
             new ArchiveProductCommand { ProductId = product.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         product.Status.Should().Be(ProductStatus.Archived);
         product.ArchivedAt.Should().NotBeNull();
         product.ArchivedAt!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
@@ -75,7 +75,7 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task ArchiveProduct_AlreadyDeleted_ReturnsNotFoundAndChangesNothing()
+    public async Task ArchiveProduct_AlreadyDeleted_ThrowsProductNotFound()
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.Deleted);
@@ -84,12 +84,13 @@ public class ProductLifecycleTests
         ArchiveProductCommandHandler handler = new ArchiveProductCommandHandler(repositoryMock.Object);
 
         // Act
-        ArchiveProductResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new ArchiveProductCommand { ProductId = product.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
         product.Status.Should().Be(ProductStatus.Deleted);
         product.ArchivedAt.Should().BeNull();
 
@@ -106,13 +107,11 @@ public class ProductLifecycleTests
         RestoreProductCommandHandler handler = new RestoreProductCommandHandler(repositoryMock.Object);
 
         // Act
-        RestoreProductResponse response = await handler.Handle(
+        await handler.Handle(
             new RestoreProductCommand { ProductId = product.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.Accepted.Should().BeTrue();
         product.Status.Should().Be(ProductStatus.Active);
         product.ArchivedAt.Should().BeNull();
 
@@ -129,20 +128,18 @@ public class ProductLifecycleTests
         RestoreProductCommandHandler handler = new RestoreProductCommandHandler(repositoryMock.Object);
 
         // Act
-        RestoreProductResponse response = await handler.Handle(
+        await handler.Handle(
             new RestoreProductCommand { ProductId = product.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.Accepted.Should().BeTrue();
         product.Status.Should().Be(ProductStatus.Active);
         product.DeletionRequestedAt.Should().BeNull();
         product.ArchivedAt.Should().BeNull();
     }
 
     [Fact]
-    public async Task RestoreProduct_FromDeleted_IsRejected()
+    public async Task RestoreProduct_FromDeleted_ThrowsProductNotRestorable()
     {
         // Arrange: soft-deleted products are terminal -- no restore path is defined for them.
         Product product = BuildProduct(ProductStatus.Deleted);
@@ -151,13 +148,13 @@ public class ProductLifecycleTests
         RestoreProductCommandHandler handler = new RestoreProductCommandHandler(repositoryMock.Object);
 
         // Act
-        RestoreProductResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new RestoreProductCommand { ProductId = product.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.Accepted.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotRestorable);
         product.Status.Should().Be(ProductStatus.Deleted);
         product.DeletedAt.Should().NotBeNull();
 
@@ -179,8 +176,7 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert: no cross-module check needed, so the product skips DeletionPending entirely.
-        response.Found.Should().BeTrue();
-        response.Accepted.Should().BeTrue();
+        response.ProductId.Should().Be(product.Id);
         product.Status.Should().Be(ProductStatus.Deleted);
         product.DeletedAt.Should().NotBeNull();
         product.DeletionRequestedAt.Should().BeNull();
@@ -206,8 +202,7 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.Accepted.Should().BeTrue();
+        response.ProductId.Should().Be(product.Id);
         product.Status.Should().Be(ProductStatus.DeletionPending);
         product.DeletionRequestedAt.Should().NotBeNull();
         product.DeletedAt.Should().BeNull();
@@ -224,7 +219,7 @@ public class ProductLifecycleTests
     }
 
     [Fact]
-    public async Task RequestProductDeletion_AlreadyPending_IsRejectedWithoutRepublish()
+    public async Task RequestProductDeletion_AlreadyPending_ThrowsDeletionAlreadyInProgress()
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
@@ -234,14 +229,13 @@ public class ProductLifecycleTests
         RequestProductDeletionCommandHandler handler = BuildDeletionRequestHandler(repositoryMock, eventPublisherMock);
 
         // Act
-        RequestProductDeletionResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new RequestProductDeletionCommand { ProductId = product.Id },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
-        response.Accepted.Should().BeFalse();
-        response.ErrorMessage.Should().Be("Product deletion already in progress.");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductDeletionAlreadyInProgress);
         eventPublisherMock.Verify(
             p => p.PublishAsync(It.IsAny<ProductDeletionRequestedEvent>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -380,7 +374,7 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert
-        response.Accepted.Should().BeTrue();
+        response.ProductId.Should().Be(product.Id);
 
         Product? reloaded = await repository.GetWithChannelProductsByIdAsync(product.Id, CancellationToken.None);
         reloaded.Should().NotBeNull();
@@ -707,7 +701,6 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.Status.Should().Be(ProductStatus.DeletionPending);
         response.StatusMessage.Should().Be("Deletion in progress, checking for orders...");
         response.DeletionRequestedAt.Should().Be(product.DeletionRequestedAt);
@@ -733,7 +726,6 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.Status.Should().Be(ProductStatus.DeletionFailed);
         response.StatusMessage.Should().Be("Deletion failed: product has existing orders.");
     }
@@ -758,13 +750,12 @@ public class ProductLifecycleTests
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.StatusMessage.Should().Be("Product deleted successfully.");
         response.DeletedAt.Should().NotBeNull();
     }
 
     [Fact]
-    public async Task GetProductDeletionStatus_UnknownProduct_ReturnsNotFound()
+    public async Task GetProductDeletionStatus_UnknownProduct_ThrowsProductNotFound()
     {
         // Arrange
         Mock<IProductRepository> repositoryMock = new Mock<IProductRepository>();
@@ -775,13 +766,13 @@ public class ProductLifecycleTests
         GetProductDeletionStatusQueryHandler handler = new GetProductDeletionStatusQueryHandler(repositoryMock.Object);
 
         // Act
-        GetProductDeletionStatusResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new GetProductDeletionStatusQuery { ProductId = Guid.NewGuid() },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
-        response.StatusMessage.Should().BeEmpty();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
     }
 
     [Fact]

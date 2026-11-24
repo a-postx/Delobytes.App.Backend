@@ -101,7 +101,6 @@ public class CreateWorkRateVersionCommandHandlerTests
 
         // Assert
         response.Id.Should().NotBe(Guid.Empty);
-        response.Found.Should().BeTrue();
 
         _versionRepoMock.Verify(
             r => r.Add(It.Is<WorkRateVersion>(version =>
@@ -132,12 +131,11 @@ public class CreateWorkRateVersionCommandHandlerTests
         };
 
         // Act
-        CreateWorkRateVersionResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
-        response.Id.Should().Be(Guid.Empty);
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.WorkRateNotFound);
 
         _versionRepoMock.Verify(r => r.Add(It.IsAny<WorkRateVersion>()), Times.Never);
         _versionRepoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
@@ -173,11 +171,9 @@ public class CreateWorkRateVersionCommandHandlerTests
         };
 
         // Act
-        CreateWorkRateVersionResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
 
         oldVersion.IsActive.Should().BeFalse();
         oldVersion.UpdatedAt.Should().NotBeNull();
@@ -260,11 +256,9 @@ public class CreateWorkRateVersionCommandHandlerTests
         };
 
         // Act
-        CreateWorkRateVersionResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
 
         _versionRepoMock.Verify(r => r.Add(It.IsAny<WorkRateVersion>()), Times.Once);
         _versionRepoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);

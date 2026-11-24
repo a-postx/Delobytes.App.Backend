@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
@@ -78,11 +79,11 @@ public class UpdateMembershipRoleCommandHandler : IRequestHandler<UpdateMembersh
 
         if (updaterMembership == null || updaterMembership.Role != Role.Administrator)
         {
-            throw new InvalidOperationException("Только администратор может изменять роли пользователей.");
+            throw new AppException(ErrorCodes.Common.Forbidden);
         }
 
         TenantMembership? targetMembership = await _membershipRepository
-            .FindActiveByUserAndTenantAsync(request.TargetUserId, request.TenantId, cancellationToken) ?? throw new InvalidOperationException("Пользователь не является членом данного тенанта.");
+            .FindActiveByUserAndTenantAsync(request.TargetUserId, request.TenantId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.MembershipNotFound);
 
         if (targetMembership.Role == Role.Administrator && request.NewRole != Role.Administrator)
         {
@@ -90,7 +91,7 @@ public class UpdateMembershipRoleCommandHandler : IRequestHandler<UpdateMembersh
 
             if (administratorCount <= 1)
             {
-                throw new InvalidOperationException("Невозможно понизить роль последнего администратора тенанта.");
+                throw new AppException(IdentityErrorCodes.LastAdministratorProtected);
             }
         }
 

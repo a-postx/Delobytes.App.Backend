@@ -40,10 +40,9 @@ public class UpdateProductCommandHandlerTests
         };
 
         // Act
-        UpdateProductResponse response = await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         product.Sku.Should().Be("NEW-SKU");
         product.Name.Should().Be("Original name");
         product.Description.Should().Be("Original description");
@@ -138,12 +137,13 @@ public class UpdateProductCommandHandlerTests
         UpdateProductCommandHandler handler = new UpdateProductCommandHandler(repositoryMock.Object);
 
         // Act
-        UpdateProductResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new UpdateProductCommand { Id = Guid.NewGuid(), Sku = "NEW-SKU" },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
         product.Sku.Should().Be("OLD-SKU");
         repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -158,12 +158,13 @@ public class UpdateProductCommandHandlerTests
         UpdateProductCommandHandler handler = new UpdateProductCommandHandler(repositoryMock.Object);
 
         // Act
-        UpdateProductResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new UpdateProductCommand { Id = product.Id, Sku = "NEW-SKU" },
             CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ProductNotFound);
         product.Sku.Should().Be("OLD-SKU");
         repositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }

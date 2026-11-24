@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -22,17 +23,19 @@ public class CancelProductsImportCommandHandler : IRequestHandler<CancelProducts
 
     public async Task Handle(CancelProductsImportCommand request, CancellationToken cancellationToken)
     {
-        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new KeyNotFoundException($"Задача импорта с ID '{request.JobRunId}' не найдена.");
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.JobNotFound);
 
         if (!jobRun.JobType.IsProductsImport())
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.JobNotCancellable,
                 $"Отмена поддерживается только для задач импорта товаров. Текущий тип: '{jobRun.JobType.ToStringCamelCase()}'.");
         }
 
         if (jobRun.Status != JobStatus.Pending && jobRun.Status != JobStatus.Running)
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.JobNotInCancellableState,
                 $"Задача в статусе '{jobRun.Status}' не может быть отменена. " +
                 "Отмена доступна только для задач со статусом Pending или Running.");
         }

@@ -53,7 +53,7 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
     {
         if (request.Lines.Any(x => x.Quantity <= 0))
         {
-            throw new AppException(ErrorCodes.Catalog.BomLineInvalidQuantity);
+            throw new AppException(CatalogErrorCodes.BomLineInvalidQuantity);
         }
 
         if (request.Lines.Select(x => x.ComponentId).Distinct().Count() != request.Lines.Count)
@@ -65,7 +65,7 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
         {
             if (await _componentRepository.GetByIdAsync(item.ComponentId, cancellationToken) == null)
             {
-                throw new AppException(ErrorCodes.Catalog.BomComponentNotFound);
+                throw new AppException(CatalogErrorCodes.BomComponentNotFound);
             }
         }
 

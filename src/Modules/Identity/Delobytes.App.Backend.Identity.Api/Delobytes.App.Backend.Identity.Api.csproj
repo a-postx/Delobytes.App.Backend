@@ -18,6 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="Delobytes.App.Backend.Identity.Application.Errors" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Identity.Domain\Delobytes.App.Backend.Identity.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Identity.Application\Delobytes.App.Backend.Identity.Application.csproj" />
   </ItemGroup>

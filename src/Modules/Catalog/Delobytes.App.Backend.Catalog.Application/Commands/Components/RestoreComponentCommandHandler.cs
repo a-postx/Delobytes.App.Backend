@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components;
@@ -14,7 +15,6 @@ public class RestoreComponentCommand : IRequest<RestoreComponentResponse>, IRequ
 
 public class RestoreComponentResponse
 {
-    public bool Found { get; set; }
 }
 
 public class RestoreComponentCommandHandler : IRequestHandler<RestoreComponentCommand, RestoreComponentResponse>
@@ -36,7 +36,7 @@ public class RestoreComponentCommandHandler : IRequestHandler<RestoreComponentCo
 
         if (component == null)
         {
-            return new RestoreComponentResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ComponentNotFound);
         }
 
         component.IsActive = true;
@@ -51,6 +51,6 @@ public class RestoreComponentCommandHandler : IRequestHandler<RestoreComponentCo
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new RestoreComponentResponse { Found = true };
+        return new RestoreComponentResponse();
     }
 }

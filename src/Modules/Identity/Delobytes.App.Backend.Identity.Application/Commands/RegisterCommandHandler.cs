@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
@@ -84,7 +85,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
 
         if (existing != null)
         {
-            throw new InvalidOperationException($"Адрес {request.Email} уже существует ¯\\_(ツ)_/¯");
+            throw new AppException(IdentityErrorCodes.EmailAlreadyExists, $"Адрес {request.Email} уже существует ¯\\_(ツ)_/¯");
         }
 
         User user = new User

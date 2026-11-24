@@ -69,11 +69,9 @@ public class WorkRateUpdateTests
         };
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
         existing.UpdatedAt.Should().NotBeNull();
 
@@ -107,11 +105,9 @@ public class WorkRateUpdateTests
         DateTimeOffset beforeUpdate = DateTimeOffset.UtcNow;
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeTrue();
         existing.UpdatedAt.Should().BeOnOrAfter(beforeUpdate);
 
@@ -136,11 +132,11 @@ public class WorkRateUpdateTests
         };
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.WorkRateNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -172,11 +168,9 @@ public class WorkRateUpdateTests
         DateTimeOffset beforeCall = DateTimeOffset.UtcNow;
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeTrue();
         existing.UpdatedAt.Should().BeOnOrAfter(beforeCall);
         existing.UpdatedAt.Should().BeAfter(oldUpdatedAt);
@@ -210,11 +204,9 @@ public class WorkRateUpdateTests
         DateTimeOffset beforeCall = DateTimeOffset.UtcNow;
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.Name.Should().Be("Сборщик, 3 разряд");
         existing.IsActive.Should().BeTrue();
         existing.UpdatedAt.Should().BeOnOrAfter(beforeCall);
@@ -246,11 +238,9 @@ public class WorkRateUpdateTests
         };
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.Name.Should().Be("Упаковщик");
         existing.IsActive.Should().BeFalse();
     }

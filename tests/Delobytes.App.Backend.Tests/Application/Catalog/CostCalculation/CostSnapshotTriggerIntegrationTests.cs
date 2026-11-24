@@ -361,7 +361,7 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             _productWorkRateRepository,
             _snapshotService);
 
-        CreateWorkRateVersionResponse response = await handler.Handle(
+        await handler.Handle(
             new CreateWorkRateVersionCommand
             {
                 WorkRateId = workRate.Id,
@@ -369,8 +369,6 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
                 ValidFrom = _today,
             },
             CancellationToken.None);
-
-        response.Found.Should().BeTrue();
 
         await _context.SaveChangesAsync();
 

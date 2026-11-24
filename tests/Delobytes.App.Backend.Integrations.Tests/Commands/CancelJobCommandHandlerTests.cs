@@ -35,8 +35,8 @@ public class CancelJobCommandHandlerTests
             new CancelJobCommand { JobRunId = jobRunId },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"*{jobRunId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotFound);
     }
 
     [Fact]
@@ -63,8 +63,8 @@ public class CancelJobCommandHandlerTests
             new CancelJobCommand { JobRunId = jobRun.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*orders-import*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotCancellable);
 
         jobRun.Status.Should().Be(JobStatus.Pending);
         _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -95,7 +95,8 @@ public class CancelJobCommandHandlerTests
             new CancelJobCommand { JobRunId = jobRun.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobNotInCancellableState);
         _jobRunRepo.Verify(r => r.UpdateAsync(It.IsAny<JobRun>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Catalog.Api.Controllers;
@@ -15,7 +15,7 @@ namespace Delobytes.App.Backend.Tests.Controllers;
 /// Tests for the PUT api/catalogs/products/{id} endpoint.
 ///
 /// The endpoint is the seam where the SKU used to be dropped: the command never carried it, so the
-/// value the form sent was silently discarded and the user was shown "Товар обновлён" over an
+/// value the form sent was silently discarded and the user was shown "РўРѕРІР°СЂ РѕР±РЅРѕРІР»С‘РЅ" over an
 /// unchanged SKU. These tests pin the mapping from the request body to the command.
 /// </summary>
 public class ProductsControllerUpdateTests
@@ -29,11 +29,11 @@ public class ProductsControllerUpdateTests
 
     private ProductsController BuildController() => new ProductsController(_mediator.Object);
 
-    private void SetupResponse(bool found)
+    private void SetupResponse()
     {
         _mediator
             .Setup(m => m.Send(It.IsAny<UpdateProductCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UpdateProductResponse { Found = found });
+            .ReturnsAsync(new UpdateProductResponse());
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class ProductsControllerUpdateTests
     {
         // Arrange
         Guid productId = Guid.NewGuid();
-        SetupResponse(found: true);
+        SetupResponse();
 
         UpdateProductRequest request = new UpdateProductRequest
         {
@@ -66,7 +66,7 @@ public class ProductsControllerUpdateTests
         // turned an absent property into an empty string or an empty list, an SKU-only save would
         // start blanking the product instead of being partial.
         Guid productId = Guid.NewGuid();
-        SetupResponse(found: true);
+        SetupResponse();
 
         UpdateProductRequest request = new UpdateProductRequest
         {
@@ -92,7 +92,7 @@ public class ProductsControllerUpdateTests
     public async Task Update_Found_Returns204NoContent()
     {
         // Arrange
-        SetupResponse(found: true);
+        SetupResponse();
 
         // Act
         ActionResult result = await BuildController().Update(
@@ -103,20 +103,5 @@ public class ProductsControllerUpdateTests
         // Assert
         result.Should().BeOfType<NoContentResult>();
     }
-
-    [Fact]
-    public async Task Update_NotFound_Returns404()
-    {
-        // Arrange
-        SetupResponse(found: false);
-
-        // Act
-        ActionResult result = await BuildController().Update(
-            Guid.NewGuid(),
-            new UpdateProductRequest { Sku = "NEW-SKU" },
-            CancellationToken.None);
-
-        // Assert
-        result.Should().BeOfType<NotFoundResult>();
-    }
 }
+

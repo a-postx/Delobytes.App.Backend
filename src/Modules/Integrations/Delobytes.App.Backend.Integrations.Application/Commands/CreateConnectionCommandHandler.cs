@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
@@ -49,14 +50,14 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
         CancellationToken cancellationToken)
     {
         SystemChannelTemplate? template = await _templateRepository
-            .GetByCodeAsync(request.SystemChannelTemplateCode, cancellationToken) ?? throw new KeyNotFoundException($"Канал '{request.SystemChannelTemplateCode}' не найден.");
+            .GetByCodeAsync(request.SystemChannelTemplateCode, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.ChannelTemplateNotFound);
 
         bool hasActiveConnection = await _connectionRepository
             .HasActiveConnectionForChannelAsync(request.ChannelId, cancellationToken);
 
         if (hasActiveConnection)
         {
-            throw new ConflictException("К этому каналу продаж уже привязано активное подключение.");
+            throw new AppException(IntegrationsErrorCodes.ConnectionAlreadyActive);
         }
 
         IApiKeyValidator validator = _validatorFactory.Create(request.SystemChannelTemplateCode);
@@ -69,7 +70,7 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
 
         if (!validationResult.IsValid)
         {
-            throw new InvalidOperationException(validationResult.ErrorMessage);
+            throw new AppException(IntegrationsErrorCodes.ApiKeyValidationFailed, validationResult.ErrorMessage);
         }
 
         IChannelApiClient apiClient = _channelApiClientFactory.Create(template);

@@ -93,11 +93,11 @@ public class ExceptionHandlingMiddlewareTests
     }
 
     [Fact]
-    public async Task Invoke_InvalidOperationException_Returns422WithDefaultMessage()
+    public async Task Invoke_InvalidOperationException_Returns500AsUnexpected()
     {
         // Arrange
-        // InvalidOperationException maps to ValidationFailed (422), not BadRequest (400).
-        // exception.Message is not echoed — the DefaultMessage from ErrorCode is used instead.
+        // InvalidOperationException is not a domain signal: without an ErrorCode it is treated
+        // as an unhandled fault and must not leak the exception message.
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
             _ => throw new InvalidOperationException("Пользователь с почтой test@example.com уже существует."));
 
@@ -108,14 +108,14 @@ public class ExceptionHandlingMiddlewareTests
         (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
 
         // Assert
-        statusCode.Should().Be(422);
-        message.Should().Be("Проверьте корректность отправленных данных.");
-        code.Should().Be("common.validation_failed");
-        bodyStatus.Should().Be(422);
+        statusCode.Should().Be((int)HttpStatusCode.InternalServerError);
+        message.Should().Be("An unexpected error occurred.");
+        code.Should().Be("common.unexpected_error");
+        bodyStatus.Should().Be(500);
     }
 
     [Fact]
-    public async Task Invoke_KeyNotFoundException_Returns404WithDefaultMessage()
+    public async Task Invoke_KeyNotFoundException_Returns500AsUnexpected()
     {
         // Arrange
         // exception.Message is not echoed — the DefaultMessage from ErrorCode is used instead.
@@ -129,10 +129,10 @@ public class ExceptionHandlingMiddlewareTests
         (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
 
         // Assert
-        statusCode.Should().Be((int)HttpStatusCode.NotFound);
-        message.Should().Be("Ресурс не найден.");
-        code.Should().Be("common.not_found");
-        bodyStatus.Should().Be(404);
+        statusCode.Should().Be((int)HttpStatusCode.InternalServerError);
+        message.Should().Be("An unexpected error occurred.");
+        code.Should().Be("common.unexpected_error");
+        bodyStatus.Should().Be(500);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public class ExceptionHandlingMiddlewareTests
     {
         // Arrange
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
-            _ => throw new AppException(ErrorCodes.Catalog.ProductWorkRateNotFound));
+            _ => throw new AppException(CatalogErrorCodes.ProductWorkRateNotFound));
 
         DefaultHttpContext context = BuildContext();
 
@@ -156,11 +156,32 @@ public class ExceptionHandlingMiddlewareTests
     }
 
     [Fact]
+    public async Task Invoke_AppExceptionWithModuleCode_UsesTheCodeStatusWithoutHostKnowledge()
+    {
+        // Arrange: the host pipeline must not know module exception types; the module owns the
+        // code and its status, and the middleware only reads them.
+        ExceptionHandlingMiddleware middleware = BuildMiddleware(
+            _ => throw new AppException(IntegrationsErrorCodes.ConnectionNotFound));
+
+        DefaultHttpContext context = BuildContext();
+
+        // Act
+        await middleware.InvokeAsync(context);
+        (int statusCode, string? message, string? code, int? bodyStatus) = await ReadResponseAsync(context);
+
+        // Assert
+        statusCode.Should().Be((int)HttpStatusCode.NotFound);
+        code.Should().Be("integrations.connection.not_found");
+        message.Should().Be("Подключение не найдено.");
+        bodyStatus.Should().Be(404);
+    }
+
+    [Fact]
     public async Task Invoke_AppException_WithCustomMessage_UsesCustomMessage()
     {
         // Arrange
         ExceptionHandlingMiddleware middleware = BuildMiddleware(
-            _ => throw new AppException(ErrorCodes.Catalog.ProductWorkRateNotFound, "Норма выработки #42 не найдена."));
+            _ => throw new AppException(CatalogErrorCodes.ProductWorkRateNotFound, "Норма выработки #42 не найдена."));
 
         DefaultHttpContext context = BuildContext();
 

@@ -154,11 +154,10 @@ public class WorkRateCommandHandlerTests
             new DeleteWorkRateCommandHandler(_repoMock.Object);
 
         // Act
-        DeleteWorkRateResponse response = await handler.Handle(
+        await handler.Handle(
             new DeleteWorkRateCommand { Id = id }, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
         existing.UpdatedAt.Should().NotBeNull();
 
@@ -177,11 +176,12 @@ public class WorkRateCommandHandlerTests
             new DeleteWorkRateCommandHandler(_repoMock.Object);
 
         // Act
-        DeleteWorkRateResponse response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new DeleteWorkRateCommand { Id = Guid.NewGuid() }, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.WorkRateNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -212,11 +212,9 @@ public class WorkRateCommandHandlerTests
         };
 
         // Act
-        UpdateWorkRateResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.Name.Should().Be("Сборщик, 3 разряд");
         existing.UpdatedAt.Should().NotBeNull();
 
@@ -301,11 +299,12 @@ public class WorkRateCommandHandlerTests
         GetWorkRateQueryHandler handler = GetWorkRateHandler();
 
         // Act
-        GetWorkRateResponse? response = await handler.Handle(
+        Func<Task> act = () => handler.Handle(
             new GetWorkRateQuery { Id = Guid.NewGuid() }, CancellationToken.None);
 
         // Assert
-        response.Should().BeNull();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.WorkRateNotFound);
         _versionRepoMock.Verify(
             r => r.GetActiveByWorkRateIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);

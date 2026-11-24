@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
@@ -30,18 +31,20 @@ public class CancelJobCommandHandler : IRequestHandler<CancelJobCommand>
 
     public async Task Handle(CancelJobCommand request, CancellationToken cancellationToken)
     {
-        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new KeyNotFoundException($"Задача с ID '{request.JobRunId}' не найдена.");
+        JobRun? jobRun = await _jobRunRepository.GetByIdAsync(request.JobRunId, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.JobNotFound);
 
         if (!jobRun.JobType.IsCancellable())
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.JobNotCancellable,
                 $"Задача типа '{jobRun.JobType.ToStringCamelCase()}' не поддерживает отмену: " +
                 "она выполняется по расписанию, и прерывание ломает непрерывность watermark.");
         }
 
         if (jobRun.Status != JobStatus.Pending && jobRun.Status != JobStatus.Running)
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.JobNotInCancellableState,
                 $"Задача в статусе '{jobRun.Status}' не может быть отменена. " +
                 "Отмена доступна только для задач со статусом Pending или Running.");
         }

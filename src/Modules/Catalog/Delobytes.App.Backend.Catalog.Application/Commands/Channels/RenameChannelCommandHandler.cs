@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Channels;
@@ -16,7 +17,6 @@ public class RenameChannelCommand : IRequest<RenameChannelResponse>, IRequireRol
 
 public class RenameChannelResponse
 {
-    public bool Found { get; set; }
 }
 
 public class RenameChannelCommandHandler : IRequestHandler<RenameChannelCommand, RenameChannelResponse>
@@ -34,7 +34,7 @@ public class RenameChannelCommandHandler : IRequestHandler<RenameChannelCommand,
 
         if (channel == null)
         {
-            return new RenameChannelResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ChannelNotFound);
         }
 
         channel.Name = request.Name;
@@ -42,6 +42,6 @@ public class RenameChannelCommandHandler : IRequestHandler<RenameChannelCommand,
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new RenameChannelResponse { Found = true };
+        return new RenameChannelResponse();
     }
 }

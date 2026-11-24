@@ -365,7 +365,7 @@ public class CreateProductWorkRateCommandHandlerTests
         Func<Task> action = () => handler.Handle(command, CancellationToken.None);
 
         AppException exception = (await action.Should().ThrowAsync<AppException>()).Which;
-        exception.Code.Should().Be(ErrorCodes.Catalog.ProductWorkRateValidFromConflict);
+        exception.Code.Should().Be(CatalogErrorCodes.ProductWorkRateValidFromConflict);
 
         _snapshotServiceMock.Verify(
             s => s.CaptureBeforeChangeAsync(

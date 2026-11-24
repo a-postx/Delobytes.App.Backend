@@ -1,8 +1,10 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application;
 using Delobytes.App.Backend.Integrations.Application.Commands;
+using Delobytes.App.Backend.Integrations.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -94,8 +96,8 @@ public class StartOrdersImportCommandHandlerTests
             new StartOrdersImportCommand { ConnectionId = connectionId },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"*{connectionId}*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ConnectionNotFound);
     }
 
     [Fact]
@@ -113,12 +115,12 @@ public class StartOrdersImportCommandHandlerTests
             new StartOrdersImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*неакт*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.ConnectionInactive);
     }
 
     [Fact]
-    public async Task Handle_DuplicateActiveJob_ThrowsConflictException()
+    public async Task Handle_DuplicateActiveJob_ThrowsJobAlreadyRunning()
     {
         Connection connection = BuildConnection();
 
@@ -136,8 +138,8 @@ public class StartOrdersImportCommandHandlerTests
             new StartOrdersImportCommand { ConnectionId = connection.Id },
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<ConflictException>()
-            .WithMessage("*активная задача*");
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(IntegrationsErrorCodes.JobAlreadyRunning);
     }
 
     [Fact]

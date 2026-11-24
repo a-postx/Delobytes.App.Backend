@@ -16,10 +16,10 @@ internal static class UniqueConstraintTranslator
     /// <summary>Index name to the error code that explains it.</summary>
     private static readonly Dictionary<string, ErrorCode> KnownConstraints = new Dictionary<string, ErrorCode>
     {
-        ["IX_Products_TenantId_Sku"] = ErrorCodes.Catalog.ProductSkuConflict,
-        ["IX_ProductBarcodes_TenantId_Value"] = ErrorCodes.Catalog.ProductBarcodeConflict,
-        ["IX_ChannelProductBarcodes_TenantId_ChannelProductId_Value"] = ErrorCodes.Catalog.ProductBarcodeConflict,
-        ["IX_ProductWorkRates_TenantId_ProductId_ValidFrom"] = ErrorCodes.Catalog.ProductWorkRateValidFromConflict,
+        ["IX_Products_TenantId_Sku"] = CatalogErrorCodes.ProductSkuConflict,
+        ["IX_ProductBarcodes_TenantId_Value"] = CatalogErrorCodes.ProductBarcodeConflict,
+        ["IX_ChannelProductBarcodes_TenantId_ChannelProductId_Value"] = CatalogErrorCodes.ProductBarcodeConflict,
+        ["IX_ProductWorkRates_TenantId_ProductId_ValidFrom"] = CatalogErrorCodes.ProductWorkRateValidFromConflict,
     };
 
     /// <summary>

@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.WorkRates;
@@ -14,7 +15,6 @@ public class DeleteWorkRateCommand : IRequest<DeleteWorkRateResponse>, IRequireR
 
 public class DeleteWorkRateResponse
 {
-    public bool Found { get; set; }
 }
 
 public class DeleteWorkRateCommandHandler : IRequestHandler<DeleteWorkRateCommand, DeleteWorkRateResponse>
@@ -32,7 +32,7 @@ public class DeleteWorkRateCommandHandler : IRequestHandler<DeleteWorkRateComman
 
         if (workRate == null)
         {
-            return new DeleteWorkRateResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.WorkRateNotFound);
         }
 
         workRate.IsActive = false;
@@ -40,6 +40,6 @@ public class DeleteWorkRateCommandHandler : IRequestHandler<DeleteWorkRateComman
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new DeleteWorkRateResponse { Found = true };
+        return new DeleteWorkRateResponse();
     }
 }

@@ -61,14 +61,9 @@ public class ComponentsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetComponentResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        GetComponentResponse? response = await _mediator.Send(
+        GetComponentResponse response = await _mediator.Send(
             new GetComponentQuery { Id = id },
             cancellationToken);
-
-        if (response == null)
-        {
-            return NotFound();
-        }
 
         return Ok(response);
     }
@@ -102,7 +97,7 @@ public class ComponentsController : ControllerBase
         [FromBody] UpdateComponentRequest request,
         CancellationToken cancellationToken)
     {
-        UpdateComponentResponse response = await _mediator.Send(
+        await _mediator.Send(
             new UpdateComponentCommand
             {
                 Id = id,
@@ -112,11 +107,6 @@ public class ComponentsController : ControllerBase
                 Category = request.Category,
             },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }
@@ -138,11 +128,6 @@ public class ComponentsController : ControllerBase
             },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return Ok(response);
     }
 
@@ -150,14 +135,9 @@ public class ComponentsController : ControllerBase
     [HttpPost("{id:guid}/restore")]
     public async Task<ActionResult> Restore(Guid id, CancellationToken cancellationToken)
     {
-        RestoreComponentResponse response = await _mediator.Send(
+        await _mediator.Send(
             new RestoreComponentCommand { Id = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }
@@ -166,14 +146,9 @@ public class ComponentsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        DeleteComponentResponse response = await _mediator.Send(
+        await _mediator.Send(
             new DeleteComponentCommand { Id = id },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return NoContent();
     }

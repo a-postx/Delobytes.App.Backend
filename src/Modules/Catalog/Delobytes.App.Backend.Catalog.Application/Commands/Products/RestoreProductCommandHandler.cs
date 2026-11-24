@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
@@ -16,10 +17,6 @@ public class RestoreProductCommand : IRequest<RestoreProductResponse>, IRequireR
 
 public class RestoreProductResponse
 {
-    public bool Found { get; set; }
-
-    /// <summary>False when the product status does not allow restore.</summary>
-    public bool Accepted { get; set; }
 }
 
 public class RestoreProductCommandHandler : IRequestHandler<RestoreProductCommand, RestoreProductResponse>
@@ -37,12 +34,12 @@ public class RestoreProductCommandHandler : IRequestHandler<RestoreProductComman
 
         if (product == null)
         {
-            return new RestoreProductResponse { Found = false, Accepted = false };
+            throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
         if (product.Status != ProductStatus.Archived && product.Status != ProductStatus.DeletionFailed)
         {
-            return new RestoreProductResponse { Found = true, Accepted = false };
+            throw new AppException(CatalogErrorCodes.ProductNotRestorable);
         }
 
         // Only the product state is restored. ChannelProduct.IsActive is a channel-reported fact and
@@ -53,6 +50,6 @@ public class RestoreProductCommandHandler : IRequestHandler<RestoreProductComman
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new RestoreProductResponse { Found = true, Accepted = true };
+        return new RestoreProductResponse();
     }
 }

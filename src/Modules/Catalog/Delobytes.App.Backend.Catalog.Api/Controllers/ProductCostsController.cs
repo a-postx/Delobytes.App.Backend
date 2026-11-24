@@ -42,11 +42,6 @@ public class ProductCostsController : ControllerBase
             },
             cancellationToken);
 
-        if (!response.Found)
-        {
-            return NotFound();
-        }
-
         return Ok(response);
     }
 
@@ -71,11 +66,6 @@ public class ProductCostsController : ControllerBase
                 AsOf = request.AsOf,
             },
             cancellationToken);
-
-        if (!response.Found)
-        {
-            return NotFound();
-        }
 
         return Ok(response);
     }

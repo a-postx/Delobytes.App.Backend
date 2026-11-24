@@ -7,4 +7,8 @@
 	<GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Delobytes.App.Backend.Contracts\Delobytes.App.Backend.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

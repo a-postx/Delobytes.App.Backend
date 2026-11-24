@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
@@ -39,7 +40,7 @@ public class DeleteConnectionCommandHandler : IRequestHandler<DeleteConnectionCo
     public async Task Handle(DeleteConnectionCommand request, CancellationToken cancellationToken)
     {
         Connection? connection = await _connectionRepository
-            .FindByIdWithTemplateAsync(request.Id, cancellationToken) ?? throw new KeyNotFoundException($"Подключение с ID '{request.Id}' не найдено.");
+            .FindByIdWithTemplateAsync(request.Id, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.ConnectionNotFound);
 
         connection.IsActive = false;
         connection.UpdatedAt = DateTimeOffset.UtcNow;

@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 
@@ -18,7 +19,6 @@ public class DeleteProductWorkRateCommand : IRequest<DeleteProductWorkRateRespon
 
 public class DeleteProductWorkRateResponse
 {
-    public bool Found { get; set; }
 }
 
 public class DeleteProductWorkRateCommandHandler : IRequestHandler<DeleteProductWorkRateCommand, DeleteProductWorkRateResponse>
@@ -46,7 +46,7 @@ public class DeleteProductWorkRateCommandHandler : IRequestHandler<DeleteProduct
 
         if (rate == null)
         {
-            return new DeleteProductWorkRateResponse { Found = false };
+            throw new AppException(CatalogErrorCodes.ProductWorkRateNotFound);
         }
 
         // Idempotent: a second submit must not move RemovedFrom forward, which would extend the
@@ -54,7 +54,7 @@ public class DeleteProductWorkRateCommandHandler : IRequestHandler<DeleteProduct
         // end state the caller asked for is the one already in place.
         if (rate.Status == ProductWorkRateStatus.Removed)
         {
-            return new DeleteProductWorkRateResponse { Found = true };
+            return new DeleteProductWorkRateResponse();
         }
 
         DateOnly today = await _tenantTimeService.GetTodayAsync(_tenantContext, cancellationToken);
@@ -77,6 +77,6 @@ public class DeleteProductWorkRateCommandHandler : IRequestHandler<DeleteProduct
 
         await _repository.SaveChangesAsync(cancellationToken);
 
-        return new DeleteProductWorkRateResponse { Found = true };
+        return new DeleteProductWorkRateResponse();
     }
 }

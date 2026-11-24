@@ -202,11 +202,9 @@ public class ComponentCommandHandlerTests
         };
 
         // Act
-        UpdateComponentResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.Name.Should().Be("Коробка 30x20x15");
         existing.Description.Should().Be("Обновлённое описание");
         existing.Unit.Should().Be(Unit.Kg);
@@ -238,11 +236,11 @@ public class ComponentCommandHandlerTests
         };
 
         // Act
-        UpdateComponentResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -272,13 +270,12 @@ public class ComponentCommandHandlerTests
             new DeleteComponentCommandHandler(_repoMock.Object, _priceRepoMock.Object);
 
         // Act
-        DeleteComponentResponse response =
-            await handler.Handle(
+        // Act
+        await handler.Handle(
                 new DeleteComponentCommand { Id = existing.Id },
                 CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
         activePrice.IsActive.Should().BeFalse();
         activePrice.UpdatedAt.Should().NotBeNull();
@@ -311,13 +308,12 @@ public class ComponentCommandHandlerTests
             new DeleteComponentCommandHandler(_repoMock.Object, _priceRepoMock.Object);
 
         // Act
-        DeleteComponentResponse response =
-            await handler.Handle(
+        // Act
+        await handler.Handle(
                 new DeleteComponentCommand { Id = existing.Id },
                 CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeFalse();
     }
 
@@ -333,13 +329,13 @@ public class ComponentCommandHandlerTests
             new DeleteComponentCommandHandler(_repoMock.Object, _priceRepoMock.Object);
 
         // Act
-        DeleteComponentResponse response =
-            await handler.Handle(
+        Func<Task> act = () => handler.Handle(
                 new DeleteComponentCommand { Id = Guid.NewGuid() },
                 CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
         _priceRepoMock.Verify(p => p.GetActiveByComponentIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -371,13 +367,11 @@ public class ComponentCommandHandlerTests
             new RestoreComponentCommandHandler(_repoMock.Object, _priceRepoMock.Object);
 
         // Act
-        RestoreComponentResponse response =
-            await handler.Handle(
+        await handler.Handle(
                 new RestoreComponentCommand { Id = existing.Id },
                 CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         existing.IsActive.Should().BeTrue();
         latestPrice.IsActive.Should().BeTrue();
         latestPrice.UpdatedAt.Should().NotBeNull();
@@ -400,13 +394,13 @@ public class ComponentCommandHandlerTests
             new RestoreComponentCommandHandler(_repoMock.Object, _priceRepoMock.Object);
 
         // Act
-        RestoreComponentResponse response =
-            await handler.Handle(
+        Func<Task> act = () => handler.Handle(
                 new RestoreComponentCommand { Id = Guid.NewGuid() },
                 CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
         _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -451,7 +445,6 @@ public class ComponentCommandHandlerTests
             await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         response.Id.Should().NotBe(Guid.Empty);
 
         // The previous version is deactivated, never overwritten in place.
@@ -491,11 +484,11 @@ public class ComponentCommandHandlerTests
         };
 
         // Act
-        CreateComponentPriceResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeFalse();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
         _priceRepoMock.Verify(p => p.Add(It.IsAny<ComponentPrice>()), Times.Never);
         _priceRepoMock.Verify(p => p.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -529,11 +522,9 @@ public class ComponentCommandHandlerTests
         };
 
         // Act
-        CreateComponentPriceResponse response =
-            await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        response.Found.Should().BeTrue();
         _priceRepoMock.Verify(p => p.Add(It.IsAny<ComponentPrice>()), Times.Once);
     }
 
@@ -637,12 +628,12 @@ public class ComponentCommandHandlerTests
             new GetComponentQueryHandler(_repoMock.Object);
 
         // Act
-        GetComponentResponse? response =
-            await handler.Handle(
-                new GetComponentQuery { Id = Guid.NewGuid() },
-                CancellationToken.None);
+        Func<Task> act = () => handler.Handle(
+            new GetComponentQuery { Id = Guid.NewGuid() },
+            CancellationToken.None);
 
         // Assert
-        response.Should().BeNull();
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentNotFound);
     }
 }

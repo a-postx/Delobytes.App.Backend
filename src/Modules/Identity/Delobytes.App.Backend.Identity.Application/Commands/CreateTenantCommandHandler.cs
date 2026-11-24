@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
@@ -77,14 +78,13 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
     /// <inheritdoc/>
     public async Task<CreateTenantResponse> Handle(CreateTenantCommand request, CancellationToken cancellationToken)
     {
-        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken) ?? throw new InvalidOperationException($"Пользователь с ID {request.UserId} не найден.");
+        User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken) ?? throw new AppException(IdentityErrorCodes.UserNotFound);
 
         int currentMembershipsCount = await _membershipRepository.CountActiveByUserAsync(request.UserId, cancellationToken);
 
         if (currentMembershipsCount >= _options.MaxTenantsPerUser)
         {
-            throw new InvalidOperationException(
-                $"Достигнут максимальный лимит пространств ({_options.MaxTenantsPerUser}).");
+            throw new AppException(IdentityErrorCodes.TenantLimitReached);
         }
 
         // If user already has memberships, check they are Administrator in current tenant
@@ -92,16 +92,15 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
         {
             if (request.CurrentTenantId == null)
             {
-                throw new InvalidOperationException("Для создания дополнительного пространства необходимо указать текущий активный тенант.");
+                throw new AppException(IdentityErrorCodes.CurrentTenantRequired);
             }
 
             TenantMembership? currentMembership = await _membershipRepository
-                .FindActiveByUserAndTenantAsync(request.UserId, request.CurrentTenantId.Value, cancellationToken) ?? throw new InvalidOperationException("Пользователь не состоит в указанном текущем пространстве.");
+                .FindActiveByUserAndTenantAsync(request.UserId, request.CurrentTenantId.Value, cancellationToken) ?? throw new AppException(IdentityErrorCodes.MembershipNotFound);
 
             if (currentMembership.Role != Role.Administrator)
             {
-                throw new InvalidOperationException(
-                    "Только Администратор текущего пространства может создавать дополнительные пространства.");
+                throw new AppException(ErrorCodes.Common.Forbidden);
             }
         }
 

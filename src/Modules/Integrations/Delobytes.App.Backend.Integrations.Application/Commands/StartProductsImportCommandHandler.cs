@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Events;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
@@ -59,11 +60,11 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         CancellationToken cancellationToken)
     {
         Connection? connection = await _connectionRepository
-            .FindByIdWithTemplateAsync(request.ConnectionId, cancellationToken) ?? throw new KeyNotFoundException($"Подключение с ID '{request.ConnectionId}' не найдено.");
+            .FindByIdWithTemplateAsync(request.ConnectionId, cancellationToken) ?? throw new AppException(IntegrationsErrorCodes.ConnectionNotFound);
 
         if (!connection.IsActive)
         {
-            throw new InvalidOperationException("Подключение неактивно. Импорт невозможен.");
+            throw new AppException(IntegrationsErrorCodes.ConnectionInactive);
         }
 
         // The channel module, not this handler, decides which job type its products import runs as:
@@ -76,7 +77,8 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
 
         if (productsJobTypes.Count == 0)
         {
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.ProductsImportNotSupported,
                 $"Импорт карточек товаров не поддерживается для канала '{channelCode}'.");
         }
 
@@ -84,7 +86,8 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
         {
             // Two products types for one channel is a registry design error: picking one would
             // silently create the wrong run type and break cancellation and dispatch for it.
-            throw new InvalidOperationException(
+            throw new AppException(
+                IntegrationsErrorCodes.ChannelJobTypeAmbiguous,
                 $"Канал '{channelCode}' объявляет несколько типов задач импорта товаров: " +
                 $"{string.Join(", ", productsJobTypes)}.");
         }
@@ -96,8 +99,7 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
 
         if (hasActiveJob)
         {
-            throw new ConflictException(
-                "Для этого подключения уже есть активная задача импорта (Pending или Running).");
+            throw new AppException(IntegrationsErrorCodes.JobAlreadyRunning);
         }
 
         JobRun jobRun = await _jobRunStarter.CreatePendingAsync(
