@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Infrastructure.Messaging;
 using Delobytes.App.Backend.Finance.Infrastructure.Persistence;
 using Delobytes.App.Backend.Finance.Infrastructure.Persistence.Stores;
+using Delobytes.App.Backend.Persistence;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,7 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("Connection string is not configured.");
         }
 
-        services.AddDbContext<FinanceDbContext>(options =>
+        services.AddModuleDbContext<FinanceDbContext>((_, options) =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__FinanceMigrationsHistory", "finance")));
 

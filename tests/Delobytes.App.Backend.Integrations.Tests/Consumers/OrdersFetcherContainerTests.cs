@@ -53,6 +53,7 @@ public class OrdersFetcherContainerTests
         ServiceCollection services = new ServiceCollection();
         services.AddLogging();
         services.AddScoped(_ => Mock.Of<ITenantContext>());
+        services.AddScoped(_ => Mock.Of<IUserContext>());
         services.AddScoped(_ => Mock.Of<IPublishEndpoint>());
         services.AddIntegrationsInfrastructure(
             "Host=localhost;Database=test;Username=test;Password=test");

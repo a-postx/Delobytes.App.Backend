@@ -14,7 +14,7 @@ using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence;
 using Delobytes.App.Backend.Catalog.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Contracts.Interfaces;
-using Delobytes.App.Backend.Persistence.Interceptors;
+using Delobytes.App.Backend.Persistence;
 using FluentValidation;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -41,20 +41,9 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("Connection string is not configured.");
         }
 
-        // AuditableEntityInterceptor depends on scoped IUserContext, so it must be scoped too.
-        // EF Core resolves interceptors from the service provider that owns the DbContext,
-        // which is the same scope — so a scoped interceptor is safe here.
-        services.AddScoped<AuditableEntityInterceptor>();
-        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-
-        services.AddDbContext<CatalogDbContext>((serviceProvider, options) =>
-        {
-            AuditableEntityInterceptor auditInterceptor = serviceProvider.GetRequiredService<AuditableEntityInterceptor>();
-
+        services.AddModuleDbContext<CatalogDbContext>((_, options) =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
-                    npgsqlOptions.MigrationsHistoryTable("__CatalogMigrationsHistory", "catalog"))
-                .AddInterceptors(auditInterceptor);
-        });
+                npgsqlOptions.MigrationsHistoryTable("__CatalogMigrationsHistory", "catalog")));
 
         services.AddScoped<IChannelRepository, ChannelRepository>();
         services.AddScoped<ISupplierRepository, SupplierRepository>();

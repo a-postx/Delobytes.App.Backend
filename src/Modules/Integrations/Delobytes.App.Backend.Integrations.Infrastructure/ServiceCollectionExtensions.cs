@@ -23,6 +23,7 @@ using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories
 using Delobytes.App.Backend.Integrations.Infrastructure.Policies;
 using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 using Delobytes.App.Backend.Integrations.Infrastructure.Services;
+using Delobytes.App.Backend.Persistence;
 using MassTransit;
 using MassTransit.Configuration;
 using Microsoft.EntityFrameworkCore;
@@ -81,7 +82,7 @@ public static class ServiceCollectionExtensions
         services.Configure<RawApiResponseCleanupOptions>(
             configuration?.GetSection("RawApiResponseCleanup") ?? new ConfigurationBuilder().Build().GetSection("RawApiResponseCleanup"));
 
-        services.AddDbContext<IntegrationsDbContext>(options =>
+        services.AddModuleDbContext<IntegrationsDbContext>((_, options) =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__IntegrationsMigrationsHistory", "integrations")));
 

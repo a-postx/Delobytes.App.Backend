@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using Delobytes.App.Backend.Persistence;
 using Delobytes.App.Backend.Sales.Application.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Sales.Application.Orders;
@@ -33,7 +34,7 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("Connection string is not configured.");
         }
 
-        services.AddDbContext<SalesDbContext>(options =>
+        services.AddModuleDbContext<SalesDbContext>((_, options) =>
             options.UseNpgsql(connectionString, npgsqlOptions =>
                 npgsqlOptions.MigrationsHistoryTable("__SalesMigrationsHistory", "sales")));
 
