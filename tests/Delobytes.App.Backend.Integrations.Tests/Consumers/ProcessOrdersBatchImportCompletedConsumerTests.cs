@@ -445,7 +445,6 @@ public partial class ProcessOrdersBatchImportCompletedConsumerTests
         publishedEvent!.JobRunId.Should().Be(jobRun.Id);
         publishedEvent.TotalCreated.Should().Be(6);
         publishedEvent.TotalUpdated.Should().Be(3);
-        publishedEvent.Status.Should().Be(JobStatus.Success);
     }
 
     [Fact]

@@ -91,8 +91,7 @@ public class OrdersImportFinisher
         {
             JobRunId = completion.JobRun.Id,
             TotalCreated = completion.JobRun.RecordsCreated,
-            TotalUpdated = completion.JobRun.RecordsUpdated,
-            Status = completion.JobRun.Status
+            TotalUpdated = completion.JobRun.RecordsUpdated
         };
 
         await _eventPublisher.PublishAsync(completedEvent, cancellationToken);

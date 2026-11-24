@@ -1,5 +1,3 @@
-using Delobytes.App.Backend.Integrations.Domain.Enums;
-
 namespace Delobytes.App.Backend.Integrations.Contracts.Events;
 
 /// <summary>
@@ -24,9 +22,4 @@ public record OrdersImportCompletedEvent
     /// Total number of orders updated across all batches.
     /// </summary>
     public int TotalUpdated { get; init; }
-
-    /// <summary>
-    /// Final status of the job run (Success, Failed or Cancelled).
-    /// </summary>
-    public JobStatus Status { get; init; }
 }
