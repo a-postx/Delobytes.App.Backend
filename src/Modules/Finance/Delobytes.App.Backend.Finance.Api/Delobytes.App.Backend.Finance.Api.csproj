@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Finance.Domain\Delobytes.App.Backend.Finance.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Finance.Application\Delobytes.App.Backend.Finance.Application.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Finance.Infrastructure\Delobytes.App.Backend.Finance.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

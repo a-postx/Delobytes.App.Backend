@@ -1,34 +1,14 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
-using System.Text.Json;
-using System.Threading.RateLimiting;
-using Delobytes.App.Backend.Application.Behaviours;
-using Delobytes.App.Backend.BackgroundServices;
-using Delobytes.App.Backend.Catalog.Api;
-using Delobytes.App.Backend.Constants;
-using Delobytes.App.Backend.Contracts.Errors;
-using Delobytes.App.Backend.Extensions;
-using Delobytes.App.Backend.Finance.Api;
-using Delobytes.App.Backend.Identity.Api;
+using Delobytes.App.Backend.Composition;
 using Delobytes.App.Backend.Infrastructure;
-using Delobytes.App.Backend.Integrations.Api;
-using Delobytes.App.Backend.Messaging.Events;
-using Delobytes.App.Backend.Middleware;
-using Delobytes.App.Backend.Options;
-using Delobytes.App.Backend.Sales.Api;
-using Delobytes.AspNetCore.Common.Constants;
-using Delobytes.AspNetCore.Logging;
-using MassTransit;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.OpenApi.Models;
 using Serilog;
 
 namespace Delobytes.App.Backend;
 
 /// <summary>
-/// Main program.
+/// Application entry point and composition.
 /// </summary>
 public partial class Program
 {
@@ -39,7 +19,7 @@ public partial class Program
     /// <summary>
     /// Entry point.
     /// </summary>
-    /// <param name="args">Comand line arguments.</param>
+    /// <param name="args">Command line arguments.</param>
     /// <returns>Exit code.</returns>
     public static async Task<int> Main(string[] args)
     {
@@ -55,307 +35,7 @@ public partial class Program
 
         try
         {
-            Log.Information("Building Web App...");
-
-            WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
-
-            Log.Information("Hosting environment is {EnvironmentName}", builder.Environment.EnvironmentName);
-
-            builder.ConfigureJsonOptions();
-
-            builder.Services.Configure<HostOptions>(opts => opts.ShutdownTimeout = TimeSpan.FromSeconds(30));
-
-            builder.WebHost
-                .UseKestrel((builderContext, options) =>
-                    {
-                        options.AddServerHeader = false;
-                        options.Configure(builderContext.Configuration.GetSection(nameof(AppSettings.Kestrel)));
-                    })
-                .CaptureStartupErrors(true)
-                .UseShutdownTimeout(TimeSpan.FromSeconds(Timeouts.WebHostShutdownTimeoutSec));
-
-            builder.Services.AddControllers()
-                .ConfigureApiBehaviorOptions(options =>
-                {
-                    // Model binding rejects a request before any handler runs; without this the
-                    // client receives ValidationProblemDetails (400) while FluentValidation
-                    // answers ErrorResponse (422) for the same class of mistake.
-                    options.InvalidModelStateResponseFactory = context =>
-                    {
-                        Dictionary<string, string[]> errors = context.ModelState
-                            .Where(entry => entry.Value is { Errors.Count: > 0 })
-                            .GroupBy(entry => ErrorFieldNames.ToCamelCase(entry.Key))
-                            .ToDictionary(
-                                group => group.Key,
-                                group => group
-                                    .SelectMany(entry => entry.Value!.Errors)
-                                    .Select(error => string.IsNullOrEmpty(error.ErrorMessage)
-                                        ? ErrorCodes.Common.ValidationFailed.DefaultMessage
-                                        : error.ErrorMessage)
-                                    .ToArray());
-
-                        ErrorResponse body = ErrorResponse.FromCode(ErrorCodes.Common.ValidationFailed, errors: errors);
-
-                        return new Microsoft.AspNetCore.Mvc.ObjectResult(body)
-                        {
-                            StatusCode = ErrorCodes.Common.ValidationFailed.Status,
-                        };
-                    };
-                })
-                .AddJsonOptions(options =>
-                {
-                    options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-                    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-                });
-
-            builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen(options =>
-            {
-                options.DescribeAllParametersInCamelCase();
-                options.EnableAnnotations();
-
-                options.SwaggerDoc("v1", new OpenApiInfo
-                {
-                    Title = "Delobytes App Backend API",
-                    Version = "v1",
-                    Description = "Delobytes e-commerce margin accounting system API",
-                });
-
-                options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-                {
-                    Description = "JWT Authorization header using the Bearer scheme.",
-                    Name = "Authorization",
-                    In = ParameterLocation.Header,
-                    Type = SecuritySchemeType.ApiKey,
-                    Scheme = "Bearer"
-                });
-
-                options.AddSecurityRequirement(new OpenApiSecurityRequirement
-                {
-                    {
-                        new OpenApiSecurityScheme
-                        {
-                            Reference = new OpenApiReference
-                            {
-                                Type = ReferenceType.SecurityScheme,
-                                Id = "Bearer"
-                            }
-                        },
-                        Array.Empty<string>()
-                    }
-                });
-            });
-
-            builder.Services.AddMediatR(cfg =>
-            {
-                cfg.AddIdentityHandlers();
-                cfg.AddIntegrationsHandlers();
-                cfg.AddCatalogHandlers();
-                cfg.AddSalesHandlers();
-                cfg.AddFinanceHandlers();
-
-                // Добавить Authorization Behaviour ПЕРЕД Validation Behaviour
-                cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
-                cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
-            });
-
-            builder.Services.AddIdentityApi();
-            builder.Services.AddIntegrationsApi();
-            builder.Services.AddCatalogApi();
-            builder.Services.AddSalesApi();
-            builder.Services.AddFinanceApi();
-
-            builder.Configuration.AddYandexCloudLockboxConfiguration(config =>
-            {
-                builder.Configuration
-                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: false, reloadOnChange: true)
-                    .AddEnvironmentVariables();
-
-                IConfigurationRoot tempConfig = new ConfigurationBuilder()
-                       .AddJsonFile("appsettings.json")
-                       .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: false, reloadOnChange: false)
-                       .Build();
-
-                config.PrivateKey = Environment.GetEnvironmentVariable("YC_PRIVATE_KEY") ?? throw new InvalidOperationException("YC_PRIVATE_KEY is required.");
-                config.ServiceAccountId = tempConfig.GetValue<string>("YC:ServiceAccountId") ?? throw new InvalidOperationException("YC:ServiceAccountId is required.");
-                config.ServiceAccountAuthorizedKeyId = tempConfig.GetValue<string>("YC:ServiceAccountAuthorizedKeyId") ?? throw new InvalidOperationException("YC:ServiceAccountAuthorizedKeyId is required.");
-                config.SecretId = tempConfig.GetValue<string>("YC:ConfigurationSecretId") ?? throw new InvalidOperationException("YC:ConfigurationSecretId is required.");
-                config.PathSeparator = '-';
-                config.Optional = false;
-                config.ReloadPeriod = TimeSpan.FromDays(7);
-                config.LoadTimeout = TimeSpan.FromSeconds(20);
-                config.OnLoadException += exceptionContext =>
-                {
-                    Log.Warning(exceptionContext.Exception, "Failed to load secrets from Yandex Cloud Lockbox: {Message}", exceptionContext.Exception.Message);
-                };
-            });
-
-            builder.AddOptionsWithValidation();
-            AppSecrets? secrets = builder.Configuration.GetSection(nameof(AppSecrets)).Get<AppSecrets>();
-
-            // ── Serilog ─────────────────────────────────────────────────────────────
-            builder.AddSerilog(secrets);
-            builder.Services.AddHttpContextLogging(options =>
-            {
-                options.LogRequestBody = true;
-                options.LogResponseBody = true;
-                options.MaxBodyLength = 32759;
-                // These paths carry passwords, authorization codes, JWTs, invitation tokens
-                // or marketplace API keys in their bodies. The middleware can only skip a
-                // whole path (exact match), so no request/response event is written for them.
-                options.SkipPaths = new List<PathString>
-                {
-                    "/metrics",
-                    "/api/auth/login",
-                    "/api/auth/register",
-                    "/api/auth/change-password",
-                    "/api/auth/yandex/callback",
-                    "/api/auth/google/callback",
-                    "/api/auth/create-tenant",
-                    "/api/tenant/switch",
-                    "/api/tenant/invitations",
-                    "/api/tenant/invitations/accept",
-                    "/api/integrations/connections",
-                };
-                options.SkipRequestHeaders = new List<string> { "Authorization" };
-            });
-
-            // Limits password guessing per client address. Behind a reverse proxy this key is
-            // only useful with ForwardedHeaders configured to trust that proxy.
-            builder.Services.AddRateLimiter(options =>
-            {
-                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-                options.AddPolicy("login", httpContext =>
-                    RateLimitPartition.GetFixedWindowLimiter(
-                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                        factory: _ => new FixedWindowRateLimiterOptions
-                        {
-                            PermitLimit = 10,
-                            Window = TimeSpan.FromMinutes(1),
-                            QueueLimit = 0,
-                            AutoReplenishment = true,
-                        }));
-            });
-
-            // ── Infrastructure (Http / EF Core / PostgreSQL) ───────────────────────────────
-            builder.Services
-                .AddInfrastructure(builder.Configuration, secrets);
-
-            // ── Health checks ───────────────────────────────────────────────────────
-            builder.Services.AddCustomHealthChecks(secrets);
-
-            // ── MassTransit + RabbitMQ (CloudAMQP) ─────────────────────────────────-
-            builder.Services.AddMessaging(secrets?.MessageBusConnectionString);
-
-            // ── Background jobs ──────────────────
-            // Separate IHostedServices: the scheduler only creates Pending JobRun rows per cron
-            // schedule, the worker is the sole place that enforces per-tenant parallelism and
-            // publishes the event that actually triggers the orchestration consumer.
-            builder.Services.AddHostedService<SchedulerHostedService>();
-            builder.Services.AddHostedService<WorkerHostedService>();
-            builder.Services.AddHostedService<WatchdogHostedService>();
-            builder.Services.AddHostedService<RawApiResponseCleanupHostedService>();
-            builder.Services.AddHostedService<ExpectationAgingHostedService>();
-
-            // ── CORS ─────────────────────────────────────────────────────────────────────
-            builder.Services.AddCustomCors();
-
-            WebApplication app = builder.Build();
-
-            IHostApplicationLifetime hostLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-            hostLifetime.ApplicationStopping.Register(() =>
-            {
-                app.Services.GetRequiredService<ILogger<Program>>().LogInformation("Shutdown has been initiated.");
-            });
-
-            // Migrations and data backfills run on startup and must succeed: serving on an outdated
-            // schema corrupts data silently, so a failure stops the host instead of retrying.
-            try
-            {
-                await app.Services.MigrateAsync();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error applying database migration");
-                return 1;
-            }
-
-            app.UseMiddleware<CorrelationIdMiddleware>();
-
-            app.UseHttpContextLogging();
-
-            app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-            app.UseCors(CorsPolicyNames.AllowAny);
-
-            // Publish test event to verify MassTransit + RabbitMQ connectivity on startup
-            string appVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
-            using (IServiceScope publishScope = app.Services.CreateScope())
-            {
-                IPublishEndpoint publishEndpoint = publishScope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
-
-                await publishEndpoint.Publish(new AppStartedEvent
-                {
-                    StartedAt = DateTimeOffset.UtcNow,
-                    ApplicationVersion = appVersion,
-                });
-            }
-
-            app.UseSwagger();
-            app.UseSwaggerUI(options =>
-            {
-                options.SwaggerEndpoint("/swagger/v1/swagger.json", "Delobytes App Backend v1");
-                options.RoutePrefix = "swagger";
-            });
-
-            app.UseRateLimiter();
-
-            // Authentication & authorization middleware must come before MapControllers
-            app.UseAuthentication()
-                .UseClaimsLogging();
-            app.UseAuthorization();
-
-            app.MapGet("/status", () =>
-            {
-                return Results.Ok(new
-                {
-                    status = "ok",
-                    version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0",
-                    timestamp = DateTimeOffset.UtcNow,
-                });
-            })
-                .WithName("Status")
-                .WithTags("System")
-                .Produces<object>(StatusCodes.Status200OK);
-
-            app.MapHealthChecks("/metrics", new HealthCheckOptions
-            {
-                ResponseWriter = async (context, report) =>
-                {
-                    context.Response.ContentType = "application/json";
-                    JsonSerializerOptions jsonOptions = new (JsonSerializerDefaults.Web);
-                    string result = JsonSerializer.Serialize(
-                        new
-                        {
-                            status = report.Status.ToString(),
-                            totalDuration = report.TotalDuration,
-                            entries = report.Entries.ToDictionary(
-                                e => e.Key,
-                                e => new
-                                {
-                                    status = e.Value.Status.ToString(),
-                                    duration = e.Value.Duration,
-                                    description = e.Value.Description,
-                                }),
-                        },
-                        jsonOptions);
-                    await context.Response.WriteAsync(result);
-                },
-            });
-
-            app.MapControllers();
+            await using WebApplication app = await CreateApp(args);
 
             await app.RunAsync();
 
@@ -370,5 +50,62 @@ public partial class Program
         {
             await Log.CloseAndFlushAsync();
         }
+    }
+
+    /// <summary>Builds the application.</summary>
+    /// <param name="args">Command line arguments.</param>
+    /// <param name="configure">Optional callback applied right after the builder is created.</param>
+    /// <returns>The composed application, ready to run.</returns>
+    public static async Task<WebApplication> CreateApp(string[] args, Action<WebApplicationBuilder>? configure = null)
+    {
+        Log.Information("Building Web App...");
+
+        WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+        // запускается перед чтением любых настроек, здесь тесты правят конфиг и подменяют сервер
+        configure?.Invoke(builder);
+
+        Log.Information("Hosting environment is {EnvironmentName}", builder.Environment.EnvironmentName);
+
+        builder
+            .AddHostConfiguration()
+            .AddApiSurface()
+            .AddObservability()
+            .AddModules()
+            .AddAppInfrastructure();
+
+        WebApplication app = builder.Build();
+
+        IHostApplicationLifetime hostLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+        hostLifetime.ApplicationStopping.Register(() =>
+        {
+            app.Services.GetRequiredService<ILogger<Program>>().LogInformation("Shutdown has been initiated.");
+        });
+
+        // Migrations and data backfills run on startup and must succeed: serving on an outdated
+        // schema corrupts data silently, so a failure stops the host instead of retrying.
+        if (builder.Configuration.GetValue("Database:MigrateOnStartup", true))
+        {
+            try
+            {
+                await app.Services.MigrateAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error applying database migration");
+                throw;
+            }
+        }
+
+        app.UseApiPipeline()
+            .MapSystemEndpoints();
+
+        if (builder.Configuration.GetValue("Background:Enabled", true))
+        {
+            // Publish test event to verify MassTransit + RabbitMQ connectivity on startup.
+            await app.PublishStartedEventAsync();
+        }
+
+        return app;
     }
 }

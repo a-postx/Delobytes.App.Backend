@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Domain\Delobytes.App.Backend.Integrations.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Application\Delobytes.App.Backend.Integrations.Application.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Integrations.Infrastructure\Delobytes.App.Backend.Integrations.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

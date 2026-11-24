@@ -6,6 +6,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
+using Delobytes.App.Backend.Contracts.Secrets;
 using Delobytes.App.Backend.Options;
 using Microsoft.AspNetCore.Http.Json;
 using Serilog;
@@ -20,22 +21,6 @@ namespace Delobytes.App.Backend.Extensions;
 
 internal static class WebApplicationBuilderExtensions
 {
-    public static WebApplicationBuilder AddOptionsWithValidation(this WebApplicationBuilder builder)
-    {
-        builder.Services
-            .AddCustomOptions(builder.Configuration)
-            .ValidateRemoteSecrets();
-
-        AppSecrets? secrets = builder.Configuration.GetSection(nameof(AppSecrets)).Get<AppSecrets>();
-
-        if (secrets == null)
-        {
-            throw new InvalidOperationException(nameof(secrets) + " not found");
-        }
-
-        return builder;
-    }
-
     public static WebApplicationBuilder ConfigureJsonOptions(this WebApplicationBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));

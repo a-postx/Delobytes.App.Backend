@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Domain\Delobytes.App.Backend.Catalog.Domain.csproj" />
     <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Application\Delobytes.App.Backend.Catalog.Application.csproj" />
+    <ProjectReference Include="..\Delobytes.App.Backend.Catalog.Infrastructure\Delobytes.App.Backend.Catalog.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

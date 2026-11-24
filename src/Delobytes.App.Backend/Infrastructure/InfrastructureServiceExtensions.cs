@@ -2,6 +2,7 @@ using Amazon.S3;
 using Delobytes.App.Backend.Catalog.Application.Options;
 using Delobytes.App.Backend.Catalog.Infrastructure;
 using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Contracts.Secrets;
 using Delobytes.App.Backend.Contracts.Storage;
 using Delobytes.App.Backend.Finance.Infrastructure;
 using Delobytes.App.Backend.Identity.Infrastructure;
@@ -76,19 +77,8 @@ public static class InfrastructureServiceExtensions
 
         services.AddSingleton<IObjectStorage, S3ObjectStorage>();
 
-        services.AddIdentityInfrastructure(
-            configuration,
-            secrets?.ConnectionString,
-            secrets?.JwtSecretKey,
-            secrets?.YandexClientId,
-            secrets?.YandexClientSecret,
-            secrets?.GoogleClientId,
-            secrets?.GoogleClientSecret);
-        services.AddCatalogInfrastructure(secrets?.ConnectionString);
-        services.AddSalesInfrastructure(secrets?.ConnectionString);
-        services.AddFinanceInfrastructure(secrets?.ConnectionString);
-        services.AddIntegrationsInfrastructure(secrets?.ConnectionString, configuration);
-
+        // Module infrastructure is registered by each IModule; this method owns only the parts
+        // shared by every module.
         return services;
     }
 }

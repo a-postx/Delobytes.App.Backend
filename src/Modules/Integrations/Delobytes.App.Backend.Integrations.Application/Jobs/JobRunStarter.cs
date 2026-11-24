@@ -9,6 +9,7 @@ namespace Delobytes.App.Backend.Integrations.Application.Jobs;
 /// Creates a Pending <see cref="JobRun"/> together with the type-specific row its job type needs.
 /// Both entry points that start a run — the manual start commands and the scheduler — go through
 /// here, so the "which rows does this job type require" rule lives in one place.
+/// Переизобретаем т.к. нужен per-tenant параллелизм, паузы из-за rate limit и watchdog зависших прогонов
 /// </summary>
 public sealed class JobRunStarter
 {

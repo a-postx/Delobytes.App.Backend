@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Constants;
+using Delobytes.App.Backend.Contracts.Secrets;
 using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Infrastructure;
 using Delobytes.App.Backend.Infrastructure.Health;
@@ -50,9 +51,12 @@ internal static class ServiceCollectionExtensions
     {
         services.AddSingleton<IValidateOptions<AppSecrets>, AppSecretsValidator>();
 
-        // binds to Yandex Lockbox configuration source
+        // Binds to the Yandex Lockbox configuration source. Validation runs on host start, so a
+        // configuration source added by a test host is already in place by then.
         services
-            .Configure<AppSecrets>(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false);
+            .AddOptions<AppSecrets>()
+            .Bind(configuration.GetSection(nameof(AppSecrets)), o => o.BindNonPublicProperties = false)
+            .ValidateOnStart();
 
         services.Configure<MultitenancyOptions>(
             configuration.GetSection(nameof(MultitenancyOptions)),
@@ -60,27 +64,6 @@ internal static class ServiceCollectionExtensions
 
         // JWT token validator — stateless, singleton-safe
         services.AddSingleton<JwtTokenValidator>();
-
-        return services;
-    }
-
-    /// <summary>
-    /// Создаёт экземпляры настроек, чтобы запустились валидаторы и проверили значения.
-    /// Используем вместо встроенного процесса валидации ValidateOnStart т.к. он вызывается и
-    /// проверяет только в процессе RunAsync.
-    /// </summary>
-    public static IServiceCollection ValidateRemoteSecrets(this IServiceCollection services)
-    {
-        try
-        {
-            ServiceProvider provider = services.BuildServiceProvider();
-            AppSecrets? appSecrets = provider.GetService<IOptions<AppSecrets>>()?.Value;
-        }
-        catch (OptionsValidationException ex)
-        {
-            Console.WriteLine($"Error validating {ex.OptionsType.FullName}: {string.Join(", ", ex.Failures)}");
-            throw;
-        }
 
         return services;
     }

@@ -4,48 +4,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Список проектов здесь не дублируется: добавление модуля не может сломать образ.
+# Кеш пакетов NuGet переиспользуется между сборками, поэтому отдельный слой restore не нужен.
 COPY ["Directory.Build.props", "./"]
-
-# Копируем .csproj файлы для кеширования слоя восстановления зависимостей
-COPY ["src/Delobytes.App.Backend/Delobytes.App.Backend.csproj", "src/Delobytes.App.Backend/"]
-COPY ["src/Delobytes.App.Backend.Contracts/Delobytes.App.Backend.Contracts.csproj", "src/Delobytes.App.Backend.Contracts/"]
-COPY ["src/Delobytes.App.Backend.Persistence/Delobytes.App.Backend.Persistence.csproj", "src/Delobytes.App.Backend.Persistence/"]
-COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Api/Delobytes.App.Backend.Identity.Api.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Api/"]
-COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/Delobytes.App.Backend.Identity.Domain.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Domain/"]
-COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Application/Delobytes.App.Backend.Identity.Application.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Application/"]
-COPY ["src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/Delobytes.App.Backend.Identity.Infrastructure.csproj", "src/Modules/Identity/Delobytes.App.Backend.Identity.Infrastructure/"]
-COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Api/Delobytes.App.Backend.Catalog.Api.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Api/"]
-COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/Delobytes.App.Backend.Catalog.Domain.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Domain/"]
-COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/Delobytes.App.Backend.Catalog.Application.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Application/"]
-COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Contracts/Delobytes.App.Backend.Catalog.Contracts.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Contracts/"]
-COPY ["src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/Delobytes.App.Backend.Catalog.Infrastructure.csproj", "src/Modules/Catalog/Delobytes.App.Backend.Catalog.Infrastructure/"]
-COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Api/Delobytes.App.Backend.Integrations.Api.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Api/"]
-COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/Delobytes.App.Backend.Integrations.Domain.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Domain/"]
-COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Contracts/Delobytes.App.Backend.Integrations.Contracts.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Contracts/"]
-COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Application/Delobytes.App.Backend.Integrations.Application.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Application/"]
-COPY ["src/Modules/Integrations/Delobytes.App.Backend.Integrations.Infrastructure/Delobytes.App.Backend.Integrations.Infrastructure.csproj", "src/Modules/Integrations/Delobytes.App.Backend.Integrations.Infrastructure/"]
-COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Api/Delobytes.App.Backend.Sales.Api.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Api/"]
-COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/Delobytes.App.Backend.Sales.Domain.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Domain/"]
-COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Application/Delobytes.App.Backend.Sales.Application.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Application/"]
-COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Contracts/Delobytes.App.Backend.Sales.Contracts.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Contracts/"]
-COPY ["src/Modules/Sales/Delobytes.App.Backend.Sales.Infrastructure/Delobytes.App.Backend.Sales.Infrastructure.csproj", "src/Modules/Sales/Delobytes.App.Backend.Sales.Infrastructure/"]
-COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Api/Delobytes.App.Backend.Finance.Api.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Api/"]
-COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Domain/Delobytes.App.Backend.Finance.Domain.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Domain/"]
-COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Contracts/Delobytes.App.Backend.Finance.Contracts.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Contracts/"]
-COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Application/Delobytes.App.Backend.Finance.Application.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Application/"]
-COPY ["src/Modules/Finance/Delobytes.App.Backend.Finance.Infrastructure/Delobytes.App.Backend.Finance.Infrastructure.csproj", "src/Modules/Finance/Delobytes.App.Backend.Finance.Infrastructure/"]
-
-# Восстанавливаем зависимости через главный проект
-RUN dotnet restore "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj"
-
-# Копируем исходный код и общие свойства сборки
 COPY ["src/", "src/"]
 
-# Собираем главный проект в режиме Release
-RUN dotnet build "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Release --no-restore
-
-# Публикуем приложение
-RUN dotnet publish "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Release --no-build -o /app/publish
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish "src/Delobytes.App.Backend/Delobytes.App.Backend.csproj" -c Release -o /app/publish
 
 # Этап 2: Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
