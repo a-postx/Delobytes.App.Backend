@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Identity.Application.Models;
 using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -92,7 +93,7 @@ public class GoogleCallbackCommandHandler : IRequestHandler<GoogleCallbackComman
 
             user = new User
             {
-                Id = Guid.NewGuid(),
+                Id = EntityId.New(),
                 ExternalId = userInfo.Sub,
                 IdentityProvider = "GoogleID",
                 Email = userInfo.Email,

@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Suppliers;
 
@@ -38,7 +39,7 @@ public class CreateSupplierCommandHandler : IRequestHandler<CreateSupplierComman
     {
         Supplier supplier = new Supplier
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             Inn = request.Inn,
             Name = request.Name,
             Description = request.Description,

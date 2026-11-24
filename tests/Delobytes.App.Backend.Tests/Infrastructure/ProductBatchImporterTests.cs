@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -244,7 +244,6 @@ public class ProductBatchImporterTests
             Sku = "SKU-001",
             Name = "Old Name",
             Description = "Old Description",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
@@ -356,7 +355,6 @@ public class ProductBatchImporterTests
             Sku = "SKU-001",
             Name = "Old Name",
             Description = "Old Description",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
@@ -604,7 +602,6 @@ public class ProductBatchImporterTests
             Code = "P-000900",
             Sku = "SKU-001",
             Name = "Existing Product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
         };
@@ -676,7 +673,6 @@ public class ProductBatchImporterTests
             Code = "P-000901",
             Sku = "INTERNAL-SKU",
             Name = "Existing Product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
         };
@@ -765,7 +761,6 @@ public class ProductBatchImporterTests
             Code = "P-000900",
             Sku = "SKU-001",
             Name = "Product 1",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
         };
@@ -776,7 +771,6 @@ public class ProductBatchImporterTests
             Code = "P-000901",
             Sku = "SKU-002",
             Name = "Product 2",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-5)
         };
@@ -849,7 +843,6 @@ public class ProductBatchImporterTests
             Code = "P-000902",
             Sku = "SKU-001",
             Name = "Product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
@@ -1082,7 +1075,6 @@ public class ProductBatchImporterTests
             Sku = "OLD-VENDOR-CODE",
             Name = "Test Product",
             Description = "Original Description",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
         };
@@ -1481,7 +1473,6 @@ public class ProductBatchImporterTests
             Code = "P-000904",
             Sku = "SKU-001",
             Name = "Test Product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };
@@ -1604,7 +1595,6 @@ public class ProductBatchImporterTests
             Code = "P-000904",
             Sku = "SKU-001",
             Name = "Test Product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };
@@ -1706,7 +1696,6 @@ public class ProductBatchImporterTests
             Code = "P-000910",
             Sku = "INTERNAL-SKU",
             Name = "Seed Name",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
         };
@@ -1813,7 +1802,6 @@ public class ProductBatchImporterTests
             Code = "P-000911",
             Sku = "OTHER-SKU",
             Name = "Product known from another channel",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
         };
@@ -2488,7 +2476,6 @@ public class ProductBatchImporterTests
             Code = code,
             Sku = sku,
             Name = name,
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10)
         };

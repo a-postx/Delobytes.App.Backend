@@ -195,7 +195,6 @@ public class ProductImportStoreBarcodeLookupTests
             Code = code,
             Sku = sku,
             Name = "Product " + code,
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };

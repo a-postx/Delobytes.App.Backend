@@ -47,7 +47,6 @@ public class ProductCostSnapshotService : IProductCostSnapshotService
             CostBreakdown breakdown = await _costCalculator.CalculateAsync(productId, today, ct);
             ProductCostSnapshot snapshot = new ProductCostSnapshot
             {
-                Id = Guid.NewGuid(),
                 ProductId = productId,
                 AsOfDate = breakdown.AsOfDate,
                 MaterialCost = breakdown.MaterialCost,

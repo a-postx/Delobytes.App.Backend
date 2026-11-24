@@ -37,16 +37,12 @@ public class RestoreProductCommandHandler : IRequestHandler<RestoreProductComman
             throw new AppException(CatalogErrorCodes.ProductNotFound);
         }
 
-        if (product.Status != ProductStatus.Archived && product.Status != ProductStatus.DeletionFailed)
+        // Only the product state is restored. ChannelProduct.IsActive is a channel-reported fact and
+        // is not something a user action can assert: it stays whatever the last import observed.
+        if (!product.TryRestore())
         {
             throw new AppException(CatalogErrorCodes.ProductNotRestorable);
         }
-
-        // Only the product state is restored. ChannelProduct.IsActive is a channel-reported fact and
-        // is not something a user action can assert: it stays whatever the last import observed.
-        product.Status = ProductStatus.Active;
-        product.ArchivedAt = null;
-        product.DeletionRequestedAt = null;
 
         await _repository.SaveChangesAsync(cancellationToken);
 

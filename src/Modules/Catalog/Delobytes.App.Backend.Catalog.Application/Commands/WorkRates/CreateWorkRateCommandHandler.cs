@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Identity;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.WorkRates;
@@ -37,9 +38,10 @@ public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateComman
 
     public async Task<CreateWorkRateResponse> Handle(CreateWorkRateCommand request, CancellationToken cancellationToken)
     {
+        // Created here because the first version below is keyed by it before the rate is tracked.
         WorkRate workRate = new WorkRate
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             Name = request.Name,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -47,7 +49,7 @@ public class CreateWorkRateCommandHandler : IRequestHandler<CreateWorkRateComman
 
         WorkRateVersion version = new WorkRateVersion
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             WorkRateId = workRate.Id,
             DailyWage = request.DailyWage,
             ValidFrom = request.ValidFrom,

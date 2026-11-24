@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Channels;
 
@@ -51,7 +52,7 @@ public class CreateChannelCommandHandler : IRequestHandler<CreateChannelCommand,
     {
         Channel channel = new Channel
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             SystemChannelTemplateId = request.SystemChannelTemplateId,
             Name = request.Name,
             Code = request.Code,

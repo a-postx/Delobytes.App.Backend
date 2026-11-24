@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
@@ -187,7 +187,6 @@ public class RawApiResponseCaptureHandler : DelegatingHandler
     {
         RawApiResponse rawResponse = new RawApiResponse
         {
-            Id = Guid.NewGuid(),
             JobRunId = jobRunId,
             ConnectionId = _jobRunExecutionContext.ConnectionId,
             ChannelId = _jobRunExecutionContext.ChannelId,

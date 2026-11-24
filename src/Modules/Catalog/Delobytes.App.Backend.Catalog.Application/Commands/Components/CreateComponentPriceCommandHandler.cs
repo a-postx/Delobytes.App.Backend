@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components;
 
@@ -73,7 +74,7 @@ public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponen
 
         ComponentPrice price = new ComponentPrice
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ComponentId = component.Id,
             PricePerUnit = request.PricePerUnit,
             SupplierId = request.SupplierId,

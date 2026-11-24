@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Catalog.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Authorization;
+using Delobytes.App.Backend.Contracts.Identity;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Components;
@@ -50,9 +51,10 @@ public class CreateComponentCommandHandler : IRequestHandler<CreateComponentComm
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
+        // Created here because the price row below is keyed by it before the component is tracked.
         Component component = new Component
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             Name = request.Name,
             Description = request.Description,
             Unit = request.Unit,
@@ -62,7 +64,7 @@ public class CreateComponentCommandHandler : IRequestHandler<CreateComponentComm
 
         ComponentPrice price = new ComponentPrice
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ComponentId = component.Id,
             PricePerUnit = request.PricePerUnit,
             SupplierId = request.SupplierId,

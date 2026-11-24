@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Identity;
 using Delobytes.App.Backend.Finance.Application.Attribution;
 using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Models;
@@ -110,7 +111,7 @@ public class JournalAppender
         {
             if (entry.Id == Guid.Empty)
             {
-                entry.Id = Guid.NewGuid();
+                entry.Id = EntityId.New();
             }
 
             if (entry.ImportedAt == default)

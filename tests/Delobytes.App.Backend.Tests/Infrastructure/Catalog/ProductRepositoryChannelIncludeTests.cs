@@ -46,7 +46,6 @@ public class ProductRepositoryChannelIncludeTests
             Code = "P-000001",
             Sku = "SKU-001",
             Name = "Test product",
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
@@ -95,7 +94,6 @@ public class ProductRepositoryChannelIncludeTests
             Code = "P-000001",
             Sku = "SKU-001",
             Name = "Linked product",
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
         linkedProduct.ChannelProducts.Add(new ChannelProduct
@@ -114,7 +112,6 @@ public class ProductRepositoryChannelIncludeTests
             Code = "P-000002",
             Sku = "SKU-002",
             Name = "Manual product",
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 

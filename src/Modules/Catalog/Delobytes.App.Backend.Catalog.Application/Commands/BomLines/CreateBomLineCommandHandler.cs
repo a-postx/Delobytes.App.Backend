@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
 
@@ -68,7 +69,7 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
         }
 
         BomLine line = new BomLine {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ProductId = request.ProductId,
             ComponentId = request.ComponentId,
             Quantity = request.Quantity,

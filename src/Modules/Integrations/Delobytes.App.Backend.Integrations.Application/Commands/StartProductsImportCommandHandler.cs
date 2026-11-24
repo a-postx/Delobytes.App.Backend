@@ -119,7 +119,6 @@ public class StartProductsImportCommandHandler : IRequestHandler<StartProductsIm
             await _syncCheckpointRepository.UpsertAsync(
                 new SyncCheckpoint
                 {
-                    Id = Guid.NewGuid(),
                     ConnectionId = request.ConnectionId,
                     JobType = productsJobType,
                     LastChangedAt = null,

@@ -667,7 +667,6 @@ public class ProductBatchImporter
 
         ChannelProduct channelProduct = new ChannelProduct
         {
-            Id = Guid.NewGuid(),
             ProductId = product.Id,
             ChannelId = channelId,
             ExternalProductId = card.ExternalProductId,
@@ -714,12 +713,10 @@ public class ProductBatchImporter
 
         Product product = new Product
         {
-            Id = Guid.NewGuid(),
             Code = code,
             Sku = sku,
             Name = TrimName(card.Name),
             Description = TrimDescription(card.Description),
-            Status = ProductStatus.Active,
             CreationSource = ResolveCreationSource(card),
             CreatedAt = _timeProvider.GetUtcNow()
         };
@@ -728,7 +725,6 @@ public class ProductBatchImporter
 
         ChannelProduct channelProduct = new ChannelProduct
         {
-            Id = Guid.NewGuid(),
             ProductId = product.Id,
             ChannelId = channelId,
             ExternalProductId = card.ExternalProductId,
@@ -1036,7 +1032,6 @@ public class ProductBatchImporter
 
         product.PackingUnits.Add(new PackingUnit
         {
-            Id = Guid.NewGuid(),
             ProductId = product.Id,
             ChannelId = null,
             LengthCm = card.LengthCm!.Value,
@@ -1078,7 +1073,6 @@ public class ProductBatchImporter
         {
             product.PackingUnits.Add(new PackingUnit
             {
-                Id = Guid.NewGuid(),
                 ProductId = product.Id,
                 ChannelId = channelId,
                 LengthCm = card.LengthCm!.Value,
@@ -1181,7 +1175,6 @@ public class ProductBatchImporter
 
             ProductBarcode barcode = new ProductBarcode
             {
-                Id = Guid.NewGuid(),
                 ProductId = product.Id,
                 Value = barcodeValue,
                 Type = BarcodeTypes.Ean13,
@@ -1250,7 +1243,6 @@ public class ProductBatchImporter
 
             ChannelProductBarcode barcode = new ChannelProductBarcode
             {
-                Id = Guid.NewGuid(),
                 ChannelProductId = channelProduct.Id,
                 Value = barcodeValue,
                 Type = barcodeType,

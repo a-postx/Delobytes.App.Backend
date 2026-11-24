@@ -79,7 +79,6 @@ public sealed class ImportRunCompletion
 
         _jobRunRepository.AddBatchResult(new JobRunBatchResult
         {
-            Id = Guid.NewGuid(),
             JobRunId = delivery.JobRunId,
             MessageId = delivery.MessageId,
             RecordsProcessed = delivery.RecordsProcessed,

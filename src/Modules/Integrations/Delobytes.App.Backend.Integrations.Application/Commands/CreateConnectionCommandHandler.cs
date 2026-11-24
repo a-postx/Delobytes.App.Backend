@@ -8,6 +8,7 @@ using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Integrations.Application.Commands;
 
@@ -87,7 +88,7 @@ public class CreateConnectionCommandHandler : IRequestHandler<CreateConnectionCo
 
         Connection connection = new Connection
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ChannelId = request.ChannelId,
             SystemChannelTemplateId = template.Id,
             Name = template.DisplayName,

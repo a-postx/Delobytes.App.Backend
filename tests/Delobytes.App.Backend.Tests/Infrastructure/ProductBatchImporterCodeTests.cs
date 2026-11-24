@@ -141,7 +141,6 @@ public class ProductBatchImporterCodeTests
             Code = "P-000001",
             Sku = "SKU-001",
             Name = "Existing product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };

@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Identity;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
@@ -310,7 +311,7 @@ public class FinanceImportOrchestrator
                         JobRunId = run.Id,
                         ConnectionId = connection.Id,
                         ChannelId = connection.ChannelId,
-                        BatchId = Guid.NewGuid(),
+                        BatchId = EntityId.New(),
                         Entries = batch.ToList(),
                     },
                     cancellationToken);

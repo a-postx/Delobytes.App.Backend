@@ -64,7 +64,6 @@ public sealed class OrdersImportWatermarkWriter
             // syncing from here".
             syncCheckpoint = new SyncCheckpoint
             {
-                Id = Guid.NewGuid(),
                 ConnectionId = jobRun.ConnectionId,
                 JobType = jobRun.JobType,
                 LastChangedAt = watermark,

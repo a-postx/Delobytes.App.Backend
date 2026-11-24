@@ -111,15 +111,41 @@ public class ProductSkuLookupTests
 
     private static Product Product(string sku, ProductStatus status)
     {
-        return new Product
+        Product product = new Product
         {
             Id = Guid.NewGuid(),
             Code = "C-" + sku,
             Sku = sku,
             Name = sku,
-            Status = status,
             CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
         };
+
+        ApplyStatus(product, status);
+
+        return product;
+    }
+
+    private static void ApplyStatus(Product product, ProductStatus status)
+    {
+        switch (status)
+        {
+            case ProductStatus.Archived:
+                product.TryArchive(DateTimeOffset.UtcNow);
+                break;
+
+            case ProductStatus.DeletionPending:
+                product.TryRequestDeletion(DateTimeOffset.UtcNow);
+                break;
+
+            case ProductStatus.DeletionFailed:
+                product.TryRequestDeletion(DateTimeOffset.UtcNow);
+                product.TryFailDeletion();
+                break;
+
+            case ProductStatus.Deleted:
+                product.TryCompleteDeletion(DateTimeOffset.UtcNow);
+                break;
+        }
     }
 
     private static CatalogDbContext BuildContext(string databaseName, Guid tenantId)

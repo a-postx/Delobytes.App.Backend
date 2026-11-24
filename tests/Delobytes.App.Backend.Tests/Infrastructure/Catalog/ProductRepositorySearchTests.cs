@@ -452,15 +452,34 @@ public class ProductRepositorySearchTests
 
     private static Product Product(string sku, string name, ProductStatus status, string? code = null)
     {
-        return new Product
+        Product product = new Product
         {
             Id = Guid.NewGuid(),
             Code = code ?? "C-" + sku,
             Sku = sku,
             Name = name,
-            Status = status,
             CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
         };
+
+        if (status == ProductStatus.Archived)
+        {
+            product.TryArchive(DateTimeOffset.UtcNow);
+        }
+        else if (status == ProductStatus.DeletionPending)
+        {
+            product.TryRequestDeletion(DateTimeOffset.UtcNow);
+        }
+        else if (status == ProductStatus.DeletionFailed)
+        {
+            product.TryRequestDeletion(DateTimeOffset.UtcNow);
+            product.TryFailDeletion();
+        }
+        else if (status == ProductStatus.Deleted)
+        {
+            product.TryCompleteDeletion(DateTimeOffset.UtcNow);
+        }
+
+        return product;
     }
 
     private CatalogDbContext BuildContext(string databaseName)

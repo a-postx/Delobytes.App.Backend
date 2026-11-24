@@ -4,6 +4,7 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 
@@ -92,7 +93,7 @@ public class CreateTenantTaxProfileCommandHandler : IRequestHandler<CreateTenant
 
         TenantTaxProfile profile = new TenantTaxProfile
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             TenantId = request.TenantId,
             Regime = request.Regime,
             RatePercent = request.RatePercent,

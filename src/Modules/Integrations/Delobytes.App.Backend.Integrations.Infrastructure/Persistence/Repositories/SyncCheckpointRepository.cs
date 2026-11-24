@@ -37,11 +37,6 @@ public class SyncCheckpointRepository : ISyncCheckpointRepository
 
         if (existing is null)
         {
-            if (checkpoint.Id == Guid.Empty)
-            {
-                checkpoint.Id = Guid.NewGuid();
-            }
-
             _context.SyncCheckpoints.Add(checkpoint);
         }
         else

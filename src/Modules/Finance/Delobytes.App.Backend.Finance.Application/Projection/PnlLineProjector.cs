@@ -166,7 +166,6 @@ public class PnlLineProjector
 
                 line ??= new PnlLine
                 {
-                    Id = Guid.NewGuid(),
                     OrderLineId = orderLineRef.OrderLineId,
                     CreatedAt = now,
                 };
@@ -339,7 +338,6 @@ public class PnlLineProjector
         {
             created = new PnlLineExpectation
             {
-                Id = Guid.NewGuid(),
                 OrderLineId = line.OrderLineId,
                 ExpectedType = PnlEntryType.Logistics,
                 Source = PnlSource.WbReport,

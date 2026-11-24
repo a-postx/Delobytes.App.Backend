@@ -159,7 +159,6 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
             {
                 product.Barcodes.Add(new ProductBarcode
                 {
-                    Id = Guid.NewGuid(),
                     ProductId = product.Id,
                     Value = dto.Value,
                     Type = NormalizeBarcodeType(dto.Type),
@@ -190,7 +189,6 @@ public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand,
         {
             product.PackingUnits.Add(new PackingUnit
             {
-                Id = Guid.NewGuid(),
                 ProductId = product.Id,
                 LengthCm = packingUnit.LengthCm,
                 WidthCm = packingUnit.WidthCm,

@@ -10,6 +10,7 @@ using Delobytes.App.Backend.Sales.Contracts.Events;
 using Delobytes.App.Backend.Sales.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Sales.Application.Orders;
 
@@ -174,7 +175,7 @@ public class OrdersBatchImporter
 
         Order order = existingOrder ?? new Order
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ChannelId = channelId,
             ExternalOrderId = snapshot.ExternalOrderId,
             FirstImportedAt = now,
@@ -375,7 +376,7 @@ public class OrdersBatchImporter
         {
             line = new OrderLine
             {
-                Id = Guid.NewGuid(),
+                Id = EntityId.New(),
                 OrderId = order.Id,
                 LineKey = snapshot.LineKey,
                 CreatedAt = now,

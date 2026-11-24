@@ -235,7 +235,6 @@ public class ProductChannelLinksTests
             Id = Guid.NewGuid(),
             Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Name = name ?? "Test product",
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
     }

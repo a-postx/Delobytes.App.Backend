@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -104,7 +105,7 @@ public class AcceptInvitationCommandHandler : IRequestHandler<AcceptInvitationCo
 
         TenantMembership membership = new TenantMembership
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             UserId = request.UserId,
             TenantId = invitation.TenantId,
             Role = invitation.Role,

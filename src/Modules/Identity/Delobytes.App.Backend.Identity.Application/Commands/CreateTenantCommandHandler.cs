@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Identity.Application.Options;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
 using Microsoft.Extensions.Options;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -106,7 +107,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
 
         Tenant tenant = new Tenant
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             Name = request.TenantName,
             CreatedAt = DateTimeOffset.UtcNow,
             IsActive = true,
@@ -117,7 +118,7 @@ public class CreateTenantCommandHandler : IRequestHandler<CreateTenantCommand, C
 
         TenantMembership membership = new TenantMembership
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             UserId = request.UserId,
             TenantId = tenant.Id,
             Role = Role.Administrator,

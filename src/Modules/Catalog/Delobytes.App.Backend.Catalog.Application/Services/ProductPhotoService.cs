@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Delobytes.App.Backend.Catalog.Application.Interfaces;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Identity;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
 using Microsoft.Extensions.Logging;
@@ -71,7 +72,9 @@ public class ProductPhotoService : IProductPhotoService
             {
                 ProductPhoto photo = new ProductPhoto
                 {
-                    Id = Guid.NewGuid(),
+                    // Created here because the upload file name below is derived from it before the
+                    // row is ever tracked.
+                    Id = EntityId.New(),
                     ProductId = product.Id,
                     ExternalId = source.ExternalId,
                     DisplayOrder = source.DisplayOrder,
@@ -112,7 +115,9 @@ public class ProductPhotoService : IProductPhotoService
             {
                 ChannelProductPhoto photo = new ChannelProductPhoto
                 {
-                    Id = Guid.NewGuid(),
+                    // Created here because the upload file name below is derived from it before the
+                    // row is ever tracked.
+                    Id = EntityId.New(),
                     ChannelProductId = channelProduct.Id,
                     ExternalId = source.ExternalId,
                     DisplayOrder = source.DisplayOrder,

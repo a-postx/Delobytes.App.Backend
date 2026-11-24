@@ -75,11 +75,29 @@ public class ProductLifecycleTests
     }
 
     [Fact]
+    public async Task ArchiveProduct_AlreadyArchived_KeepsOriginalTimestamp()
+    {
+        // Arrange: a repeated archive is a no-op, not a state change.
+        Product product = BuildProduct(ProductStatus.Archived);
+        DateTimeOffset original = product.ArchivedAt!.Value;
+        Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
+        ArchiveProductCommandHandler handler = new ArchiveProductCommandHandler(repositoryMock.Object);
+
+        // Act
+        await handler.Handle(
+            new ArchiveProductCommand { ProductId = product.Id },
+            CancellationToken.None);
+
+        // Assert
+        product.Status.Should().Be(ProductStatus.Archived);
+        product.ArchivedAt.Should().Be(original);
+    }
+
+    [Fact]
     public async Task ArchiveProduct_AlreadyDeleted_ThrowsProductNotFound()
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.Deleted);
-        product.DeletedAt = DateTimeOffset.UtcNow;
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         ArchiveProductCommandHandler handler = new ArchiveProductCommandHandler(repositoryMock.Object);
 
@@ -102,7 +120,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.Archived);
-        product.ArchivedAt = DateTimeOffset.UtcNow.AddDays(-5);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         RestoreProductCommandHandler handler = new RestoreProductCommandHandler(repositoryMock.Object);
 
@@ -123,7 +140,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionFailed);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddHours(-2);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         RestoreProductCommandHandler handler = new RestoreProductCommandHandler(repositoryMock.Object);
 
@@ -143,7 +159,6 @@ public class ProductLifecycleTests
     {
         // Arrange: soft-deleted products are terminal -- no restore path is defined for them.
         Product product = BuildProduct(ProductStatus.Deleted);
-        product.DeletedAt = DateTimeOffset.UtcNow;
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         RestoreProductCommandHandler handler = new RestoreProductCommandHandler(repositoryMock.Object);
 
@@ -223,7 +238,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         Mock<IEventPublisher> eventPublisherMock = new Mock<IEventPublisher>();
         RequestProductDeletionCommandHandler handler = BuildDeletionRequestHandler(repositoryMock, eventPublisherMock);
@@ -454,7 +468,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
@@ -486,7 +499,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         ProductDeletionService service = BuildDeletionService(
             repositoryMock.Object,
@@ -686,7 +698,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
 
         Mock<IProductRepository> repositoryMock = new Mock<IProductRepository>();
         repositoryMock
@@ -735,7 +746,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.Deleted);
-        product.DeletedAt = DateTimeOffset.UtcNow;
 
         Mock<IProductRepository> repositoryMock = new Mock<IProductRepository>();
         repositoryMock
@@ -780,7 +790,6 @@ public class ProductLifecycleTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.DeletionPending);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
 
         ProductPhoto photo1 = new ProductPhoto
         {
@@ -861,7 +870,6 @@ public class ProductLifecycleTests
         // Storage failures must not block the soft-delete: a stale blob is cheaper than
         // a product stuck in DeletionPending forever.
         Product product = BuildProduct(ProductStatus.DeletionPending);
-        product.DeletionRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
 
         product.Photos.Add(new ProductPhoto
         {
@@ -922,9 +930,32 @@ public class ProductLifecycleTests
             Code = "C-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Name = name ?? "Test product",
-            Status = status,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
         };
+
+        // States are reached through the domain transitions, the same way production does; the
+        // status itself is no longer writable from the outside.
+        DateTimeOffset now = DateTimeOffset.UtcNow.AddDays(-5);
+
+        switch (status)
+        {
+            case ProductStatus.Archived:
+                product.TryArchive(now);
+                break;
+
+            case ProductStatus.DeletionPending:
+                product.TryRequestDeletion(now);
+                break;
+
+            case ProductStatus.DeletionFailed:
+                product.TryRequestDeletion(now);
+                product.TryFailDeletion();
+                break;
+
+            case ProductStatus.Deleted:
+                product.TryCompleteDeletion(now);
+                break;
+        }
 
         for (int i = 0; i < channelProductCount; i++)
         {

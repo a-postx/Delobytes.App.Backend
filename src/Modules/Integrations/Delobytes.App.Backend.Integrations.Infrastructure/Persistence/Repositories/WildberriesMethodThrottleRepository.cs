@@ -44,11 +44,6 @@ public class WildberriesMethodThrottleRepository : IWildberriesMethodThrottleRep
 
         if (existing is null)
         {
-            if (throttle.Id == Guid.Empty)
-            {
-                throttle.Id = Guid.NewGuid();
-            }
-
             _context.WildberriesMethodThrottles.Add(throttle);
         }
         else
@@ -97,11 +92,6 @@ public class WildberriesMethodThrottleRepository : IWildberriesMethodThrottleRep
             throttle = createDefault();
             throttle.KeyFingerprint = keyFingerprint;
             throttle.Method = method;
-
-            if (throttle.Id == Guid.Empty)
-            {
-                throttle.Id = Guid.NewGuid();
-            }
 
             _context.WildberriesMethodThrottles.Add(throttle);
         }

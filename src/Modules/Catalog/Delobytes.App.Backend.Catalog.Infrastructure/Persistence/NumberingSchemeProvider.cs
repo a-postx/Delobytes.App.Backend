@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Catalog.Application.Numbering;
 using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
+using Delobytes.App.Backend.Contracts.Identity;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -73,9 +74,11 @@ public class NumberingSchemeProvider : INumberingSchemeProvider
 
     private async Task<NumberingScheme> CreateDefaultProductSchemeAsync(CancellationToken cancellationToken)
     {
+        // Created here because the auto-number segment below references it before anything is
+        // tracked; the scheme, the sequence and the segments are saved together.
         NumberingSequence sequence = new NumberingSequence
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             Name = ProductSequenceName,
             StartNumber = 1,
             Step = 1,
@@ -85,7 +88,6 @@ public class NumberingSchemeProvider : INumberingSchemeProvider
 
         NumberingScheme scheme = new NumberingScheme
         {
-            Id = Guid.NewGuid(),
             Code = ProductSchemeCode,
             Name = ProductSchemeName,
             EntityKind = NumberingEntityKind.Product,
@@ -95,14 +97,12 @@ public class NumberingSchemeProvider : INumberingSchemeProvider
             {
                 new NumberingSegment
                 {
-                    Id = Guid.NewGuid(),
                     Order = 1,
                     Type = NumberingSegmentType.Constant,
                     ConstantValue = ProductCodeConstant,
                 },
                 new NumberingSegment
                 {
-                    Id = Guid.NewGuid(),
                     Order = 2,
                     Type = NumberingSegmentType.AutoNumber,
                     NumberingSequenceId = sequence.Id,

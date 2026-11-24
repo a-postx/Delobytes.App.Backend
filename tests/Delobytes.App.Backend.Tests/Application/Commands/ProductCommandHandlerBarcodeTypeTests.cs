@@ -162,7 +162,6 @@ public class ProductCommandHandlerBarcodeTypeTests
             Code = "P-000001",
             Sku = "SKU-001",
             Name = "Product",
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
         };

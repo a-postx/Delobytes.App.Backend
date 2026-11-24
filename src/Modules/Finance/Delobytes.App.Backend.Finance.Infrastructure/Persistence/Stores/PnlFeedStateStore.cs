@@ -50,7 +50,6 @@ public class PnlFeedStateStore : IPnlFeedStateStore
         {
             state = new PnlFeedState
             {
-                Id = Guid.NewGuid(),
                 ChannelId = checkpoint.ChannelId,
                 CreatedAt = checkpoint.BatchCompletedAt,
             };

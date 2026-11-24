@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.Logging;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Integrations.Application.Jobs;
 
@@ -50,7 +51,7 @@ public sealed class JobRunStarter
     {
         JobRun jobRun = new JobRun
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ConnectionId = connectionId,
             JobType = jobType,
             Status = JobStatus.Pending,

@@ -373,7 +373,6 @@ public class GetProductsQueryHandlerTests
             Id = Guid.NewGuid(),
             Sku = "SKU-" + Guid.NewGuid().ToString("N").Substring(0, 8),
             Name = "Test product",
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
     }

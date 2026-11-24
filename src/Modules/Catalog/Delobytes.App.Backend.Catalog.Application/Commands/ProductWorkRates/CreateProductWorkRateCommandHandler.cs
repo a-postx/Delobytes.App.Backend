@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.ProductWorkRates;
 
@@ -77,7 +78,7 @@ public class CreateProductWorkRateCommandHandler : IRequestHandler<CreateProduct
 
         ProductWorkRate rate = new ProductWorkRate
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ProductId = request.ProductId,
             WorkRateId = request.WorkRateId,
             AssemblyRatePerDay = request.AssemblyRatePerDay,

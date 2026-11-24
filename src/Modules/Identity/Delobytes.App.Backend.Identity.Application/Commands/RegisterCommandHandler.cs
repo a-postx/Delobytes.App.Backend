@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -90,7 +91,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
 
         User user = new User
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ExternalId = request.Email,
             IdentityProvider = "Local",
             Email = request.Email,

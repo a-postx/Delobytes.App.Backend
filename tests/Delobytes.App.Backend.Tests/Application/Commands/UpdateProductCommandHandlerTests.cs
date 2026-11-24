@@ -153,7 +153,6 @@ public class UpdateProductCommandHandlerTests
     {
         // Arrange
         Product product = BuildProduct(ProductStatus.Deleted);
-        product.DeletedAt = DateTimeOffset.UtcNow;
         Mock<IProductRepository> repositoryMock = BuildRepositoryMock(product);
         UpdateProductCommandHandler handler = new UpdateProductCommandHandler(repositoryMock.Object);
 
@@ -364,10 +363,14 @@ public class UpdateProductCommandHandlerTests
             Sku = "OLD-SKU",
             Name = "Original name",
             Description = "Original description",
-            Status = status,
             CreationSource = CreationSource.WildberriesImport,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
         };
+
+        if (status == ProductStatus.Deleted)
+        {
+            product.TryCompleteDeletion(DateTimeOffset.UtcNow);
+        }
 
         product.Barcodes.Add(new ProductBarcode
         {

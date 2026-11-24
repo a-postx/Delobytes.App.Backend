@@ -41,8 +41,10 @@ public class ArchiveProductCommandHandler : IRequestHandler<ArchiveProductComman
         // card is still listed in the channel, which archiving does not change, and the import sets
         // it back to true on the next sync regardless -- writing it here only produced a flag that
         // flipped twice per day and stated nothing about the actual channel listing.
-        product.Status = ProductStatus.Archived;
-        product.ArchivedAt = DateTimeOffset.UtcNow;
+        //
+        // A repeated archive changes nothing: ArchivedAt records when the product actually left the
+        // active catalogue and must keep its first value.
+        product.TryArchive(DateTimeOffset.UtcNow);
 
         await _repository.SaveChangesAsync(cancellationToken);
 

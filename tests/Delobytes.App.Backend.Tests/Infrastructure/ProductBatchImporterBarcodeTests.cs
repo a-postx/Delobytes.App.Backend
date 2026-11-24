@@ -423,7 +423,6 @@ public class ProductBatchImporterBarcodeTests
             Code = code,
             Sku = sku,
             Name = name,
-            Status = ProductStatus.Active,
             CreationSource = CreationSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
         };

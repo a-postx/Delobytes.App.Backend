@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
+using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.BomLines;
 
@@ -92,7 +93,7 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
         foreach (UpsertProductBomItem item in request.Lines)
         {
             _repository.Add(new BomLine {
-                Id = Guid.NewGuid(),
+                Id = EntityId.New(),
                 ProductId = request.ProductId,
                 ComponentId = item.ComponentId,
                 Quantity = item.Quantity,

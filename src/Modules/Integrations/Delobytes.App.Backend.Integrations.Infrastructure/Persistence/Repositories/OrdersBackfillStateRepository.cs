@@ -39,11 +39,6 @@ public class OrdersBackfillStateRepository : IOrdersBackfillStateRepository
 
         if (existing is null)
         {
-            if (state.Id == Guid.Empty)
-            {
-                state.Id = Guid.NewGuid();
-            }
-
             _context.OrdersBackfillStates.Add(state);
         }
         else

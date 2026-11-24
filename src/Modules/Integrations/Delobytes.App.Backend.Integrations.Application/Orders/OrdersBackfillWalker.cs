@@ -1,4 +1,5 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Contracts.Identity;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
@@ -50,9 +51,10 @@ public sealed class OrdersBackfillWalker
 
         DateTimeOffset todayStart = OrdersWindowPlanner.GetMoscowDayStart(_timeProvider.GetUtcNow());
 
+        // Created here because the returned cursor is addressed by its own id by the caller.
         state = new OrdersBackfillState
         {
-            Id = Guid.NewGuid(),
+            Id = EntityId.New(),
             ConnectionId = connectionId,
             JobType = jobType,
             NextDayToFetch = todayStart,

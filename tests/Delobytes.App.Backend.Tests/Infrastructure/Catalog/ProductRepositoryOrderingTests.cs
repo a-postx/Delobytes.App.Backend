@@ -166,7 +166,6 @@ public class ProductRepositoryOrderingTests
             Code = "C-" + sku,
             Sku = sku,
             Name = name,
-            Status = ProductStatus.Active,
             CreatedAt = createdAt,
             UpdatedAt = updatedAt,
         };

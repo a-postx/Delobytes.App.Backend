@@ -1,4 +1,5 @@
-﻿using Delobytes.App.Backend.Contracts.Interfaces;
+using Delobytes.App.Backend.Contracts.Identity;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Extensions;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
@@ -116,7 +117,9 @@ public class ConnectionScheduleProvisioner
         List<JobSchedule> schedules = jobTypes
             .Select(jobType => new JobSchedule
             {
-                Id = Guid.NewGuid(),
+                // Created here because the proposed set is returned to the caller, which addresses
+                // the schedules by id before anything is saved.
+                Id = EntityId.New(),
                 ConnectionId = connection.Id,
                 JobType = jobType,
                 CronExpression = _backgroundJobsOptions.ResolveDefaultCronExpression(jobType),

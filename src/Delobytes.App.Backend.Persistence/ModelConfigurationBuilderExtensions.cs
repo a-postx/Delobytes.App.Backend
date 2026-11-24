@@ -20,6 +20,7 @@ public static class ModelConfigurationBuilderExtensions
     {
         configurationBuilder.Conventions.Add(_ => new TenantIdShadowPropertyConvention());
         configurationBuilder.Conventions.Add(_ => new RowVersionedEntityConvention());
+        configurationBuilder.Conventions.Add(_ => new SequentialGuidKeyConvention());
 
         // Both CLR types must be registered. ConfigureProperty (the path that applies pre-convention
         // property configuration) resolves by exact CLR type plus its base types and interfaces;

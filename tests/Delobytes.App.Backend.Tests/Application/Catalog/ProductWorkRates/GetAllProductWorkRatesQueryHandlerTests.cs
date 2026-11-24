@@ -432,7 +432,6 @@ public class GetAllProductWorkRatesQueryHandlerTests
             Id = Guid.NewGuid(),
             Sku = sku,
             Name = name,
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
     }

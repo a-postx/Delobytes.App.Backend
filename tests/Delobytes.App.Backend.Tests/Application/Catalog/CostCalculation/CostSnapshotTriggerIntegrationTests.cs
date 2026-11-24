@@ -586,7 +586,6 @@ public class CostSnapshotTriggerIntegrationTests : IDisposable
             Code = "C-" + productId.ToString("N").Substring(0, 8),
             Sku = "SKU-" + productId.ToString("N").Substring(0, 8),
             Name = "Товар " + productId.ToString("N").Substring(0, 8),
-            Status = ProductStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 

@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Identity;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.Logging;
@@ -46,7 +47,7 @@ public sealed class FinanceImportWatermarkWriter
         await _syncCheckpointRepository.UpsertAsync(
             new SyncCheckpoint
             {
-                Id = existing?.Id ?? Guid.NewGuid(),
+                Id = existing?.Id ?? EntityId.New(),
                 ConnectionId = jobRun.ConnectionId,
                 JobType = jobRun.JobType,
                 LastChangedAt = new DateTimeOffset(

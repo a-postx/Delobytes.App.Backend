@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
@@ -35,7 +35,6 @@ public sealed class OrdersContinuationScheduler
 
         JobRun continuation = new JobRun
         {
-            Id = Guid.NewGuid(),
             ConnectionId = current.ConnectionId,
             JobType = current.JobType,
             Status = JobStatus.Pending,

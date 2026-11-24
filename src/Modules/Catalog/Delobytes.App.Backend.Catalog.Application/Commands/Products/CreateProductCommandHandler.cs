@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Identity;
 using MediatR;
 
 namespace Delobytes.App.Backend.Catalog.Application.Commands.Products;
@@ -69,14 +70,15 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
                 throw new AppException(CatalogErrorCodes.ProductSkuConflict);
             }
 
+            // The identity is created here rather than at save time because the barcode and packing
+            // unit rows below are keyed by it before the product is tracked.
             Product product = new Product
             {
-                Id = Guid.NewGuid(),
+                Id = EntityId.New(),
                 Code = code,
                 Sku = request.Sku,
                 Name = request.Name,
-                Description = request.Description,
-                Status = ProductStatus.Active
+                Description = request.Description
             };
 
             if (request.Barcodes != null)
@@ -85,7 +87,6 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
                 {
                     product.Barcodes.Add(new ProductBarcode
                     {
-                        Id = Guid.NewGuid(),
                         ProductId = product.Id,
                         Value = dto.Value,
                         Type = NormalizeBarcodeType(dto.Type),
@@ -98,7 +99,6 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
             {
                 product.PackingUnits.Add(new PackingUnit
                 {
-                    Id = Guid.NewGuid(),
                     ProductId = product.Id,
                     LengthCm = request.PackingUnit.LengthCm,
                     WidthCm = request.PackingUnit.WidthCm,

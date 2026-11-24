@@ -82,8 +82,7 @@ public class ProductDeletionService
         // No channel products — safe to delete immediately, no cross-module check needed.
         if (!product.ChannelProducts.Any())
         {
-            product.Status = ProductStatus.Deleted;
-            product.DeletedAt = _timeProvider.GetUtcNow();
+            product.TryCompleteDeletion(_timeProvider.GetUtcNow());
 
             await _repository.SaveChangesAsync(cancellationToken);
 
@@ -92,8 +91,7 @@ public class ProductDeletionService
             return new RequestProductDeletionResponse { ProductId = product.Id };
         }
 
-        product.Status = ProductStatus.DeletionPending;
-        product.DeletionRequestedAt = _timeProvider.GetUtcNow();
+        product.TryRequestDeletion(_timeProvider.GetUtcNow());
 
         await _repository.SaveChangesAsync(cancellationToken);
 
@@ -146,8 +144,7 @@ public class ProductDeletionService
 
         if (message.HasOrders)
         {
-            product.Status = ProductStatus.DeletionFailed;
-            product.DeletionRequestedAt = null;
+            product.TryFailDeletion();
 
             _logger.LogInformation(
                 "Product {ProductId} deletion cancelled: {OrderCount} order(s) exist",
@@ -175,8 +172,7 @@ public class ProductDeletionService
 
             // The card keeps existing in the channel after a soft product delete; ChannelProduct.IsActive
             // describes the channel listing, not whether we still show the product.
-            product.Status = ProductStatus.Deleted;
-            product.DeletedAt = _timeProvider.GetUtcNow();
+            product.TryCompleteDeletion(_timeProvider.GetUtcNow());
 
             _logger.LogInformation("Product {ProductId} deleted successfully", product.Id);
         }

@@ -210,7 +210,6 @@ public class ProductBatchImporterSkuAllocationTests
                 Code = code,
                 Sku = sku,
                 Name = "Seeded product " + sku,
-                Status = ProductStatus.Active,
                 CreationSource = CreationSource.Manual,
                 CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
             });
