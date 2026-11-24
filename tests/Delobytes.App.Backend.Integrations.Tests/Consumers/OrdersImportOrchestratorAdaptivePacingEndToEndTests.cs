@@ -376,7 +376,8 @@ public class OrdersImportOrchestratorAdaptivePacingEndToEndTests
     public void DefaultBackfillRunBudget_StaysComfortablyBelowTheOrdersImportWatchdogTimeout()
     {
         // WatchdogHostedService fails any JobRun still Running once JobTypeConfiguration.TimeoutMinutes
-        // elapses; OrdersImport seeds that to 30 minutes (DataSeeder.cs). BackfillRunBudgetSeconds
+        // elapses; the seed_integrations_reference_data migration sets that to 30 minutes for
+        // OrdersImport. BackfillRunBudgetSeconds
         // must stay well under that 1800s ceiling, or a run that legitimately uses its whole budget
         // would race the watchdog instead of stopping itself cleanly.
         const int ordersImportWatchdogTimeoutSeconds = 30 * 60;

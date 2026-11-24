@@ -81,6 +81,18 @@ public class ConnectionScheduleProvisioner
             return;
         }
 
+        await ProvisionForConnectionAsync(connection, cancellationToken);
+    }
+
+    /// <summary>
+    /// Creates the orders and finance schedules a loaded connection lacks. The caller owns the
+    /// ambient tenant: a cross-tenant sweep has to set it per connection before calling this.
+    /// </summary>
+    /// <param name="connection">Connection with its <see cref="Connection.SystemChannelTemplate"/> loaded.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of schedules created.</returns>
+    public async Task<int> ProvisionForConnectionAsync(Connection connection, CancellationToken cancellationToken)
+    {
         string? channelCode = connection.SystemChannelTemplate?.Code;
         List<JobType> jobTypes = _jobTypes.GetJobTypes(channelCode, ChannelJobKind.OrdersImport)
             .Concat(_jobTypes.GetJobTypes(channelCode, ChannelJobKind.FinanceImport))
@@ -92,8 +104,8 @@ public class ConnectionScheduleProvisioner
                 "ConnectionScheduleProvisioner: channel '{ChannelCode}' has no orders import job types, " +
                 "no schedules created for connection {ConnectionId}.",
                 channelCode,
-                message.ConnectionId);
-            return;
+                connection.Id);
+            return 0;
         }
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -122,16 +134,18 @@ public class ConnectionScheduleProvisioner
             _logger.LogInformation(
                 "ConnectionScheduleProvisioner: connection {ConnectionId} already has every orders schedule, " +
                 "nothing created.",
-                message.ConnectionId);
-            return;
+                connection.Id);
+            return 0;
         }
 
         _logger.LogInformation(
             "ConnectionScheduleProvisioner: created {Count} JobSchedule(s) for connection {ConnectionId} " +
             "(tenant {TenantId}), first run due immediately.",
             createdCount,
-            message.ConnectionId,
+            connection.Id,
             _tenantContext.TenantId);
+
+        return createdCount;
     }
 }
 

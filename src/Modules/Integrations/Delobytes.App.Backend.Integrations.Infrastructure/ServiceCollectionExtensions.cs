@@ -1,4 +1,5 @@
 using System.Reflection;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Options;
 using Delobytes.App.Backend.Integrations.Application.Interfaces.Repositories;
@@ -133,6 +134,7 @@ public static class ServiceCollectionExtensions
         // scans this assembly.
         services.AddScoped<ConnectionCreatedConsumer>();
         services.AddScoped<ConnectionScheduleProvisioner>();
+        services.AddScoped<IDataBackfill, ConnectionSchedulesBackfill>();
 
         services.AddScoped<JobRunLifecycle>();
         services.AddScoped<JobRunStarter>();

@@ -270,9 +270,11 @@ public partial class Program
                 app.Services.GetRequiredService<ILogger<Program>>().LogInformation("Shutdown has been initiated.");
             });
 
+            // Migrations and data backfills run on startup and must succeed: serving on an outdated
+            // schema corrupts data silently, so a failure stops the host instead of retrying.
             try
             {
-                await app.Services.ApplyMigrationsAsync();
+                await app.Services.MigrateAsync();
             }
             catch (Exception ex)
             {
