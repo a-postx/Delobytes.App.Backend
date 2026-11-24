@@ -162,7 +162,7 @@ public class TenantScopedDbContextTests
     }
 
     [Fact]
-    public async Task SaveChangesAsync_WhenNoTenantAndEntityDeleted_PersistsDeletion()
+    public async Task SaveChangesAsync_WhenNoTenantAndEntityDeleted_ThrowsSecurityExceptionAndPersistsNothing()
     {
         // Arrange
         Guid tenantId = Guid.NewGuid();
@@ -188,13 +188,52 @@ public class TenantScopedDbContextTests
             Func<Task> act = () => context.SaveChangesAsync();
 
             // Assert
-            await act.Should().NotThrowAsync();
+            await act.Should().ThrowAsync<SecurityException>()
+                .WithMessage("*Widget*without a resolved TenantId*");
         }
 
         using TestPersistenceDbContext verify = new TestPersistenceDbContext(
             options,
             TenantContextMocks.WithTenant(tenantId).Object);
-        (await verify.Widgets.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await verify.Widgets.IgnoreQueryFilters().CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_WhenExemptEntityModifiedAndNoTenant_DoesNotThrow()
+    {
+        // Mirrors invitation acceptance: the row belongs to another tenant, but the
+        // entity is explicitly exempt from cross-tenant validation.
+        // Arrange
+        Guid tenantId = Guid.NewGuid();
+        DbContextOptions<ExemptPersistenceDbContext> options = PersistenceTestOptions.Build<ExemptPersistenceDbContext>(
+            PersistenceTestOptions.NewDatabaseName("exempt-modify"));
+
+        using (ExemptPersistenceDbContext seed = new ExemptPersistenceDbContext(
+            options,
+            TenantContextMocks.WithTenant(tenantId).Object))
+        {
+            seed.Badges.Add(BuildBadge(tenantId, "before"));
+            await seed.SaveChangesAsync();
+        }
+
+        using (ExemptPersistenceDbContext context = new ExemptPersistenceDbContext(
+            options,
+            TenantContextMocks.WithTenant(null).Object))
+        {
+            Badge badge = await context.Badges.IgnoreQueryFilters().SingleAsync();
+            badge.Label = "after";
+
+            // Act
+            Func<Task> act = () => context.SaveChangesAsync();
+
+            // Assert
+            await act.Should().NotThrowAsync();
+        }
+
+        using ExemptPersistenceDbContext verify = new ExemptPersistenceDbContext(
+            options,
+            TenantContextMocks.WithTenant(tenantId).Object);
+        (await verify.Badges.SingleAsync()).Label.Should().Be("after");
     }
 
     [Fact]

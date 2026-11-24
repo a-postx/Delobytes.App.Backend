@@ -194,17 +194,32 @@ public abstract class TenantScopedDbContext : DbContext
     private void ValidateCrossTenantWrite()
     {
         Guid? tenantId = TenantContext.TenantId;
-        if (!tenantId.HasValue)
-        {
-            // System / background context -- no user-scoped enforcement.
-            return;
-        }
 
         IEnumerable<EntityEntry> entries = ChangeTracker.Entries()
             .Where(e =>
                 (e.State == EntityState.Modified || e.State == EntityState.Deleted)
                 && e.Entity is ITenantScoped
                 && !IsExemptFromCrossTenantValidation(e));
+
+        if (!tenantId.HasValue)
+        {
+            // SetTenantId rejects Added/Modified without a tenant; Deleted used to pass
+            // through here. Check both states so the guard does not depend on that split.
+            List<string> entityNames = entries
+                .Select(e => e.Entity.GetType().Name)
+                .Distinct()
+                .ToList();
+
+            if (entityNames.Count == 0)
+            {
+                return;
+            }
+
+            throw new SecurityException(
+                $"Cannot modify or delete tenant-scoped entit{(entityNames.Count == 1 ? "y" : "ies")} " +
+                $"({string.Join(", ", entityNames)}) without a resolved TenantId. " +
+                "The current execution context has no tenant.");
+        }
 
         foreach (EntityEntry entry in entries)
         {
