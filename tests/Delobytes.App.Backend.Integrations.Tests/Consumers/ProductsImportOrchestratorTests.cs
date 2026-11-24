@@ -142,6 +142,34 @@ public class ProductsImportOrchestratorTests
         };
     }
 
+    private static ApiResponse<ProductCardsData> BuildDeferredResponse(DateTimeOffset retryAt)
+    {
+        return new ApiResponse<ProductCardsData>
+        {
+            IsSuccess = false,
+            StatusCode = 429,
+            ErrorMessage = $"Rate limit: slot not available until {retryAt:O}.",
+            RetryAt = retryAt,
+            Timestamp = DateTimeOffset.UtcNow,
+            Data = new ProductCardsData { Cards = new List<ChannelProductCard>() },
+        };
+    }
+
+    private static ProductCardsCursor? ReadCheckpointCursor(JobCheckpoint checkpoint)
+    {
+        using JsonDocument document = JsonDocument.Parse(checkpoint.Payload);
+        JsonElement cursor = document.RootElement.GetProperty("Cursor");
+
+        return cursor.ValueKind == JsonValueKind.Null ? null : cursor.Deserialize<ProductCardsCursor>();
+    }
+
+    private static int ReadCheckpointPublishedBatches(JobCheckpoint checkpoint)
+    {
+        using JsonDocument document = JsonDocument.Parse(checkpoint.Payload);
+
+        return document.RootElement.GetProperty("PublishedBatches").GetInt32();
+    }
+
     private static ChannelProductCard BuildCard(long nmId = 1)
     {
         return new ChannelProductCard
@@ -560,6 +588,111 @@ public class ProductsImportOrchestratorTests
     }
 
     // -----------------------------------------------------------------------
+    // Throttled page -> run deferred (Pending + NotBefore), not failed
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_ThrottledPage_DefersTheRunInsteadOfFailingIt()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        DateTimeOffset retryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+
+        SetupDefaults(jobRun);
+
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(), null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildDeferredResponse(retryAt));
+
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+
+        List<ProductsImportCompletedEvent> completedEvents = new List<ProductsImportCompletedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductsImportCompletedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductsImportCompletedEvent, CancellationToken>((e, _) => completedEvents.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProductsImportOrchestrator orchestrator = CreateOrchestrator();
+
+        await orchestrator.ProcessAsync(
+            new ProductsImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        jobRun.Status.Should().Be(
+            JobStatus.Pending, "the worker only dispatches Pending runs, so a deferred run must go back to Pending");
+        jobRun.NotBefore.Should().Be(retryAt);
+        jobRun.Error.Should().BeNull();
+
+        published.Should().BeEmpty("nothing was read, so no batch may be published");
+        completedEvents.Should().BeEmpty("a deferred run has not finished");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ResumedAfterDeferral_ContinuesBatchNumberingAndKeepsTheStartBoundary()
+    {
+        SystemChannelTemplate template = BuildWildberriesTemplate();
+        Connection connection = BuildConnection(template);
+        JobRun jobRun = BuildJobRun(connection, JobStatus.Pending);
+
+        DateTimeOffset startedAt = DateTimeOffset.UtcNow.AddMinutes(-30);
+        jobRun.StartedAt = startedAt;
+        jobRun.NotBefore = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        SetupDefaults(jobRun);
+
+        _jobCheckpointRepo
+            .Setup(r => r.GetByJobRunIdAsync(jobRun.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JobCheckpoint
+            {
+                JobRunId = jobRun.Id,
+                Payload = JsonSerializer.Serialize(new
+                {
+                    Cursor = new ProductCardsCursor { UpdatedAt = "2024-06-01T00:00:00Z", ProductId = 500 },
+                    PublishedBatches = 3,
+                }),
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+
+        _clientFactory.Setup(f => f.Create(template)).Returns(_apiClient.Object);
+
+        _apiClient
+            .Setup(c => c.GetProductCardsAsync(It.IsAny<Guid>(),
+                It.Is<ProductCardsCursor?>(x => x != null && x.ProductId == 500),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildSuccessResponse(BuildCards(1, 2), nextCursor: null));
+
+        List<ProductBatchImportRequestedEvent> published = new List<ProductBatchImportRequestedEvent>();
+        _eventPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<ProductBatchImportRequestedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ProductBatchImportRequestedEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+
+        ProductsImportOrchestrator orchestrator = CreateOrchestrator();
+
+        await orchestrator.ProcessAsync(
+            new ProductsImportRequestedEvent { JobRunId = jobRun.Id, ConnectionId = connection.Id },
+            CancellationToken.None);
+
+        published.Should().ContainSingle();
+        published[0].IsLastBatch.Should().BeTrue();
+        published[0].TotalBatches.Should().Be(
+            4, "the three batches of the earlier attempt still count towards the run's total");
+
+        jobRun.NotBefore.Should().BeNull("the deferral is spent once the run is dispatched");
+        jobRun.StartedAt.Should().Be(
+            startedAt, "the reconciliation boundary must not move on resume");
+    }
+
+    // -----------------------------------------------------------------------
     // WB API failure -> job marked Failed, ProductsImportCompletedEvent published
     // -----------------------------------------------------------------------
 
@@ -647,9 +780,10 @@ public class ProductsImportOrchestratorTests
             "the checkpoint is only advanced for the first (buffered) batch once it is actually published");
         savedCheckpoints[0].JobRunId.Should().Be(jobRun.Id);
 
-        ProductCardsCursor? persistedCursor = JsonSerializer.Deserialize<ProductCardsCursor>(savedCheckpoints[0].Payload);
+        ProductCardsCursor? persistedCursor = ReadCheckpointCursor(savedCheckpoints[0]);
         persistedCursor.Should().NotBeNull();
         persistedCursor!.ProductId.Should().Be(5, "it must checkpoint the cursor of the published batch, not the one just fetched");
+        ReadCheckpointPublishedBatches(savedCheckpoints[0]).Should().Be(1);
     }
 
     // -----------------------------------------------------------------------
@@ -707,7 +841,7 @@ public class ProductsImportOrchestratorTests
         savedCheckpoints.Should().ContainSingle(
             "only the first batch is buffered-then-published mid-loop; the final (terminal) batch is published on break without a further checkpoint write");
 
-        ProductCardsCursor? persistedCursor = JsonSerializer.Deserialize<ProductCardsCursor>(savedCheckpoints[0].Payload);
+        ProductCardsCursor? persistedCursor = ReadCheckpointCursor(savedCheckpoints[0]);
         persistedCursor!.ProductId.Should().Be(5);
     }
 

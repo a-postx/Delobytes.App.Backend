@@ -93,7 +93,7 @@ public class ProductsImportOrchestratorPagingTests
 
         string checkpointPayload = harness.CheckpointPayloads.Should().ContainSingle().Subject;
         using JsonDocument payload = JsonDocument.Parse(checkpointPayload);
-        payload.RootElement.GetProperty("Token").GetString().Should().Be("c1");
+        payload.RootElement.GetProperty("Cursor").GetProperty("Token").GetString().Should().Be("c1");
     }
 
     [Fact]

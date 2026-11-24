@@ -222,7 +222,47 @@ public class WildberriesApiClientFinanceReportTests
         page.RetryAt.Should().NotBeNull();
     }
 
-    private static WildberriesApiClient BuildClient(MockHttpMessageHandler mockHttp, int financePageLimit = 20000)
+    [Fact]
+    public async Task GetEntriesAsync_ServerError_IsNotReportedToTheLimiterAsASuccess()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, ReportUrl).Respond(HttpStatusCode.InternalServerError);
+
+        RecordingRateLimiter limiter = new RecordingRateLimiter();
+        WildberriesApiClient client = BuildClient(mockHttp, rateLimiter: limiter);
+
+        Func<Task> act = () => client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 7, 27), To = new DateOnly(2026, 8, 2) },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+
+        limiter.SuccessReports.Should().Be(
+            0, "a 5xx reported as a success would mark the row 200 and speed the pace up after an outage");
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_NoContent_IsReportedToTheLimiterAsASuccess()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, ReportUrl).Respond(HttpStatusCode.NoContent);
+
+        RecordingRateLimiter limiter = new RecordingRateLimiter();
+        WildberriesApiClient client = BuildClient(mockHttp, rateLimiter: limiter);
+
+        await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 7, 27), To = new DateOnly(2026, 8, 2) },
+            CancellationToken.None);
+
+        limiter.SuccessReports.Should().Be(1, "204 is a successful answer and must still feed the limiter");
+    }
+
+    private static WildberriesApiClient BuildClient(
+        MockHttpMessageHandler mockHttp,
+        int financePageLimit = 20000,
+        IChannelRateLimiter? rateLimiter = null)
     {
         HttpClient typedClient = mockHttp.ToHttpClient();
 
@@ -243,7 +283,7 @@ public class WildberriesApiClientFinanceReportTests
             typedClient,
             endpointResolver.Object,
             new FixedConnectionResolver(),
-            new AlwaysAllowRateLimiter(),
+            rateLimiter ?? new AlwaysAllowRateLimiter(),
             Options.Create(options),
             NullLogger<WildberriesApiClient>.Instance,
             TimeProvider.System);

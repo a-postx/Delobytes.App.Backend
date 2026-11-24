@@ -1,7 +1,9 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Models;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
@@ -201,13 +203,53 @@ public class OzonApiClientFinanceAccrualsTests
         page.IsComplete.Should().BeTrue();
     }
 
-    private static OzonApiClient BuildClient(MockHttpMessageHandler mockHttp)
+    [Fact]
+    public async Task GetEntriesAsync_ServerError_IsNotReportedToTheLimiterAsASuccess()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp.When(HttpMethod.Post, AccrualsUrl).Respond(HttpStatusCode.InternalServerError);
+
+        RecordingRateLimiter limiter = new RecordingRateLimiter();
+        OzonApiClient client = BuildClient(mockHttp, limiter);
+
+        Func<Task> act = () => client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 11, 16), To = new DateOnly(2026, 11, 16) },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+
+        limiter.SuccessReports.Should().Be(
+            0, "a 5xx must not feed the limiter the allowance of a response that failed");
+    }
+
+    [Fact]
+    public async Task GetEntriesAsync_Success_IsReportedToTheLimiterOnce()
+    {
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, AccrualsUrl)
+            .Respond("application/json", """{ "accruals": [], "last_id": "" }""");
+
+        RecordingRateLimiter limiter = new RecordingRateLimiter();
+        OzonApiClient client = BuildClient(mockHttp, limiter);
+
+        await client.GetFinanceEntriesAsync(
+            Guid.NewGuid(),
+            new FinanceEntriesRequest { From = new DateOnly(2026, 11, 16), To = new DateOnly(2026, 11, 16) },
+            CancellationToken.None);
+
+        limiter.SuccessReports.Should().Be(1);
+    }
+
+    private static OzonApiClient BuildClient(
+        MockHttpMessageHandler mockHttp, IChannelRateLimiter? rateLimiter = null)
     {
         OzonApiClient client = new OzonApiClient(
             mockHttp.ToHttpClient(),
             Mock.Of<IHttpClientFactory>(),
             new FixedConnectionResolver(),
-            new AlwaysAllowRateLimiter(),
+            rateLimiter ?? new AlwaysAllowRateLimiter(),
             NullLogger<OzonApiClient>.Instance,
             TimeProvider.System);
 

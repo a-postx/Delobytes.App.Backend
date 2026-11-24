@@ -113,19 +113,31 @@ public class ProductsImportOrchestrator
         if (jobRun.Status == JobStatus.Pending)
         {
             jobRun.Status = JobStatus.Running;
-            jobRun.StartedAt = _timeProvider.GetUtcNow();
+
+            // Kept across a deferral: the full-set reconciliation compares link stamps with this
+            // boundary, so moving it on resume would make everything the earlier attempt imported
+            // look unlisted.
+            jobRun.StartedAt ??= _timeProvider.GetUtcNow();
+
+            // The run has been dispatched, so its deferral is spent; a leftover future NotBefore
+            // keeps the row out of the active-run unique index.
+            jobRun.NotBefore = null;
+
             await _jobRunRepository.UpdateAsync(jobRun, cancellationToken);
         }
 
         IChannelApiClient apiClient = _clientFactory.Create(connection.SystemChannelTemplate);
 
         int pageSize = ResolvePageSize(connection);
-        int publishedBatches = 0;
         int pageNumber = 0;
 
-        // Resume from the saved checkpoint cursor when redelivered mid-import.
+        // Resume from the saved checkpoint when redelivered mid-import. The published-batch count is
+        // part of that state: a resumed run that restarted its own counter would announce a lower
+        // total than the run has already produced, and the aggregator would finalise it on a
+        // non-terminal batch.
         JobCheckpoint? checkpoint = await _jobCheckpointRepository.GetByJobRunIdAsync(jobRun.Id, cancellationToken);
-        ProductCardsCursor? cursor = DeserializeCursor(checkpoint?.Payload);
+        (ProductCardsCursor? cursor, int publishedBatches) = DeserializeCheckpoint(checkpoint?.Payload);
+
 
         // Identifiers this run has already published, so a page that repeats a card cannot count it
         // twice. Kept for the whole run: a channel is free to repeat a card across pages or inside
@@ -160,6 +172,12 @@ public class ProductsImportOrchestrator
 
                     if (!apiResponse.IsSuccess)
                     {
+                        if (apiResponse.RetryAt is DateTimeOffset retryAt)
+                        {
+                            await DeferAsync(jobRun, retryAt);
+                            return;
+                        }
+
                         string errorMsg = apiResponse.ErrorMessage ?? "Unknown API error";
 
                         _logger.LogError(
@@ -210,7 +228,7 @@ public class ProductsImportOrchestrator
                         if (bufferedBatch == null)
                         {
                             await _jobCheckpointRepository.UpsertAsync(
-                                BuildCheckpoint(jobRun.Id, data.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
+                                BuildCheckpoint(jobRun.Id, data.NextCursor, publishedBatches, _timeProvider.GetUtcNow()), cancellationToken);
                         }
                         else
                         {
@@ -265,7 +283,7 @@ public class ProductsImportOrchestrator
                         // which at worst duplicates one batch that batch idempotency absorbs, instead
                         // of skipping it outright. All chunks of the page are published by now.
                         await _jobCheckpointRepository.UpsertAsync(
-                            BuildCheckpoint(jobRun.Id, bufferedBatch.NextCursor, _timeProvider.GetUtcNow()), cancellationToken);
+                            BuildCheckpoint(jobRun.Id, bufferedBatch.NextCursor, publishedBatches, _timeProvider.GetUtcNow()), cancellationToken);
                     }
 
                     if (isTerminalPage)
@@ -513,41 +531,83 @@ public class ProductsImportOrchestrator
         }
     }
 
-    private static JobCheckpoint BuildCheckpoint(Guid jobRunId, ProductCardsCursor? cursor, DateTimeOffset now)
+    /// <summary>
+    /// Parks the run until the channel allows the next attempt instead of failing it. The checkpoint
+    /// already names the last published page, so the walk resumes there; Pending is the only status
+    /// the worker dispatches, and the next dispatch clears the deferral.
+    /// </summary>
+    private async Task DeferAsync(JobRun jobRun, DateTimeOffset retryAt)
+    {
+        jobRun.Status = JobStatus.Pending;
+        jobRun.NotBefore = retryAt;
+
+        // CancellationToken.None on purpose: a cancelled consume must still persist the deferral,
+        // or the run stays immediately due and the worker re-publishes it on every tick.
+        await _jobRunRepository.UpdateAsync(jobRun, CancellationToken.None);
+
+        _logger.LogWarning(
+            "JobRun {JobRunId}: products import deferred, the channel rate limiter allows the next " +
+            "attempt at {RetryAt:O}",
+            jobRun.Id,
+            retryAt);
+    }
+
+    private static JobCheckpoint BuildCheckpoint(
+        Guid jobRunId, ProductCardsCursor? cursor, int publishedBatches, DateTimeOffset now)
     {
         return new JobCheckpoint
         {
             JobRunId = jobRunId,
-            Payload = SerializeCursor(cursor) ?? string.Empty,
+            Payload = JsonSerializer.Serialize(new CheckpointPayload
+            {
+                Cursor = cursor,
+                PublishedBatches = publishedBatches,
+            }),
             UpdatedAt = now,
         };
     }
 
-    private static ProductCardsCursor? DeserializeCursor(string? json)
+    /// <summary>
+    /// Reads the resume state. A checkpoint written before the batch counter was persisted carries
+    /// the bare cursor, so it is read as the cursor of a run that has published nothing yet.
+    /// </summary>
+    private static (ProductCardsCursor? Cursor, int PublishedBatches) DeserializeCheckpoint(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
         {
-            return null;
+            return (null, 0);
         }
 
         try
         {
-            return JsonSerializer.Deserialize<ProductCardsCursor>(json);
+            using JsonDocument document = JsonDocument.Parse(json);
+
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty(nameof(CheckpointPayload.Cursor), out _))
+            {
+                CheckpointPayload? payload = document.RootElement.Deserialize<CheckpointPayload>();
+
+                return payload == null ? (null, 0) : (payload.Cursor, payload.PublishedBatches);
+            }
+
+            return (document.RootElement.Deserialize<ProductCardsCursor>(), 0);
         }
         catch
         {
-            return null;
+            return (null, 0);
         }
     }
 
-    private static string? SerializeCursor(ProductCardsCursor? cursor)
+    /// <summary>
+    /// Resume state of a products walk. <see cref="PublishedBatches"/> is the number of batch events
+    /// the run has published across every attempt, so the terminal batch keeps announcing the run's
+    /// real total after a deferral.
+    /// </summary>
+    private sealed class CheckpointPayload
     {
-        if (cursor == null)
-        {
-            return null;
-        }
+        public ProductCardsCursor? Cursor { get; init; }
 
-        return JsonSerializer.Serialize(cursor);
+        public int PublishedBatches { get; init; }
     }
 
     /// <summary>

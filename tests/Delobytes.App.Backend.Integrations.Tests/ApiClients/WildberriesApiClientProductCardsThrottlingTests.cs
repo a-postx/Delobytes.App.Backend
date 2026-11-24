@@ -125,6 +125,7 @@ public class WildberriesApiClientProductCardsThrottlingTests
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(429);
         result.ErrorMessage.Should().Contain("Rate limit exceeded");
+        result.RetryAt.Should().NotBeNull("a throttled page is deferred, so the caller needs the instant to retry");
 
         string fingerprint = ApiKeyFingerprint.Compute(FixedConnectionResolver.ApiKey);
 
@@ -190,6 +191,7 @@ public class WildberriesApiClientProductCardsThrottlingTests
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(429);
         result.ErrorMessage.Should().Contain("Rate limit");
+        result.RetryAt.Should().NotBeNull("the caller defers the run until the limiter releases the slot");
         result.Data!.Cards.Should().BeEmpty();
 
         httpCallCount.Should().Be(0, "a slot the limiter has not released must not be spent on a request");

@@ -332,6 +332,7 @@ public class OzonApiClientGetProductCardsTests
 
         response.IsSuccess.Should().BeFalse();
         response.ErrorMessage.Should().Contain("Rate limit");
+        response.RetryAt.Should().NotBeNull("a throttled page is deferred, so the caller needs the instant to retry");
         requests.Should().Be(1);
 
         rateLimiter.Verify(
@@ -484,6 +485,7 @@ public class OzonApiClientGetProductCardsTests
 
         response.IsSuccess.Should().BeFalse();
         response.ErrorMessage.Should().Contain(unavailableUntil.ToString("O"));
+        response.RetryAt.Should().Be(unavailableUntil, "the caller defers the run until the limiter releases the slot");
         requests.Should().Be(0, "a refusal beyond the tolerance must not spend an HTTP request");
     }
 

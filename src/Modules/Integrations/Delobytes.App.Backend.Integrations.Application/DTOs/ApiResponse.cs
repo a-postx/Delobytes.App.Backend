@@ -27,6 +27,14 @@ public class ApiResponse<T>
     public int? StatusCode { get; set; }
 
     /// <summary>
+    /// Gets or sets the instant the channel allows the next attempt, when the call was deferred
+    /// rather than failed: a slot the rate limiter has not released, or a 429 answered by the
+    /// channel. A caller walking a catalogue resumes from this instant instead of failing the run;
+    /// null means the failure is not retryable by waiting.
+    /// </summary>
+    public DateTimeOffset? RetryAt { get; set; }
+
+    /// <summary>
     /// Gets or sets the date and time when the response was received.
     /// </summary>
     public DateTimeOffset Timestamp { get; set; }

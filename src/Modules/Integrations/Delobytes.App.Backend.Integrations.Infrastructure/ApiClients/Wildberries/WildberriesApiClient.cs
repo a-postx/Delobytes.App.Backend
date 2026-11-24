@@ -372,6 +372,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
 
                     apiResponse.IsSuccess = false;
                     apiResponse.ErrorMessage = $"Rate limit exceeded. Retry after {retryAt:O}.";
+                    apiResponse.RetryAt = retryAt;
                     apiResponse.Data = new ProductCardsData
                     {
                         Cards = new List<ChannelProductCard>(),
@@ -736,13 +737,6 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 $"Wildberries finance API returned {(int)response.StatusCode}. Enable the «Финансы» category for the token; retrying cannot fix a missing scope.");
         }
 
-        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
-
-        if (response.StatusCode == HttpStatusCode.NoContent)
-        {
-            return new FinanceEntriesPage { IsComplete = true };
-        }
-
         if (!response.IsSuccessStatusCode)
         {
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -757,6 +751,15 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
                 $"Wildberries finance API returned {(int)response.StatusCode}.",
                 null,
                 response.StatusCode);
+        }
+
+        // Reported after the status check: a 5xx fed to the limiter as a success would mark the row
+        // 200, speed the pace up after an outage and overwrite the failure evidence.
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return new FinanceEntriesPage { IsComplete = true };
         }
 
         List<WildberriesFinanceReportRow>? rows =
@@ -811,6 +814,7 @@ public class WildberriesApiClient : IChannelApiClient, IProductsSource, IOrdersS
             IsSuccess = false,
             ErrorMessage = $"Rate limit: slot not available until {nextAllowedAt:O}.",
             StatusCode = 429,
+            RetryAt = nextAllowedAt,
             Timestamp = _timeProvider.GetUtcNow(),
             Data = new ProductCardsData
             {

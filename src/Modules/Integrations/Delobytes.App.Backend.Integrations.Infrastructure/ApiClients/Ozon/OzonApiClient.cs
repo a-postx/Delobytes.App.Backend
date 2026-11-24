@@ -467,9 +467,11 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
                 IsSuccess = false,
                 ErrorMessage = $"Rate limit: slot not available until {refusedSlot.NextRequestAllowedAt:O}.",
                 StatusCode = 429,
+                RetryAt = refusedSlot.NextRequestAllowedAt,
                 Timestamp = _timeProvider.GetUtcNow(),
                 Data = new ProductCardsData(),
             };
+
         }
 
         OzonProductAttributesRequest body = new OzonProductAttributesRequest
@@ -514,9 +516,11 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
                 IsSuccess = false,
                 ErrorMessage = $"Rate limit exceeded. Retry after {retryAt:O}.",
                 StatusCode = (int)response.StatusCode,
+                RetryAt = retryAt,
                 Timestamp = _timeProvider.GetUtcNow(),
                 Data = new ProductCardsData(),
             };
+
         }
 
         if (!response.IsSuccessStatusCode)
@@ -960,8 +964,6 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
                 $"Ozon finance API returned {(int)response.StatusCode}. The API key role must allow the finance method.");
         }
 
-        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
-
         if (!response.IsSuccessStatusCode)
         {
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -977,6 +979,10 @@ public class OzonApiClient : IChannelApiClient, IProductsSource, IOrdersSource, 
                 null,
                 response.StatusCode);
         }
+
+        // Reported after the status check: a 5xx must not feed the limiter the counters of a failed
+        // response, or a short outage teaches the pacing the wrong allowance.
+        await _rateLimiter.ReportSuccessAsync(scope, rateLimitSignal, cancellationToken);
 
         OzonAccrualsResponse? page =
             await response.Content.ReadFromJsonAsync<OzonAccrualsResponse>(SerializerOptions, cancellationToken);
