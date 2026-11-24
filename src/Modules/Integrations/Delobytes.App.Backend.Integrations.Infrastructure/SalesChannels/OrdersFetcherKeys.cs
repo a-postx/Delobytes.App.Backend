@@ -1,11 +1,13 @@
-﻿using Delobytes.App.Backend.Integrations.Domain.Enums;
+﻿using Delobytes.App.Backend.Integrations.Application.SalesChannels;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 
-namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 
 /// <summary>
 /// The keyed-service key of one (channel code, orders job type) pair, and of the parts that pair
 /// owns. The job type is rendered by its enum name, which is stable across renames of the public
-/// API token.
+/// API token. The channel code is normalized here, so the key a module registers and the key a
+/// resolver looks up cannot differ by casing.
 /// </summary>
 internal static class OrdersFetcherKeys
 {
@@ -17,7 +19,7 @@ internal static class OrdersFetcherKeys
 
     public static string Fetchers(string channelCode, JobType jobType)
     {
-        return $"{channelCode}:{jobType}";
+        return $"{ChannelCatalog.Normalize(channelCode)}:{jobType}";
     }
 
     public static string Backfill(string channelCode, JobType jobType)

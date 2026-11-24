@@ -32,4 +32,8 @@
 	<GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Delobytes.App.Backend.Integrations.Tests" />
+  </ItemGroup>
+
 </Project>

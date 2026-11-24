@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Products;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
@@ -24,7 +25,7 @@ public sealed class ProductsImportTuningResolver : IProductsImportTuningResolver
     public ProductsImportTuning Resolve(string channelCode)
     {
         ProductsImportTuning? tuning = _serviceProvider
-            .GetKeyedService<ProductsImportTuning>(channelCode);
+            .GetKeyedService<ProductsImportTuning>(ChannelCatalog.Normalize(channelCode));
 
         return tuning ?? ProductsImportTuning.Default;
     }

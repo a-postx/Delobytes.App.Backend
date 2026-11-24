@@ -30,6 +30,17 @@ public static class ChannelCatalog
             SerializesOrdersJobTypes: true),
     };
 
+    /// <summary>
+    /// Normalizes a channel code to the form keyed registrations use, so a lookup does not depend
+    /// on how the code was stored or entered.
+    /// </summary>
+    /// <param name="code">Channel code from a connection, template or API request.</param>
+    /// <returns>The normalized code; an empty string for null or blank input.</returns>
+    public static string Normalize(string? code)
+    {
+        return code?.Trim().ToLowerInvariant() ?? string.Empty;
+    }
+
     public static bool TryGet(string? code, [NotNullWhen(true)] out ChannelDescriptor descriptor)
     {
         foreach (ChannelDescriptor candidate in All)

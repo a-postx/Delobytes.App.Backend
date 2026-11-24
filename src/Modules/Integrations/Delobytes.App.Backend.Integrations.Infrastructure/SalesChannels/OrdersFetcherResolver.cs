@@ -1,7 +1,8 @@
-﻿using Delobytes.App.Backend.Integrations.Domain.Enums;
+﻿using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
 
 /// <summary>
 /// Resolves the fetchers registered for a (channel code, orders job type) pair from the keyed
@@ -20,7 +21,7 @@ public sealed class OrdersFetcherResolver : IOrdersFetcherResolver
     /// <inheritdoc/>
     public OrdersFetchersResolution Resolve(string channelCode, JobType jobType)
     {
-        string key = OrdersFetcherKeys.Fetchers(channelCode.ToLowerInvariant(), jobType);
+        string key = OrdersFetcherKeys.Fetchers(channelCode, jobType);
 
         IOrdersFetchers? fetchers = _serviceProvider.GetKeyedService<IOrdersFetchers>(key);
 

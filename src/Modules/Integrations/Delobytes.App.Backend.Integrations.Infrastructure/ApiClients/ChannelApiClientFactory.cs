@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,7 +23,7 @@ public class ChannelApiClientFactory : IChannelApiClientFactory
     {
         ArgumentNullException.ThrowIfNull(template);
 
-        string code = template.Code.ToLowerInvariant();
+        string code = ChannelCatalog.Normalize(template.Code);
         IChannelApiClient? client = _serviceProvider.GetKeyedService<IChannelApiClient>(code) ?? throw new NotSupportedException($"Channel '{template.Code}' is not supported.");
 
         // A client that resolves its endpoints from the template is bound here, at the one place

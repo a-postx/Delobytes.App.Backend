@@ -1,4 +1,5 @@
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.ApiClients;
@@ -19,7 +20,7 @@ public class ApiKeyValidatorFactory : IApiKeyValidatorFactory
     public IApiKeyValidator Create(string channelCode)
     {
         IApiKeyValidator? validator = _serviceProvider.GetKeyedService<IApiKeyValidator>(
-            channelCode.ToLowerInvariant());
+            ChannelCatalog.Normalize(channelCode));
 
         return validator
             ?? throw new NotSupportedException($"Валидатор для канала '{channelCode}' не найден.");
