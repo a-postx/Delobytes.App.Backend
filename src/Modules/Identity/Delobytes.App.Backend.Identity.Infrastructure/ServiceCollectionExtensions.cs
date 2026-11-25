@@ -136,7 +136,7 @@ public static class ServiceCollectionExtensions
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
                 NameClaimType = JwtClaimNames.Subject,
                 RoleClaimType = JwtClaimNames.Role,
-                ClockSkew = TimeSpan.FromSeconds(1)
+                ClockSkew = TimeSpan.FromSeconds(5)
             };
 
             // A password change records TokensValidAfter; tokens issued earlier are rejected.
