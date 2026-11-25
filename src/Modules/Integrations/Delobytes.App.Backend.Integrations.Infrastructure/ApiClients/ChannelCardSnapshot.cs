@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 

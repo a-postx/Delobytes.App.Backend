@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.SalesChannels;
@@ -101,12 +102,15 @@ public sealed class ChannelJobTypeRegistry : IChannelJobTypeRegistry
             : null;
     }
 
-    private bool TryGetModule(string? channelCode, out ChannelModule module)
+    private bool TryGetModule(string? channelCode, [NotNullWhen(true)] out ChannelModule? module)
     {
-        module = null!;
+        if (string.IsNullOrWhiteSpace(channelCode))
+        {
+            module = null;
+            return false;
+        }
 
-        return !string.IsNullOrWhiteSpace(channelCode)
-            && _modulesByCode.TryGetValue(channelCode, out module);
+        return _modulesByCode.TryGetValue(channelCode, out module);
     }
 
     private static bool Serves(ChannelModule module, JobType jobType)

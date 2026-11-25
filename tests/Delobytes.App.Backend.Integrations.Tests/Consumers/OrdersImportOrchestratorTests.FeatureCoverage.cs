@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -142,7 +142,9 @@ public partial class OrdersImportOrchestratorTests
         DateTimeOffset handover = _timeProvider.GetUtcNow().AddDays(-2);
         _backfillStateRepo.Setup(r => r.GetAsync(connection.Id, It.IsAny<JobType>(), It.IsAny<CancellationToken>())).ReturnsAsync(new OrdersBackfillState
         {
-            ConnectionId = connection.Id, IsCompleted = true, OldestDayInScope = oldest,
+            ConnectionId = connection.Id,
+            IsCompleted = true,
+            OldestDayInScope = oldest,
             HandoverWatermark = legacy ? null : handover,
         });
         List<OrdersRequest> requests = new List<OrdersRequest>();

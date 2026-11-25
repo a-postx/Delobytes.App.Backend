@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Delobytes.App.Backend.Persistence;
 using Delobytes.App.Backend.Sales.Application.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;

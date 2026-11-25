@@ -68,7 +68,8 @@ public class CreateBomLineCommandHandler : IRequestHandler<CreateBomLineCommand,
             previous.UpdatedAt = now;
         }
 
-        BomLine line = new BomLine {
+        BomLine line = new BomLine
+        {
             Id = EntityId.New(),
             ProductId = request.ProductId,
             ComponentId = request.ComponentId,

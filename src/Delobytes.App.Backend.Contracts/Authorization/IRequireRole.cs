@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Contracts.Authorization;
+namespace Delobytes.App.Backend.Contracts.Authorization;
 
 /// <summary>
 /// Marker interface for requests that require specific role(s) to execute.

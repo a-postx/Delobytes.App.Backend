@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Contracts.Models;
+using Delobytes.App.Backend.Integrations.Contracts.Models;
 
 namespace Delobytes.App.Backend.Integrations.Application.Orders;
 

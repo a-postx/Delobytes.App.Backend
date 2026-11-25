@@ -7,7 +7,7 @@ namespace Delobytes.App.Backend.Persistence.Conventions;
 
 /// <summary>
 /// Declares the TenantId shadow property on every <see cref="ITenantScoped"/> entity as soon as
-/// the entity type is added to the model — before any <see cref="IEntityTypeConfiguration{TEntity}"/>
+/// the entity type is added to the model — before any <c>IEntityTypeConfiguration&lt;T&gt;</c>
 /// runs. Entity configurations reference "TenantId" by name in composite <c>HasIndex</c> calls;
 /// without this convention EF cannot infer the shadow property's CLR type from a bare string
 /// reference and throws <see cref="InvalidOperationException"/> ("no property type was specified").

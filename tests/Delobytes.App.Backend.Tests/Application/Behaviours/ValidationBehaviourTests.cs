@@ -22,7 +22,7 @@ public class ValidationBehaviourTests
     public async Task Handle_WhenNoValidators_CallsNext()
     {
         // Arrange
-        ValidationBehaviour<TestRequest, string> behaviour = new (Enumerable.Empty<IValidator<TestRequest>>());
+        ValidationBehaviour<TestRequest, string> behaviour = new(Enumerable.Empty<IValidator<TestRequest>>());
 
         bool nextCalled = false;
         RequestHandlerDelegate<string> next = () =>
@@ -43,7 +43,7 @@ public class ValidationBehaviourTests
     public async Task Handle_WhenValidationPasses_CallsNext()
     {
         // Arrange
-        ValidationBehaviour<TestRequest, string> behaviour = new (new IValidator<TestRequest>[] { new AlwaysValidValidator() });
+        ValidationBehaviour<TestRequest, string> behaviour = new(new IValidator<TestRequest>[] { new AlwaysValidValidator() });
 
         bool nextCalled = false;
         RequestHandlerDelegate<string> next = () =>
@@ -64,7 +64,7 @@ public class ValidationBehaviourTests
     public async Task Handle_WhenValidationFails_ThrowsValidationException()
     {
         // Arrange
-        ValidationBehaviour<TestRequest, string> behaviour = new (new IValidator<TestRequest>[] { new AlwaysInvalidValidator() });
+        ValidationBehaviour<TestRequest, string> behaviour = new(new IValidator<TestRequest>[] { new AlwaysInvalidValidator() });
 
         RequestHandlerDelegate<string> next = () => Task.FromResult("should-not-reach");
 
@@ -80,7 +80,7 @@ public class ValidationBehaviourTests
     public async Task Handle_WhenValidationFailsWithEmptyName_ThrowsValidationException()
     {
         // Arrange
-        ValidationBehaviour<TestRequest, string> behaviour = new (new IValidator<TestRequest>[] { new AlwaysValidValidator() });
+        ValidationBehaviour<TestRequest, string> behaviour = new(new IValidator<TestRequest>[] { new AlwaysValidValidator() });
 
         RequestHandlerDelegate<string> next = () => Task.FromResult("should-not-reach");
 

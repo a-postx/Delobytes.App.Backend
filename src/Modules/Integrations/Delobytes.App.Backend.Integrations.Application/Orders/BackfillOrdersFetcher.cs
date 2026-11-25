@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Interfaces;
+using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 
 namespace Delobytes.App.Backend.Integrations.Application.Orders;

@@ -1,0 +1,12 @@
+<Project>
+  <!-- The nearest Directory.Build.props wins, so the root one has to be imported explicitly: it
+       carries the target framework, nullable/implicit usings, StyleCop and the package list. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- The root correctness gate is production-only. In test code the 76 nullable findings are
+         test-data literals and would force churn without catching a product defect, so tests get the
+         rule that does matter here: blocking task operations can deadlock a test run. -->
+    <WarningsAsErrors>xUnit1031</WarningsAsErrors>
+  </PropertyGroup>
+</Project>

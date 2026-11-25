@@ -17,12 +17,12 @@ namespace Delobytes.App.Backend.Tests.Application.Catalog.Numbering;
 /// </summary>
 internal sealed class FakeNumberingSequenceStore : INumberingSequenceStore
 {
-    private readonly Dictionary<Guid, NumberingScheme> _schemes = new ();
-    private readonly Dictionary<Guid, int> _numbersAfterLock = new ();
+    private readonly Dictionary<Guid, NumberingScheme> _schemes = new();
+    private readonly Dictionary<Guid, int> _numbersAfterLock = new();
 
-    public List<string> CallOrder { get; } = new ();
+    public List<string> CallOrder { get; } = new();
 
-    public List<Guid> RequestedSequenceIds { get; } = new ();
+    public List<Guid> RequestedSequenceIds { get; } = new();
 
     public Exception? LockException { get; set; }
 

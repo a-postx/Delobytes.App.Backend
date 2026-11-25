@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Integrations.Application.Interfaces;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 using Delobytes.App.Backend.Integrations.Application.Models;

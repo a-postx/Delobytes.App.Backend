@@ -93,8 +93,10 @@ public partial class JobRunRepositoryTests
             OrdersBackfillStateRepository repository = new OrdersBackfillStateRepository(context);
             OrdersBackfillState state = new OrdersBackfillState
             {
-                ConnectionId = connection.Id, JobType = JobType.WbOrdersImport,
-                OldestDayInScope = now.AddDays(-90), NextDayToFetch = now,
+                ConnectionId = connection.Id,
+                JobType = JobType.WbOrdersImport,
+                OldestDayInScope = now.AddDays(-90),
+                NextDayToFetch = now,
             };
             await repository.UpsertAsync(state, default);
             context.ChangeTracker.Clear();

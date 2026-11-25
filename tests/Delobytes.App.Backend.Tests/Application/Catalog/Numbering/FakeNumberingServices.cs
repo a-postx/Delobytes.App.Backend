@@ -79,7 +79,7 @@ internal sealed class FakeNumberingSchemeProvider : INumberingSchemeProvider
 /// </summary>
 internal sealed class FakeCatalogTransactionFactory : ICatalogTransactionFactory
 {
-    public List<string> CallLog { get; } = new ();
+    public List<string> CallLog { get; } = new();
 
     public FakeCatalogTransaction Transaction { get; private set; } = default!;
 

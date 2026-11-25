@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Models;
+namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
 /// Outcome of <see cref="Interfaces.IChannelRateLimiter.TryAcquireAsync"/>.

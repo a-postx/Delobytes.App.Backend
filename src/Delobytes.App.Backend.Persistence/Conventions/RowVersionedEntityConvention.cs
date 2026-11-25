@@ -21,12 +21,21 @@ public sealed class RowVersionedEntityConvention : IEntityTypeAddedConvention
 
         if (clrType is not null && typeof(IRowVersionedEntity).IsAssignableFrom(clrType))
         {
-            entityTypeBuilder.Property(typeof(uint), nameof(IRowVersionedEntity.RowVersion))
-                ?.IsRequired(true, fromDataAnnotation: false)
-                .IsConcurrencyToken(true, fromDataAnnotation: false)
-                .ValueGenerated(ValueGenerated.OnAddOrUpdate, fromDataAnnotation: false)
-                .HasColumnName("xmin")
-                .HasColumnType("xid");
+            IConventionPropertyBuilder? rowVersion = entityTypeBuilder.Property(
+                typeof(uint), nameof(IRowVersionedEntity.RowVersion));
+
+            if (rowVersion is null)
+            {
+                return;
+            }
+
+            // Separate statements on purpose: every fluent call returns a nullable builder, so a
+            // chain would dereference a possible null instead of mutating the builder in place.
+            rowVersion.IsRequired(true, fromDataAnnotation: false);
+            rowVersion.IsConcurrencyToken(true, fromDataAnnotation: false);
+            rowVersion.ValueGenerated(ValueGenerated.OnAddOrUpdate, fromDataAnnotation: false);
+            rowVersion.HasColumnName("xmin");
+            rowVersion.HasColumnType("xid");
         }
     }
 }

@@ -34,7 +34,7 @@ public class NumberingSegmentValidator : AbstractValidator<NumberingSegment>
         RuleFor(segment => segment.SeparatorAfter)
             .MaximumLength(5);
 
-        RuleFor(segment => segment.NumberingSequence)
+        RuleFor(segment => segment.NumberingSequence!)
             .SetValidator(new NumberingSequenceValidator())
             .When(segment => segment.NumberingSequence is not null);
     }

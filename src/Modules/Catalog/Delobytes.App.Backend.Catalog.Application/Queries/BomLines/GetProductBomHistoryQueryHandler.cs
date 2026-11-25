@@ -18,7 +18,8 @@ public class GetProductBomHistoryQueryHandler : IRequestHandler<GetProductBomHis
 {
     private readonly IBomLineRepository _repository;
 
-    public GetProductBomHistoryQueryHandler(IBomLineRepository repository) {
+    public GetProductBomHistoryQueryHandler(IBomLineRepository repository)
+    {
         _repository = repository;
     }
 
@@ -32,7 +33,8 @@ public class GetProductBomHistoryQueryHandler : IRequestHandler<GetProductBomHis
 
     private static BomLineDto Map(BomLine line)
     {
-        return new BomLineDto {
+        return new BomLineDto
+        {
             Id = line.Id,
             ProductId = line.ProductId,
             ComponentId = line.ComponentId,
@@ -41,7 +43,8 @@ public class GetProductBomHistoryQueryHandler : IRequestHandler<GetProductBomHis
             ValidTo = line.ValidTo,
             CreatedAt = line.CreatedAt,
             UpdatedAt = line.UpdatedAt,
-            Component = line.Component == null ? null : new BomComponentDto {
+            Component = line.Component == null ? null : new BomComponentDto
+            {
                 Id = line.Component.Id,
                 Name = line.Component.Name,
                 Unit = line.Component.Unit,

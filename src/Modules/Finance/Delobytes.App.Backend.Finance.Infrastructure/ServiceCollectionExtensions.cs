@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Delobytes.App.Backend.Finance.Application.Expectation;
 using Delobytes.App.Backend.Finance.Application.Ingestion;
 using Delobytes.App.Backend.Finance.Application.Interfaces;

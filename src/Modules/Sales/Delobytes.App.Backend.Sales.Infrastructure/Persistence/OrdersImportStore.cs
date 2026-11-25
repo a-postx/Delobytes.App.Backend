@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Sales.Application.Interfaces;
+using Delobytes.App.Backend.Sales.Application.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Models;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 using Microsoft.EntityFrameworkCore;

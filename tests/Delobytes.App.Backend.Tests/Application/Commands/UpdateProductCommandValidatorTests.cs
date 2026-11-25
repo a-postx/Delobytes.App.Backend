@@ -13,7 +13,7 @@ namespace Delobytes.App.Backend.Tests.Application.Commands;
 /// </summary>
 public class UpdateProductCommandValidatorTests
 {
-    private readonly UpdateProductCommandValidator _validator = new ();
+    private readonly UpdateProductCommandValidator _validator = new();
 
     [Fact]
     public void DescriptionOfFiveThousandCharacters_IsAccepted()

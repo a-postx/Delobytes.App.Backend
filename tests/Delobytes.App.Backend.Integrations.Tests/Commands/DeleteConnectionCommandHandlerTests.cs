@@ -13,9 +13,9 @@ namespace Delobytes.App.Backend.Integrations.Tests.Commands;
 
 public class DeleteConnectionCommandHandlerTests
 {
-    private readonly Mock<IConnectionRepository> _connectionRepo = new ();
-    private readonly Mock<IJobScheduleRepository> _scheduleRepo = new ();
-    private readonly Mock<IEventPublisher> _eventPublisher = new ();
+    private readonly Mock<IConnectionRepository> _connectionRepo = new();
+    private readonly Mock<IJobScheduleRepository> _scheduleRepo = new();
+    private readonly Mock<IEventPublisher> _eventPublisher = new();
 
     private static Connection BuildConnection(Guid? id = null)
     {

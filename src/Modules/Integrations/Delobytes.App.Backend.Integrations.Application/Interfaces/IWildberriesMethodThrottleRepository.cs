@@ -33,6 +33,7 @@ public interface IWildberriesMethodThrottleRepository
     /// concurrent callers for the same (key, method) pair can never interleave their
     /// read-modify-write, including the race to create the very first row.
     /// </summary>
+    /// <typeparam name="TResult">Value produced by <paramref name="mutate"/>.</typeparam>
     public Task<TResult> MutateAsync<TResult>(
         string keyFingerprint,
         string method,

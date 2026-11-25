@@ -95,7 +95,7 @@ public sealed class FinanceImportCheckpointStore
                 ?? throw new InvalidOperationException(
                     $"Finance import checkpoint payload of JobRun {jobRunId} deserialised to null.");
         }
-        catch (JsonException exception) when (!throwOnCorrupt)
+        catch (JsonException) when (!throwOnCorrupt)
         {
             return null;
         }

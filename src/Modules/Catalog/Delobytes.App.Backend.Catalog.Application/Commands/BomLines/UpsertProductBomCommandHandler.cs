@@ -92,13 +92,15 @@ public class UpsertProductBomCommandHandler : IRequestHandler<UpsertProductBomCo
 
         foreach (UpsertProductBomItem item in request.Lines)
         {
-            _repository.Add(new BomLine {
+            _repository.Add(new BomLine
+            {
                 Id = EntityId.New(),
                 ProductId = request.ProductId,
                 ComponentId = item.ComponentId,
                 Quantity = item.Quantity,
                 ValidFrom = today,
-                CreatedAt = now });
+                CreatedAt = now
+            });
         }
 
         await _repository.SaveChangesAsync(cancellationToken);

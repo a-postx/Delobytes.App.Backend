@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Application.Orders;
 
 /// <summary>
 /// The two limits a run may hit: a wall-clock deadline and a hard cap on issued requests. Budget

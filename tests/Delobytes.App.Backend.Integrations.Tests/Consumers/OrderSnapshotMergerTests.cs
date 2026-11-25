@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Orders;
+using Delobytes.App.Backend.Integrations.Application.Orders;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using FluentAssertions;
 using Xunit;

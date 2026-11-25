@@ -1,7 +1,7 @@
 namespace Delobytes.App.Backend.Catalog.Application.Interfaces;
 
 /// <summary>
-/// Outcome counters of a single <see cref="IProductPhotoService.ImportPhotosAsync"/> run.
+/// Outcome counters of a single <see cref="IProductPhotoService"/> run.
 /// Imported + Replaced + Skipped + Failed equals the number of sources passed in;
 /// <see cref="Removed"/> is counted separately and is not part of that sum.
 /// </summary>

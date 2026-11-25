@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Application.Orders;
 
 /// <summary>
 /// Reads one run's orders. The backfill and delta implementations differ in what they read, and

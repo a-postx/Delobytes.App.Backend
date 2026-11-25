@@ -61,7 +61,8 @@ public class BomLinesController : ControllerBase
     public async Task<ActionResult<CreateBomLineResponse>> CreateLine(Guid productId, [FromBody] CreateBomLineRequest request, CancellationToken cancellationToken)
     {
         CreateBomLineResponse response = await _mediator
-            .Send(new CreateBomLineCommand {
+            .Send(new CreateBomLineCommand
+            {
                 ProductId = productId,
                 ComponentId = request.ComponentId,
                 Quantity = request.Quantity,

@@ -23,6 +23,8 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore Delobytes.App.Backend.sln
 
+      # Warnings that indicate a defect (nullable, dead code, broken XML-doc references) are
+      # promoted to errors by Directory.Build.props, so this step is also the correctness gate.
       - name: Build (Release)
         run: dotnet build Delobytes.App.Backend.sln --no-restore --configuration Release
 
@@ -30,8 +32,10 @@ jobs:
         run: >
           dotnet test tests/Delobytes.App.Backend.Tests/Delobytes.App.Backend.Tests.csproj
           --no-build
+          --no-restore
           --configuration Release
           --verbosity normal
+          --collect:"XPlat Code Coverage"
           --logger "trx;LogFileName=test-results.trx"
           --results-directory ./TestResults
 
@@ -39,14 +43,39 @@ jobs:
         run: >
           dotnet test tests/Delobytes.App.Backend.Integrations.Tests/Delobytes.App.Backend.Integrations.Tests.csproj
           --no-build
+          --no-restore
           --configuration Release
           --verbosity normal
+          --collect:"XPlat Code Coverage"
           --logger "trx;LogFileName=integrations-test-results.trx"
           --results-directory ./TestResults
 
-      - name: Upload test results
+      - name: Upload test results and coverage
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/**/coverage.cobertura.xml
+
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore Delobytes.App.Backend.sln
+
+      # Whitespace only. Analyzer and style findings are already reported by the build job through
+      # EnforceCodeStyleInBuild, so a second full analyzer pass would add minutes without new signal.
+      - name: Verify formatting
+        run: dotnet format whitespace Delobytes.App.Backend.sln --verify-no-changes --no-restore

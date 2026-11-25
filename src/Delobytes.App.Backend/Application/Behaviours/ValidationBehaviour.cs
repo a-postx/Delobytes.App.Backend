@@ -28,7 +28,7 @@ public class ValidationBehaviour<TRequest, TResponse> : IPipelineBehavior<TReque
     {
         if (_validators.Any())
         {
-            ValidationContext<TRequest> context = new (request);
+            ValidationContext<TRequest> context = new(request);
 
             FluentValidation.Results.ValidationResult[] results =
                 await Task.WhenAll(_validators.Select(v => v.ValidateAsync(context, cancellationToken)));

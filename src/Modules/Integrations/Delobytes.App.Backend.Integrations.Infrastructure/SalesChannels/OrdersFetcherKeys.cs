@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Application.SalesChannels;
+using Delobytes.App.Backend.Integrations.Application.SalesChannels;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 
 namespace Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;

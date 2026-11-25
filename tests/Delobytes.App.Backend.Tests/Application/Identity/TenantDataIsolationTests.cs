@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -260,7 +260,7 @@ public class TenantDataIsolationTests
     // ── Cross-tenant operation prevention ─────────────────────────────────────────────
 
     [Fact]
-    public void UserCannotModifyMembershipInTenantTheyDontBelong()
+    public async Task UserCannotModifyMembershipInTenantTheyDontBelong()
     {
         // Arrange
         Guid user1Id = Guid.NewGuid();
@@ -277,22 +277,20 @@ public class TenantDataIsolationTests
 
         // Act & Assert
         // User1 can operate in tenant1
-        TenantMembership? membershipInTenant1 = _membershipRepo.Object
-            .FindActiveByUserAndTenantAsync(user1Id, tenant1Id, CancellationToken.None)
-            .Result;
+        TenantMembership? membershipInTenant1 = await _membershipRepo.Object
+            .FindActiveByUserAndTenantAsync(user1Id, tenant1Id, CancellationToken.None);
 
         membershipInTenant1.Should().NotBeNull();
 
         // User1 cannot operate in tenant2
-        TenantMembership? membershipInTenant2 = _membershipRepo.Object
-            .FindActiveByUserAndTenantAsync(user1Id, tenant2Id, CancellationToken.None)
-            .Result;
+        TenantMembership? membershipInTenant2 = await _membershipRepo.Object
+            .FindActiveByUserAndTenantAsync(user1Id, tenant2Id, CancellationToken.None);
 
         membershipInTenant2.Should().BeNull();
     }
 
     [Fact]
-    public void AdminInTenant1CannotAccessMembersOfTenant2()
+    public async Task AdminInTenant1CannotAccessMembersOfTenant2()
     {
         // Arrange
         Guid admin1Id = Guid.NewGuid();
@@ -322,8 +320,8 @@ public class TenantDataIsolationTests
             .ReturnsAsync(tenant2Members);
 
         // Act
-        IReadOnlyList<TenantMembership> tenant1Result = _membershipRepo.Object.GetActiveByTenantAsync(tenant1Id, CancellationToken.None).Result;
-        IReadOnlyList<TenantMembership> tenant2Result = _membershipRepo.Object.GetActiveByTenantAsync(tenant2Id, CancellationToken.None).Result;
+        IReadOnlyList<TenantMembership> tenant1Result = await _membershipRepo.Object.GetActiveByTenantAsync(tenant1Id, CancellationToken.None);
+        IReadOnlyList<TenantMembership> tenant2Result = await _membershipRepo.Object.GetActiveByTenantAsync(tenant2Id, CancellationToken.None);
 
         // Assert
         tenant1Result.Should().OnlyContain(m => m.TenantId == tenant1Id);
@@ -334,7 +332,7 @@ public class TenantDataIsolationTests
     }
 
     [Fact]
-    public void InvitationTokenIsUniqueAndCannotBeGuessedAcrossTenants()
+    public async Task InvitationTokenIsUniqueAndCannotBeGuessedAcrossTenants()
     {
         // Arrange
         Guid tenant1Id = Guid.NewGuid();
@@ -357,9 +355,9 @@ public class TenantDataIsolationTests
             .ReturnsAsync((Invitation?)null);
 
         // Act
-        Invitation? result1 = _invitationRepo.Object.FindByTokenAsync(invitation1.Token, CancellationToken.None).Result;
-        Invitation? result2 = _invitationRepo.Object.FindByTokenAsync(invitation2.Token, CancellationToken.None).Result;
-        Invitation? resultFake = _invitationRepo.Object.FindByTokenAsync("fake-token", CancellationToken.None).Result;
+        Invitation? result1 = await _invitationRepo.Object.FindByTokenAsync(invitation1.Token, CancellationToken.None);
+        Invitation? result2 = await _invitationRepo.Object.FindByTokenAsync(invitation2.Token, CancellationToken.None);
+        Invitation? resultFake = await _invitationRepo.Object.FindByTokenAsync("fake-token", CancellationToken.None);
 
         // Assert
         result1.Should().NotBeNull();
@@ -373,7 +371,7 @@ public class TenantDataIsolationTests
     }
 
     [Fact]
-    public void MultiTenantUser_HasSeparateMembershipsForEachTenant()
+    public async Task MultiTenantUser_HasSeparateMembershipsForEachTenant()
     {
         // Arrange
         Guid userId = Guid.NewGuid();
@@ -390,7 +388,7 @@ public class TenantDataIsolationTests
             .ReturnsAsync(userMemberships);
 
         // Act
-        IReadOnlyList<TenantMembership> result = _membershipRepo.Object.GetActiveByUserAsync(userId, CancellationToken.None).Result;
+        IReadOnlyList<TenantMembership> result = await _membershipRepo.Object.GetActiveByUserAsync(userId, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(2);
@@ -399,7 +397,7 @@ public class TenantDataIsolationTests
     }
 
     [Fact]
-    public void UserRoleIsIndependentAcrossTenants()
+    public async Task UserRoleIsIndependentAcrossTenants()
     {
         // Arrange
         Guid userId = Guid.NewGuid();
@@ -415,8 +413,8 @@ public class TenantDataIsolationTests
             .ReturnsAsync(BuildMembership(userId, tenant2Id, Role.ReadOnly));
 
         // Act
-        TenantMembership? membershipTenant1 = _membershipRepo.Object.FindActiveByUserAndTenantAsync(userId, tenant1Id, CancellationToken.None).Result;
-        TenantMembership? membershipTenant2 = _membershipRepo.Object.FindActiveByUserAndTenantAsync(userId, tenant2Id, CancellationToken.None).Result;
+        TenantMembership? membershipTenant1 = await _membershipRepo.Object.FindActiveByUserAndTenantAsync(userId, tenant1Id, CancellationToken.None);
+        TenantMembership? membershipTenant2 = await _membershipRepo.Object.FindActiveByUserAndTenantAsync(userId, tenant2Id, CancellationToken.None);
 
         // Assert
         membershipTenant1.Should().NotBeNull();

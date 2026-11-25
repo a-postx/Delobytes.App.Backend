@@ -50,9 +50,9 @@ public class ProductBatchImporterTests
         // Arrange
         (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
             await CreateScenarioAsync(_tenantId);
-                ChannelProductCard card = BuildCard();
+        ChannelProductCard card = BuildCard();
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -115,7 +115,7 @@ public class ProductBatchImporterTests
             WeightKg = 0.5m
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -150,9 +150,9 @@ public class ProductBatchImporterTests
         // Arrange
         (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
             await CreateScenarioAsync(_tenantId);
-                ChannelProductCard card = BuildCard();
+        ChannelProductCard card = BuildCard();
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -236,7 +236,7 @@ public class ProductBatchImporterTests
             WeightKg = 1.2m
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -324,7 +324,7 @@ public class ProductBatchImporterTests
             Description = "Updated Description"
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -438,9 +438,9 @@ public class ProductBatchImporterTests
         // Arrange
         (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
             await CreateScenarioAsync(_tenantId);
-                ChannelProductCard card = BuildCard();
+        ChannelProductCard card = BuildCard();
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act - Process the same batch twice
         await importer.ImportAsync(message, CancellationToken.None);
@@ -516,7 +516,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1234567890123" }
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -591,7 +591,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "9876543210987", "1111111111111" }
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -671,7 +671,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string>()
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -759,7 +759,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1111111111111", "2222222222222" }
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -888,7 +888,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string>()
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -954,7 +954,7 @@ public class ProductBatchImporterTests
             Description = "Updated Description"
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1040,7 +1040,7 @@ public class ProductBatchImporterTests
             },
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
+        ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1119,7 +1119,7 @@ public class ProductBatchImporterTests
             },
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1181,7 +1181,7 @@ public class ProductBatchImporterTests
 
         ChannelProductCard card = BuildCardWithPhotos();
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
+        ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1231,9 +1231,9 @@ public class ProductBatchImporterTests
 
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, photoServiceMock);
 
-                ChannelProductCard card = BuildCard();
+        ChannelProductCard card = BuildCard();
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card);
+        ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1331,7 +1331,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1234567890123" },
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
+        ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1443,7 +1443,7 @@ public class ProductBatchImporterTests
             },
         };
 
-                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
+        ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);

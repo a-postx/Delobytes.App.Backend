@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Domain.Enums;
+namespace Delobytes.App.Backend.Integrations.Domain.Enums;
 
 /// <summary>
 /// Defines types of channel API endpoints for different operation categories.

@@ -57,6 +57,7 @@ public interface IOrdersImportStore
     /// Runs <paramref name="operation"/> and persists its changes, retrying when the save loses a
     /// unique or concurrency race, and detaching whatever the failed attempt staged before retrying.
     /// </summary>
+    /// <typeparam name="TResult">Result of <paramref name="operation"/>.</typeparam>
     public Task<TResult> ExecuteWithSaveAsync<TResult>(
         Func<Task<TResult>> operation,
         string externalOrderId,

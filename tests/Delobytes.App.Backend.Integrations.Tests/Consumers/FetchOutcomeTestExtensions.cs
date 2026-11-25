@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Delobytes.App.Backend.Integrations.Application.Orders;
 
 namespace Delobytes.App.Backend.Integrations.Tests.Consumers;

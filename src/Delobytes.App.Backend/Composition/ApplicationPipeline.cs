@@ -59,7 +59,7 @@ internal static class ApplicationPipeline
             ResponseWriter = async (context, report) =>
             {
                 context.Response.ContentType = "application/json";
-                JsonSerializerOptions jsonOptions = new (JsonSerializerDefaults.Web);
+                JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
                 string result = JsonSerializer.Serialize(
                     new
                     {

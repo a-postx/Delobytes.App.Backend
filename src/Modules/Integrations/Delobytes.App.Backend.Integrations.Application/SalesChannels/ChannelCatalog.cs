@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using Delobytes.App.Backend.Integrations.Application.Jobs;
 
 namespace Delobytes.App.Backend.Integrations.Application.SalesChannels;

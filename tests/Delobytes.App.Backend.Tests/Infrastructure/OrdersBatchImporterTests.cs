@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -988,7 +988,8 @@ public class OrdersBatchImporterTests
         };
     }
 
-    private ChannelProductRef BuildChannelProductRef(Guid channelProductId, string externalProductId)    {
+    private ChannelProductRef BuildChannelProductRef(Guid channelProductId, string externalProductId)
+    {
         return new ChannelProductRef
         {
             ChannelProductId = channelProductId,

@@ -85,7 +85,7 @@ public sealed class NumberAllocator : INumberAllocator
 
     private static Dictionary<Guid, int> ProjectNumbers(List<NumberingSegment> segments, int[] issuedNumbers)
     {
-        Dictionary<Guid, int> cursors = new ();
+        Dictionary<Guid, int> cursors = new();
 
         for (int index = 0; index < segments.Count; index++)
         {
@@ -132,7 +132,7 @@ public sealed class NumberAllocator : INumberAllocator
 
     private static string Compose(List<NumberingSegment> segments, int[] issuedNumbers)
     {
-        StringBuilder builder = new ();
+        StringBuilder builder = new();
 
         for (int index = 0; index < segments.Count; index++)
         {

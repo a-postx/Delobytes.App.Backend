@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -129,8 +129,11 @@ public partial class OrdersImportOrchestratorBackfillTests
         SetupRun(run);
         _persistedState = new OrdersBackfillState
         {
-            Id = Guid.NewGuid(), ConnectionId = connection.Id,
-            OldestDayInScope = today.AddDays(-90), NextDayToFetch = today.AddDays(-91), CatchUpNextDay = today.AddDays(-1),
+            Id = Guid.NewGuid(),
+            ConnectionId = connection.Id,
+            OldestDayInScope = today.AddDays(-90),
+            NextDayToFetch = today.AddDays(-91),
+            CatchUpNextDay = today.AddDays(-1),
         };
         UseStateStore();
         UseSource((request, call) => Task.FromResult(call == 1
@@ -253,8 +256,11 @@ public partial class OrdersImportOrchestratorBackfillTests
         SetupRun(firstRun);
         _persistedState = new OrdersBackfillState
         {
-            Id = Guid.NewGuid(), ConnectionId = connection.Id,
-            OldestDayInScope = today.AddDays(-90), NextDayToFetch = today.AddDays(-91), CatchUpNextDay = today,
+            Id = Guid.NewGuid(),
+            ConnectionId = connection.Id,
+            OldestDayInScope = today.AddDays(-90),
+            NextDayToFetch = today.AddDays(-91),
+            CatchUpNextDay = today,
         };
         UseStateStore();
         UseSource((request, call) => Task.FromResult(new OrdersPage { Throttled = true, RetryAt = _timeProvider.GetUtcNow().AddHours(3) }));

@@ -5,6 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Correctness-only gate for production code: nullable safety, dead code, unused variables and
+         broken XML-doc references fail the build. Style rules stay warnings on purpose — they are
+         ~90% of the current 318 findings, and a blanket TreatWarningsAsErrors would turn every
+         cosmetic nit into a merge blocker. Test projects replace this list (tests/Directory.Build.props). -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS0105;CS0168;CS1573;CS1574;CS8600;CS8601;CS8602;CS8603;CS8604;CS8619;CS8620;CS8625;SA1618</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

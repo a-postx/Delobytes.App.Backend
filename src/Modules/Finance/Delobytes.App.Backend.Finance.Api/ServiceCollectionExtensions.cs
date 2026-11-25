@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Finance.Application.Queries;
+using Delobytes.App.Backend.Finance.Application.Queries;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;

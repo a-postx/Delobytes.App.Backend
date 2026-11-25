@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Application.Orders;
 
 /// <summary>
 /// Mutable accounting for one orders import run. The same instance is shared by every contributor,

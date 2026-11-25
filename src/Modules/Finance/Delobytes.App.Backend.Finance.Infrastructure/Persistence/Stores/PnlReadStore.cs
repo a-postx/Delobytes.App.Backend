@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Attribution;
@@ -429,12 +429,12 @@ public class PnlReadStore : IPnlReadStore
                select new PnlLineRow
                {
                    Id = line.Id,
-OrderLineId = line.OrderLineId,
-                    ExternalOrderId = reference.ExternalOrderId,
-                    ExternalLineId = reference.ExternalLineId,
-                    ExternalProductId = reference.ExternalProductId,
-                    OrderDate = reference.OrderDate,
-                    ChannelId = reference.ChannelId,
+                   OrderLineId = line.OrderLineId,
+                   ExternalOrderId = reference.ExternalOrderId,
+                   ExternalLineId = reference.ExternalLineId,
+                   ExternalProductId = reference.ExternalProductId,
+                   OrderDate = reference.OrderDate,
+                   ChannelId = reference.ChannelId,
                    // The product is the one Catalog resolved the cost for. The channel product is a
                    // different identity and must not stand in for it: a substitution would put the
                    // sale into a group no catalogue product can be joined to and would hide it from

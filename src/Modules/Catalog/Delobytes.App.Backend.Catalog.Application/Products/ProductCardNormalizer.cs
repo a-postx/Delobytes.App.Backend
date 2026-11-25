@@ -109,7 +109,8 @@ public static class ProductCardNormalizer
     }
 
     /// <summary>
-    /// Type the channel reports for its barcode. Used for <see cref="ChannelProductBarcode"/> only:
+    /// Type the channel reports for its barcode. Used for
+    /// <see cref="Delobytes.App.Backend.Catalog.Domain.Entities.ChannelProductBarcode"/> only:
     /// canonical barcodes carry a symbology (<see cref="BarcodeTypes.Ean13"/>), not a channel code.
     /// </summary>
     /// <param name="card">Card of the channel.</param>

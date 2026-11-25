@@ -227,7 +227,7 @@ public class CreateProductWorkRateCommandHandlerTests
             r => r.SaveChangesAsync(It.IsAny<CancellationToken>()),
             Times.Never);
     }
-// ── Supersede-on-create ──────────────────────────────────────────────────────────────────
+    // ── Supersede-on-create ──────────────────────────────────────────────────────────────────
 
     private static ProductWorkRate BuildActiveRate(Guid productId, Guid workRateId, DateOnly validFrom)
         => new ProductWorkRate

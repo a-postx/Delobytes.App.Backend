@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Integrations.Application.Options;
+using Delobytes.App.Backend.Integrations.Application.Options;
 
 namespace Delobytes.App.Backend.Integrations.Application.Orders;
 

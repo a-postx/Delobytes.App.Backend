@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Models;
+namespace Delobytes.App.Backend.Integrations.Application.Models;
 
 /// <summary>
 /// Counters collected while a finance document is mapped. Every skipped row or fallback is visible

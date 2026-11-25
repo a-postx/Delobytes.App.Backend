@@ -55,6 +55,7 @@ internal static class OAuthHttp
     /// <summary>
     /// Calls a user-info endpoint with the given authorization scheme and returns the raw payload.
     /// </summary>
+    /// <typeparam name="TResponse">Shape the provider's user-info payload is read into.</typeparam>
     public static async Task<TResponse> GetUserInfoAsync<TResponse>(
         HttpClient httpClient,
         string userInfoEndpoint,

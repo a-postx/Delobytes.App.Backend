@@ -30,7 +30,9 @@ public static class PnlSkuLabeler
 
         foreach (T row in rows)
         {
-            if (row.ProductId.HasValue && skus.TryGetValue(row.ProductId.Value, out string sku))
+            if (row.ProductId.HasValue
+                && skus.TryGetValue(row.ProductId.Value, out string? sku)
+                && sku is not null)
             {
                 row.Sku = sku;
             }

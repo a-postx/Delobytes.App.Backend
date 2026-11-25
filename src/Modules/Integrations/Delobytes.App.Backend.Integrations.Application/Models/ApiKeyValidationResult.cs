@@ -7,11 +7,11 @@ public class ApiKeyValidationResult
 
     public static ApiKeyValidationResult Success()
     {
-        return new () { IsValid = true };
+        return new() { IsValid = true };
     }
 
     public static ApiKeyValidationResult Failure(string message)
     {
-        return new () { IsValid = false, ErrorMessage = message };
+        return new() { IsValid = false, ErrorMessage = message };
     }
 }

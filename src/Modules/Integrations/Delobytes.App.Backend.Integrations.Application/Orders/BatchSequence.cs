@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Application.Orders;
 
 /// <summary>
 /// The batch numbering of one run. Publishing takes a number from here, so the publisher never

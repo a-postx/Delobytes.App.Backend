@@ -1,4 +1,4 @@
-﻿using Delobytes.App.Backend.Sales.Domain.Entities;
+using Delobytes.App.Backend.Sales.Domain.Entities;
 
 namespace Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
 

@@ -166,8 +166,13 @@ public class GetConnectionsQueryHandlerTests
             ApiKey = "short",
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
-            SystemChannelTemplate = new SystemChannelTemplate { Code = "test", DisplayName = "Test",
-                ApiBaseUrl = "x", ApiVersion = "v1" },
+            SystemChannelTemplate = new SystemChannelTemplate
+            {
+                Code = "test",
+                DisplayName = "Test",
+                ApiBaseUrl = "x",
+                ApiVersion = "v1"
+            },
         };
 
         _connectionRepo

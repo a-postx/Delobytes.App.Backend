@@ -1,4 +1,4 @@
-﻿namespace Delobytes.App.Backend.Integrations.Application.Orders;
+namespace Delobytes.App.Backend.Integrations.Application.Orders;
 
 /// <summary>
 /// Why a fetch stopped before its window was read whole. The absence of a stop is expressed by
