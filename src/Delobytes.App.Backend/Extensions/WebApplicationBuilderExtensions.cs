@@ -164,19 +164,6 @@ internal static class WebApplicationBuilderExtensions
             IndexFormat = context.HostingEnvironment.IsProduction() ? "delobytes-logs-prod-{0:yyyy.MM.dd}" : "delobytes-logs-dev-{0:yyyy.MM.dd}",
             DeadLetterIndexName = context.HostingEnvironment.IsProduction() ? "delobytes-prod-deadletter-{0:yyyy.MM.dd}" : "delobytes-dev-deadletter-{0:yyyy.MM.dd}",
             CustomFormatter = new ExceptionAsObjectJsonFormatter(renderMessage: true, inlineFields: true),
-            BufferCleanPayload = (failingEvent, statuscode, exception) =>
-            {
-                dynamic e = Newtonsoft.Json.Linq.JObject.Parse(failingEvent);
-                return Newtonsoft.Json.JsonConvert.SerializeObject(new Dictionary<string, object>()
-                {
-                    { "@timestamp", e["@timestamp"] },
-                    { "level", "Error" },
-                    { "message", "Error: " + e.message },
-                    { "messageTemplate", e.messageTemplate },
-                    { "failingStatusCode", statuscode ?? 0 },
-                    { "failingException", exception },
-                });
-            },
         });
     }
 
