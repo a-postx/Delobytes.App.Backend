@@ -261,12 +261,44 @@ public class GetPnlSummaryQueryHandlerTests
         row.NetRevenueWithoutCostAmount.Should().Be(0m);
         row.RevenueWithoutCostAmount.Should().Be(0m);
         row.Margin.Should().Be(160m);
+        row.MarginFromSalesAmount.Should().Be(160m);
+        row.MarginWithoutSaleAmount.Should().BeNull();
         row.ContributionMarginPercent.Should().BeApproximately(160m / 180m * 100m, 0.0001m);
         row.ReturnOnSoldCostPercent.Should().BeApproximately(800m, 0.0001m);
         row.InvestedCostAmount.Should().Be(20m);
         row.LinesWithInvestedCost.Should().Be(2);
         row.IsRoiComplete.Should().BeTrue();
         row.RoiPercent.Should().BeApproximately(800m, 0.0001m);
+    }
+
+    [Fact]
+    public async Task GetSummary_SplitsTheMarginBetweenSoldAndUnsoldLines()
+    {
+        // A non-buyout never sold, so no cost of goods applies and its result is its net revenue:
+        // the delivery charge of an unsold unit lands in the margin of the group. Reported apart
+        // from the sales margin, it tells a negative total apart from a loss on the sales.
+        List<PnlLineRow> rows = new()
+        {
+            PnlTestData.Row(new DateOnly(2026, 8, 1), 1000m, 700m, 300m),
+            PnlTestData.Row(
+                saleDate: null,
+                revenue: null,
+                netRevenue: -50m,
+                cost: null,
+                periodDate: new DateOnly(2026, 8, 2),
+                deliveryFee: -50m),
+        };
+
+        PnlSummaryResponse response = await PnlTestData.SummaryHandler(rows).Handle(
+            new GetPnlSummaryQuery { Granularity = PnlPeriodGranularity.Month },
+            CancellationToken.None);
+
+        PnlSummaryRowView row = response.Rows.Should().ContainSingle().Subject;
+
+        row.Margin.Should().Be(350m);
+        row.MarginFromSalesAmount.Should().Be(400m);
+        row.MarginWithoutSaleAmount.Should().Be(-50m);
+        row.Margin.Should().Be(row.MarginFromSalesAmount + row.MarginWithoutSaleAmount);
     }
 
     [Fact]

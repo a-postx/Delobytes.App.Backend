@@ -99,6 +99,23 @@ public sealed class PnlSummaryRowView : IPnlSkuLabelTarget
     public decimal? Margin { get; set; }
 
     /// <summary>
+    /// Gets or sets the part of <see cref="Margin"/> earned by the lines that sold something: net
+    /// revenue minus the production cost of the sold units. Null when no such line of the group has
+    /// a known margin. Together with <see cref="MarginWithoutSaleAmount"/> it adds up to
+    /// <see cref="Margin"/>.
+    /// </summary>
+    public decimal? MarginFromSalesAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the part of <see cref="Margin"/> carried by the lines with no sale at all: a
+    /// non-buyout or a fully returned unit never leaves the seller, so no cost of goods applies and
+    /// the result of such a line is its net revenue, which is negative when only fees were charged.
+    /// Null when the group has no such line. Reported apart from <see cref="MarginFromSalesAmount"/>
+    /// so a negative total is never read as a loss on the sales themselves.
+    /// </summary>
+    public decimal? MarginWithoutSaleAmount { get; set; }
+
+    /// <summary>
     /// Gets or sets the margin net of the estimated tax: the sum over the lines that have both a
     /// known margin and a tax profile. Null when no line of the group has both.
     /// </summary>

@@ -21,6 +21,8 @@ public sealed class PnlSummaryGroup
     private decimal? _productionCost;
     private decimal? _estimatedTax;
     private decimal? _margin;
+    private decimal? _marginFromSales;
+    private decimal? _marginWithoutSale;
     private decimal? _taxAdjustedMargin;
     private decimal? _controlDifference;
     private decimal _revenueWithMargin;
@@ -143,6 +145,19 @@ public sealed class PnlSummaryGroup
         {
             _linesWithMargin++;
             _margin = Accumulate(_margin, view.Margin);
+
+            // A line that sold nothing carries no cost of goods, so its result is its net revenue.
+            // Kept apart from the sales margin: a group whose only covered lines are non-buyouts would
+            // otherwise report their delivery charges as a loss on the sales themselves.
+            if (view.QuantitySold > 0)
+            {
+                _marginFromSales = Accumulate(_marginFromSales, view.Margin);
+            }
+            else
+            {
+                _marginWithoutSale = Accumulate(_marginWithoutSale, view.Margin);
+            }
+
             _revenueWithMargin += view.RevenueAmount ?? 0m;
             _productionCostWithMargin += view.ProductionCostAmount ?? 0m;
             _netRevenueWithMargin += view.NetRevenueAmount ?? 0m;
@@ -239,6 +254,8 @@ public sealed class PnlSummaryGroup
             ProductionCostAmount = _productionCost,
             EstimatedTax = _estimatedTax,
             Margin = _margin,
+            MarginFromSalesAmount = _marginFromSales,
+            MarginWithoutSaleAmount = _marginWithoutSale,
             TaxAdjustedMargin = _taxAdjustedMargin,
             ContributionMarginPercent =
                 PnlTaxCalculator.ContributionMarginPercent(_margin, _netRevenueWithMargin),
