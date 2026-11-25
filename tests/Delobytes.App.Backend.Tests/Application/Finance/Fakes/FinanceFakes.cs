@@ -11,21 +11,6 @@ using Delobytes.App.Backend.Finance.Domain.Enums;
 
 namespace Delobytes.App.Backend.Tests.Application.Finance.Fakes;
 
-internal sealed class FixedTimeProvider : TimeProvider
-{
-    private readonly DateTimeOffset _now;
-
-    public FixedTimeProvider(DateTimeOffset now)
-    {
-        _now = now;
-    }
-
-    public override DateTimeOffset GetUtcNow()
-    {
-        return _now;
-    }
-}
-
 internal sealed class InMemoryPnlJournalStore : IPnlJournalStore
 {
     public List<PnlEntry> Entries { get; } = new List<PnlEntry>();
@@ -391,22 +376,5 @@ internal sealed class InMemoryPnlExpectationStore : IPnlExpectationStore
             .ToList();
 
         return Task.FromResult(result);
-    }
-}
-
-internal sealed class StubTenantContext : Delobytes.App.Backend.Contracts.Interfaces.ITenantContext
-{
-    public Guid? TenantId { get; init; } = Guid.Parse("22222222-2222-2222-2222-222222222222");
-}
-
-internal sealed class RecordingEventPublisher : Delobytes.App.Backend.Finance.Application.Interfaces.IEventPublisher
-{
-    public List<object> Events { get; } = new List<object>();
-
-    public Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken)
-        where TEvent : class
-    {
-        Events.Add(@event);
-        return Task.CompletedTask;
     }
 }

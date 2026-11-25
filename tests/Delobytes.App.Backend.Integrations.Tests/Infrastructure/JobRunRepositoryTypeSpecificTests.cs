@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -19,68 +20,15 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 /// </summary>
 public class JobRunRepositoryTypeSpecificTests
 {
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("jobrun-type-specific-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static Mock<ITenantContext> TenantMock(Guid tenantId)
-    {
-        Mock<ITenantContext> mock = new Mock<ITenantContext>();
-        mock.Setup(t => t.TenantId).Returns(tenantId);
-        return mock;
-    }
-
-    private static SystemChannelTemplate BuildTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static Connection BuildConnection(Guid templateId)
-    {
-        return new Connection
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = Guid.NewGuid(),
-            SystemChannelTemplateId = templateId,
-            Name = "Test connection",
-            ApiKey = "test-key",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static JobRun BuildJobRun(Guid connectionId, JobType jobType)
-    {
-        return new JobRun
-        {
-            Id = Guid.NewGuid(),
-            ConnectionId = connectionId,
-            JobType = jobType,
-            Status = JobStatus.Pending,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
 
     [Fact]
     public async Task CreateProductsImportJobAsync_PersistsRow_LinkedToJobRun()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
-        JobRun jobRun = BuildJobRun(connection.Id, JobType.ProductsImport);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-type-specific");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
+        JobRun jobRun = IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
@@ -113,8 +61,8 @@ public class JobRunRepositoryTypeSpecificTests
     [Fact]
     public async Task GetProductsImportJobAsync_ReturnsNull_WhenNoRowExists()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-type-specific");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
 
         using IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object);
         JobRunRepository repository = new JobRunRepository(ctx);

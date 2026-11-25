@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Finance.Application.Queries;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Xunit;
 

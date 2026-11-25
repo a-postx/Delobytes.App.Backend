@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -24,33 +25,6 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 /// </summary>
 public class IntegrationsDbContextNoTenantGuardTests
 {
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("no-tenant-guard-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static Mock<ITenantContext> TenantMock(Guid? tenantId)
-    {
-        Mock<ITenantContext> mock = new Mock<ITenantContext>();
-        mock.Setup(t => t.TenantId).Returns(tenantId);
-        return mock;
-    }
-
-    private static SystemChannelTemplate BuildTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
 
     private static Connection BuildActiveConnection(Guid channelId)
     {
@@ -73,10 +47,10 @@ public class IntegrationsDbContextNoTenantGuardTests
     [Fact]
     public async Task SaveChangesAsync_AddingTenantScopedEntity_WithNoTenant_Throws()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> noTenantMock = TenantMock(null);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("no-tenant-guard");
+        Mock<ITenantContext> noTenantMock = IntegrationsTestData.Tenant(null);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
         using IntegrationsDbContext ctx = new IntegrationsDbContext(options, noTenantMock.Object);
         ctx.SystemChannelTemplates.Add(template); // not tenant-scoped: must not interfere
@@ -95,10 +69,10 @@ public class IntegrationsDbContextNoTenantGuardTests
     [Fact]
     public async Task SaveChangesAsync_AddingTenantScopedEntity_WithNoTenant_PersistsNothing()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> noTenantMock = TenantMock(null);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("no-tenant-guard");
+        Mock<ITenantContext> noTenantMock = IntegrationsTestData.Tenant(null);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         Connection orphanCandidate = BuildActiveConnection(template.Id);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, noTenantMock.Object))
@@ -110,7 +84,7 @@ public class IntegrationsDbContextNoTenantGuardTests
         }
 
         // Fresh context, real tenant, bypassing filters entirely: the row must be absent.
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             bool exists = await ctx.Connections
@@ -129,10 +103,10 @@ public class IntegrationsDbContextNoTenantGuardTests
     [Fact]
     public async Task SaveChangesAsync_AddingNonTenantScopedEntity_WithNoTenant_Succeeds()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> noTenantMock = TenantMock(null);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("no-tenant-guard");
+        Mock<ITenantContext> noTenantMock = IntegrationsTestData.Tenant(null);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
         using IntegrationsDbContext ctx = new IntegrationsDbContext(options, noTenantMock.Object);
         ctx.SystemChannelTemplates.Add(template);
@@ -148,11 +122,11 @@ public class IntegrationsDbContextNoTenantGuardTests
     [Fact]
     public async Task SaveChangesAsync_AddingTenantScopedEntity_WithTenant_StillWorks()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("no-tenant-guard");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         Connection connection = BuildActiveConnection(template.Id);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))

@@ -48,35 +48,11 @@ public class ProductBatchImporterTests
     public async Task ProcessAsync_CreatesNewProduct_WhenNoMatchExists()
     {
         // Arrange
-        string databaseName = Guid.NewGuid().ToString();
-        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
-        await CreateChannelAsync(setupContext, _tenantId);
+        (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
+            await CreateScenarioAsync(_tenantId);
+                ChannelProductCard card = BuildCard();
 
-        // Use fresh context for consumer to properly apply query filters
-        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
-
-        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
-
-        ChannelProductCard card = new ChannelProductCard
-        {
-            ExternalProductId = "123456789",
-            ChannelCode = ChannelCodes.Wildberries,
-            BarcodeType = ChannelCodes.Wildberries,
-            Name = "Test Product",
-            OfferId = "SKU-001",
-            Barcodes = new List<string> { "1234567890123" },
-            Description = "Test Description"
-        };
-
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -122,15 +98,8 @@ public class ProductBatchImporterTests
     public async Task ProcessAsync_CreatesCanonicalAndChannelPackingUnit_WhenCardHasDimensions()
     {
         // Arrange
-        string databaseName = Guid.NewGuid().ToString();
-        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
-        await CreateChannelAsync(setupContext, _tenantId);
-
-        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
-
-        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
-
+        (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
+            await CreateScenarioAsync(_tenantId);
         ChannelProductCard card = new ChannelProductCard
         {
             ExternalProductId = "123456789",
@@ -146,14 +115,7 @@ public class ProductBatchImporterTests
             WeightKg = 0.5m
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -186,34 +148,11 @@ public class ProductBatchImporterTests
     public async Task ProcessAsync_DoesNotCreatePackingUnit_WhenCardHasNoDimensions()
     {
         // Arrange
-        string databaseName = Guid.NewGuid().ToString();
-        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
-        await CreateChannelAsync(setupContext, _tenantId);
+        (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
+            await CreateScenarioAsync(_tenantId);
+                ChannelProductCard card = BuildCard();
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
-
-        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
-
-        ChannelProductCard card = new ChannelProductCard
-        {
-            ExternalProductId = "123456789",
-            ChannelCode = ChannelCodes.Wildberries,
-            BarcodeType = ChannelCodes.Wildberries,
-            Name = "Test Product",
-            OfferId = "SKU-001",
-            Barcodes = new List<string> { "1234567890123" },
-            Description = "Test Description"
-        };
-
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -297,14 +236,7 @@ public class ProductBatchImporterTests
             WeightKg = 1.2m
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -392,14 +324,7 @@ public class ProductBatchImporterTests
             Description = "Updated Description"
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -434,13 +359,8 @@ public class ProductBatchImporterTests
     {
         // The verdict reads the channel snapshot, so an identical card must report no change. Before
         // the volatile members left the snapshot this branch was unreachable for Wildberries.
-        string databaseName = Guid.NewGuid().ToString();
-        await CreateChannelAsync(BuildCatalogDbContext(_tenantId, databaseName), _tenantId);
-
-        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
-        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
-
+        (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
+            await CreateScenarioAsync(_tenantId);
         ChannelProductCard card = BuildCardWithSnapshot("{\"brand\":\"Brand\",\"photos\":[]}");
 
         await importer.ImportAsync(BuildMessage(card), CancellationToken.None);
@@ -460,13 +380,8 @@ public class ProductBatchImporterTests
     [Fact]
     public async Task ProcessAsync_ChangedChannelSpecificData_IsReportedAsUpdated()
     {
-        string databaseName = Guid.NewGuid().ToString();
-        await CreateChannelAsync(BuildCatalogDbContext(_tenantId, databaseName), _tenantId);
-
-        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
-        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
-
+        (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
+            await CreateScenarioAsync(_tenantId);
         await importer.ImportAsync(
             BuildMessage(BuildCardWithSnapshot("{\"brand\":\"Brand\",\"photos\":[]}")),
             CancellationToken.None);
@@ -521,34 +436,11 @@ public class ProductBatchImporterTests
     public async Task ProcessAsync_IsIdempotent_WhenBatchReprocessed()
     {
         // Arrange
-        string databaseName = Guid.NewGuid().ToString();
-        CatalogDbContext setupContext = BuildCatalogDbContext(_tenantId, databaseName);
-        await CreateChannelAsync(setupContext, _tenantId);
+        (ProductBatchImporter importer, CatalogDbContext consumerContext, Mock<IPublishEndpoint> publishEndpointMock, string databaseName) =
+            await CreateScenarioAsync(_tenantId);
+                ChannelProductCard card = BuildCard();
 
-        CatalogDbContext consumerContext = BuildCatalogDbContext(_tenantId, databaseName);
-
-        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
-        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
-
-        ChannelProductCard card = new ChannelProductCard
-        {
-            ExternalProductId = "123456789",
-            ChannelCode = ChannelCodes.Wildberries,
-            BarcodeType = ChannelCodes.Wildberries,
-            Name = "Test Product",
-            OfferId = "SKU-001",
-            Barcodes = new List<string> { "1234567890123" },
-            Description = "Test Description"
-        };
-
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act - Process the same batch twice
         await importer.ImportAsync(message, CancellationToken.None);
@@ -624,14 +516,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1234567890123" }
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -706,14 +591,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "9876543210987", "1111111111111" }
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -793,14 +671,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string>()
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -888,14 +759,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1111111111111", "2222222222222" }
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -987,23 +851,9 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1234567890123" }
         };
 
-        ProductBatchImportRequestedEvent messageTenant1 = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+        ProductBatchImportRequestedEvent messageTenant1 = BuildMessage(card);
 
-        ProductBatchImportRequestedEvent messageTenant2 = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+        ProductBatchImportRequestedEvent messageTenant2 = BuildMessage(card);
 
         // Act
         await importerTenant1.ImportAsync(messageTenant1, CancellationToken.None);
@@ -1038,14 +888,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string>()
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1111,14 +954,7 @@ public class ProductBatchImporterTests
             Description = "Updated Description"
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1204,14 +1040,7 @@ public class ProductBatchImporterTests
             },
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = true,
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1290,14 +1119,7 @@ public class ProductBatchImporterTests
             },
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false,
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1359,14 +1181,7 @@ public class ProductBatchImporterTests
 
         ChannelProductCard card = BuildCardWithPhotos();
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = true
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1416,25 +1231,9 @@ public class ProductBatchImporterTests
 
         ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object, photoServiceMock);
 
-        ChannelProductCard card = new ChannelProductCard
-        {
-            ExternalProductId = "123456789",
-            ChannelCode = ChannelCodes.Wildberries,
-            BarcodeType = ChannelCodes.Wildberries,
-            Name = "Test Product",
-            OfferId = "SKU-001",
-            Barcodes = new List<string> { "1234567890123" },
-            Description = "Test Description"
-        };
+                ChannelProductCard card = BuildCard();
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1532,14 +1331,7 @@ public class ProductBatchImporterTests
             Barcodes = new List<string> { "1234567890123" },
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = true,
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -1651,14 +1443,7 @@ public class ProductBatchImporterTests
             },
         };
 
-        ProductBatchImportRequestedEvent message = new ProductBatchImportRequestedEvent
-        {
-            JobRunId = _syncJobId,
-            ConnectionId = _connectionId,
-            ChannelId = _channelId,
-            Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = true,
-        };
+                ProductBatchImportRequestedEvent message = BuildMessage(card, isLastBatch: true);
 
         // Act
         await importer.ImportAsync(message, CancellationToken.None);
@@ -2452,7 +2237,15 @@ public class ProductBatchImporterTests
         return BuildMessage(card, _channelId);
     }
 
-    private ProductBatchImportRequestedEvent BuildMessage(ChannelProductCard card, Guid channelId)
+    private ProductBatchImportRequestedEvent BuildMessage(ChannelProductCard card, bool isLastBatch)
+    {
+        return BuildMessage(card, _channelId, isLastBatch);
+    }
+
+    private ProductBatchImportRequestedEvent BuildMessage(
+        ChannelProductCard card,
+        Guid channelId,
+        bool isLastBatch = false)
     {
         return new ProductBatchImportRequestedEvent
         {
@@ -2460,7 +2253,21 @@ public class ProductBatchImporterTests
             ConnectionId = _connectionId,
             ChannelId = channelId,
             Cards = new List<ChannelProductCard> { card },
-            IsLastBatch = false
+            IsLastBatch = isLastBatch
+        };
+    }
+
+    private static ChannelProductCard BuildCard()
+    {
+        return new ChannelProductCard
+        {
+            ExternalProductId = "123456789",
+            ChannelCode = ChannelCodes.Wildberries,
+            BarcodeType = ChannelCodes.Wildberries,
+            Name = "Test Product",
+            OfferId = "SKU-001",
+            Barcodes = new List<string> { "1234567890123" },
+            Description = "Test Description"
         };
     }
 
@@ -2508,6 +2315,17 @@ public class ProductBatchImporterTests
         };
     }
 
+    private async Task<(ProductBatchImporter Importer, CatalogDbContext Context, Mock<IPublishEndpoint> PublishEndpoint, string DatabaseName)> CreateScenarioAsync(Guid tenantId)
+    {
+        string databaseName = Guid.NewGuid().ToString();
+        await CreateChannelAsync(BuildCatalogDbContext(tenantId, databaseName), tenantId);
+
+        CatalogDbContext consumerContext = BuildCatalogDbContext(tenantId, databaseName);
+        Mock<IPublishEndpoint> publishEndpointMock = new Mock<IPublishEndpoint>();
+        ProductBatchImporter importer = BuildImporter(consumerContext, publishEndpointMock.Object);
+
+        return (importer, consumerContext, publishEndpointMock, databaseName);
+    }
     private ProductBatchImporter BuildImporter(CatalogDbContext context, IPublishEndpoint publishEndpoint)
     {
         return BuildImporter(context, publishEndpoint, BuildPhotoServiceMock());

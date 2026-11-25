@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -8,6 +8,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -21,47 +22,6 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 /// </summary>
 public class JobScheduleRepositoryTests
 {
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("job-schedule-repo-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static Mock<ITenantContext> TenantMock(Guid tenantId)
-    {
-        Mock<ITenantContext> mock = new Mock<ITenantContext>();
-        mock.Setup(t => t.TenantId).Returns(tenantId);
-        return mock;
-    }
-
-    private static SystemChannelTemplate BuildTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static Connection BuildConnection(Guid templateId)
-    {
-        return new Connection
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = Guid.NewGuid(),
-            SystemChannelTemplateId = templateId,
-            Name = "Test connection",
-            ApiKey = "test-key",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
 
     private static JobSchedule BuildSchedule(
         Guid connectionId,
@@ -91,7 +51,7 @@ public class JobScheduleRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
         }
 
-        Connection connection = BuildConnection(template.Id);
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         ctx.Connections.Add(connection);
         await ctx.SaveChangesAsync();
         return connection;
@@ -100,10 +60,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task GetDueSchedulesAsync_ReturnsOnlyEnabledSchedulesThatAreDue()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         Guid dueId;
@@ -150,10 +110,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task GetDueSchedulesAsync_WhenNextRunAtEqualsNow_IsTreatedAsDue()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
@@ -176,12 +136,12 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task GetDueSchedulesAsync_ReturnsDueSchedulesAcrossAllTenants()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
@@ -214,10 +174,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task UpdateAsync_PersistsAdvancedLastRunAtAndNextRunAt()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset now = DateTimeOffset.UtcNow;
         Guid scheduleId;
 
@@ -257,10 +217,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task SaveChanges_StampsTenantId_OnNewlyAddedSchedule()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         Guid scheduleId;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
@@ -290,10 +250,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task GetScheduledJobTypesAsync_ReturnsOnlyTheJobTypesOfThatConnection()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
 
         Guid targetConnectionId;
@@ -325,12 +285,12 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task GetScheduledJobTypesAsync_DoesNotSeeSchedulesOfAnotherTenant()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
 
         Guid foreignConnectionId;
@@ -362,10 +322,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task AddMissingAsync_CreatesOnlyTheMissingJobTypes()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow;
 
         Guid connectionId;
@@ -408,10 +368,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task AddMissingAsync_PersistsSchedulesStampedWithTheAmbientTenant()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow;
 
         Guid connectionId;
@@ -450,10 +410,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task AddMissingAsync_WhenEveryJobTypeAlreadyExists_CreatesNothing()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow;
 
         Guid connectionId;
@@ -492,10 +452,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task DisableForConnectionAsync_DisablesOnlyTheEnabledSchedulesOfThatConnection()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
 
         Guid targetConnectionId;
@@ -541,10 +501,10 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task DisableForConnectionAsync_WhenConnectionHasNoSchedules_ReturnsZero()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
         Guid connectionId;
 
@@ -567,12 +527,12 @@ public class JobScheduleRepositoryTests
     [Fact]
     public async Task DisableForConnectionAsync_DoesNotTouchSchedulesOfAnotherTenant()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-schedule-repo");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         DateTimeOffset nextRunAt = DateTimeOffset.UtcNow.AddHours(1);
 
         Guid foreignConnectionId;
@@ -607,7 +567,7 @@ public class JobScheduleRepositoryTests
     /// </summary>
     private static Connection SeedConnectionWithoutTemplate(IntegrationsDbContext ctx, SystemChannelTemplate template)
     {
-        Connection connection = BuildConnection(template.Id);
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         ctx.Connections.Add(connection);
         return connection;
     }

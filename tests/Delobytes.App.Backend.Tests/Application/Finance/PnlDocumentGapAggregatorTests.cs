@@ -10,6 +10,7 @@ using Delobytes.App.Backend.Finance.Application.ProductTable;
 using Delobytes.App.Backend.Finance.Application.Queries;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Enums;
+using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -158,7 +159,7 @@ public class PnlDocumentGapAggregatorTests
         PnlLineFilter filter = new();
 
         return await PnlDocumentGapAggregator.AggregateAsync(
-            new FakeStore(rows),
+            new PnlReadStoreFake(rows),
             provider.Object,
             TenantId,
             "RUB",
@@ -192,58 +193,5 @@ public class PnlDocumentGapAggregatorTests
             ExpectedBy = expectedBy,
             ControlDifferenceAmount = 0m,
         };
-    }
-
-    private sealed class FakeStore : IPnlReadStore
-    {
-        private readonly IReadOnlyList<PnlLineRow> _rows;
-
-        public FakeStore(IReadOnlyList<PnlLineRow> rows)
-        {
-            _rows = rows;
-        }
-
-        public Task<PnlLinePage> GetLinesAsync(
-            string currency,
-            PnlLineFilter filter,
-            PnlLineSort sort,
-            int take,
-            PnlLineCursor? after,
-            CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<IReadOnlyList<PnlCurrencyExclusion>> GetCurrencyExclusionsAsync(
-            string currency,
-            PnlLineFilter filter,
-            CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
-
-        public async IAsyncEnumerable<PnlLineRow> StreamForSummaryAsync(
-            string currency,
-            PnlLineFilter filter,
-            CancellationToken cancellationToken)
-        {
-            foreach (PnlLineRow row in _rows)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return row;
-            }
-
-            await Task.CompletedTask;
-        }
-
-        public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
-            string currency,
-            Guid? channelId,
-            DateOnly from,
-            DateOnly to,
-            CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
     }
 }

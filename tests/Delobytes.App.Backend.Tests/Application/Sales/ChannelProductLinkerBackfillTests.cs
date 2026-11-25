@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -11,6 +11,7 @@ using Delobytes.App.Backend.Sales.Contracts.Events;
 using Delobytes.App.Backend.Sales.Domain.Entities;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence;
 using Delobytes.App.Backend.Sales.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -84,7 +85,7 @@ public class ChannelProductLinkerBackfillTests
         context.Orders.Add(order);
         await context.SaveChangesAsync();
 
-        RecordingPublisher publisher = new RecordingPublisher();
+        RecordingSalesEventPublisher publisher = new RecordingSalesEventPublisher();
 
         ChannelProductLinker linker = new ChannelProductLinker(
             new ChannelProductRefRepository(context),
@@ -114,18 +115,6 @@ public class ChannelProductLinkerBackfillTests
         published.Lines[0].ChannelProductId.Should().Be(ChannelProductId);
         published.Lines[0].CostRelevantChange.Should().BeTrue();
         published.Lines[0].IsNew.Should().BeFalse();
-    }
-
-    private sealed class RecordingPublisher : Delobytes.App.Backend.Sales.Application.Interfaces.IEventPublisher
-    {
-        public List<object> Events { get; } = new List<object>();
-
-        public Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken)
-            where TEvent : class
-        {
-            Events.Add(@event);
-            return Task.CompletedTask;
-        }
     }
 }
 

@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Contracts.Errors;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
 
@@ -146,17 +147,5 @@ public class ChangePasswordCommandHandlerTests
         exception.Code.Should().Be(ErrorCodes.Common.ValidationFailed);
         _passwordHasher.Verify(h => h.Verify(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    private sealed class FixedTimeProvider : TimeProvider
-    {
-        private readonly DateTimeOffset _utcNow;
-
-        public FixedTimeProvider(DateTimeOffset utcNow)
-        {
-            _utcNow = utcNow;
-        }
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
     }
 }

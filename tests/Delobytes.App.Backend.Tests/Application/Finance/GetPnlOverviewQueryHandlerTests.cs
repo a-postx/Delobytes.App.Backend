@@ -8,6 +8,7 @@ using Delobytes.App.Backend.Finance.Application.Interfaces;
 using Delobytes.App.Backend.Finance.Application.Queries;
 using Delobytes.App.Backend.Finance.Application.ReadModels;
 using Delobytes.App.Backend.Finance.Domain.Enums;
+using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -28,7 +29,7 @@ public class GetPnlOverviewQueryHandlerTests
     [Fact]
     public async Task GetOverview_ReportsEveryDimensionFromOneFold()
     {
-        FakeStore store = new FakeStore(BuildRows());
+        PnlReadStoreFake store = new PnlReadStoreFake(BuildRows()) { AppliesPeriodFilter = true };
 
         PnlOverviewResponse response = await BuildHandler(store).Handle(
             new GetPnlOverviewQuery { Filter = BuildFilter() },
@@ -51,7 +52,7 @@ public class GetPnlOverviewQueryHandlerTests
     [Fact]
     public async Task GetOverview_ComparisonRange_IsASecondFoldOfItsOwn()
     {
-        FakeStore store = new FakeStore(BuildRows());
+        PnlReadStoreFake store = new PnlReadStoreFake(BuildRows()) { AppliesPeriodFilter = true };
 
         await BuildHandler(store).Handle(
             new GetPnlOverviewQuery
@@ -70,7 +71,7 @@ public class GetPnlOverviewQueryHandlerTests
     [Fact]
     public async Task GetOverview_Attention_CountsOnlyThePopulationsTheTotalsHold()
     {
-        FakeStore store = new FakeStore(BuildRows());
+        PnlReadStoreFake store = new PnlReadStoreFake(BuildRows()) { AppliesPeriodFilter = true };
 
         PnlOverviewResponse response = await BuildHandler(store).Handle(
             new GetPnlOverviewQuery { Filter = BuildFilter() },
@@ -112,7 +113,7 @@ public class GetPnlOverviewQueryHandlerTests
             Row(new DateOnly(2026, 8, 6), revenue: 9000m, netRevenue: 8000m, cost: null, ChannelOne),
         };
 
-        PnlOverviewResponse response = await BuildHandler(new FakeStore(rows)).Handle(
+        PnlOverviewResponse response = await BuildHandler(new PnlReadStoreFake(rows) { AppliesPeriodFilter = true }).Handle(
             new GetPnlOverviewQuery
             {
                 Filter = BuildFilter(),
@@ -137,7 +138,7 @@ public class GetPnlOverviewQueryHandlerTests
             Row(new DateOnly(2026, 8, 1), revenue: 700m, netRevenue: 600m, cost: 400m, ChannelOne),
         };
 
-        PnlOverviewResponse response = await BuildHandler(new FakeStore(rows)).Handle(
+        PnlOverviewResponse response = await BuildHandler(new PnlReadStoreFake(rows) { AppliesPeriodFilter = true }).Handle(
             new GetPnlOverviewQuery { Filter = BuildFilter() },
             CancellationToken.None);
 
@@ -165,7 +166,7 @@ public class GetPnlOverviewQueryHandlerTests
                 returnedQuantity: 1),
         };
 
-        PnlOverviewResponse response = await BuildHandler(new FakeStore(rows)).Handle(
+        PnlOverviewResponse response = await BuildHandler(new PnlReadStoreFake(rows) { AppliesPeriodFilter = true }).Handle(
             new GetPnlOverviewQuery { Filter = BuildFilter() },
             CancellationToken.None);
 
@@ -179,7 +180,7 @@ public class GetPnlOverviewQueryHandlerTests
         buyout.DeltaPercent.Should().BeNull();
     }
 
-    private static GetPnlOverviewQueryHandler BuildHandler(FakeStore store)
+    private static GetPnlOverviewQueryHandler BuildHandler(PnlReadStoreFake store)
     {
         return new GetPnlOverviewQueryHandler(
             store,
@@ -277,81 +278,5 @@ public class GetPnlOverviewQueryHandlerTests
             .ReturnsAsync(new List<TenantTaxProfileSnapshot>());
 
         return provider;
-    }
-
-    private sealed class FakeStore : IPnlReadStore
-    {
-        private readonly IReadOnlyList<PnlLineRow> _rows;
-
-        public FakeStore(IReadOnlyList<PnlLineRow> rows)
-        {
-            _rows = rows;
-        }
-
-        public int StreamCount { get; private set; }
-
-        public PnlLineFilter? LastFilter { get; private set; }
-
-        public Task<PnlLinePage> GetLinesAsync(
-            string currency,
-            PnlLineFilter filter,
-            PnlLineSort sort,
-            int take,
-            PnlLineCursor? after,
-            CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException("The overview reads the summary stream only.");
-        }
-
-        public Task<IReadOnlyList<PnlCurrencyExclusion>> GetCurrencyExclusionsAsync(
-            string currency,
-            PnlLineFilter filter,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult<IReadOnlyList<PnlCurrencyExclusion>>(Array.Empty<PnlCurrencyExclusion>());
-        }
-
-        public async IAsyncEnumerable<PnlLineRow> StreamForSummaryAsync(
-            string currency,
-            PnlLineFilter filter,
-            CancellationToken cancellationToken)
-        {
-            LastFilter = filter;
-            StreamCount++;
-
-            // The read store applies the period itself, so the fake must too: otherwise a handler
-            // could fold a range it never asked for and the test would not notice.
-            IEnumerable<PnlLineRow> selected = _rows;
-
-            if (filter.From.HasValue)
-            {
-                selected = selected.Where(row =>
-                    row.PeriodDate.HasValue && row.PeriodDate.Value >= filter.From.Value);
-            }
-
-            if (filter.To.HasValue)
-            {
-                selected = selected.Where(row =>
-                    row.PeriodDate.HasValue && row.PeriodDate.Value <= filter.To.Value);
-            }
-
-            foreach (PnlLineRow row in selected)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return row;
-            }
-
-            await Task.CompletedTask;
-        }
-
-        public Task<PnlDiagnosticsResult> GetDiagnosticsAsync(
-            string currency,
-            Guid? channelId,
-            DateOnly from,
-            DateOnly to,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new PnlDiagnosticsResult());
-        }
     }
 }

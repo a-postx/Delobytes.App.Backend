@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -20,68 +21,15 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 /// </summary>
 public partial class JobRunRepositoryTests
 {
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("jobrun-repo-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static Mock<ITenantContext> TenantMock(Guid tenantId)
-    {
-        Mock<ITenantContext> mock = new Mock<ITenantContext>();
-        mock.Setup(t => t.TenantId).Returns(tenantId);
-        return mock;
-    }
-
-    private static SystemChannelTemplate BuildTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static Connection BuildConnection(Guid templateId)
-    {
-        return new Connection
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = Guid.NewGuid(),
-            SystemChannelTemplateId = templateId,
-            Name = "Test connection",
-            ApiKey = "test-key",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static JobRun BuildJobRun(Guid connectionId, JobType jobType, JobStatus status, DateTimeOffset createdAt)
-    {
-        return new JobRun
-        {
-            Id = Guid.NewGuid(),
-            ConnectionId = connectionId,
-            JobType = jobType,
-            Status = status,
-            CreatedAt = createdAt,
-        };
-    }
 
     [Fact]
     public async Task CreateAsync_PersistsJobRun_AndReturnsIt()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
@@ -95,7 +43,7 @@ public partial class JobRunRepositoryTests
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             JobRunRepository repository = new JobRunRepository(ctx);
-            JobRun jobRun = BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, DateTimeOffset.UtcNow);
+            JobRun jobRun = IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, DateTimeOffset.UtcNow);
 
             JobRun created = await repository.CreateAsync(jobRun, CancellationToken.None);
 
@@ -117,19 +65,19 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task HasActiveJobAsync_ReturnsTrue_ForPendingOrRunning_AndFalse_ForTerminalStatuses()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connectionWithActiveJob = BuildConnection(template.Id);
-        Connection connectionWithTerminalJob = BuildConnection(template.Id);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connectionWithActiveJob = IntegrationsTestData.Connection(template.Id);
+        Connection connectionWithTerminalJob = IntegrationsTestData.Connection(template.Id);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.AddRange(connectionWithActiveJob, connectionWithTerminalJob);
-            ctx.JobRuns.Add(BuildJobRun(connectionWithActiveJob.Id, JobType.ProductsImport, JobStatus.Running, DateTimeOffset.UtcNow));
-            ctx.JobRuns.Add(BuildJobRun(connectionWithTerminalJob.Id, JobType.ProductsImport, JobStatus.Success, DateTimeOffset.UtcNow));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionWithActiveJob.Id, JobType.ProductsImport, JobStatus.Running, DateTimeOffset.UtcNow));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionWithTerminalJob.Id, JobType.ProductsImport, JobStatus.Success, DateTimeOffset.UtcNow));
             await ctx.SaveChangesAsync();
         }
 
@@ -148,16 +96,16 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPendingJobsAsync_ReturnsOnlyPendingJobs_ForGivenTenant_OrderedByCreatedAt_RespectingLimit()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
-        Connection connectionA = BuildConnection(template.Id);
-        Connection connectionA2 = BuildConnection(template.Id);
-        Connection connectionB = BuildConnection(template.Id);
+        Connection connectionA = IntegrationsTestData.Connection(template.Id);
+        Connection connectionA2 = IntegrationsTestData.Connection(template.Id);
+        Connection connectionB = IntegrationsTestData.Connection(template.Id);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
@@ -166,11 +114,11 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.AddRange(connectionA, connectionA2);
             // Older Pending job for tenant A, created first.
-            ctx.JobRuns.Add(BuildJobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-10)));
             // Newer Pending job for tenant A.
-            ctx.JobRuns.Add(BuildJobRun(connectionA2.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-5)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionA2.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-5)));
             // Running job for tenant A must be excluded.
-            ctx.JobRuns.Add(BuildJobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Running, now.AddMinutes(-1)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Running, now.AddMinutes(-1)));
             await ctx.SaveChangesAsync();
         }
 
@@ -178,7 +126,7 @@ public partial class JobRunRepositoryTests
         {
             ctx.Connections.Add(connectionB);
             // Pending job for tenant B must never leak into tenant A's results.
-            ctx.JobRuns.Add(BuildJobRun(connectionB.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-20)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionB.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-20)));
             await ctx.SaveChangesAsync();
         }
 
@@ -201,15 +149,15 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetRunningJobsOlderThanAsync_ReturnsStuckJobs_AcrossAllTenants_IgnoringQueryFilter()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
-        Connection connectionA = BuildConnection(template.Id);
-        Connection connectionB = BuildConnection(template.Id);
+        Connection connectionA = IntegrationsTestData.Connection(template.Id);
+        Connection connectionB = IntegrationsTestData.Connection(template.Id);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset threshold = now.AddHours(-1);
@@ -219,12 +167,12 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connectionA);
             // Stuck job for tenant A: started well before the threshold.
-            JobRun stuckJob = BuildJobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Running, now.AddHours(-3));
+            JobRun stuckJob = IntegrationsTestData.JobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Running, now.AddHours(-3));
             stuckJob.StartedAt = now.AddHours(-3);
             ctx.JobRuns.Add(stuckJob);
 
             // Fresh Running job, still within timeout, must be excluded.
-            JobRun freshJob = BuildJobRun(connectionA.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, now.AddMinutes(-5));
+            JobRun freshJob = IntegrationsTestData.JobRun(connectionA.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, now.AddMinutes(-5));
             freshJob.StartedAt = now.AddMinutes(-5);
             ctx.JobRuns.Add(freshJob);
 
@@ -235,7 +183,7 @@ public partial class JobRunRepositoryTests
         {
             ctx.Connections.Add(connectionB);
             // Stuck job belonging to a different tenant must still be found by the watchdog.
-            JobRun stuckJobTenantB = BuildJobRun(connectionB.Id, JobType.ProductsImport, JobStatus.Running, now.AddHours(-2));
+            JobRun stuckJobTenantB = IntegrationsTestData.JobRun(connectionB.Id, JobType.ProductsImport, JobStatus.Running, now.AddHours(-2));
             stuckJobTenantB.StartedAt = now.AddHours(-2);
             ctx.JobRuns.Add(stuckJobTenantB);
 
@@ -257,15 +205,15 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPendingJobsOlderThanAsync_ReturnsOnlyStalePendingJobs_AcrossAllTenants()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
-        SystemChannelTemplate template = BuildTemplate();
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
-        Connection connectionA = BuildConnection(template.Id);
-        Connection connectionB = BuildConnection(template.Id);
+        Connection connectionA = IntegrationsTestData.Connection(template.Id);
+        Connection connectionB = IntegrationsTestData.Connection(template.Id);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset createdBefore = now.AddMinutes(-120);
@@ -278,17 +226,17 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connectionA);
 
-            JobRun staleJob = BuildJobRun(connectionA.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-11));
+            JobRun staleJob = IntegrationsTestData.JobRun(connectionA.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-11));
             ctx.JobRuns.Add(staleJob);
 
-            JobRun freshJob = BuildJobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-10));
+            JobRun freshJob = IntegrationsTestData.JobRun(connectionA.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-10));
             ctx.JobRuns.Add(freshJob);
 
-            JobRun runningJob = BuildJobRun(connectionA.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, now.AddHours(-11));
+            JobRun runningJob = IntegrationsTestData.JobRun(connectionA.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, now.AddHours(-11));
             runningJob.StartedAt = now.AddHours(-11);
             ctx.JobRuns.Add(runningJob);
 
-            ctx.JobRuns.Add(BuildJobRun(connectionA.Id, JobType.WbFinanceReportImport, JobStatus.Success, now.AddHours(-11)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionA.Id, JobType.WbFinanceReportImport, JobStatus.Success, now.AddHours(-11)));
 
             await ctx.SaveChangesAsync();
 
@@ -300,7 +248,7 @@ public partial class JobRunRepositoryTests
         {
             ctx.Connections.Add(connectionB);
             // A never-dispatched Pending row of another tenant is the case the watchdog exists for.
-            ctx.JobRuns.Add(BuildJobRun(connectionB.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-12)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connectionB.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-12)));
             await ctx.SaveChangesAsync();
         }
 
@@ -324,11 +272,11 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPendingJobsOlderThanAsync_SkipsRowsDeferredToTheFuture_ButReturnsExpiredDeferrals()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset createdBefore = now.AddMinutes(-120);
@@ -341,11 +289,11 @@ public partial class JobRunRepositoryTests
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
 
-            JobRun deferredJob = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-5));
+            JobRun deferredJob = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-5));
             deferredJob.NotBefore = now.AddMinutes(30);
             ctx.JobRuns.Add(deferredJob);
 
-            JobRun expiredDeferralJob = BuildJobRun(connection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-5));
+            JobRun expiredDeferralJob = IntegrationsTestData.JobRun(connection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-5));
             expiredDeferralJob.NotBefore = now.AddHours(-3);
             ctx.JobRuns.Add(expiredDeferralJob);
 
@@ -376,12 +324,12 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPendingJobsOlderThanAsync_MeasuresTheWaitingPeriodFromTheDeferral_NotFromCreation()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
-        Connection resumedConnection = BuildConnection(template.Id);
-        Connection abandonedConnection = BuildConnection(template.Id);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection resumedConnection = IntegrationsTestData.Connection(template.Id);
+        Connection abandonedConnection = IntegrationsTestData.Connection(template.Id);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset createdBefore = now.AddMinutes(-120);
@@ -397,13 +345,13 @@ public partial class JobRunRepositoryTests
 
             // Parked by the rate limiter for twelve hours and resumed five minutes ago: the run is
             // healthy even though its CreatedAt is far beyond the pending timeout.
-            JobRun resumedJob = BuildJobRun(
+            JobRun resumedJob = IntegrationsTestData.JobRun(
                 resumedConnection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-12));
             resumedJob.NotBefore = now.AddMinutes(-5);
             ctx.JobRuns.Add(resumedJob);
 
             // Its deferral expired three hours ago and nothing dispatched it since: stale.
-            JobRun abandonedJob = BuildJobRun(
+            JobRun abandonedJob = IntegrationsTestData.JobRun(
                 abandonedConnection.Id, JobType.WbFinanceReportImport, JobStatus.Pending, now.AddHours(-12));
             abandonedJob.NotBefore = now.AddHours(-3);
             ctx.JobRuns.Add(abandonedJob);
@@ -435,12 +383,12 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task UpdateAsync_PersistsStatusTransition()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
-        JobRun jobRun = BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, DateTimeOffset.UtcNow);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
+        JobRun jobRun = IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, DateTimeOffset.UtcNow);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
@@ -475,26 +423,26 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPagedAsync_NoFilters_ReturnsEveryJobOfCurrentTenant_NewestFirst()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
         Guid tenantId = Guid.NewGuid();
-        Mock<ITenantContext> tenantMock = TenantMock(tenantId);
-        Mock<ITenantContext> otherTenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(tenantId);
+        Mock<ITenantContext> otherTenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddHours(-3)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Failed, now.AddHours(-1)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddHours(-3)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Failed, now.AddHours(-1)));
             await ctx.SaveChangesAsync();
         }
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, otherTenantMock.Object))
         {
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now));
             await ctx.SaveChangesAsync();
         }
 
@@ -514,18 +462,18 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPagedAsync_TypeFilter_ExcludesOtherJobTypes()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Success, now.AddMinutes(-5)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Success, now.AddMinutes(-5)));
             await ctx.SaveChangesAsync();
         }
 
@@ -544,19 +492,19 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPagedAsync_ConnectionFilter_ExcludesOtherConnections()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection first = BuildConnection(template.Id);
-        Connection second = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection first = IntegrationsTestData.Connection(template.Id);
+        Connection second = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.AddRange(first, second);
-            ctx.JobRuns.Add(BuildJobRun(first.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
-            ctx.JobRuns.Add(BuildJobRun(second.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-5)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(first.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(second.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-5)));
             await ctx.SaveChangesAsync();
         }
 
@@ -575,19 +523,19 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPagedAsync_StatusFilter_KeepsOnlyRequestedStatuses()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-30)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Running, now.AddMinutes(-20)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Pending, now.AddMinutes(-30)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Running, now.AddMinutes(-20)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
             await ctx.SaveChangesAsync();
         }
 
@@ -611,18 +559,18 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPagedAsync_EmptyStatusArray_IsTreatedAsNoFilter()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
         {
             ctx.SystemChannelTemplates.Add(template);
             ctx.Connections.Add(connection);
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
-            ctx.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Failed, now.AddMinutes(-5)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.ProductsImport, JobStatus.Success, now.AddMinutes(-10)));
+            ctx.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Failed, now.AddMinutes(-5)));
             await ctx.SaveChangesAsync();
         }
 
@@ -641,10 +589,10 @@ public partial class JobRunRepositoryTests
     [Fact]
     public async Task GetPagedAsync_SkipAndTake_CountsBeforePaging()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("jobrun-repo");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
@@ -654,7 +602,7 @@ public partial class JobRunRepositoryTests
 
             for (int i = 0; i < 5; i++)
             {
-                ctx.JobRuns.Add(BuildJobRun(
+                ctx.JobRuns.Add(IntegrationsTestData.JobRun(
                     connection.Id,
                     JobType.ProductsImport,
                     JobStatus.Success,

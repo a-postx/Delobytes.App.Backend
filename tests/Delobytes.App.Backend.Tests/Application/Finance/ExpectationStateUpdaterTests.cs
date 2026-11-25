@@ -8,6 +8,7 @@ using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Domain.Entities;
 using Delobytes.App.Backend.Finance.Domain.Enums;
 using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

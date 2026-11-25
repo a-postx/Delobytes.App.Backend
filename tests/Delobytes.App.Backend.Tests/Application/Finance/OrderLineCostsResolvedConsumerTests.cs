@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +10,7 @@ using Delobytes.App.Backend.Finance.Infrastructure.Messaging.Consumers;
 using ContractCostStatus = Delobytes.App.Backend.Catalog.Contracts.Events.OrderLineCostStatus;
 using DomainCostStatus = Delobytes.App.Backend.Finance.Domain.Enums.OrderLineCostStatus;
 using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.Extensions.Logging.Abstractions;

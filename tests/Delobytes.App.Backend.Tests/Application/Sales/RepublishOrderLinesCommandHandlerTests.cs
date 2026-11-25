@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -11,6 +11,7 @@ using Delobytes.App.Backend.Sales.Application.Models;
 using Delobytes.App.Backend.Sales.Application.Options;
 using Delobytes.App.Backend.Sales.Application.Queries.Orders;
 using Delobytes.App.Backend.Sales.Contracts.Events;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -29,7 +30,7 @@ public class RepublishOrderLinesCommandHandlerTests
     {
         // Arrange
         FakeRepublishRepository repository = new FakeRepublishRepository(rows: 3, pageSize: 3);
-        RecordingPublisher publisher = new RecordingPublisher();
+        RecordingSalesEventPublisher publisher = new RecordingSalesEventPublisher();
 
         RepublishOrderLinesCommandHandler handler = CreateHandler(repository, publisher, chunkSize: 2);
 
@@ -54,7 +55,7 @@ public class RepublishOrderLinesCommandHandlerTests
     {
         // Arrange
         FakeRepublishRepository repository = new FakeRepublishRepository(rows: 2, pageSize: 5);
-        RecordingPublisher publisher = new RecordingPublisher();
+        RecordingSalesEventPublisher publisher = new RecordingSalesEventPublisher();
 
         RepublishOrderLinesCommandHandler handler = CreateHandler(repository, publisher, chunkSize: 500);
 
@@ -74,7 +75,7 @@ public class RepublishOrderLinesCommandHandlerTests
     {
         // Arrange
         FakeRepublishRepository repository = new FakeRepublishRepository(rows: 1, pageSize: 5000);
-        RepublishOrderLinesCommandHandler handler = CreateHandler(repository, new RecordingPublisher(), 500);
+        RepublishOrderLinesCommandHandler handler = CreateHandler(repository, new RecordingSalesEventPublisher(), 500);
 
         // Act
         await handler.Handle(new RepublishOrderLinesCommand { MaxLines = 100000 }, CancellationToken.None);
@@ -85,7 +86,7 @@ public class RepublishOrderLinesCommandHandlerTests
 
     private static RepublishOrderLinesCommandHandler CreateHandler(
         FakeRepublishRepository repository,
-        RecordingPublisher publisher,
+        RecordingSalesEventPublisher publisher,
         int chunkSize)
     {
         Mock<ITenantContext> tenantContext = new Mock<ITenantContext>();
@@ -102,18 +103,6 @@ public class RepublishOrderLinesCommandHandlerTests
             tenantContext.Object,
             timeService.Object,
             Microsoft.Extensions.Options.Options.Create(new SalesImportOptions { OrderLinesChangedChunkSize = chunkSize }));
-    }
-
-    private sealed class RecordingPublisher : IEventPublisher
-    {
-        public List<object> Events { get; } = new List<object>();
-
-        public Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken)
-            where TEvent : class
-        {
-            Events.Add(@event);
-            return Task.CompletedTask;
-        }
     }
 
     private sealed class FakeRepublishRepository : IOrderLineRepublishRepository

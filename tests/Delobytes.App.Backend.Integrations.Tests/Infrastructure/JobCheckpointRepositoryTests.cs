@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -19,47 +20,6 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 /// </summary>
 public class JobCheckpointRepositoryTests
 {
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("job-checkpoint-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static Mock<ITenantContext> TenantMock(Guid tenantId)
-    {
-        Mock<ITenantContext> mock = new Mock<ITenantContext>();
-        mock.Setup(t => t.TenantId).Returns(tenantId);
-        return mock;
-    }
-
-    private static SystemChannelTemplate BuildTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
-    private static Connection BuildConnection(Guid templateId)
-    {
-        return new Connection
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = Guid.NewGuid(),
-            SystemChannelTemplateId = templateId,
-            Name = "Test connection",
-            ApiKey = "test-key",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
 
     private static async Task<JobRun> SeedJobRunAsync(IntegrationsDbContext ctx, Guid connectionId)
     {
@@ -80,10 +40,10 @@ public class JobCheckpointRepositoryTests
     [Fact]
     public async Task UpsertAsync_InsertsNewCheckpoint_WhenNoneExistsForJobRun()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-checkpoint");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset updatedAt = DateTimeOffset.UtcNow;
         Guid jobRunId;
 
@@ -122,10 +82,10 @@ public class JobCheckpointRepositoryTests
     [Fact]
     public async Task UpsertAsync_UpdatesExistingCheckpoint_InsteadOfInsertingDuplicate()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-checkpoint");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         Guid jobRunId;
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object))
@@ -169,8 +129,8 @@ public class JobCheckpointRepositoryTests
     [Fact]
     public async Task GetByJobRunIdAsync_ReturnsNull_WhenNoCheckpointExists()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
-        Mock<ITenantContext> tenantMock = TenantMock(Guid.NewGuid());
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("job-checkpoint");
+        Mock<ITenantContext> tenantMock = IntegrationsTestData.Tenant(Guid.NewGuid());
 
         using IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantMock.Object);
         JobCheckpointRepository repository = new JobCheckpointRepository(ctx);

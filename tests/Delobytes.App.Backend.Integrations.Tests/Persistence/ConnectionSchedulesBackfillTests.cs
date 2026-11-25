@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
 using Delobytes.App.Backend.Integrations.Infrastructure.SalesChannels;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -29,45 +30,9 @@ namespace Delobytes.App.Backend.Integrations.Tests.Persistence;
 /// </summary>
 public class ConnectionSchedulesBackfillTests
 {
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("schedules-backfill-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static SystemChannelTemplate BuildTemplate(
-        string code = "wildberries", string displayName = "Wildberries", string apiBaseUrl = "https://suppliers-api.wildberries.ru")
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = code,
-            DisplayName = displayName,
-            ApiBaseUrl = apiBaseUrl,
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
-
     private static SystemChannelTemplate BuildOzonTemplate()
     {
-        return BuildTemplate("ozon", "Ozon", "https://api-seller.ozon.ru");
-    }
-
-    private static Connection BuildConnection(Guid templateId, bool isActive = true)
-    {
-        return new Connection
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = Guid.NewGuid(),
-            SystemChannelTemplateId = templateId,
-            Name = "Test connection",
-            ApiKey = "test-key",
-            IsActive = isActive,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+        return IntegrationsTestData.Template("ozon", "Ozon", "https://api-seller.ozon.ru");
     }
 
     /// <summary>
@@ -134,10 +99,10 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_CreatesOneEnabledOrdersAndOneFinanceSchedulePerActiveConnection()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 
@@ -161,10 +126,10 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_SkipsInactiveConnections()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection inactive = BuildConnection(template.Id, isActive: false);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection inactive = IntegrationsTestData.Connection(template.Id, isActive: false);
 
         await SeedConnectionAsync(options, tenantId, inactive, template);
 
@@ -178,10 +143,10 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_RunTwice_DoesNotDuplicateSchedules()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 
@@ -198,10 +163,10 @@ public class ConnectionSchedulesBackfillTests
     {
         // A schedule that already fired must keep its watermark; rewriting it would silently
         // re-run the same window.
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         DateTimeOffset preservedNextRunAt = DateTimeOffset.UtcNow.AddMinutes(17);
         DateTimeOffset preservedLastRunAt = DateTimeOffset.UtcNow.AddHours(-1);
 
@@ -227,10 +192,10 @@ public class ConnectionSchedulesBackfillTests
     {
         // Idempotency is keyed on (ConnectionId, JobType), not on IsEnabled: an operator who
         // disabled a schedule must not have it silently re-enabled by the migrate step.
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
         await AddScheduleAsync(options, tenantId, BuildSchedule(connection.Id, JobType.WbOrdersImport, enabled: false));
@@ -246,12 +211,12 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_SeedsEveryConnectionThatLacksASchedule()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection first = BuildConnection(template.Id);
-        Connection second = BuildConnection(template.Id);
-        Connection third = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection first = IntegrationsTestData.Connection(template.Id);
+        Connection second = IntegrationsTestData.Connection(template.Id);
+        Connection third = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, first, template);
 
@@ -275,12 +240,12 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_MultipleConnectionsAcrossTenants_SeedsEachUnderItsOwnTenant()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connectionA = BuildConnection(template.Id);
-        Connection connectionB = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connectionA = IntegrationsTestData.Connection(template.Id);
+        Connection connectionB = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantAId, connectionA, template);
         await SeedConnectionAsync(options, tenantBId, connectionB, null);
@@ -297,10 +262,10 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_UsesConfiguredCronExpression()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
         BackgroundJobsOptions backgroundJobsOptions = new BackgroundJobsOptions
         {
             DefaultOrdersImportCronExpression = "*/15 * * * *",
@@ -321,7 +286,7 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_WhenNoConnectionsExist_SeedsNothingAndDoesNotThrow()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
 
         Func<Task> act = () => RunBackfillAsync(options);
 
@@ -338,10 +303,10 @@ public class ConnectionSchedulesBackfillTests
     {
         // Both schemas share one connection and are always scheduled; sequential execution is
         // enforced by the scheduler, not by a configuration flag deciding which exists.
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
         SystemChannelTemplate template = BuildOzonTemplate();
-        Connection connection = BuildConnection(template.Id);
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 
@@ -365,10 +330,10 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_WildberriesConnection_SeedsOrdersAndFinanceImportOnly()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate();
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template();
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 
@@ -386,10 +351,10 @@ public class ConnectionSchedulesBackfillTests
     {
         // A channel with no mapping is not an error: it simply has no orders pipeline yet, and the
         // scheduler must not be handed a job it cannot dispatch.
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
-        SystemChannelTemplate template = BuildTemplate("yandex.kit", "Yandex Kit", "https://api.kit.yandex.net");
-        Connection connection = BuildConnection(template.Id);
+        SystemChannelTemplate template = IntegrationsTestData.Template("yandex.kit", "Yandex Kit", "https://api.kit.yandex.net");
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 
@@ -403,13 +368,13 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_MixedChannels_SeedsEachConnectionItsOwnType()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid wildberriesTenantId = Guid.NewGuid();
         Guid ozonTenantId = Guid.NewGuid();
-        SystemChannelTemplate wildberriesTemplate = BuildTemplate();
+        SystemChannelTemplate wildberriesTemplate = IntegrationsTestData.Template();
         SystemChannelTemplate ozonTemplate = BuildOzonTemplate();
-        Connection wildberriesConnection = BuildConnection(wildberriesTemplate.Id);
-        Connection ozonConnection = BuildConnection(ozonTemplate.Id);
+        Connection wildberriesConnection = IntegrationsTestData.Connection(wildberriesTemplate.Id);
+        Connection ozonConnection = IntegrationsTestData.Connection(ozonTemplate.Id);
 
         await SeedConnectionAsync(options, wildberriesTenantId, wildberriesConnection, wildberriesTemplate);
         await SeedConnectionAsync(options, ozonTenantId, ozonConnection, ozonTemplate);
@@ -435,10 +400,10 @@ public class ConnectionSchedulesBackfillTests
     [Fact]
     public async Task Backfill_OzonConnectionRunTwice_IsIdempotent()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("schedules-backfill");
         Guid tenantId = Guid.NewGuid();
         SystemChannelTemplate template = BuildOzonTemplate();
-        Connection connection = BuildConnection(template.Id);
+        Connection connection = IntegrationsTestData.Connection(template.Id);
 
         await SeedConnectionAsync(options, tenantId, connection, template);
 

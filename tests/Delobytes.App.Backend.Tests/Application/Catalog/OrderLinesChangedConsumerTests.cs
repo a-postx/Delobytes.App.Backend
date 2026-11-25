@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -12,6 +12,7 @@ using Delobytes.App.Backend.Catalog.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Contracts.Events;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -233,7 +234,7 @@ public class OrderLinesChangedConsumerTests
             .Setup(t => t.GetTimeZoneAsync(TenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(timeZone);
 
-        RecordingPublisher publisher = new RecordingPublisher();
+        RecordingCatalogEventPublisher publisher = new RecordingCatalogEventPublisher();
 
         OrderLinesChangedConsumer consumer = new OrderLinesChangedConsumer(
             links,
@@ -380,18 +381,6 @@ public class OrderLinesChangedConsumerTests
                 .ToDictionary(id => id, id => _byChannelProductId[id]);
 
             return Task.FromResult(resolved);
-        }
-    }
-
-    private sealed class RecordingPublisher : IEventPublisher
-    {
-        public List<object> Events { get; } = new List<object>();
-
-        public Task PublishAsync<TEvent>(TEvent @event, CancellationToken cancellationToken)
-            where TEvent : class
-        {
-            Events.Add(@event);
-            return Task.CompletedTask;
         }
     }
 }

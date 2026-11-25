@@ -1,6 +1,7 @@
 using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Filters;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using MassTransit;
 using Moq;
@@ -75,5 +76,4 @@ public class TenantPublishFilterTests
         _nextPipeMock.Verify(p => p.Send(_publishContextMock.Object), Times.Once);
     }
 
-    public class TestMessage { }
 }

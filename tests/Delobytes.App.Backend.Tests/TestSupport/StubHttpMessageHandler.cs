@@ -4,7 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Delobytes.App.Backend.Tests.Infrastructure.Identity;
+namespace Delobytes.App.Backend.Tests.TestSupport;
 
 internal sealed class RecordedHttpRequest
 {
@@ -17,9 +17,24 @@ internal sealed class RecordedHttpRequest
     public string? Authorization { get; init; }
 }
 
+/// <summary>
+/// Transport double for tests that inspect outgoing requests or replay a canned response. Two shapes
+/// shared one class name before: a queue of responses and a response factory. Both live here now, so a
+/// test picks the shape it needs instead of declaring its own handler.
+/// </summary>
 internal sealed class StubHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<HttpResponseMessage> _responses = new Queue<HttpResponseMessage>();
+    private readonly Func<HttpResponseMessage>? _responseFactory;
+
+    public StubHttpMessageHandler()
+    {
+    }
+
+    public StubHttpMessageHandler(Func<HttpResponseMessage> responseFactory)
+    {
+        _responseFactory = responseFactory;
+    }
 
     public List<RecordedHttpRequest> Requests { get; } = new List<RecordedHttpRequest>();
 
@@ -57,6 +72,11 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
             Content = content,
             Authorization = request.Headers.Authorization?.ToString(),
         });
+
+        if (_responseFactory != null)
+        {
+            return _responseFactory();
+        }
 
         if (_responses.Count == 0)
         {

@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;

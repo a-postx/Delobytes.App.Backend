@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -25,33 +26,6 @@ namespace Delobytes.App.Backend.Integrations.Tests.Infrastructure;
 public class IntegrationsDbContextTenantIsolationTests
 {
     // Unique DB name per test prevents cross-test state leakage.
-    private static DbContextOptions<IntegrationsDbContext> BuildOptions()
-    {
-        return new DbContextOptionsBuilder<IntegrationsDbContext>()
-            .UseInMemoryDatabase("isolation-" + Guid.NewGuid())
-            .Options;
-    }
-
-    private static Mock<ITenantContext> TenantMock(Guid tenantId)
-    {
-        Mock<ITenantContext> mock = new Mock<ITenantContext>();
-        mock.Setup(t => t.TenantId).Returns(tenantId);
-        return mock;
-    }
-
-    private static SystemChannelTemplate BuildTemplate()
-    {
-        return new SystemChannelTemplate
-        {
-            Id = Guid.NewGuid(),
-            Code = "wildberries",
-            DisplayName = "Wildberries",
-            ApiBaseUrl = "https://suppliers-api.wildberries.ru",
-            ApiVersion = "v3",
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-    }
 
     private static Connection BuildActiveConnection(Guid channelId)
     {
@@ -77,15 +51,15 @@ public class IntegrationsDbContextTenantIsolationTests
     [Fact]
     public async Task QueryFilter_SecondContextWithDifferentTenant_DoesNotLeakFirstTenantData()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("isolation");
 
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
 
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
         // TenantA context — triggers OnModelCreating, seeds one connection.
         using (IntegrationsDbContext ctxA = new IntegrationsDbContext(options, tenantAMock.Object))
@@ -117,15 +91,15 @@ public class IntegrationsDbContextTenantIsolationTests
     [Fact]
     public async Task QueryFilter_FirstTenantContext_StillIsolatedAfterSecondTenantIsCreated()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("isolation");
 
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
 
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
         {
@@ -156,15 +130,15 @@ public class IntegrationsDbContextTenantIsolationTests
     [Fact]
     public async Task QueryFilter_LookupByKnownId_ReturnsNullForCrossTenantAccess()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("isolation");
 
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
 
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         Connection tenantAConnection = BuildActiveConnection(template.Id);
 
         using (IntegrationsDbContext ctx = new IntegrationsDbContext(options, tenantAMock.Object))
@@ -192,15 +166,15 @@ public class IntegrationsDbContextTenantIsolationTests
     [Fact]
     public async Task SaveChanges_StampsTenantIdShadowProperty_FromCurrentContextTenant()
     {
-        DbContextOptions<IntegrationsDbContext> options = BuildOptions();
+        DbContextOptions<IntegrationsDbContext> options = IntegrationsTestData.Options("isolation");
 
         Guid tenantAId = Guid.NewGuid();
         Guid tenantBId = Guid.NewGuid();
 
-        Mock<ITenantContext> tenantAMock = TenantMock(tenantAId);
-        Mock<ITenantContext> tenantBMock = TenantMock(tenantBId);
+        Mock<ITenantContext> tenantAMock = IntegrationsTestData.Tenant(tenantAId);
+        Mock<ITenantContext> tenantBMock = IntegrationsTestData.Tenant(tenantBId);
 
-        SystemChannelTemplate template = BuildTemplate();
+        SystemChannelTemplate template = IntegrationsTestData.Template();
         Connection connA = BuildActiveConnection(template.Id);
         Connection connB = BuildActiveConnection(template.Id);
 

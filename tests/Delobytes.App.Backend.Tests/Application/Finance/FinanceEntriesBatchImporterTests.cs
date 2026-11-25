@@ -13,6 +13,7 @@ using Delobytes.App.Backend.Finance.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Contracts.Events;
 using Delobytes.App.Backend.Integrations.Contracts.Models;
 using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -65,7 +66,7 @@ public class FinanceEntriesBatchImporterTests
     {
         // Arrange
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher);
 
         journal.Entries.Add(new PnlEntry
@@ -118,7 +119,7 @@ public class FinanceEntriesBatchImporterTests
     {
         // Arrange
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher);
 
         ChannelFinanceEntrySnapshot invalid = Snapshot("799692300:2026-08-03", "rrd-1");
@@ -153,7 +154,7 @@ public class FinanceEntriesBatchImporterTests
     {
         // Arrange
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher);
 
         FinanceEntriesBatchImportRequestedEvent message = new FinanceEntriesBatchImportRequestedEvent
@@ -187,7 +188,7 @@ public class FinanceEntriesBatchImporterTests
         // import of the new, valid entry must still succeed and still publish its completed event.
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
         InMemoryOrderLineRefStore refs = new InMemoryOrderLineRefStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, refs);
 
         Guid orderLineId = Guid.NewGuid();
@@ -249,7 +250,7 @@ public class FinanceEntriesBatchImporterTests
     {
         // Arrange
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         InMemoryPnlFeedStateStore feedStore = new InMemoryPnlFeedStateStore();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, feedStore: feedStore);
 
@@ -286,7 +287,7 @@ public class FinanceEntriesBatchImporterTests
     {
         // Arrange
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         InMemoryPnlFeedStateStore feedStore = new InMemoryPnlFeedStateStore();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, feedStore: feedStore);
 
@@ -336,7 +337,7 @@ public class FinanceEntriesBatchImporterTests
     {
         // Arrange
         InMemoryPnlJournalStore journal = new InMemoryPnlJournalStore();
-        RecordingEventPublisher publisher = new RecordingEventPublisher();
+        RecordingFinanceEventPublisher publisher = new RecordingFinanceEventPublisher();
         InMemoryPnlFeedStateStore feedStore = new InMemoryPnlFeedStateStore();
         FinanceEntriesBatchImporter importer = CreateImporter(journal, publisher, feedStore: feedStore);
 
@@ -366,7 +367,7 @@ public class FinanceEntriesBatchImporterTests
 
     private static FinanceEntriesBatchImporter CreateImporter(
         InMemoryPnlJournalStore journal,
-        RecordingEventPublisher publisher,
+        RecordingFinanceEventPublisher publisher,
         InMemoryOrderLineRefStore? refs = null,
         InMemoryPnlFeedStateStore? feedStore = null)
     {

@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Finance.Application.Projection;
 using Delobytes.App.Backend.Finance.Infrastructure.Messaging.Consumers;
 using Delobytes.App.Backend.Sales.Contracts.Events;
 using Delobytes.App.Backend.Tests.Application.Finance.Fakes;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -7,6 +7,7 @@ using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Sales.Application.Interfaces.Repositories;
 using Delobytes.App.Backend.Sales.Application.Models;
 using Delobytes.App.Backend.Sales.Application.Queries.Orders;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using FluentValidation;
 using Moq;
@@ -505,23 +506,5 @@ public class GetOrdersChartQueryHandlerTests
             _settingsProviderMock.Object,
             _tenantContextMock.Object,
             new FixedTimeProvider(PinnedUtcNow));
-    }
-
-    /// <summary>
-    /// Pins the clock so the handler's "today" resolution is deterministic.
-    /// </summary>
-    private sealed class FixedTimeProvider : TimeProvider
-    {
-        private readonly DateTimeOffset _utcNow;
-
-        public FixedTimeProvider(DateTimeOffset utcNow)
-        {
-            _utcNow = utcNow;
-        }
-
-        public override DateTimeOffset GetUtcNow()
-        {
-            return _utcNow;
-        }
     }
 }

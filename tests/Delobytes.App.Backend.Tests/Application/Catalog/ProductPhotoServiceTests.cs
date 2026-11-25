@@ -12,6 +12,7 @@ using Delobytes.App.Backend.Catalog.Domain.Entities;
 using Delobytes.App.Backend.Catalog.Domain.Enums;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Storage;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -1074,23 +1075,6 @@ public class ProductPhotoServiceTests
         payload[4] = filler;
 
         return payload;
-    }
-
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpResponseMessage> _responseFactory;
-
-        public StubHttpMessageHandler(Func<HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_responseFactory());
-        }
     }
 
     private sealed class NonSeekableStream : Stream

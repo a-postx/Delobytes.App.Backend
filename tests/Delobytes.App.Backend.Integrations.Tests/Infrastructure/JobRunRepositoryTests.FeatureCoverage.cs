@@ -6,6 +6,7 @@ using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Domain.Enums;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence;
 using Delobytes.App.Backend.Integrations.Infrastructure.Persistence.Repositories;
+using Delobytes.App.Backend.Integrations.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -21,19 +22,19 @@ public partial class JobRunRepositoryTests
     {
         Guid tenantId = Guid.NewGuid();
         DateTimeOffset now = new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero);
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
-            JobRun future = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-4));
+            JobRun future = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-4));
             future.NotBefore = now.AddTicks(1);
-            JobRun immediate = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-3));
-            JobRun due = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-2));
+            JobRun immediate = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-3));
+            JobRun due = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-2));
             due.NotBefore = now;
-            JobRun past = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-1));
+            JobRun past = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now.AddHours(-1));
             past.NotBefore = now.AddTicks(-1);
             context.JobRuns.AddRange(future, immediate, due, past);
-            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Running, now.AddHours(-5)));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Running, now.AddHours(-5)));
             await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
             JobRunRepository repository = new JobRunRepository(context);
@@ -60,12 +61,12 @@ public partial class JobRunRepositoryTests
     public async Task HasPendingJobAsync_FiltersStatusAndExcludesCurrent(JobStatus status, bool expected)
     {
         Guid tenantId = Guid.NewGuid();
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
-            JobRun current = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, DateTimeOffset.UtcNow);
-            JobRun other = BuildJobRun(connection.Id, JobType.WbOrdersImport, status, DateTimeOffset.UtcNow);
+            JobRun current = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, DateTimeOffset.UtcNow);
+            JobRun other = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, status, DateTimeOffset.UtcNow);
             other.NotBefore = DateTimeOffset.UtcNow.AddHours(3);
             context.JobRuns.AddRange(current, other);
             await context.SaveChangesAsync();
@@ -84,9 +85,9 @@ public partial class JobRunRepositoryTests
     {
         Guid tenantId = Guid.NewGuid();
         DateTimeOffset now = new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero);
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
             await context.SaveChangesAsync();
             OrdersBackfillStateRepository repository = new OrdersBackfillStateRepository(context);
@@ -118,7 +119,7 @@ public partial class JobRunRepositoryTests
     [Fact]
     public void Model_DeferredAndCatchUpProperties_AreNullableAndHaveNoConfiguredDefault()
     {
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(Guid.NewGuid()).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(Guid.NewGuid()).Object))
         {
             Microsoft.EntityFrameworkCore.Metadata.IProperty notBefore = context.Model.FindEntityType(typeof(JobRun))!.FindProperty(nameof(JobRun.NotBefore))!;
             Microsoft.EntityFrameworkCore.Metadata.IProperty catchUp = context.Model.FindEntityType(typeof(OrdersBackfillState))!.FindProperty(nameof(OrdersBackfillState.CatchUpNextDay))!;
@@ -135,11 +136,11 @@ public partial class JobRunRepositoryTests
     {
         Guid tenantId = Guid.NewGuid();
         DateTimeOffset now = new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero);
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
-            JobRun run = BuildJobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now);
+            JobRun run = IntegrationsTestData.JobRun(connection.Id, JobType.WbOrdersImport, JobStatus.Pending, now);
             run.NotBefore = now.AddHours(3);
             context.JobRuns.Add(run);
             await context.SaveChangesAsync();
@@ -165,11 +166,11 @@ public partial class JobRunRepositoryTests
         JobType existingJobType, JobStatus existingStatus)
     {
         Guid tenantId = Guid.NewGuid();
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
-            context.JobRuns.Add(BuildJobRun(connection.Id, existingJobType, existingStatus, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, existingJobType, existingStatus, DateTimeOffset.UtcNow));
             await context.SaveChangesAsync();
             JobRunRepository repository = new JobRunRepository(context);
 
@@ -184,13 +185,13 @@ public partial class JobRunRepositoryTests
         // The exact case the scheduler relies on: FBO occupies the connection, so the FBS schedule
         // has to be skipped rather than creating a second JobRun on the same rate-limiter bucket.
         Guid tenantId = Guid.NewGuid();
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
-            Connection otherConnection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
+            Connection otherConnection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.AddRange(connection, otherConnection);
-            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, DateTimeOffset.UtcNow));
-            context.JobRuns.Add(BuildJobRun(otherConnection.Id, JobType.OzonOrdersImportFbs, JobStatus.Running, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.OzonOrdersImportFbo, JobStatus.Running, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(otherConnection.Id, JobType.OzonOrdersImportFbs, JobStatus.Running, DateTimeOffset.UtcNow));
             await context.SaveChangesAsync();
             JobRunRepository repository = new JobRunRepository(context);
 
@@ -207,12 +208,12 @@ public partial class JobRunRepositoryTests
     public async Task HasActiveOzonOrdersJobAsync_ReturnsFalse_ForTerminalStatuses(JobStatus status)
     {
         Guid tenantId = Guid.NewGuid();
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
-            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.OzonOrdersImportFbo, status, DateTimeOffset.UtcNow));
-            context.JobRuns.Add(BuildJobRun(connection.Id, JobType.OzonOrdersImportFbs, status, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.OzonOrdersImportFbo, status, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, JobType.OzonOrdersImportFbs, status, DateTimeOffset.UtcNow));
             await context.SaveChangesAsync();
             JobRunRepository repository = new JobRunRepository(context);
 
@@ -227,11 +228,11 @@ public partial class JobRunRepositoryTests
     public async Task HasActiveOzonOrdersJobAsync_IgnoresOtherJobTypes(JobType jobType)
     {
         Guid tenantId = Guid.NewGuid();
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection connection = BuildConnection(Guid.NewGuid());
+            Connection connection = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.Add(connection);
-            context.JobRuns.Add(BuildJobRun(connection.Id, jobType, JobStatus.Running, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(connection.Id, jobType, JobStatus.Running, DateTimeOffset.UtcNow));
             await context.SaveChangesAsync();
             JobRunRepository repository = new JobRunRepository(context);
 
@@ -245,12 +246,12 @@ public partial class JobRunRepositoryTests
     public async Task HasActiveOzonOrdersJobAsync_IsScopedToOneConnection()
     {
         Guid tenantId = Guid.NewGuid();
-        using (IntegrationsDbContext context = new IntegrationsDbContext(BuildOptions(), TenantMock(tenantId).Object))
+        using (IntegrationsDbContext context = new IntegrationsDbContext(IntegrationsTestData.Options("jobrun-repo"), IntegrationsTestData.Tenant(tenantId).Object))
         {
-            Connection busy = BuildConnection(Guid.NewGuid());
-            Connection idle = BuildConnection(Guid.NewGuid());
+            Connection busy = IntegrationsTestData.Connection(Guid.NewGuid());
+            Connection idle = IntegrationsTestData.Connection(Guid.NewGuid());
             context.Connections.AddRange(busy, idle);
-            context.JobRuns.Add(BuildJobRun(busy.Id, JobType.OzonOrdersImportFbs, JobStatus.Running, DateTimeOffset.UtcNow));
+            context.JobRuns.Add(IntegrationsTestData.JobRun(busy.Id, JobType.OzonOrdersImportFbs, JobStatus.Running, DateTimeOffset.UtcNow));
             await context.SaveChangesAsync();
             JobRunRepository repository = new JobRunRepository(context);
 

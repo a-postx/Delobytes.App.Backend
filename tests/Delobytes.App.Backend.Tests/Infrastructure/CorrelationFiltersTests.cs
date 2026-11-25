@@ -2,6 +2,7 @@ using Delobytes.App.Backend.Constants;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Filters;
 using Delobytes.App.Backend.Services;
+using Delobytes.App.Backend.Tests.TestSupport;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.AspNetCore.Http;
@@ -73,7 +74,7 @@ public class CorrelationFiltersTests
     public async Task Publish_WithEmptyNativeCorrelationId_SynchronisesItWithOurs()
     {
         // No saga claims PublishContext.CorrelationId yet in this project, so when it is empty it
-        // is free to mirror our own identifier — making the chain visible to broker-level tooling
+        // is free to mirror our own identifier вЂ” making the chain visible to broker-level tooling
         // and fault messages without a second, project-specific enricher.
         Guid chainId = Guid.NewGuid();
         _correlationContextMock.Setup(c => c.CorrelationId).Returns(chainId);
@@ -88,7 +89,7 @@ public class CorrelationFiltersTests
     {
         // A saga's message send topology (CorrelatedBy<Guid>) or an explicit CorrelateById may have
         // already set this field to the business id it uses to locate its instance; our chain id
-        // must not clobber it. The header still carries our id regardless — that is a separate,
+        // must not clobber it. The header still carries our id regardless вЂ” that is a separate,
         // unrelated mechanism.
         Guid sagaId = Guid.NewGuid();
         _publishContextMock.SetupGet(c => c.CorrelationId).Returns(sagaId);
@@ -231,7 +232,7 @@ public class CorrelationFiltersTests
     public async Task Consume_WithMalformedHeader_GeneratesSubstituteInstead()
     {
         // The header on the wire is still a plain string, so a legacy or mis-instrumented producer
-        // can still send something that is not a GUID — it must not be parsed as one.
+        // can still send something that is not a GUID вЂ” it must not be parsed as one.
         Guid? observedInsidePipe = null;
         _consumeHeadersMock
             .Setup(h => h.Get<string>(CorrelationHeaders.CorrelationId, It.IsAny<string?>()))
@@ -311,7 +312,4 @@ public class CorrelationFiltersTests
         observedInsideConsumer.Should().Be(chainId);
     }
 
-    public class TestMessage
-    {
-    }
 }
