@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Integrations.Application.Models;
+using Delobytes.App.Backend.Integrations.Domain.Entities;
 using Delobytes.App.Backend.Integrations.Infrastructure.ApiClients.Ozon;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,7 +18,9 @@ public class OzonApiClientAccountInfoTests
 {
     private const string SellerInfoUrl = "https://api-seller.ozon.ru/v1/seller/info";
 
-    private static OzonApiClient BuildClient(MockHttpMessageHandler accountInfoHandler)
+    private static OzonApiClient BuildClient(
+        MockHttpMessageHandler accountInfoHandler,
+        SystemChannelTemplate? template = null)
     {
         HttpClient typedClient = new HttpClient();
 
@@ -26,13 +29,34 @@ public class OzonApiClientAccountInfoTests
             .Setup(f => f.CreateClient(It.IsAny<string>()))
             .Returns(accountInfoHandler.ToHttpClient());
 
-        return new OzonApiClient(
+        OzonApiClient client = new OzonApiClient(
             typedClient,
             factory.Object,
             new FixedConnectionResolver(),
             new AlwaysAllowRateLimiter(),
             NullLogger<OzonApiClient>.Instance,
             TimeProvider.System);
+
+        if (template is not null)
+        {
+            client.SetTemplate(template);
+        }
+
+        return client;
+    }
+
+    private static SystemChannelTemplate BuildTemplate(string apiBaseUrl)
+    {
+        return new SystemChannelTemplate
+        {
+            Id = Guid.NewGuid(),
+            Code = "ozon",
+            DisplayName = "Ozon",
+            ApiBaseUrl = apiBaseUrl,
+            ApiVersion = "v1",
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
     }
 
     private static Dictionary<string, string> ValidSettings()
@@ -158,6 +182,47 @@ public class OzonApiClientAccountInfoTests
 
         AccountInfo? result = await client.GetAccountInfoAsync(
             null, "my-ozon-key", null, ValidSettings(), CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.CustomerName.Should().Be("Shop");
+    }
+
+    [Fact]
+    public async Task GetAccountInfoAsync_BoundTemplate_CallsTheTemplateBaseUrl()
+    {
+        const string templateBaseUrl = "https://ozon-seller.example.com";
+        string json = """{ "company": { "name": "Shop" } }""";
+
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, templateBaseUrl + "/v1/seller/info")
+            .Respond("application/json", json);
+
+        OzonApiClient client = BuildClient(mockHttp, BuildTemplate(templateBaseUrl));
+
+        AccountInfo? result = await client.GetAccountInfoAsync(
+            null, "ozon-key", null, ValidSettings(), CancellationToken.None);
+
+        // The bound template is the configured endpoint; hitting the public one would validate the key
+        // against a different host than the one every later data call uses.
+        result.Should().NotBeNull();
+        result!.CustomerName.Should().Be("Shop");
+    }
+
+    [Fact]
+    public async Task GetAccountInfoAsync_UnboundClient_KeepsThePublicEndpoint()
+    {
+        // Credential validation runs before a connection exists, so the factory may hand out a client
+        // that was never bound. Only the data calls refuse that state.
+        MockHttpMessageHandler mockHttp = new MockHttpMessageHandler();
+        mockHttp
+            .When(HttpMethod.Post, SellerInfoUrl)
+            .Respond("application/json", """{ "company": { "name": "Shop" } }""");
+
+        OzonApiClient client = BuildClient(mockHttp);
+
+        AccountInfo? result = await client.GetAccountInfoAsync(
+            null, "ozon-key", null, ValidSettings(), CancellationToken.None);
 
         result.Should().NotBeNull();
         result!.CustomerName.Should().Be("Shop");
