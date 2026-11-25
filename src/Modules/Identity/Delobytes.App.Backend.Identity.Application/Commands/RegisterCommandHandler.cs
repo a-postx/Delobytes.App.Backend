@@ -1,9 +1,9 @@
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Identity;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using MediatR;
-using Delobytes.App.Backend.Contracts.Identity;
 
 namespace Delobytes.App.Backend.Identity.Application.Commands;
 
@@ -60,23 +60,20 @@ public class RegisterResponse
 public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterResponse>
 {
     private readonly IUserRepository _userRepository;
-    private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IPasswordHasher _passwordHasher;
-    private readonly IJwtTokenService _jwtTokenService;
+    private readonly IUserSessionIssuer _sessionIssuer;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RegisterCommandHandler"/> class.
     /// </summary>
     public RegisterCommandHandler(
         IUserRepository userRepository,
-        ITenantMembershipRepository membershipRepository,
         IPasswordHasher passwordHasher,
-        IJwtTokenService jwtTokenService)
+        IUserSessionIssuer sessionIssuer)
     {
         _userRepository = userRepository;
-        _membershipRepository = membershipRepository;
         _passwordHasher = passwordHasher;
-        _jwtTokenService = jwtTokenService;
+        _sessionIssuer = sessionIssuer;
     }
 
     /// <inheritdoc/>
@@ -103,35 +100,15 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
         };
 
         _userRepository.Add(user);
-        await _userRepository.SaveChangesAsync(cancellationToken);
 
-        // Check if user already has tenant memberships (should not happen for new user)
-        IReadOnlyList<TenantMembership> memberships = await _membershipRepository.GetActiveByUserAsync(user.Id, cancellationToken);
-
-        if (memberships.Count == 0)
-        {
-            // New user without tenant - return JWT without tenant for tenant setup
-            string setupToken = _jwtTokenService.GenerateToken(user.Id, null, null);
-
-            return new RegisterResponse
-            {
-                UserId = user.Id,
-                Success = true,
-                AccessToken = setupToken,
-                RequiresTenantSetup = true,
-            };
-        }
-
-        // User has tenant (edge case) - generate full token
-        TenantMembership activeMembership = memberships.First();
-        string token = _jwtTokenService.GenerateToken(user.Id, activeMembership.TenantId, activeMembership.Role);
+        LoginResponse session = await _sessionIssuer.IssueAsync(user, cancellationToken);
 
         return new RegisterResponse
         {
-            UserId = user.Id,
+            UserId = session.UserId,
             Success = true,
-            AccessToken = token,
-            RequiresTenantSetup = false,
+            AccessToken = session.AccessToken,
+            RequiresTenantSetup = session.RequiresTenantSetup,
         };
     }
 }

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Delobytes.App.Backend.Identity.Application.Commands;
+using Delobytes.App.Backend.Identity.Application.Models;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -38,6 +39,7 @@ public class AuthController : ControllerBase
     /// <returns>Registration result.</returns>
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting("register")]
     public async Task<ActionResult<RegisterResponse>> Register(
         [FromBody] RegisterCommand command,
         CancellationToken cancellationToken)
@@ -145,16 +147,19 @@ public class AuthController : ControllerBase
     /// The client sends the code received from Yandex; the backend exchanges it
     /// for a Yandex token, resolves or creates the local user account, and returns a local JWT.
     /// </summary>
-    /// <param name="command">Authorization code and redirect URI.</param>
+    /// <param name="request">Authorization code and redirect URI.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Login result with JWT token.</returns>
     [HttpPost("yandex/callback")]
     [AllowAnonymous]
+    [EnableRateLimiting("oauth-callback")]
     public async Task<ActionResult<LoginResponse>> YandexCallback(
-        [FromBody] YandexCallbackCommand command,
+        [FromBody] OAuthCallbackRequest request,
         CancellationToken cancellationToken)
     {
-        LoginResponse response = await _mediator.Send(command, cancellationToken);
+        LoginResponse response = await SendCallbackAsync(
+            OAuthProviderKind.Yandex, request, cancellationToken);
+
         return Ok(response);
     }
 
@@ -163,18 +168,52 @@ public class AuthController : ControllerBase
     /// The client sends the code received from Google; the backend exchanges it for a Google token,
     /// resolves or creates the local user account, and returns a local JWT.
     /// </summary>
-    /// <param name="command">Authorization code and redirect URI.</param>
+    /// <param name="request">Authorization code and redirect URI.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Login result with JWT token.</returns>
     [HttpPost("google/callback")]
     [AllowAnonymous]
+    [EnableRateLimiting("oauth-callback")]
     public async Task<ActionResult<LoginResponse>> GoogleCallback(
-        [FromBody] GoogleCallbackCommand command,
+        [FromBody] OAuthCallbackRequest request,
         CancellationToken cancellationToken)
     {
-        LoginResponse response = await _mediator.Send(command, cancellationToken);
+        LoginResponse response = await SendCallbackAsync(
+            OAuthProviderKind.Google, request, cancellationToken);
+
         return Ok(response);
     }
+
+    private async Task<LoginResponse> SendCallbackAsync(
+        OAuthProviderKind provider,
+        OAuthCallbackRequest request,
+        CancellationToken cancellationToken)
+    {
+        return await _mediator.Send(
+            new OAuthCallbackCommand
+            {
+                Provider = provider,
+                Code = request.Code,
+                RedirectUri = request.RedirectUri,
+            },
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// Request model for OAuth 2.0 callbacks. The provider comes from the route, not the body.
+/// </summary>
+public class OAuthCallbackRequest
+{
+    /// <summary>
+    /// Gets or sets the authorization code received from the provider.
+    /// </summary>
+    public string Code { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets the redirect URI used in the original authorization request.
+    /// </summary>
+    public string RedirectUri { get; set; } = default!;
 }
 
 /// <summary>

@@ -1,9 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Amazon.Runtime.Internal.Util;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
+using Delobytes.App.Backend.Identity.Application.Models;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -29,35 +29,41 @@ public class AuthControllerOAuthTests
 
     private AuthController BuildController() => new AuthController(_mediator.Object, _logger.Object);
 
-    // ── Yandex callback ───────────────────────────────────────────────────────
+    private static OAuthCallbackRequest BuildRequest(
+        string code = "auth-code",
+        string redirectUri = "https://app.example.com/auth/callback")
+        => new OAuthCallbackRequest { Code = code, RedirectUri = redirectUri };
 
-    [Fact]
-    public async Task YandexCallback_ValidCommand_ReturnsOkWithLoginResponse()
+    private void SetupSession(LoginResponse response)
+    {
+        _mediator
+            .Setup(m => m.Send(It.IsAny<OAuthCallbackCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+    }
+
+    [Theory]
+    [InlineData("yandex")]
+    [InlineData("google")]
+    public async Task Callback_ValidRequest_ReturnsOkWithLoginResponse(string provider)
     {
         // Arrange
         Guid userId = Guid.NewGuid();
         Guid tenantId = Guid.NewGuid();
 
-        LoginResponse handlerResponse = new LoginResponse
+        SetupSession(new LoginResponse
         {
             AccessToken = "jwt-token",
             UserId = userId,
             TenantId = tenantId,
             RequiresTenantSetup = false,
-        };
+        });
 
-        _mediator
-            .Setup(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(handlerResponse);
-
-        YandexCallbackCommand command = new YandexCallbackCommand
-        {
-            Code = "yandex-code-abc",
-            RedirectUri = "https://app.example.com/auth/yandex/callback",
-        };
+        AuthController controller = BuildController();
 
         // Act
-        ActionResult<LoginResponse> result = await BuildController().YandexCallback(command, CancellationToken.None);
+        ActionResult<LoginResponse> result = provider == "yandex"
+            ? await controller.YandexCallback(BuildRequest(), CancellationToken.None)
+            : await controller.GoogleCallback(BuildRequest(), CancellationToken.None);
 
         // Assert
         OkObjectResult okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
@@ -69,27 +75,43 @@ public class AuthControllerOAuthTests
     }
 
     [Fact]
-    public async Task YandexCallback_SendsCommandWithCorrectCodeAndRedirectUri()
+    public async Task YandexCallback_SendsCommandForYandexWithCodeAndRedirectUri()
     {
         // Arrange
-        _mediator
-            .Setup(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse { UserId = Guid.NewGuid(), RequiresTenantSetup = true, AccessToken = string.Empty });
-
-        YandexCallbackCommand command = new YandexCallbackCommand
-        {
-            Code = "exact-code-value",
-            RedirectUri = "https://myapp.ru/auth/yandex/callback",
-        };
+        SetupSession(new LoginResponse { UserId = Guid.NewGuid(), AccessToken = "t" });
 
         // Act
-        await BuildController().YandexCallback(command, CancellationToken.None);
+        await BuildController().YandexCallback(
+            BuildRequest(code: "exact-code-value", redirectUri: "https://myapp.ru/auth/yandex/callback"),
+            CancellationToken.None);
 
         // Assert
         _mediator.Verify(m => m.Send(
-            It.Is<YandexCallbackCommand>(c =>
+            It.Is<OAuthCallbackCommand>(c =>
+                c.Provider == OAuthProviderKind.Yandex &&
                 c.Code == "exact-code-value" &&
                 c.RedirectUri == "https://myapp.ru/auth/yandex/callback"),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GoogleCallback_SendsCommandForGoogleWithCodeAndRedirectUri()
+    {
+        // Arrange
+        SetupSession(new LoginResponse { UserId = Guid.NewGuid(), AccessToken = "t" });
+
+        // Act
+        await BuildController().GoogleCallback(
+            BuildRequest(code: "google-exact-code", redirectUri: "https://myapp.ru/auth/google/callback"),
+            CancellationToken.None);
+
+        // Assert
+        _mediator.Verify(m => m.Send(
+            It.Is<OAuthCallbackCommand>(c =>
+                c.Provider == OAuthProviderKind.Google &&
+                c.Code == "google-exact-code" &&
+                c.RedirectUri == "https://myapp.ru/auth/google/callback"),
             It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -99,183 +121,22 @@ public class AuthControllerOAuthTests
     {
         // Arrange
         Guid userId = Guid.NewGuid();
-
-        _mediator
-            .Setup(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse
-            {
-                UserId = userId,
-                RequiresTenantSetup = true,
-                AccessToken = "temp-token",
-            });
-
-        // Act
-        ActionResult<LoginResponse> result = await BuildController()
-            .YandexCallback(new YandexCallbackCommand { Code = "c", RedirectUri = "https://x.ru" }, CancellationToken.None);
-
-        // Assert
-        OkObjectResult okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        LoginResponse response = okResult.Value.Should().BeOfType<LoginResponse>().Subject;
-        response.RequiresTenantSetup.Should().BeTrue();
-        response.AccessToken.Should().NotBeNullOrEmpty().And.Be("temp-token");
-        response.UserId.Should().Be(userId);
-    }
-
-    [Fact]
-    public async Task YandexCallback_MediatorCalledExactlyOnce()
-    {
-        // Arrange
-        _mediator
-            .Setup(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse { UserId = Guid.NewGuid(), RequiresTenantSetup = false, AccessToken = "t" });
-
-        // Act
-        await BuildController()
-            .YandexCallback(new YandexCallbackCommand { Code = "c", RedirectUri = "https://x.ru" }, CancellationToken.None);
-
-        // Assert
-        _mediator.Verify(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    // ── Google callback ───────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task GoogleCallback_ValidCommand_ReturnsOkWithLoginResponse()
-    {
-        // Arrange
-        Guid userId = Guid.NewGuid();
-        Guid tenantId = Guid.NewGuid();
-
-        LoginResponse handlerResponse = new LoginResponse
+        SetupSession(new LoginResponse
         {
-            AccessToken = "google-jwt-token",
             UserId = userId,
-            TenantId = tenantId,
-            RequiresTenantSetup = false,
-        };
-
-        _mediator
-            .Setup(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(handlerResponse);
-
-        GoogleCallbackCommand command = new GoogleCallbackCommand
-        {
-            Code = "google-code-xyz",
-            RedirectUri = "https://app.example.com/auth/google/callback",
-        };
-
-        // Act
-        ActionResult<LoginResponse> result = await BuildController().GoogleCallback(command, CancellationToken.None);
-
-        // Assert
-        OkObjectResult okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        LoginResponse response = okResult.Value.Should().BeOfType<LoginResponse>().Subject;
-        response.AccessToken.Should().Be("google-jwt-token");
-        response.UserId.Should().Be(userId);
-        response.TenantId.Should().Be(tenantId);
-        response.RequiresTenantSetup.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task GoogleCallback_SendsCommandWithCorrectCodeAndRedirectUri()
-    {
-        // Arrange
-        _mediator
-            .Setup(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse { UserId = Guid.NewGuid(), RequiresTenantSetup = true, AccessToken = string.Empty });
-
-        GoogleCallbackCommand command = new GoogleCallbackCommand
-        {
-            Code = "google-exact-code",
-            RedirectUri = "https://myapp.ru/auth/google/callback",
-        };
-
-        // Act
-        await BuildController().GoogleCallback(command, CancellationToken.None);
-
-        // Assert
-        _mediator.Verify(m => m.Send(
-            It.Is<GoogleCallbackCommand>(c =>
-                c.Code == "google-exact-code" &&
-                c.RedirectUri == "https://myapp.ru/auth/google/callback"),
-            It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task GoogleCallback_RequiresTenantSetup_ReturnsOkWithFlag()
-    {
-        // Arrange
-        Guid userId = Guid.NewGuid();
-
-        _mediator
-            .Setup(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse
-            {
-                UserId = userId,
-                RequiresTenantSetup = true,
-                AccessToken = "temp-token",
-            });
+            RequiresTenantSetup = true,
+            AccessToken = "temp-token",
+        });
 
         // Act
         ActionResult<LoginResponse> result = await BuildController()
-            .GoogleCallback(new GoogleCallbackCommand { Code = "c", RedirectUri = "https://x.ru" }, CancellationToken.None);
+            .YandexCallback(BuildRequest(), CancellationToken.None);
 
         // Assert
         OkObjectResult okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         LoginResponse response = okResult.Value.Should().BeOfType<LoginResponse>().Subject;
         response.RequiresTenantSetup.Should().BeTrue();
-        response.AccessToken.Should().NotBeNullOrEmpty().And.Be("temp-token");
+        response.AccessToken.Should().Be("temp-token");
         response.UserId.Should().Be(userId);
-    }
-
-    [Fact]
-    public async Task GoogleCallback_MediatorCalledExactlyOnce()
-    {
-        // Arrange
-        _mediator
-            .Setup(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse { UserId = Guid.NewGuid(), RequiresTenantSetup = false, AccessToken = "t" });
-
-        // Act
-        await BuildController()
-            .GoogleCallback(new GoogleCallbackCommand { Code = "c", RedirectUri = "https://x.ru" }, CancellationToken.None);
-
-        // Assert
-        _mediator.Verify(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    // ── Provider isolation ────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task YandexCallback_DoesNotDispatchGoogleCallbackCommand()
-    {
-        // Arrange
-        _mediator
-            .Setup(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse { UserId = Guid.NewGuid(), RequiresTenantSetup = false, AccessToken = "t" });
-
-        // Act
-        await BuildController()
-            .YandexCallback(new YandexCallbackCommand { Code = "c", RedirectUri = "https://x.ru" }, CancellationToken.None);
-
-        // Assert
-        _mediator.Verify(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task GoogleCallback_DoesNotDispatchYandexCallbackCommand()
-    {
-        // Arrange
-        _mediator
-            .Setup(m => m.Send(It.IsAny<GoogleCallbackCommand>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LoginResponse { UserId = Guid.NewGuid(), RequiresTenantSetup = false, AccessToken = "t" });
-
-        // Act
-        await BuildController()
-            .GoogleCallback(new GoogleCallbackCommand { Code = "c", RedirectUri = "https://x.ru" }, CancellationToken.None);
-
-        // Assert
-        _mediator.Verify(m => m.Send(It.IsAny<YandexCallbackCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

@@ -55,8 +55,15 @@ public partial class Program
     /// <summary>Builds the application.</summary>
     /// <param name="args">Command line arguments.</param>
     /// <param name="configure">Optional callback applied right after the builder is created.</param>
+    /// <param name="configureServices">
+    /// Optional callback applied after every module registered its services. This is the only point
+    /// where a test can replace a module registration (for example its DbContext provider) and win.
+    /// </param>
     /// <returns>The composed application, ready to run.</returns>
-    public static async Task<WebApplication> CreateApp(string[] args, Action<WebApplicationBuilder>? configure = null)
+    public static async Task<WebApplication> CreateApp(
+        string[] args,
+        Action<WebApplicationBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         Log.Information("Building Web App...");
 
@@ -73,6 +80,8 @@ public partial class Program
             .AddObservability()
             .AddModules()
             .AddAppInfrastructure();
+
+        configureServices?.Invoke(builder.Services);
 
         WebApplication app = builder.Build();
 

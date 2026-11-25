@@ -5,6 +5,7 @@ using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
+using Delobytes.App.Backend.Identity.Application.Services;
 using Delobytes.App.Backend.Identity.Domain.Entities;
 using Delobytes.App.Backend.Identity.Infrastructure.Persistence;
 using Delobytes.App.Backend.Identity.Infrastructure.Services;
@@ -79,25 +80,27 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ITokenValidityCache, TokenValidityCache>();
 
-        // Register Yandex OAuth service
+        // Every authentication entry point issues its session through this service.
+        services.AddScoped<IUserSessionIssuer, UserSessionIssuer>();
+
+        // OAuth providers are resolved by kind through IEnumerable<IOAuthProvider>.
         services.AddHttpClient("YandexOAuth");
-        services.AddScoped<IYandexOAuthService>(sp =>
+        services.AddScoped<IOAuthProvider>(sp =>
         {
             IHttpClientFactory factory = sp.GetRequiredService<IHttpClientFactory>();
             HttpClient httpClient = factory.CreateClient("YandexOAuth");
-            return new YandexOAuthService(
+            return new YandexOAuthProvider(
                 httpClient,
                 yandexClientId ?? string.Empty,
                 yandexClientSecret ?? string.Empty);
         });
 
-        // Register Google OAuth service
         services.AddHttpClient("GoogleOAuth");
-        services.AddScoped<IGoogleOAuthService>(sp =>
+        services.AddScoped<IOAuthProvider>(sp =>
         {
             IHttpClientFactory factory = sp.GetRequiredService<IHttpClientFactory>();
             HttpClient httpClient = factory.CreateClient("GoogleOAuth");
-            return new GoogleOAuthService(
+            return new GoogleOAuthProvider(
                 httpClient,
                 googleClientId ?? string.Empty,
                 googleClientSecret ?? string.Empty);

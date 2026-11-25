@@ -336,4 +336,64 @@ public class GetCurrentUserQueryHandlerTests
         _tenantMembRepo.Verify(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
         _tenantMembRepo.Verify(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Theory]
+    [InlineData("Local", "bcrypt-hash", true)]
+    [InlineData("Local", null, false)]
+    [InlineData("YandexID", null, false)]
+    [InlineData("GoogleID", null, false)]
+    public async Task Handle_ReportsIdentityProviderAndPasswordCapability(
+        string identityProvider,
+        string? passwordHash,
+        bool expectedCanChangePassword)
+    {
+        // Arrange
+        Guid userId = Guid.NewGuid();
+        Guid tenantId = Guid.NewGuid();
+
+        User user = new User
+        {
+            Id = userId,
+            ExternalId = "user@example.com",
+            IdentityProvider = identityProvider,
+            PasswordHash = passwordHash,
+            Email = "user@example.com",
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
+        Tenant tenant = new Tenant
+        {
+            Id = tenantId,
+            Name = "T",
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
+        TenantMembership tenantMembership = new TenantMembership
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Tenant = tenant,
+            UserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IsActive = true,
+        };
+
+        _userRepo.Setup(r => r.FindByIdAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _tenantRepo.Setup(r => r.FindByIdAsync(tenantId, It.IsAny<CancellationToken>())).ReturnsAsync(tenant);
+        _tenantMembRepo.Setup(r => r.GetActiveByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TenantMembership> { tenantMembership });
+        _tenantMembRepo.Setup(r => r.FindActiveByUserAndTenantAsync(userId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenantMembership);
+
+        // Act
+        GetCurrentUserResponse response = await BuildHandler().Handle(
+            new GetCurrentUserQuery { UserId = userId, TenantId = tenantId },
+            CancellationToken.None);
+
+        // Assert
+        response.IdentityProvider.Should().Be(identityProvider);
+        response.CanChangePassword.Should().Be(expectedCanChangePassword);
+    }
 }

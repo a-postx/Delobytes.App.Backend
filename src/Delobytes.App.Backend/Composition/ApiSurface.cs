@@ -83,26 +83,42 @@ internal static class ApiSurface
             });
         });
 
-        // Limits password guessing per client address. Behind a reverse proxy this key is
-        // only useful with ForwardedHeaders configured to trust that proxy.
+        // Limits anonymous authentication traffic per client address: password guessing on
+        // login, bulk sign-up on register, and OAuth code replay on the callbacks.
+        // Behind a reverse proxy this key is only useful with ForwardedHeaders configured
+        // to trust that proxy. Limits are configurable so HTTP tests can exercise the
+        // endpoints without exhausting the bucket, while production keeps the defaults.
+        IConfigurationSection rateLimits = builder.Configuration.GetSection("RateLimiting");
+        int loginPermitLimit = rateLimits.GetValue("LoginPerMinute", 10);
+        int registerPermitLimit = rateLimits.GetValue("RegisterPerMinute", 5);
+        int oauthCallbackPermitLimit = rateLimits.GetValue("OAuthCallbackPerMinute", 10);
+
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-            options.AddPolicy("login", httpContext =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = 10,
-                        Window = TimeSpan.FromMinutes(1),
-                        QueueLimit = 0,
-                        AutoReplenishment = true,
-                    }));
+            options.AddPolicy("login", httpContext => PerClientAddress(httpContext, loginPermitLimit));
+
+            options.AddPolicy("register", httpContext => PerClientAddress(httpContext, registerPermitLimit));
+
+            options.AddPolicy("oauth-callback", httpContext => PerClientAddress(httpContext, oauthCallbackPermitLimit));
         });
 
         builder.Services.AddCustomCors();
 
         return builder;
+    }
+
+    private static RateLimitPartition<string> PerClientAddress(HttpContext httpContext, int permitLimit)
+    {
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            });
     }
 }

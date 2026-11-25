@@ -41,6 +41,18 @@ public class GetCurrentUserResponse
     public string Email { get; set; } = default!;
 
     /// <summary>
+    /// Gets or sets the identity provider the account was created with
+    /// (for example "Local", "YandexID", "GoogleID").
+    /// </summary>
+    public string IdentityProvider { get; set; } = default!;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the account can change its password.
+    /// False for accounts that authenticate only through an external provider.
+    /// </summary>
+    public bool CanChangePassword { get; set; }
+
+    /// <summary>
     /// Gets or sets the active tenant identifier.
     /// </summary>
     public Guid TenantId { get; set; }
@@ -138,6 +150,8 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, G
             UserId = user.Id,
             DisplayName = user.DisplayName,
             Email = user.Email,
+            IdentityProvider = user.IdentityProvider,
+            CanChangePassword = user.CanChangePassword,
             TenantId = tenant.Id,
             TenantName = tenant.Name,
             Currency = tenant.Currency,

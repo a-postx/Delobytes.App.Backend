@@ -70,7 +70,16 @@ public class User
     public Guid? LastActiveTenantId { get; set; }
 
     /// <summary>
-    /// Navigation property: tenant memberships.
+    /// Gets the navigation property: tenant memberships.
     /// </summary>
     public ICollection<TenantMembership> Memberships { get; set; } = new List<TenantMembership>();
+
+    /// <summary>
+    /// Gets a value indicating whether the account can change its password.
+    /// Only local accounts with a stored password hash can; external identities cannot.
+    /// Single source of truth for both the UI flag and the change-password guard.
+    /// </summary>
+    public bool CanChangePassword
+        => string.Equals(IdentityProvider, "Local", StringComparison.Ordinal)
+            && !string.IsNullOrEmpty(PasswordHash);
 }

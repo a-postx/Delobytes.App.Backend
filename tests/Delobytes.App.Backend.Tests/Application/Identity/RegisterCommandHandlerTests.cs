@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
 using Delobytes.App.Backend.Identity.Domain.Entities;
@@ -16,28 +14,21 @@ public class RegisterCommandHandlerTests
 {
     private const string LocalProvider = "Local";
 
-    private readonly Mock<IUserRepository> _userRepository;
-    private readonly Mock<ITenantMembershipRepository> _membershipRepository;
-    private readonly Mock<IPasswordHasher> _passwordHasher;
-    private readonly Mock<IJwtTokenService> _jwtTokenService;
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IPasswordHasher> _passwordHasher = new();
+    private readonly Mock<IUserSessionIssuer> _sessionIssuer = new();
     private readonly RegisterCommandHandler _handler;
 
     public RegisterCommandHandlerTests()
     {
-        _userRepository = new Mock<IUserRepository>();
-        _membershipRepository = new Mock<ITenantMembershipRepository>();
-        _passwordHasher = new Mock<IPasswordHasher>();
-        _jwtTokenService = new Mock<IJwtTokenService>();
-
         _handler = new RegisterCommandHandler(
             _userRepository.Object,
-            _membershipRepository.Object,
             _passwordHasher.Object,
-            _jwtTokenService.Object);
+            _sessionIssuer.Object);
     }
 
     [Fact]
-    public async Task Handle_WhenEmailAlreadyRegistered_ThrowsInvalidOperationException()
+    public async Task Handle_WhenEmailAlreadyRegistered_ThrowsConflictWithoutCreatingUser()
     {
         // Arrange
         string email = "taken@example.com";
@@ -68,12 +59,11 @@ public class RegisterCommandHandlerTests
         exception.Code.Should().Be(IdentityErrorCodes.EmailAlreadyExists);
 
         _userRepository.Verify(r => r.Add(It.IsAny<User>()), Times.Never);
-        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-        _jwtTokenService.VerifyNoOtherCalls();
+        _sessionIssuer.Verify(s => s.IssueAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task Handle_WhenNewUserHasNoMemberships_CreatesLocalUserAndReturnsSetupToken()
+    public async Task Handle_NewUser_CreatesLocalUserAndMapsSessionFromIssuer()
     {
         // Arrange
         string email = "new@example.com";
@@ -88,18 +78,18 @@ public class RegisterCommandHandlerTests
         _userRepository
             .Setup(r => r.Add(It.IsAny<User>()))
             .Callback<User>(user => addedUser = user);
-        _userRepository
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
-        _membershipRepository
-            .Setup(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<TenantMembership>());
         _passwordHasher
             .Setup(h => h.Hash(password))
             .Returns(passwordHash);
-        _jwtTokenService
-            .Setup(j => j.GenerateToken(It.IsAny<Guid>(), null, null))
-            .Returns("setup-token");
+
+        _sessionIssuer
+            .Setup(s => s.IssueAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User user, CancellationToken _) => new LoginResponse
+            {
+                UserId = user.Id,
+                AccessToken = "setup-token",
+                RequiresTenantSetup = true,
+            });
 
         RegisterCommand command = new RegisterCommand
         {
@@ -131,8 +121,7 @@ public class RegisterCommandHandlerTests
 
         _passwordHasher.Verify(h => h.Hash(password), Times.Once);
         _userRepository.Verify(r => r.Add(It.IsAny<User>()), Times.Once);
-        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-        _jwtTokenService.Verify(j => j.GenerateToken(addedUser.Id, null, null), Times.Once);
+        _sessionIssuer.Verify(s => s.IssueAsync(addedUser, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -148,15 +137,12 @@ public class RegisterCommandHandlerTests
         _userRepository
             .Setup(r => r.Add(It.IsAny<User>()))
             .Callback<User>(user => addedUser = user);
-        _membershipRepository
-            .Setup(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<TenantMembership>());
         _passwordHasher
             .Setup(h => h.Hash(It.IsAny<string>()))
             .Returns("bcrypt-hash");
-        _jwtTokenService
-            .Setup(j => j.GenerateToken(It.IsAny<Guid>(), null, null))
-            .Returns("setup-token");
+        _sessionIssuer
+            .Setup(s => s.IssueAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LoginResponse { AccessToken = "setup-token", RequiresTenantSetup = true });
 
         RegisterCommand command = new RegisterCommand
         {
@@ -173,40 +159,28 @@ public class RegisterCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenNewUserAlreadyHasMembership_ReturnsTokenWithTenantAndRole()
+    public async Task Handle_WhenIssuerReturnsTenantSession_ResponseDoesNotRequireTenantSetup()
     {
         // Arrange
-        string email = "member@example.com";
-        Guid tenantId = Guid.NewGuid();
-
-        TenantMembership membership = new TenantMembership
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            Role = Role.Manager,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-
         _userRepository
-            .Setup(r => r.FindByEmailAsync(email, LocalProvider, It.IsAny<CancellationToken>()))
+            .Setup(r => r.FindByEmailAsync(It.IsAny<string>(), LocalProvider, It.IsAny<CancellationToken>()))
             .ReturnsAsync((User?)null);
-        _userRepository
-            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
-        _membershipRepository
-            .Setup(r => r.GetActiveByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { membership });
         _passwordHasher
             .Setup(h => h.Hash(It.IsAny<string>()))
             .Returns("bcrypt-hash");
-        _jwtTokenService
-            .Setup(j => j.GenerateToken(It.IsAny<Guid>(), tenantId, Role.Manager))
-            .Returns("full-token");
+        _sessionIssuer
+            .Setup(s => s.IssueAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LoginResponse
+            {
+                UserId = Guid.NewGuid(),
+                TenantId = Guid.NewGuid(),
+                AccessToken = "full-token",
+                RequiresTenantSetup = false,
+            });
 
         RegisterCommand command = new RegisterCommand
         {
-            Email = email,
+            Email = "member@example.com",
             Password = "Secret123!",
         };
 
@@ -217,8 +191,5 @@ public class RegisterCommandHandlerTests
         response.AccessToken.Should().Be("full-token");
         response.Success.Should().BeTrue();
         response.RequiresTenantSetup.Should().BeFalse();
-
-        _jwtTokenService.Verify(j => j.GenerateToken(It.IsAny<Guid>(), tenantId, Role.Manager), Times.Once);
-        _jwtTokenService.Verify(j => j.GenerateToken(It.IsAny<Guid>(), null, null), Times.Never);
     }
 }

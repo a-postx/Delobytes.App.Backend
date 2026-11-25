@@ -57,13 +57,12 @@ public class ChangePasswordCommandHandler : IRequestHandler<ChangePasswordComman
         User? user = await _userRepository.FindByIdAsync(request.UserId, cancellationToken)
             ?? throw new UnauthorizedAccessException("Пользователь не найден.");
 
-        if (!string.Equals(user.IdentityProvider, "Local", StringComparison.Ordinal)
-            || string.IsNullOrEmpty(user.PasswordHash))
+        if (!user.CanChangePassword)
         {
             throw new AppException(ErrorCodes.Common.ValidationFailed, "Для этого аккаунта пароль не задан.");
         }
 
-        if (!_passwordHasher.Verify(request.CurrentPassword, user.PasswordHash))
+        if (!_passwordHasher.Verify(request.CurrentPassword, user.PasswordHash!))
         {
             // 422 rather than 401: the caller is authenticated, only the submitted password is wrong.
             throw new AppException(ErrorCodes.Common.ValidationFailed, "Текущий пароль неверен.");

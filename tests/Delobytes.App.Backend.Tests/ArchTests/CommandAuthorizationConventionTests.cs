@@ -26,8 +26,7 @@ public class CommandAuthorizationConventionTests
         // Anonymous or self-service endpoints; access is checked by the handler itself.
         nameof(LoginCommand),
         nameof(RegisterCommand),
-        nameof(YandexCallbackCommand),
-        nameof(GoogleCallbackCommand),
+        nameof(OAuthCallbackCommand),
         nameof(ChangePasswordCommand),
         nameof(CreateTenantCommand),
         nameof(SwitchTenantCommand),
