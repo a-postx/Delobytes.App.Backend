@@ -7,6 +7,16 @@ WORKDIR /src
 # Список проектов здесь не дублируется: добавление модуля не может сломать образ.
 # Кеш пакетов NuGet переиспользуется между сборками, поэтому отдельный слой restore не нужен.
 COPY ["Directory.Build.props", "./"]
+
+# Версии пакетов живут в Directory.Packages.props (Central Package Management): без него restore
+# падает с NU1015 на каждом PackageReference без атрибута Version.
+COPY ["Directory.Packages.props", "./"]
+
+# Не обязательны для restore, но без них контейнерная сборка расходится с локальной: global.json
+# выбирает SDK, .editorconfig задаёт серьёзность анализаторов (StyleCop/IDE).
+COPY ["global.json", "./"]
+COPY [".editorconfig", "./"]
+
 COPY ["src/", "src/"]
 
 RUN --mount=type=cache,target=/root/.nuget/packages \

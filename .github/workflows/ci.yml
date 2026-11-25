@@ -79,3 +79,20 @@ jobs:
       # EnforceCodeStyleInBuild, so a second full analyzer pass would add minutes without new signal.
       - name: Verify formatting
         run: dotnet format whitespace Delobytes.App.Backend.sln --verify-no-changes --no-restore
+
+  docker:
+    name: Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Build only, no push: this job exists to catch Dockerfile defects that build and tests cannot
+      # see — a props file missing from the COPY list broke restore with NU1015 while everything else
+      # stayed green. BuildKit is required by the Dockerfile's cache mount.
+      - name: Build image
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build --tag delobytes-app-backend:ci .
