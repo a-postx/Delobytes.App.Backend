@@ -90,6 +90,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 
         services.AddScoped<IProductImportStore, ProductImportStore>();
+
+        // Scoped as well: every part of the batch import works through the same store and change
+        // tracker, so one card is processed by one graph of collaborators.
+        services.AddScoped<ProductCardMatcher>();
+        services.AddScoped<ChannelProductUpserter>();
+        services.AddScoped<CardBarcodePolicy>();
+        services.AddScoped<ProductCodeResolver>();
+        services.AddScoped<ProductImportEffectsPublisher>();
         services.AddScoped<ProductBatchImporter>();
         services.AddScoped<ProductDeletionService>();
         services.AddScoped<ProductOrdersCheckCompletedConsumer>();

@@ -547,14 +547,10 @@ public class ProductBatchImporterBarcodeTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());
 
-        return new ProductBatchImporter(
+        return ProductImportComposition.Build(
             new ProductImportStore(context),
             photoServiceMock.Object,
-            new MassTransitEventPublisher(publishEndpoint),
-            new FakeNumberingSchemeProvider(),
-            new FakeNumberAllocator(),
-            Mock.Of<ILogger<ProductBatchImporter>>(),
-            TimeProvider.System);
+            publishEndpoint);
     }
 
     private CatalogDbContext BuildContext(string databaseName)

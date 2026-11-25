@@ -412,14 +412,10 @@ public class ProductPhotoSplitTests
             Mock.Of<ILogger<ProductPhotoService>>(),
             TimeProvider.System);
 
-        return new ProductBatchImporter(
+        return ProductImportComposition.Build(
             new ProductImportStore(context),
             photoService,
-            new MassTransitEventPublisher(publishEndpoint),
-            new FakeNumberingSchemeProvider(),
-            new FakeNumberAllocator(),
-            Mock.Of<ILogger<ProductBatchImporter>>(),
-            TimeProvider.System);
+            publishEndpoint);
     }
 
     private ProductBatchImportRequestedEvent BuildMessage(ChannelProductCard card, Guid channelId)

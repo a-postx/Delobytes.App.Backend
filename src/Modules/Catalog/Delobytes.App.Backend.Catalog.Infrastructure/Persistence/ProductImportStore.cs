@@ -445,15 +445,71 @@ public class ProductImportStore : IProductImportStore
                 }
             }
 
-            // Numbering counters advanced by this card were rolled back in the database, but EF
-            // still holds the advanced values in memory; without this reload the next card would
-            // allocate from a number this card never committed. Sequences first tracked inside the
-            // failed card were detached by the loop above, so only committed counters remain here.
-            // Counters of cards that already saved stay as the database holds them.
-            foreach (EntityEntry<NumberingSequence> sequenceEntry
-                in _context.ChangeTracker.Entries<NumberingSequence>().ToList())
+            // Rows the card updated or removed were rolled back in the database, but EF still holds
+            // the new values in memory. Without the reload the next card's save would commit them,
+            // and a barcode this card removed would be deleted again by that save. Numbering
+            // counters advanced by the card are covered by the same rule; counters a previous card
+            // already committed are Unchanged and keep the values the database holds.
+            List<EntityEntry> reverted = _context.ChangeTracker.Entries()
+                .Where(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+                .ToList();
+
+            foreach (EntityEntry entry in reverted)
             {
-                await sequenceEntry.ReloadAsync(cancellationToken);
+                await entry.ReloadAsync(cancellationToken);
+            }
+
+            RestoreOwnerCollections();
+        }
+
+        /// <summary>
+        /// Brings the collections the import mutates back in line with the change tracker after a
+        /// rollback: a child of a still-tracked owner is removed from the collection when it was
+        /// detached, and put back when the rollback reloaded it. Without this the next card reads
+        /// a barcode that is either not stored yet or no longer there.
+        /// </summary>
+        private void RestoreOwnerCollections()
+        {
+            foreach (ChannelProduct link in _context.ChangeTracker.Entries<ChannelProduct>().Select(entry => entry.Entity))
+            {
+                foreach (ChannelProductBarcode barcode in link.Barcodes.ToList())
+                {
+                    if (_context.Entry(barcode).State == EntityState.Detached)
+                    {
+                        link.Barcodes.Remove(barcode);
+                    }
+                }
+
+                foreach (ChannelProductBarcode barcode in _context.ChangeTracker.Entries<ChannelProductBarcode>()
+                    .Select(entry => entry.Entity)
+                    .Where(barcode => barcode.ChannelProductId == link.Id))
+                {
+                    if (!link.Barcodes.Contains(barcode))
+                    {
+                        link.Barcodes.Add(barcode);
+                    }
+                }
+            }
+
+            foreach (Product product in _context.ChangeTracker.Entries<Product>().Select(entry => entry.Entity))
+            {
+                foreach (PackingUnit unit in product.PackingUnits.ToList())
+                {
+                    if (_context.Entry(unit).State == EntityState.Detached)
+                    {
+                        product.PackingUnits.Remove(unit);
+                    }
+                }
+
+                foreach (PackingUnit unit in _context.ChangeTracker.Entries<PackingUnit>()
+                    .Select(entry => entry.Entity)
+                    .Where(unit => unit.ProductId == product.Id))
+                {
+                    if (!product.PackingUnits.Contains(unit))
+                    {
+                        product.PackingUnits.Add(unit);
+                    }
+                }
             }
         }
 

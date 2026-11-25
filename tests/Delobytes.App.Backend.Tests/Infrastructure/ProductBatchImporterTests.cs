@@ -1517,14 +1517,10 @@ public class ProductBatchImporterTests
         Mock<IObjectStorage> storageMock = new Mock<IObjectStorage>();
         ProductPhotoService photoService = BuildRealPhotoService(storageMock);
 
-        ProductBatchImporter importer = new ProductBatchImporter(
+        ProductBatchImporter importer = ProductImportComposition.Build(
             new ProductImportStore(consumerContext),
             photoService,
-            new MassTransitEventPublisher(publishEndpointMock.Object),
-            new FakeNumberingSchemeProvider(),
-            new FakeNumberAllocator(),
-            Mock.Of<ILogger<ProductBatchImporter>>(),
-            TimeProvider.System);
+            publishEndpointMock.Object);
 
         ChannelProductCard card = new ChannelProductCard
         {
@@ -2522,18 +2518,10 @@ public class ProductBatchImporterTests
         IPublishEndpoint publishEndpoint,
         Mock<IProductPhotoService> photoService)
     {
-        ProductImportStore store = new ProductImportStore(context);
-        MassTransitEventPublisher eventPublisher = new MassTransitEventPublisher(publishEndpoint);
-        Mock<ILogger<ProductBatchImporter>> loggerMock = new Mock<ILogger<ProductBatchImporter>>();
-
-        return new ProductBatchImporter(
-            store,
+        return ProductImportComposition.Build(
+            new ProductImportStore(context),
             photoService.Object,
-            eventPublisher,
-            new FakeNumberingSchemeProvider(),
-            new FakeNumberAllocator(),
-            loggerMock.Object,
-            TimeProvider.System);
+            publishEndpoint);
     }
 
     private static Mock<IProductPhotoService> BuildPhotoServiceMock()

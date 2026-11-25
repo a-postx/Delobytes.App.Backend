@@ -262,13 +262,10 @@ public class ProductBatchImporterSkuAllocationTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());
 
-        return new ProductBatchImporter(
+        return ProductImportComposition.Build(
             new ProductImportStore(context),
             photoServiceMock.Object,
-            new MassTransitEventPublisher(publishEndpoint),
-            new FakeNumberingSchemeProvider(),
-            allocator,
-            Mock.Of<ILogger<ProductBatchImporter>>(),
-            TimeProvider.System);
+            publishEndpoint,
+            numberAllocator: allocator);
     }
 }

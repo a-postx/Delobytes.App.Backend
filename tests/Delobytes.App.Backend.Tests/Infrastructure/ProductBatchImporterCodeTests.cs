@@ -205,13 +205,11 @@ public class ProductBatchImporterCodeTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProductPhotoImportResult());
 
-        return new ProductBatchImporter(
+        return ProductImportComposition.Build(
             new ProductImportStore(context),
             photoServiceMock.Object,
-            new MassTransitEventPublisher(publishEndpoint),
+            publishEndpoint,
             schemeProvider,
-            allocator,
-            Mock.Of<ILogger<ProductBatchImporter>>(),
-            TimeProvider.System);
+            allocator);
     }
 }
