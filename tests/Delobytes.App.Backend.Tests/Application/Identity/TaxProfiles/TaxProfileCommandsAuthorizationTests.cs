@@ -3,6 +3,7 @@ using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 using FluentAssertions;
 using MediatR;
@@ -24,12 +25,16 @@ public class TaxProfileCommandsAuthorizationTests
 {
     private readonly Mock<IHttpContextAccessor> _httpContextAccessorMock;
     private readonly DefaultHttpContext _httpContext;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
 
     public TaxProfileCommandsAuthorizationTests()
     {
         _httpContext = new DefaultHttpContext();
         _httpContextAccessorMock = new Mock<IHttpContextAccessor>();
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(_httpContext);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
     }
 
     private void SetupAuthenticatedUser(Role? role)
@@ -66,11 +71,15 @@ public class TaxProfileCommandsAuthorizationTests
     private AuthorizationBehaviour<CreateTenantTaxProfileCommand, CreateTenantTaxProfileResponse> CreateCreateBehaviour() =>
         new AuthorizationBehaviour<CreateTenantTaxProfileCommand, CreateTenantTaxProfileResponse>(
             _httpContextAccessorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object,
             NullLogger<AuthorizationBehaviour<CreateTenantTaxProfileCommand, CreateTenantTaxProfileResponse>>.Instance);
 
     private AuthorizationBehaviour<DeleteTenantTaxProfileCommand, DeleteTenantTaxProfileResponse> CreateDeleteBehaviour() =>
         new AuthorizationBehaviour<DeleteTenantTaxProfileCommand, DeleteTenantTaxProfileResponse>(
             _httpContextAccessorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object,
             NullLogger<AuthorizationBehaviour<DeleteTenantTaxProfileCommand, DeleteTenantTaxProfileResponse>>.Instance);
 
     [Fact]

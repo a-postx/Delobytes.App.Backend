@@ -1,3 +1,4 @@
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Services;
@@ -28,7 +29,7 @@ public class TenantContext : ITenantContext
         get
         {
             string? tenantIdClaim = _httpContextAccessor.HttpContext?.User
-                .FindFirst("tenantId")?.Value;
+                .FindFirst(JwtClaimNames.TenantId)?.Value;
 
             if (!string.IsNullOrEmpty(tenantIdClaim) && Guid.TryParse(tenantIdClaim, out Guid tenantId))
             {

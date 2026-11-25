@@ -1,8 +1,7 @@
-using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using MediatR;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -12,12 +11,19 @@ namespace Delobytes.App.Backend.Tests.Controllers;
 public class TenantControllerTests
 {
     private readonly Mock<IMediator> _mediatorMock;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
     private readonly TenantController _controller;
 
     public TenantControllerTests()
     {
         _mediatorMock = new Mock<IMediator>();
-        _controller = new TenantController(_mediatorMock.Object);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
+        _controller = new TenantController(
+            _mediatorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object);
     }
 
     [Fact]
@@ -116,7 +122,7 @@ public class TenantControllerTests
     }
 
     [Fact]
-    public async Task CreateTenantForUser_WithoutUserIdClaim_ReturnsUnauthorized()
+    public async Task CreateTenantForUser_WithoutUserId_ThrowsUnauthorized()
     {
         // Arrange
         CreateTenantForUserRequest request = new CreateTenantForUserRequest
@@ -124,56 +130,15 @@ public class TenantControllerTests
             TenantName = "Test Company"
         };
 
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity())
-            }
-        };
+        _userContextMock.SetupGet(c => c.UserId).Returns((Guid?)null);
 
         // Act
-        ActionResult<CreateTenantForUserResponse> result = await _controller.CreateTenantForUser(
+        Func<Task> act = () => _controller.CreateTenantForUser(
             request,
             CancellationToken.None);
 
         // Assert
-        Assert.IsType<UnauthorizedResult>(result.Result);
-
-        _mediatorMock.Verify(
-            m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
-    public async Task CreateTenantForUser_WithInvalidUserIdClaim_ReturnsUnauthorized()
-    {
-        // Arrange
-        CreateTenantForUserRequest request = new CreateTenantForUserRequest
-        {
-            TenantName = "Test Company"
-        };
-
-        ClaimsIdentity identity = new ClaimsIdentity(new[]
-        {
-            new Claim("sub", "not-a-guid")
-        });
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(identity)
-            }
-        };
-
-        // Act
-        ActionResult<CreateTenantForUserResponse> result = await _controller.CreateTenantForUser(
-            request,
-            CancellationToken.None);
-
-        // Assert
-        Assert.IsType<UnauthorizedResult>(result.Result);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(act);
 
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<CreateTenantCommand>(), It.IsAny<CancellationToken>()),
@@ -207,24 +172,7 @@ public class TenantControllerTests
 
     private void SetupUserClaims(Guid userId, Guid? tenantId)
     {
-        List<Claim> claims = new List<Claim>
-        {
-            new Claim("sub", userId.ToString())
-        };
-
-        if (tenantId.HasValue)
-        {
-            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
-        }
-
-        ClaimsIdentity identity = new ClaimsIdentity(claims);
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(identity)
-            }
-        };
+        _userContextMock.SetupGet(c => c.UserId).Returns(userId);
+        _tenantContextMock.SetupGet(c => c.TenantId).Returns(tenantId);
     }
 }

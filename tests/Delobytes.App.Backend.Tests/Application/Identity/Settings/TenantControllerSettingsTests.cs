@@ -1,9 +1,8 @@
-using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using FluentAssertions;
 using MediatR;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -12,43 +11,31 @@ namespace Delobytes.App.Backend.Tests.Application.Identity.Settings;
 
 /// <summary>
 /// Tests for the settings endpoint of TenantController.
-/// The tenant is always resolved from the JWT claim, never from the request body,
+/// The tenant always comes from the current tenant context, never from the request body,
 /// so a client cannot modify another tenant's settings.
 /// </summary>
 public class TenantControllerSettingsTests
 {
     private readonly Mock<IMediator> _mediatorMock;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
     private readonly TenantController _controller;
 
     public TenantControllerSettingsTests()
     {
         _mediatorMock = new Mock<IMediator>();
-        _controller = new TenantController(_mediatorMock.Object);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
+        _controller = new TenantController(
+            _mediatorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object);
     }
 
-    private void SetupUserClaims(Guid? tenantId, string? rawTenantIdClaim = null)
+    private void SetupUserClaims(Guid? tenantId)
     {
-        List<Claim> claims = new List<Claim>
-        {
-            new Claim("sub", Guid.NewGuid().ToString()),
-        };
-
-        if (tenantId.HasValue)
-        {
-            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
-        }
-        else if (rawTenantIdClaim != null)
-        {
-            claims.Add(new Claim("tenantId", rawTenantIdClaim));
-        }
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity(claims)),
-            },
-        };
+        _userContextMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        _tenantContextMock.SetupGet(c => c.TenantId).Returns(tenantId);
     }
 
     [Fact]
@@ -110,36 +97,18 @@ public class TenantControllerSettingsTests
     }
 
     [Fact]
-    public async Task UpdateTenantSettings_MissingTenantClaim_ReturnsUnauthorizedWithoutDispatch()
+    public async Task UpdateTenantSettings_MissingTenant_ThrowsUnauthorizedWithoutDispatch()
     {
         // Arrange
         SetupUserClaims(null);
 
         // Act
-        ActionResult<UpdateTenantSettingsResponse> result = await _controller.UpdateTenantSettings(
+        Func<Task> act = () => _controller.UpdateTenantSettings(
             new UpdateTenantSettingsRequest { TimeZone = "Europe/Samara" },
             CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
-        _mediatorMock.Verify(
-            m => m.Send(It.IsAny<UpdateTenantSettingsCommand>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
-    public async Task UpdateTenantSettings_MalformedTenantClaim_ReturnsUnauthorizedWithoutDispatch()
-    {
-        // Arrange
-        SetupUserClaims(null, rawTenantIdClaim: "not-a-guid");
-
-        // Act
-        ActionResult<UpdateTenantSettingsResponse> result = await _controller.UpdateTenantSettings(
-            new UpdateTenantSettingsRequest { TimeZone = "Europe/Samara" },
-            CancellationToken.None);
-
-        // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<UpdateTenantSettingsCommand>(), It.IsAny<CancellationToken>()),
             Times.Never);

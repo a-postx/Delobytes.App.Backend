@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Models;
 using MediatR;
@@ -15,7 +15,7 @@ namespace Delobytes.App.Backend.Identity.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
+public class AuthController : TenantApiControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ILogger<AuthController> _logger;
@@ -24,8 +24,15 @@ public class AuthController : ControllerBase
     /// Initializes a new instance of the <see cref="AuthController"/> class.
     /// </summary>
     /// <param name="mediator">Mediator instance.</param>
-    /// /// <param name="logger">Logger.</param>
-    public AuthController(IMediator mediator, ILogger<AuthController> logger)
+    /// <param name="logger">Logger.</param>
+    /// <param name="userContext">Current user context.</param>
+    /// <param name="tenantContext">Current tenant context.</param>
+    public AuthController(
+        IMediator mediator,
+        ILogger<AuthController> logger,
+        IUserContext userContext,
+        ITenantContext tenantContext)
+        : base(userContext, tenantContext)
     {
         _mediator = mediator;
         _logger = logger;
@@ -84,12 +91,7 @@ public class AuthController : ControllerBase
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
 
         await _mediator.Send(
             new ChangePasswordCommand
@@ -115,20 +117,9 @@ public class AuthController : ControllerBase
         [FromBody] CreateTenantRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
+        Guid userId = CurrentUserId;
 
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
-
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-        Guid? currentTenantId = null;
-
-        if (!string.IsNullOrEmpty(tenantIdClaim) && Guid.TryParse(tenantIdClaim, out Guid parsedTenantId))
-        {
-            currentTenantId = parsedTenantId;
-        }
+        Guid? currentTenantId = CurrentTenantIdOrNull;
 
         CreateTenantResponse response = await _mediator.Send(
             new CreateTenantCommand

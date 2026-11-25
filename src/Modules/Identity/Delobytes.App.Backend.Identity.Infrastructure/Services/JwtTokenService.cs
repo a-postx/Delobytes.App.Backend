@@ -42,20 +42,20 @@ public class JwtTokenService : IJwtTokenService
 
         List<Claim> claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim(JwtClaimNames.Subject, userId.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Iat, _timeProvider.GetUtcNow().ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new Claim(JwtClaimNames.IssuedAt, _timeProvider.GetUtcNow().ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
         };
 
         // Add tenant and role claims only if user has a tenant
         if (tenantId.HasValue)
         {
-            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
+            claims.Add(new Claim(JwtClaimNames.TenantId, tenantId.Value.ToString()));
         }
 
         if (role.HasValue)
         {
-            claims.Add(new Claim("role", role.Value.ToString()));
+            claims.Add(new Claim(JwtClaimNames.Role, role.Value.ToString()));
         }
 
         JwtSecurityToken token = new JwtSecurityToken(

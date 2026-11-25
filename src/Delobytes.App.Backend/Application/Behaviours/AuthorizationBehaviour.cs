@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 
@@ -16,18 +17,26 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
     where TRequest : notnull
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IUserContext _userContext;
+    private readonly ITenantContext _tenantContext;
     private readonly ILogger<AuthorizationBehaviour<TRequest, TResponse>> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AuthorizationBehaviour{TRequest, TResponse}"/> class.
     /// </summary>
     /// <param name="httpContextAccessor">HTTP context accessor.</param>
+    /// <param name="userContext">Current user context.</param>
+    /// <param name="tenantContext">Current tenant context.</param>
     /// <param name="logger">Logger instance.</param>
     public AuthorizationBehaviour(
         IHttpContextAccessor httpContextAccessor,
+        IUserContext userContext,
+        ITenantContext tenantContext,
         ILogger<AuthorizationBehaviour<TRequest, TResponse>> logger)
     {
         _httpContextAccessor = httpContextAccessor;
+        _userContext = userContext;
+        _tenantContext = tenantContext;
         _logger = logger;
     }
 
@@ -46,7 +55,7 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
                 throw new UnauthorizedAccessException("Пользователь не аутентифицирован.");
             }
 
-            string? roleClaim = httpContext.User.FindFirstValue("role");
+            string? roleClaim = httpContext.User.FindFirstValue(JwtClaimNames.Role);
 
             if (string.IsNullOrEmpty(roleClaim))
             {
@@ -67,8 +76,8 @@ public class AuthorizationBehaviour<TRequest, TResponse> : IPipelineBehavior<TRe
 
             if (!requireRole.AllowedRoles.Contains(userRole))
             {
-                string userId = httpContext.User.FindFirstValue("sub") ?? "unknown";
-                string tenantId = httpContext.User.FindFirstValue("tenantId") ?? "unknown";
+                string userId = _userContext.UserId?.ToString() ?? "unknown";
+                string tenantId = _tenantContext.TenantId?.ToString() ?? "unknown";
 
                 _logger.LogWarning(
                     "Authorization failed for {RequestType}: User {UserId} in tenant {TenantId} with role {UserRole} is not authorized. Required roles: {RequiredRoles}",

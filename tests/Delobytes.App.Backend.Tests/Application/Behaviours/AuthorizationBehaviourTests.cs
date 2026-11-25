@@ -2,6 +2,7 @@
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -13,13 +14,17 @@ namespace Delobytes.App.Backend.Tests.Application.Behaviours;
 public class AuthorizationBehaviourTests
 {
     private readonly Mock<IHttpContextAccessor> _httpContextAccessorMock;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
     private DefaultHttpContext _httpContext;
 
     public AuthorizationBehaviourTests()
     {
-        _httpContextAccessorMock = new Mock<IHttpContextAccessor>();
         _httpContext = new DefaultHttpContext();
+        _httpContextAccessorMock = new Mock<IHttpContextAccessor>();
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(_httpContext);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
     }
 
     [Fact]
@@ -221,6 +226,8 @@ public class AuthorizationBehaviourTests
     {
         return new AuthorizationBehaviour<TCommand, AuthTestResponse>(
             _httpContextAccessorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object,
             NullLogger<AuthorizationBehaviour<TCommand, AuthTestResponse>>.Instance);
     }
 
@@ -233,11 +240,17 @@ public class AuthorizationBehaviourTests
 
     private void SetupHttpContextWithRole(Role role)
     {
+        Guid userId = Guid.NewGuid();
+        Guid tenantId = Guid.NewGuid();
+
+        _userContextMock.SetupGet(x => x.UserId).Returns(userId);
+        _tenantContextMock.SetupGet(x => x.TenantId).Returns(tenantId);
+
         ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim("sub", Guid.NewGuid().ToString()),
-            new Claim("tenantId", Guid.NewGuid().ToString()),
-            new Claim("role", role.ToString()),
+            new Claim(JwtClaimNames.Subject, userId.ToString()),
+            new Claim(JwtClaimNames.TenantId, tenantId.ToString()),
+            new Claim(JwtClaimNames.Role, role.ToString()),
         }, "TestAuth"));
 
         _httpContext.User = user;
@@ -252,8 +265,8 @@ public class AuthorizationBehaviourTests
     {
         ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim("sub", Guid.NewGuid().ToString()),
-            new Claim("tenantId", Guid.NewGuid().ToString()),
+            new Claim(JwtClaimNames.Subject, Guid.NewGuid().ToString()),
+            new Claim(JwtClaimNames.TenantId, Guid.NewGuid().ToString()),
         }, "TestAuth"));
 
         _httpContext.User = user;
@@ -263,9 +276,9 @@ public class AuthorizationBehaviourTests
     {
         ClaimsPrincipal user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim("sub", Guid.NewGuid().ToString()),
-            new Claim("tenantId", Guid.NewGuid().ToString()),
-            new Claim("role", "InvalidRole"),
+            new Claim(JwtClaimNames.Subject, Guid.NewGuid().ToString()),
+            new Claim(JwtClaimNames.TenantId, Guid.NewGuid().ToString()),
+            new Claim(JwtClaimNames.Role, "InvalidRole"),
         }, "TestAuth"));
 
         _httpContext.User = user;

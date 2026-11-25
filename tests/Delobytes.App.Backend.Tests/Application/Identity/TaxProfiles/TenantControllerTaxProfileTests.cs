@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 using Delobytes.App.Backend.Identity.Application.Queries.TaxProfiles;
@@ -23,42 +23,25 @@ namespace Delobytes.App.Backend.Tests.Application.Identity.TaxProfiles;
 public class TenantControllerTaxProfileTests
 {
     private readonly Mock<IMediator> _mediatorMock;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
     private readonly TenantController _controller;
 
     public TenantControllerTaxProfileTests()
     {
         _mediatorMock = new Mock<IMediator>();
-        _controller = new TenantController(_mediatorMock.Object);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
+        _controller = new TenantController(
+            _mediatorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object);
     }
 
-    private void SetupUserClaims(Guid? tenantId, string? rawTenantIdClaim = null, string? role = "Administrator")
+    private void SetupUserClaims(Guid? tenantId)
     {
-        List<Claim> claims = new List<Claim>
-        {
-            new Claim("sub", Guid.NewGuid().ToString()),
-        };
-
-        if (tenantId.HasValue)
-        {
-            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
-        }
-        else if (rawTenantIdClaim != null)
-        {
-            claims.Add(new Claim("tenantId", rawTenantIdClaim));
-        }
-
-        if (role != null)
-        {
-            claims.Add(new Claim("role", role));
-        }
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity(claims)),
-            },
-        };
+        _userContextMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        _tenantContextMock.SetupGet(c => c.TenantId).Returns(tenantId);
     }
 
     // ── GET /api/tenant/tax-profiles ──────────────────────────────────────────
@@ -113,7 +96,7 @@ public class TenantControllerTaxProfileTests
             .Setup(m => m.Send(It.IsAny<GetTenantTaxProfilesQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetTenantTaxProfilesResponse());
 
-        SetupUserClaims(tenantId, role: "ReadOnly");
+        SetupUserClaims(tenantId);
 
         // Act
         await _controller.GetTaxProfiles(CancellationToken.None);
@@ -127,35 +110,20 @@ public class TenantControllerTaxProfileTests
     }
 
     [Fact]
-    public async Task GetTaxProfiles_WithoutTenantClaim_ReturnsUnauthorized()
+    public async Task GetTaxProfiles_WithoutTenant_ThrowsUnauthorized()
     {
         // Arrange
         SetupUserClaims(null);
 
         // Act
-        ActionResult<GetTenantTaxProfilesResponse> result =
-            await _controller.GetTaxProfiles(CancellationToken.None);
+        Func<Task> act = () => _controller.GetTaxProfiles(CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
 
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<GetTenantTaxProfilesQuery>(), It.IsAny<CancellationToken>()),
             Times.Never);
-    }
-
-    [Fact]
-    public async Task GetTaxProfiles_WithMalformedTenantClaim_ReturnsUnauthorized()
-    {
-        // Arrange
-        SetupUserClaims(null, rawTenantIdClaim: "not-a-guid");
-
-        // Act
-        ActionResult<GetTenantTaxProfilesResponse> result =
-            await _controller.GetTaxProfiles(CancellationToken.None);
-
-        // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
     }
 
     // ── GET /api/tenant/tax-profiles/active ───────────────────────────────────
@@ -247,17 +215,16 @@ public class TenantControllerTaxProfileTests
     }
 
     [Fact]
-    public async Task GetActiveTaxProfile_WithoutTenantClaim_ReturnsUnauthorized()
+    public async Task GetActiveTaxProfile_WithoutTenant_ThrowsUnauthorized()
     {
         // Arrange
         SetupUserClaims(null);
 
         // Act
-        ActionResult<GetActiveTenantTaxProfileResponse> result =
-            await _controller.GetActiveTaxProfile(null, CancellationToken.None);
+        Func<Task> act = () => _controller.GetActiveTaxProfile(null, CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
     }
 
     // ── POST /api/tenant/tax-profiles ─────────────────────────────────────────
@@ -366,7 +333,7 @@ public class TenantControllerTaxProfileTests
     }
 
     [Fact]
-    public async Task CreateTaxProfile_WithoutTenantClaim_ReturnsUnauthorized()
+    public async Task CreateTaxProfile_WithoutTenant_ThrowsUnauthorized()
     {
         // Arrange
         CreateTenantTaxProfileRequest request = new CreateTenantTaxProfileRequest
@@ -380,11 +347,10 @@ public class TenantControllerTaxProfileTests
         SetupUserClaims(null);
 
         // Act
-        ActionResult<CreateTenantTaxProfileResponse> result =
-            await _controller.CreateTaxProfile(request, CancellationToken.None);
+        Func<Task> act = () => _controller.CreateTaxProfile(request, CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
 
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<CreateTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()),
@@ -483,17 +449,16 @@ public class TenantControllerTaxProfileTests
     }
 
     [Fact]
-    public async Task DeleteTaxProfile_WithoutTenantClaim_ReturnsUnauthorized()
+    public async Task DeleteTaxProfile_WithoutTenant_ThrowsUnauthorized()
     {
         // Arrange
         SetupUserClaims(null);
 
         // Act
-        ActionResult<DeleteTenantTaxProfileResponse> result =
-            await _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
+        Func<Task> act = () => _controller.DeleteTaxProfile(Guid.NewGuid(), CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
 
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<DeleteTenantTaxProfileCommand>(), It.IsAny<CancellationToken>()),

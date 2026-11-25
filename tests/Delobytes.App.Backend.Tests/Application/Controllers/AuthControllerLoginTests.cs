@@ -1,10 +1,9 @@
-using System.Security.Claims;
 using System.Text.Json;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using FluentAssertions;
 using MediatR;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -18,8 +17,11 @@ public class AuthControllerLoginTests
 {
     private readonly Mock<IMediator> _mediator = new();
     private readonly Mock<ILogger<AuthController>> _logger = new();
+    private readonly Mock<IUserContext> _userContext = new();
+    private readonly Mock<ITenantContext> _tenantContext = new();
 
-    private AuthController BuildController() => new AuthController(_mediator.Object, _logger.Object);
+    private AuthController BuildController() =>
+        new AuthController(_mediator.Object, _logger.Object, _userContext.Object, _tenantContext.Object);
 
     [Fact]
     public async Task Login_MapsRequestToPasswordLoginCommand()
@@ -83,20 +85,12 @@ public class AuthControllerLoginTests
     }
 
     [Fact]
-    public async Task ChangePassword_AuthenticatedUser_SendsCommandWithUserIdFromClaims()
+    public async Task ChangePassword_AuthenticatedUser_SendsCommandWithUserIdFromContext()
     {
         // Arrange
         Guid userId = Guid.NewGuid();
+        _userContext.SetupGet(c => c.UserId).Returns(userId);
         AuthController controller = BuildController();
-        controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity(
-                    new[] { new Claim("sub", userId.ToString()) },
-                    "test")),
-            },
-        };
 
         ChangePasswordRequest request = new ChangePasswordRequest
         {
@@ -121,25 +115,19 @@ public class AuthControllerLoginTests
     }
 
     [Fact]
-    public async Task ChangePassword_WithoutSubjectClaim_ReturnsUnauthorized()
+    public async Task ChangePassword_WithoutUser_ThrowsUnauthorized()
     {
         // Arrange
+        _userContext.SetupGet(c => c.UserId).Returns((Guid?)null);
         AuthController controller = BuildController();
-        controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity()),
-            },
-        };
 
         // Act
-        IActionResult result = await controller.ChangePassword(
+        Func<Task> act = () => controller.ChangePassword(
             new ChangePasswordRequest { CurrentPassword = "old", NewPassword = "new" },
             CancellationToken.None);
 
         // Assert
-        result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
         _mediator.Verify(
             m => m.Send(It.IsAny<ChangePasswordCommand>(), It.IsAny<CancellationToken>()),
             Times.Never);

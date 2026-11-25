@@ -1,7 +1,7 @@
-﻿using System.Security.Claims;
-using Delobytes.App.Backend.Contracts.Accounting;
+﻿using Delobytes.App.Backend.Contracts.Accounting;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Commands.TaxProfiles;
 using Delobytes.App.Backend.Identity.Application.Queries;
@@ -18,7 +18,7 @@ namespace Delobytes.App.Backend.Identity.Api.Controllers;
 [ApiController]
 [Route("api/tenant")]
 [Authorize]
-public class TenantController : ControllerBase
+public class TenantController : TenantApiControllerBase
 {
     private readonly IMediator _mediator;
 
@@ -26,7 +26,13 @@ public class TenantController : ControllerBase
     /// Initializes a new instance of the <see cref="TenantController"/> class.
     /// </summary>
     /// <param name="mediator">Mediator instance.</param>
-    public TenantController(IMediator mediator)
+    /// <param name="userContext">Current user context.</param>
+    /// <param name="tenantContext">Current tenant context.</param>
+    public TenantController(
+        IMediator mediator,
+        IUserContext userContext,
+        ITenantContext tenantContext)
+        : base(userContext, tenantContext)
     {
         _mediator = mediator;
     }
@@ -39,12 +45,7 @@ public class TenantController : ControllerBase
     [HttpGet("legal-entity")]
     public async Task<ActionResult<GetTenantLegalEntityResponse>> GetTenantLegalEntity(CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         GetTenantLegalEntityResponse response = await _mediator.Send(
             new GetTenantLegalEntityQuery
@@ -67,12 +68,7 @@ public class TenantController : ControllerBase
         [FromBody] UpdateTenantLegalEntityRequest request,
         CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         UpdateTenantLegalEntityResponse response = await _mediator.Send(
             new UpdateTenantLegalEntityCommand
@@ -97,12 +93,7 @@ public class TenantController : ControllerBase
         [FromBody] UpdateTenantNameRequest request,
         CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         UpdateTenantNameResponse response = await _mediator.Send(
             new UpdateTenantNameCommand
@@ -126,12 +117,7 @@ public class TenantController : ControllerBase
         [FromBody] UpdateTenantSettingsRequest request,
         CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         UpdateTenantSettingsResponse response = await _mediator.Send(
             new UpdateTenantSettingsCommand
@@ -155,12 +141,7 @@ public class TenantController : ControllerBase
         [FromBody] SwitchTenantRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
 
         SwitchTenantResponse response = await _mediator.Send(
             new SwitchTenantCommand
@@ -184,20 +165,9 @@ public class TenantController : ControllerBase
         [FromBody] CreateTenantForUserRequest request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
+        Guid userId = CurrentUserId;
 
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
-
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-        Guid? currentTenantId = null;
-
-        if (!string.IsNullOrEmpty(tenantIdClaim) && Guid.TryParse(tenantIdClaim, out Guid parsedTenantId))
-        {
-            currentTenantId = parsedTenantId;
-        }
+        Guid? currentTenantId = CurrentTenantIdOrNull;
 
         CreateTenantResponse response = await _mediator.Send(
             new CreateTenantCommand
@@ -226,18 +196,8 @@ public class TenantController : ControllerBase
         [FromBody] CreateInvitationRequestDto request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
+        Guid tenantId = CurrentTenantId;
 
         CreateInvitationResponse response = await _mediator.Send(
             new CreateInvitationCommand
@@ -263,12 +223,7 @@ public class TenantController : ControllerBase
         [FromBody] AcceptInvitationRequestDto request,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
 
         AcceptInvitationResponse response = await _mediator.Send(
             new AcceptInvitationCommand
@@ -292,18 +247,8 @@ public class TenantController : ControllerBase
         Guid invitationId,
         CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
+        Guid tenantId = CurrentTenantId;
 
         RevokeInvitationResponse response = await _mediator.Send(
             new RevokeInvitationCommand
@@ -325,18 +270,8 @@ public class TenantController : ControllerBase
     [HttpGet("members")]
     public async Task<ActionResult<GetTenantMembersResponse>> GetTenantMembers(CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
+        Guid tenantId = CurrentTenantId;
 
         GetTenantMembersResponse response = await _mediator.Send(
             new GetTenantMembersQuery
@@ -362,18 +297,8 @@ public class TenantController : ControllerBase
         [FromBody] UpdateMemberRoleRequestDto request,
         CancellationToken cancellationToken)
     {
-        string? updaterIdClaim = User.FindFirstValue("sub");
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(updaterIdClaim) || !Guid.TryParse(updaterIdClaim, out Guid updaterId))
-        {
-            return Unauthorized();
-        }
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid updaterId = CurrentUserId;
+        Guid tenantId = CurrentTenantId;
 
         UpdateMembershipRoleResponse response = await _mediator.Send(
             new UpdateMembershipRoleCommand
@@ -399,18 +324,8 @@ public class TenantController : ControllerBase
         Guid userId,
         CancellationToken cancellationToken)
     {
-        string? removerIdClaim = User.FindFirstValue("sub");
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(removerIdClaim) || !Guid.TryParse(removerIdClaim, out Guid removerId))
-        {
-            return Unauthorized();
-        }
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid removerId = CurrentUserId;
+        Guid tenantId = CurrentTenantId;
 
         RemoveTenantMemberResponse response = await _mediator.Send(
             new RemoveTenantMemberCommand
@@ -432,12 +347,7 @@ public class TenantController : ControllerBase
     [HttpGet("tax-profiles")]
     public async Task<ActionResult<GetTenantTaxProfilesResponse>> GetTaxProfiles(CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         GetTenantTaxProfilesResponse response = await _mediator.Send(
             new GetTenantTaxProfilesQuery
@@ -462,12 +372,7 @@ public class TenantController : ControllerBase
         [FromQuery] DateTimeOffset? at,
         CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         GetActiveTenantTaxProfileResponse response = await _mediator.Send(
             new GetActiveTenantTaxProfileQuery
@@ -491,12 +396,7 @@ public class TenantController : ControllerBase
         [FromBody] CreateTenantTaxProfileRequest request,
         CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         CreateTenantTaxProfileResponse response = await _mediator.Send(
             new CreateTenantTaxProfileCommand
@@ -529,12 +429,7 @@ public class TenantController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid tenantId = CurrentTenantId;
 
         DeleteTenantTaxProfileResponse response = await _mediator.Send(
             new DeleteTenantTaxProfileCommand

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Delobytes.App.Backend.Contracts.Accounting;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Contracts.Tenancy;
 using Delobytes.App.Backend.Identity.Application.Interfaces;
@@ -133,6 +134,8 @@ public static class ServiceCollectionExtensions
                 ValidIssuer = issuer,
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
+                NameClaimType = JwtClaimNames.Subject,
+                RoleClaimType = JwtClaimNames.Role,
                 ClockSkew = TimeSpan.FromSeconds(1)
             };
 
@@ -142,8 +145,8 @@ public static class ServiceCollectionExtensions
             {
                 OnTokenValidated = async context =>
                 {
-                    string? subject = context.Principal?.FindFirst("sub")?.Value;
-                    string? issuedAt = context.Principal?.FindFirst("iat")?.Value;
+                    string? subject = context.Principal?.FindFirst(JwtClaimNames.Subject)?.Value;
+                    string? issuedAt = context.Principal?.FindFirst(JwtClaimNames.IssuedAt)?.Value;
 
                     if (!Guid.TryParse(subject, out Guid userId)
                         || !long.TryParse(issuedAt, NumberStyles.Integer, CultureInfo.InvariantCulture, out long issuedAtSeconds))
@@ -179,8 +182,8 @@ public static class ServiceCollectionExtensions
 
         services.AddClaimsLogging(options =>
         {
-            options.UserIdClaimName = "sub";
-            options.TenantIdClaimName = "tenantId";
+            options.UserIdClaimName = JwtClaimNames.Subject;
+            options.TenantIdClaimName = JwtClaimNames.TenantId;
         });
 
         // Authorization for module commands and queries is enforced by the MediatR

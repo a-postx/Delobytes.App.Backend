@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Interfaces;
 
 namespace Delobytes.App.Backend.Services;
@@ -33,7 +34,7 @@ public class UserContext : IUserContext
         {
             // DefaultInboundClaimTypeMap is cleared in Identity module setup, so "sub" is not
             // remapped to ClaimTypes.NameIdentifier. Try both just in case.
-            string? subClaim = _httpContextAccessor.HttpContext?.User.FindFirstValue("sub")
+            string? subClaim = _httpContextAccessor.HttpContext?.User.FindFirstValue(JwtClaimNames.Subject)
                 ?? _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
 
             if (!string.IsNullOrEmpty(subClaim) && Guid.TryParse(subClaim, out Guid userId))

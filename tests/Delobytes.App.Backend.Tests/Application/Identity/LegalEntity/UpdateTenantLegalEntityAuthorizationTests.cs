@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Delobytes.App.Backend.Application.Behaviours;
 using Delobytes.App.Backend.Contracts.Authorization;
 using Delobytes.App.Backend.Contracts.Errors;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using FluentAssertions;
 using MediatR;
@@ -21,6 +22,8 @@ public class UpdateTenantLegalEntityAuthorizationTests
 {
     private readonly Mock<IHttpContextAccessor> _httpContextAccessorMock;
     private readonly DefaultHttpContext _httpContext;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
     private readonly Mock<RequestHandlerDelegate<UpdateTenantLegalEntityResponse>> _nextMock;
 
     public UpdateTenantLegalEntityAuthorizationTests()
@@ -28,6 +31,8 @@ public class UpdateTenantLegalEntityAuthorizationTests
         _httpContext = new DefaultHttpContext();
         _httpContextAccessorMock = new Mock<IHttpContextAccessor>();
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(_httpContext);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
 
         _nextMock = new Mock<RequestHandlerDelegate<UpdateTenantLegalEntityResponse>>();
         _nextMock
@@ -38,6 +43,8 @@ public class UpdateTenantLegalEntityAuthorizationTests
     private AuthorizationBehaviour<UpdateTenantLegalEntityCommand, UpdateTenantLegalEntityResponse> CreateBehaviour() =>
         new AuthorizationBehaviour<UpdateTenantLegalEntityCommand, UpdateTenantLegalEntityResponse>(
             _httpContextAccessorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object,
             NullLogger<AuthorizationBehaviour<UpdateTenantLegalEntityCommand, UpdateTenantLegalEntityResponse>>.Instance);
 
     private void SetupAuthenticatedUser(Role? role)

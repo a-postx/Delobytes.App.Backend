@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Models;
@@ -20,14 +21,19 @@ public class AuthControllerOAuthTests
 {
     private readonly Mock<IMediator> _mediator;
     private readonly Mock<ILogger<AuthController>> _logger;
+    private readonly Mock<IUserContext> _userContext;
+    private readonly Mock<ITenantContext> _tenantContext;
 
     public AuthControllerOAuthTests()
     {
         _mediator = new Mock<IMediator>();
         _logger = new Mock<ILogger<AuthController>>();
+        _userContext = new Mock<IUserContext>();
+        _tenantContext = new Mock<ITenantContext>();
     }
 
-    private AuthController BuildController() => new AuthController(_mediator.Object, _logger.Object);
+    private AuthController BuildController() =>
+        new AuthController(_mediator.Object, _logger.Object, _userContext.Object, _tenantContext.Object);
 
     private static OAuthCallbackRequest BuildRequest(
         string code = "auth-code",

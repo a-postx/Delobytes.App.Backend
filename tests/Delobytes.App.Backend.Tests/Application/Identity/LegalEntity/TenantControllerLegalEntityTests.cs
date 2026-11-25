@@ -1,10 +1,9 @@
-using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Api.Controllers;
 using Delobytes.App.Backend.Identity.Application.Commands;
 using Delobytes.App.Backend.Identity.Application.Queries;
 using FluentAssertions;
 using MediatR;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
@@ -13,48 +12,31 @@ namespace Delobytes.App.Backend.Tests.Application.Identity.LegalEntity;
 
 /// <summary>
 /// Tests for the legal entity endpoints of TenantController.
-/// The tenant is always resolved from the JWT claim, never from the request body,
+/// The tenant always comes from the current tenant context, never from the request body,
 /// so a client cannot read or modify another tenant's settings.
 /// </summary>
 public class TenantControllerLegalEntityTests
 {
     private readonly Mock<IMediator> _mediatorMock;
+    private readonly Mock<IUserContext> _userContextMock;
+    private readonly Mock<ITenantContext> _tenantContextMock;
     private readonly TenantController _controller;
 
     public TenantControllerLegalEntityTests()
     {
         _mediatorMock = new Mock<IMediator>();
-        _controller = new TenantController(_mediatorMock.Object);
+        _userContextMock = new Mock<IUserContext>();
+        _tenantContextMock = new Mock<ITenantContext>();
+        _controller = new TenantController(
+            _mediatorMock.Object,
+            _userContextMock.Object,
+            _tenantContextMock.Object);
     }
 
-    private void SetupUserClaims(Guid? tenantId, string? rawTenantIdClaim = null, string? role = null)
+    private void SetupUserClaims(Guid? tenantId)
     {
-        List<Claim> claims = new List<Claim>
-        {
-            new Claim("sub", Guid.NewGuid().ToString()),
-        };
-
-        if (tenantId.HasValue)
-        {
-            claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
-        }
-        else if (rawTenantIdClaim != null)
-        {
-            claims.Add(new Claim("tenantId", rawTenantIdClaim));
-        }
-
-        if (role != null)
-        {
-            claims.Add(new Claim("role", role));
-        }
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity(claims)),
-            },
-        };
+        _userContextMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        _tenantContextMock.SetupGet(c => c.TenantId).Returns(tenantId);
     }
 
     // ── GET /api/tenant/legal-entity ──────────────────────────────────────────
@@ -76,7 +58,7 @@ public class TenantControllerLegalEntityTests
             .Setup(m => m.Send(It.IsAny<GetTenantLegalEntityQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(mediatorResponse);
 
-        SetupUserClaims(tenantId, role: "Administrator");
+        SetupUserClaims(tenantId);
 
         // Act
         ActionResult<GetTenantLegalEntityResponse> result =
@@ -102,7 +84,7 @@ public class TenantControllerLegalEntityTests
             .Setup(m => m.Send(It.IsAny<GetTenantLegalEntityQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetTenantLegalEntityResponse { TenantId = tenantId });
 
-        SetupUserClaims(tenantId, role: "Manager");
+        SetupUserClaims(tenantId);
 
         // Act
         await _controller.GetTenantLegalEntity(CancellationToken.None);
@@ -116,35 +98,20 @@ public class TenantControllerLegalEntityTests
     }
 
     [Fact]
-    public async Task GetTenantLegalEntity_WithoutTenantClaim_ReturnsUnauthorized()
+    public async Task GetTenantLegalEntity_WithoutTenant_ThrowsUnauthorized()
     {
         // Arrange
-        SetupUserClaims(null, role: "Administrator");
+        SetupUserClaims(null);
 
         // Act
-        ActionResult<GetTenantLegalEntityResponse> result =
-            await _controller.GetTenantLegalEntity(CancellationToken.None);
+        Func<Task> act = () => _controller.GetTenantLegalEntity(CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
 
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<GetTenantLegalEntityQuery>(), It.IsAny<CancellationToken>()),
             Times.Never);
-    }
-
-    [Fact]
-    public async Task GetTenantLegalEntity_WithMalformedTenantClaim_ReturnsUnauthorized()
-    {
-        // Arrange
-        SetupUserClaims(null, rawTenantIdClaim: "not-a-guid", role: "Administrator");
-
-        // Act
-        ActionResult<GetTenantLegalEntityResponse> result =
-            await _controller.GetTenantLegalEntity(CancellationToken.None);
-
-        // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
     }
 
     [Fact]
@@ -158,7 +125,7 @@ public class TenantControllerLegalEntityTests
             .Setup(m => m.Send(It.IsAny<GetTenantLegalEntityQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetTenantLegalEntityResponse { TenantId = tenantId });
 
-        SetupUserClaims(tenantId, role: "ReadOnly");
+        SetupUserClaims(tenantId);
 
         // Act
         ActionResult<GetTenantLegalEntityResponse> result =
@@ -193,7 +160,7 @@ public class TenantControllerLegalEntityTests
             Inn = "7712345678",
         };
 
-        SetupUserClaims(tenantId, role: "Administrator");
+        SetupUserClaims(tenantId);
 
         // Act
         ActionResult<UpdateTenantLegalEntityResponse> result =
@@ -224,7 +191,7 @@ public class TenantControllerLegalEntityTests
             Inn = "771234567890",
         };
 
-        SetupUserClaims(tenantId, role: "Administrator");
+        SetupUserClaims(tenantId);
 
         // Act
         await _controller.UpdateTenantLegalEntity(request, CancellationToken.None);
@@ -255,7 +222,7 @@ public class TenantControllerLegalEntityTests
             LegalName = "ООО «Ромашка»",
         };
 
-        SetupUserClaims(claimTenantId, role: "Administrator");
+        SetupUserClaims(claimTenantId);
 
         // Act
         await _controller.UpdateTenantLegalEntity(request, CancellationToken.None);
@@ -269,7 +236,7 @@ public class TenantControllerLegalEntityTests
     }
 
     [Fact]
-    public async Task UpdateTenantLegalEntity_WithoutTenantClaim_ReturnsUnauthorized()
+    public async Task UpdateTenantLegalEntity_WithoutTenant_ThrowsUnauthorized()
     {
         // Arrange
         UpdateTenantLegalEntityRequest request = new UpdateTenantLegalEntityRequest
@@ -277,36 +244,16 @@ public class TenantControllerLegalEntityTests
             LegalName = "ООО «Ромашка»",
         };
 
-        SetupUserClaims(null, role: "Administrator");
+        SetupUserClaims(null);
 
         // Act
-        ActionResult<UpdateTenantLegalEntityResponse> result =
-            await _controller.UpdateTenantLegalEntity(request, CancellationToken.None);
+        Func<Task> act = () => _controller.UpdateTenantLegalEntity(request, CancellationToken.None);
 
         // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
 
         _mediatorMock.Verify(
             m => m.Send(It.IsAny<UpdateTenantLegalEntityCommand>(), It.IsAny<CancellationToken>()),
             Times.Never);
-    }
-
-    [Fact]
-    public async Task UpdateTenantLegalEntity_WithMalformedTenantClaim_ReturnsUnauthorized()
-    {
-        // Arrange
-        UpdateTenantLegalEntityRequest request = new UpdateTenantLegalEntityRequest
-        {
-            LegalName = "ООО «Ромашка»",
-        };
-
-        SetupUserClaims(null, rawTenantIdClaim: "not-a-guid", role: "Administrator");
-
-        // Act
-        ActionResult<UpdateTenantLegalEntityResponse> result =
-            await _controller.UpdateTenantLegalEntity(request, CancellationToken.None);
-
-        // Assert
-        result.Result.Should().BeOfType<UnauthorizedResult>();
     }
 }

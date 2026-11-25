@@ -1,4 +1,4 @@
-using System.Security.Claims;
+using Delobytes.App.Backend.Contracts.Interfaces;
 using Delobytes.App.Backend.Identity.Application.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -12,7 +12,7 @@ namespace Delobytes.App.Backend.Identity.Api.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize]
-public class UserController : ControllerBase
+public class UserController : TenantApiControllerBase
 {
     private readonly IMediator _mediator;
 
@@ -20,7 +20,13 @@ public class UserController : ControllerBase
     /// Initializes a new instance of the <see cref="UserController"/> class.
     /// </summary>
     /// <param name="mediator">Mediator instance.</param>
-    public UserController(IMediator mediator)
+    /// <param name="userContext">Current user context.</param>
+    /// <param name="tenantContext">Current tenant context.</param>
+    public UserController(
+        IMediator mediator,
+        IUserContext userContext,
+        ITenantContext tenantContext)
+        : base(userContext, tenantContext)
     {
         _mediator = mediator;
     }
@@ -33,18 +39,8 @@ public class UserController : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<GetCurrentUserResponse>> GetMe(CancellationToken cancellationToken)
     {
-        string? userIdClaim = User.FindFirstValue("sub");
-        string? tenantIdClaim = User.FindFirstValue("tenantId");
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
-        {
-            return Unauthorized();
-        }
-
-        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out Guid tenantId))
-        {
-            return Unauthorized();
-        }
+        Guid userId = CurrentUserId;
+        Guid tenantId = CurrentTenantId;
 
         GetCurrentUserResponse response = await _mediator.Send(
             new GetCurrentUserQuery { UserId = userId, TenantId = tenantId },
