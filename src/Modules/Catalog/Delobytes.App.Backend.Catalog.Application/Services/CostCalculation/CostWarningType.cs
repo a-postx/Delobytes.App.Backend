@@ -16,4 +16,7 @@ public enum CostWarningType
 
     /// <summary>A quantity or rate is zero or negative, so the affected part of the cost is not computed.</summary>
     InvalidQuantity,
+
+    /// <summary>The component price covers a zero or negative quantity, so no per-unit price exists.</summary>
+    InvalidComponentPriceQuantity,
 }

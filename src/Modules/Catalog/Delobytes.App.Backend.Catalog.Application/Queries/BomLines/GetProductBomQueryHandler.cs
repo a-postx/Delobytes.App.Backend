@@ -48,7 +48,6 @@ public class GetProductBomQueryHandler : IRequestHandler<GetProductBomQuery, Get
                 Name = line.Component.Name,
                 Unit = line.Component.Unit,
                 Category = line.Component.Category,
-                ActivePricePerUnit = line.Component.Prices.FirstOrDefault()?.PricePerUnit
             }
         };
     }

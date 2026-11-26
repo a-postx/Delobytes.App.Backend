@@ -9,6 +9,9 @@ public class ComponentPriceDto
 
     public decimal PricePerUnit { get; set; }
 
+    /// <summary>Number of component units the price refers to.</summary>
+    public decimal Quantity { get; set; }
+
     public Guid? SupplierId { get; set; }
 
     public string? SupplierName { get; set; }

@@ -82,6 +82,7 @@ public class ComponentsController : ControllerBase
                 Unit = request.Unit,
                 Category = request.Category,
                 PricePerUnit = request.PricePerUnit,
+                Quantity = request.Quantity,
                 SupplierId = request.SupplierId,
                 ValidFrom = request.ValidFrom,
             },
@@ -123,6 +124,7 @@ public class ComponentsController : ControllerBase
             {
                 ComponentId = id,
                 PricePerUnit = request.PricePerUnit,
+                Quantity = request.Quantity,
                 SupplierId = request.SupplierId,
                 ValidFrom = request.ValidFrom,
             },
@@ -168,6 +170,9 @@ public class CreateComponentRequest
 
     public decimal PricePerUnit { get; set; }
 
+    /// <summary>Количество единиц компонента, за которое указана цена. По умолчанию — одна единица.</summary>
+    public decimal Quantity { get; set; } = 1m;
+
     public Guid? SupplierId { get; set; }
 
     /// <summary>Effective date of the first price version.</summary>
@@ -191,6 +196,9 @@ public class UpdateComponentRequest
 public class CreateComponentPriceRequest
 {
     public decimal PricePerUnit { get; set; }
+
+    /// <summary>Количество единиц компонента, за которое указана цена. По умолчанию — одна единица.</summary>
+    public decimal Quantity { get; set; } = 1m;
 
     public Guid? SupplierId { get; set; }
 

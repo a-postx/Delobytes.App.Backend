@@ -26,5 +26,6 @@ public static class CatalogErrorCodes
     public static readonly ErrorCode NumberingExhausted = new ErrorCode("catalog.numbering.exhausted", 409, "Диапазон нумерации исчерпан.");
     public static readonly ErrorCode SupplierNotFound = new ErrorCode("catalog.supplier.not_found", 404, "Поставщик не найден.");
     public static readonly ErrorCode ComponentNotFound = new ErrorCode("catalog.component.not_found", 404, "Компонент не найден.");
+    public static readonly ErrorCode ComponentUnitImmutable = new ErrorCode("catalog.component.unit_immutable", 409, "Единицу измерения нельзя изменить: от неё зависят сохранённые цены компонента и количества в составе товаров.");
     public static readonly ErrorCode ChannelNotFound = new ErrorCode("catalog.channel.not_found", 404, "Канал продаж не найден.");
 }

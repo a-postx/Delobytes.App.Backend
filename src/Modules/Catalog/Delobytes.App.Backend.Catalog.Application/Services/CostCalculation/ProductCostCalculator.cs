@@ -125,8 +125,30 @@ public class ProductCostCalculator : ICostCalculator
 
             // A missing price yields a zero-priced line rather than an omitted one, so the user sees
             // that the position exists but was not counted.
-            decimal pricePerUnit = componentPrice == null ? 0m : componentPrice.PricePerUnit;
-            decimal lineTotal = bomLine.Quantity * pricePerUnit;
+            decimal pricePerUnit = 0m;
+            decimal lineTotal = 0m;
+
+            if (componentPrice != null && componentPrice.Quantity <= 0m)
+            {
+                // A price entered for zero units has no per-unit value, and dividing by it would
+                // abort the whole calculation. Priced like a missing one: zero here, warning next to it.
+                warnings.Add(new CostWarning(
+                    CostWarningType.InvalidComponentPriceQuantity,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Некорректное количество в цене компонента {0}: {1}.",
+                        componentName,
+                        componentPrice.Quantity),
+                    bomLine.ComponentId));
+            }
+            else if (componentPrice != null)
+            {
+                // The entered price covers componentPrice.Quantity units, so one unit costs
+                // PricePerUnit / Quantity. The line multiplies first and divides last: 12 * 100 / 150
+                // is exactly 8, while 12 * (100 / 150) carries the rounding of the division.
+                pricePerUnit = componentPrice.PricePerUnit / componentPrice.Quantity;
+                lineTotal = bomLine.Quantity * componentPrice.PricePerUnit / componentPrice.Quantity;
+            }
 
             lines.Add(new CostLine(
                 bomLine.ComponentId,

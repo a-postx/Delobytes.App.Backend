@@ -27,5 +27,4 @@ public class BomComponentDto
     public string Name { get; set; } = default!;
     public Unit Unit { get; set; }
     public ComponentCategory Category { get; set; }
-    public decimal? ActivePricePerUnit { get; set; }
 }

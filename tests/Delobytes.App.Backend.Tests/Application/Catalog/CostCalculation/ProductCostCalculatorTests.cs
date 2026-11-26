@@ -426,6 +426,82 @@ public class ProductCostCalculatorTests
         breakdown.Warnings.Should().NotContain(warning => warning.Type == CostWarningType.MissingWorkRate);
     }
 
+    [Fact]
+    public async Task CalculateAsync_PriceCoversManyUnits_ChargesTheFractionUsed()
+    {
+        Guid productId = Guid.NewGuid();
+        DateOnly asOf = new DateOnly(2026, 3, 1);
+
+        Component candles = CreateComponent("Свечи", ComponentCategory.Material);
+        SetupBom(productId, asOf, new[] { CreateBomLine(productId, candles, 12m) });
+
+        // 150 pieces bought for 100: one piece costs 100 / 150, and 12 pieces cost 8.
+        _componentPriceRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(candles.Id, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ComponentPrice
+            {
+                ComponentId = candles.Id,
+                PricePerUnit = 100m,
+                Quantity = 150m,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                IsActive = true,
+            });
+
+        SetupLabor(productId, asOf, dailyWage: 0m, assemblyRatePerDay: 1);
+
+        CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
+
+        breakdown.MaterialCost.Should().Be(8m);
+        breakdown.Warnings.Should().BeEmpty();
+
+        CostLine line = breakdown.Lines.Single();
+        line.Quantity.Should().Be(12m);
+        line.PricePerUnit.Should().BeApproximately(100m / 150m, Tolerance);
+        line.LineTotal.Should().Be(8m);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_PriceQuantityIsZero_WarnsAndChargesNothing()
+    {
+        Guid productId = Guid.NewGuid();
+        DateOnly asOf = new DateOnly(2026, 3, 1);
+
+        Component broken = CreateComponent("Свечи", ComponentCategory.Material);
+        Component healthy = CreateComponent("Коробка", ComponentCategory.Packaging);
+
+        SetupBom(productId, asOf, new[]
+        {
+            CreateBomLine(productId, broken, 12m),
+            CreateBomLine(productId, healthy, 1m),
+        });
+
+        _componentPriceRepositoryMock
+            .Setup(repository => repository.GetEffectiveAtAsync(broken.Id, asOf, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ComponentPrice
+            {
+                ComponentId = broken.Id,
+                PricePerUnit = 100m,
+                Quantity = 0m,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                IsActive = true,
+            });
+
+        SetupPrices(asOf, new Dictionary<Guid, decimal> { { healthy.Id, 10m } });
+        SetupLabor(productId, asOf, dailyWage: 0m, assemblyRatePerDay: 1);
+
+        CostBreakdown breakdown = await _calculator.CalculateAsync(productId, asOf, CancellationToken.None);
+
+        // The broken position must not divide by zero or hide the rest of the composition.
+        breakdown.MaterialCost.Should().Be(0m);
+        breakdown.PackagingCost.Should().Be(10m);
+        breakdown.Lines.Should().HaveCount(2);
+        breakdown.Lines.Single(line => line.ComponentId == broken.Id).LineTotal.Should().Be(0m);
+        breakdown.Warnings.Should().ContainSingle(warning =>
+            warning.Type == CostWarningType.InvalidComponentPriceQuantity
+            && warning.ComponentId == broken.Id);
+        breakdown.IsComplete.Should().BeFalse();
+    }
+
     private static Component CreateComponent(string name, ComponentCategory category)
     {
         return new Component

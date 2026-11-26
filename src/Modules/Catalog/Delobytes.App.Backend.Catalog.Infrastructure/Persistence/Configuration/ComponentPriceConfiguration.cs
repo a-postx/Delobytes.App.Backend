@@ -19,6 +19,12 @@ public class ComponentPriceConfiguration : IEntityTypeConfiguration<ComponentPri
             .HasPrecision(18, 4)
             .IsRequired();
 
+        // Six decimals: a pack may hold a fraction of a unit (0,004 kg), and the price is divided
+        // by this value, so truncating it would shift the per-unit cost.
+        builder.Property(p => p.Quantity)
+            .HasPrecision(18, 6)
+            .IsRequired();
+
         builder.Property(p => p.SupplierId);
 
         builder.Property(p => p.ValidFrom)

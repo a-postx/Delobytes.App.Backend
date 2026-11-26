@@ -25,5 +25,9 @@ public class CreateComponentCommandValidator : AbstractValidator<CreateComponent
         RuleFor(x => x.PricePerUnit)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Цена не может быть отрицательной.");
+
+        RuleFor(x => x.Quantity)
+            .GreaterThan(0)
+            .WithMessage("Количество должно быть больше нуля.");
     }
 }

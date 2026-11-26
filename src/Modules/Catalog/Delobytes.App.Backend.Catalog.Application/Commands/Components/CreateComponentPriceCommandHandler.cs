@@ -18,6 +18,9 @@ public class CreateComponentPriceCommand : IRequest<CreateComponentPriceResponse
 
     public decimal PricePerUnit { get; set; }
 
+    /// <summary>Number of component units the price refers to; one unit means the price of a unit.</summary>
+    public decimal Quantity { get; set; } = 1m;
+
     public Guid? SupplierId { get; set; }
 
     public DateOnly ValidFrom { get; set; }
@@ -77,6 +80,7 @@ public class CreateComponentPriceCommandHandler : IRequestHandler<CreateComponen
             Id = EntityId.New(),
             ComponentId = component.Id,
             PricePerUnit = request.PricePerUnit,
+            Quantity = request.Quantity,
             SupplierId = request.SupplierId,
             ValidFrom = request.ValidFrom,
             IsActive = true,

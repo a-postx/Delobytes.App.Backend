@@ -183,7 +183,7 @@ public class ComponentCommandHandlerTests
         Guid? originalSupplierId = originalPrice.SupplierId;
 
         _repoMock
-            .Setup(r => r.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetWithPricesByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
 
         _repoMock
@@ -198,7 +198,7 @@ public class ComponentCommandHandlerTests
             Id = existing.Id,
             Name = "Коробка 30x20x15",
             Description = "Обновлённое описание",
-            Unit = Unit.Kg,
+            Unit = Unit.Piece,
         };
 
         // Act
@@ -207,7 +207,7 @@ public class ComponentCommandHandlerTests
         // Assert
         existing.Name.Should().Be("Коробка 30x20x15");
         existing.Description.Should().Be("Обновлённое описание");
-        existing.Unit.Should().Be(Unit.Kg);
+        existing.Unit.Should().Be(Unit.Piece);
 
         // Price versioning invariant — updating descriptive fields must never touch the price.
         originalPrice.PricePerUnit.Should().Be(originalPricePerUnit);
@@ -218,11 +218,74 @@ public class ComponentCommandHandlerTests
     }
 
     [Fact]
+    public async Task UpdateComponent_ChangingUnitWithPriceVersions_IsRejected()
+    {
+        // Arrange: a price version states how many units its amount covers, so the unit is part of
+        // the price's meaning. Rewriting it would reinterpret saved prices instead of versioning them.
+        Component existing = BuildComponent();
+
+        _repoMock
+            .Setup(r => r.GetWithPricesByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+
+        UpdateComponentCommandHandler handler =
+            new UpdateComponentCommandHandler(_repoMock.Object);
+
+        UpdateComponentCommand command = new UpdateComponentCommand
+        {
+            Id = existing.Id,
+            Name = "Коробка 30x20x15",
+            Unit = Unit.Kg,
+        };
+
+        // Act
+        Func<Task> act = () => handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        AppException exception = (await act.Should().ThrowAsync<AppException>()).Which;
+        exception.Code.Should().Be(CatalogErrorCodes.ComponentUnitImmutable);
+        existing.Unit.Should().Be(Unit.Piece);
+        _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateComponent_ChangingUnitWithoutPriceVersions_UpdatesUnit()
+    {
+        // Arrange: an unpriced component has nothing expressed in its unit yet, so the unit is free.
+        Component existing = BuildComponent(withActivePrice: false);
+
+        _repoMock
+            .Setup(r => r.GetWithPricesByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+
+        _repoMock
+            .Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        UpdateComponentCommandHandler handler =
+            new UpdateComponentCommandHandler(_repoMock.Object);
+
+        UpdateComponentCommand command = new UpdateComponentCommand
+        {
+            Id = existing.Id,
+            Name = "Коробка 30x20x15",
+            Unit = Unit.Kg,
+        };
+
+        // Act
+        await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        existing.Unit.Should().Be(Unit.Kg);
+        _repoMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task UpdateComponent_NotFound_ReturnsFalse()
     {
         // Arrange
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetWithPricesByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Component?)null);
 
         UpdateComponentCommandHandler handler =

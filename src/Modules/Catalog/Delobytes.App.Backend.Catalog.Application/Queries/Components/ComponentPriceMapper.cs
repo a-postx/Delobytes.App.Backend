@@ -18,6 +18,7 @@ internal static class ComponentPriceMapper
         {
             Id = price.Id,
             PricePerUnit = price.PricePerUnit,
+            Quantity = price.Quantity,
             SupplierId = price.SupplierId,
             SupplierName = price.Supplier?.Name,
             ValidFrom = price.ValidFrom.ToString("yyyy-MM-dd"),

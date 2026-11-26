@@ -21,6 +21,9 @@ public class CreateComponentCommand : IRequest<CreateComponentResponse>, IRequir
     /// <summary>Price of the first price version created together with the component.</summary>
     public decimal PricePerUnit { get; set; }
 
+    /// <summary>Number of component units the price refers to; one unit means the price of a unit.</summary>
+    public decimal Quantity { get; set; } = 1m;
+
     public Guid? SupplierId { get; set; }
 
     /// <summary>Effective date of the first price version.</summary>
@@ -67,6 +70,7 @@ public class CreateComponentCommandHandler : IRequestHandler<CreateComponentComm
             Id = EntityId.New(),
             ComponentId = component.Id,
             PricePerUnit = request.PricePerUnit,
+            Quantity = request.Quantity,
             SupplierId = request.SupplierId,
             ValidFrom = request.ValidFrom,
             IsActive = true,

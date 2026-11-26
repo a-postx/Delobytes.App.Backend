@@ -13,8 +13,18 @@ public class ComponentPrice : ITenantScoped, IAuditableEntity, IRowVersionedEnti
 
     public Guid ComponentId { get; set; }
 
-    /// <summary>Purchase price per unit in currency.</summary>
+    /// <summary>
+    /// Price in currency for <see cref="Quantity"/> units of the component, not for a single unit:
+    /// a purchase of 150 pieces for 100 leaves both figures as they were entered.
+    /// </summary>
     public decimal PricePerUnit { get; set; }
+
+    /// <summary>
+    /// Number of component units (in the component's own unit) the price refers to. One unit keeps
+    /// the historical meaning of <see cref="PricePerUnit"/>; the cost of a single unit is
+    /// <c>PricePerUnit / Quantity</c>.
+    /// </summary>
+    public decimal Quantity { get; set; } = 1m;
 
     public Guid? SupplierId { get; set; }
 

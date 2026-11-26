@@ -73,7 +73,7 @@ public class ComponentSupplierIntegrationTests
         ComponentPrice originalPrice = existing.Prices.First();
 
         _componentRepoMock
-            .Setup(r => r.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetWithPricesByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
 
         _componentRepoMock

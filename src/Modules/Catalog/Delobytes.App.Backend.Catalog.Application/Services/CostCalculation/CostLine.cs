@@ -11,8 +11,8 @@ namespace Delobytes.App.Backend.Catalog.Application.Services.CostCalculation;
 /// <param name="ComponentName">Component display name.</param>
 /// <param name="Category">Category that decides which cost bucket the line falls into.</param>
 /// <param name="Quantity">Component quantity per one unit of the product.</param>
-/// <param name="PricePerUnit">Price effective on the requested date; zero when no price exists.</param>
-/// <param name="LineTotal">Quantity multiplied by price.</param>
+/// <param name="PricePerUnit">Price of one component unit on the requested date; zero when no price exists.</param>
+/// <param name="LineTotal">Quantity multiplied by the price of one unit.</param>
 public sealed record CostLine(
     Guid ComponentId,
     string ComponentName,
